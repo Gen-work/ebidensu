@@ -1,7 +1,14 @@
-# Changelog
+﻿# Changelog
 
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
+
+## 2026-05-18 (Session 3) — AI Co-workflow Tooling & Encoding Fixes
+
+### Added / Changed
+- **AI Sync Infrastructure**: Added `Pack-LlmContext.ps1`, `Apply-LlmPatch.ps1`, and `Export-DailyPatch.ps1` to facilitate secure, clipboard-driven LLM interactions bypassing Genba network restrictions.
+- **Encoding Fixes**: Enforced `-Encoding UTF8` across all `Get-Content` and `Set-Content` calls in the LLM toolchain to prevent Shift-JIS text corruption (文字化け).
+- **Docs**: Planned deprecation of `HANDOFF.md`. Updated `CLAUDE.md` to track local build tools.
 
 ## 2026-05-18 (later2) — v2.2: Mark phase, auto column repair, shape probe
 

@@ -30,6 +30,12 @@ Migration deadline: 2026-12 (MQFX EOS). Real, billable work — be careful.
 
 ## Project file map
 
+# --- AI Co-workflow (Local Build Tools) ---
+Pack-LlmContext.ps1     packs project context to clipboard for LLM ingestion
+Apply-LlmPatch.ps1      parses XML patches from clipboard and updates local files
+Export-DailyPatch.ps1   extracts daily Git diff to clipboard for low-bandwidth sync
+# ------------------------------------------
+
 ```
 VerifyTool.ps1          main entry, menu, phase router, status display
 VerifyConfig.psd1       paths, scripts, phase order, aliases, labels

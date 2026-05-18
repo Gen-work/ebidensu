@@ -9,6 +9,20 @@ Daily use:
 .\VerifyTool.ps1 -Help
 ```
 
+## AI 協働ワークフロー
+
+現場と自宅の環境間で安全にコードの差分を同期・更新するためのツールです。
+
+1. 全コンテキストの抽出（初期設定・大規模型再構築用）
+.\Pack-LlmContext.ps1
+
+2. AIからのXMLパッチ自動適用
+.\Apply-LlmPatch.ps1
+
+3. 退勤前の差分抽出（自宅のCursor/Claude同期用）
+.\Export-DailyPatch.ps1
+
+
 ## Folder layout
 
 Expected work folder:
@@ -248,4 +262,8 @@ CLAUDE.md               context file for Claude Code (read it first when opening
 README.md               this file
 CHANGELOG.md            iteration log across browser-IDE bridge
 HANDOFF.md              architecture notes for any follow-up engineer
+
+Pack-LlmContext.ps1     プロジェクト全体のコンテキストをクリップボードにコピー
+Apply-LlmPatch.ps1      AIが生成したXMLパッチをローカルファイルに自動適用
+Export-DailyPatch.ps1   本日のGit差分のみを抽出してクリップボードにコピー
 ```
