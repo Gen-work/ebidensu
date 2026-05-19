@@ -3,6 +3,48 @@
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
+## 2026-05-19 — ReviewEvidence live test + Apply-LlmPatch v3
+
+### Added / Changed
+- Added and wired `ReviewEvidence.ps1` manual review flow.
+  - New review phases: `ReviewGift`, `ReviewGfix`, `ReviewDf`, and `ReviewEvidence`.
+  - `isReviewed` now follows bitmask semantics: `1=GIFT`, `2=GFIX`, `4=DF`, `7=all`.
+  - `ReviewEvidence.ps1` opens evidence workbooks by `Excel_NAME`, waits for manual review, then saves/closes and updates mapping.
+- Updated `VerifyConfig.psd1` with review phase entries, aliases, `SaveWaitMs`, and review bit values.
+- Updated `VerifyTool.ps1` so review phases route to `ReviewEvidence.ps1` with `ReviewBit`.
+- Fixed `ReviewEvidence.ps1` `$pid` bug by avoiding PowerShell's built-in read-only `$PID` variable.
+- Explicitly opened workbooks as read-write via `Workbooks.Open($file, 0, $false)` and added read-only detection.
+- Moved cursor relocation to after manual review instead of immediately after opening.
+  - After manual review, the script selects `A3` by default, or `A1` for sheets whose name contains the arrow marker.
+  - It also scrolls the active window to the top-left area after selecting the target cell.
+- Clarified review prompt wording: `update mapping` is used instead of `mark`, to avoid confusion with the red-rectangle Mark phase.
+
+### Tooling
+- Replaced `Apply-LlmPatch.ps1` with v3 behavior.
+  - Resolves relative patch paths against the script/repo directory.
+  - Trims one boundary newline inside `<search>` / `<replace>`.
+  - Validates multiple patches against the in-memory updated file state.
+  - Writes each changed file once, preventing later patches from overwriting earlier patches on the same file.
+  - Preserves BOM and original line endings.
+- Confirmed that patch text copied with Windows PowerShell must use `Get-Content -Raw -Encoding UTF8 | Set-Clipboard` to avoid Japanese mojibake.
+
+### Live test notes
+- `ReviewGift -TargetIds QJRVWD50` successfully opened the workbook and updated `isReviewed` bit `1`.
+- `ReviewGift -TargetIds KJRVWD64` successfully opened the workbook, waited for manual review, saved/closed, and updated mapping.
+- Current remaining issue: after `Ctrl+S` + `Esc`, Excel may still report `$wb.Saved = false`, causing an extra confirmation prompt. Next change should remove the second confirmation and use a longer wait before close.
+
+### Pending / Next
+- Change save routine to:
+  1. send `Ctrl+S`;
+  2. wait about 300 ms;
+  3. send `Esc` to dismiss the GenBa macro prompt;
+  4. wait about 5 seconds for network-share save to settle;
+  5. if `$wb.Saved` is still false, log a warning only;
+  6. close without second save to avoid a macro loop;
+  7. update mapping and continue to the next workbook.
+- Keep `Close($false)` for now. Do not switch to `Close($true)` unless the macro behavior is retested, because close-time save may trigger the same macro/prompt again.
+- After the save-close flow stabilizes, run a multi-workbook review pass without `-TargetIds`.
+
 ## 2026-05-18 (Session 3) — AI Co-workflow Tooling & Encoding Fixes
 
 ### Added / Changed

@@ -179,9 +179,9 @@ To add a new phase:
 7. When proposing edits, give line numbers and minimal diffs, not full file rewrites.
 8. After any code change, add a `CHANGELOG.md` entry under a new date heading.
 
-## Current state (last bump: 2026-05-19 v2.3)
+## Current state (last bump: 2026-05-18 v2.2)
 
-**Implemented:** Mapping, ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins, GiftJenkinsNoFile, GfixHmSnap, GfixJenkins, Clone, ReplaceGift, ReplaceGfix (with TODO stub for log), ReplaceDf, MarkGift, MarkGfix, MarkDf, ReviewGift, ReviewGfix, ReviewDf, ReviewEvidence, Crop, Validate, RepairMapping (auto on startup + manual), ProbeShapes, Status.
+**Implemented:** Mapping, ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins, GiftJenkinsNoFile, GfixHmSnap, GfixJenkins, Clone, ReplaceGift, ReplaceGfix (with TODO stub for log), ReplaceDf, MarkGift, MarkGfix, MarkDf, ReviewEvidence, Crop, Validate, RepairMapping (auto on startup + manual), ProbeShapes, Status.
 
 **Mark architecture (current):**
 - `ReplaceEvidence` stamps every inserted Picture with `AlternativeText = "v1|<folder>|<correl>"` (e.g. `"v1|GIFT_HM|JIDSC48S"`).
@@ -192,22 +192,6 @@ To add a new phase:
 **Auto column repair:**
 - On every VerifyTool startup, if the mapping CSV exists, `Ensure-PhaseColumns` reads `PhaseOrder` and adds any missing column with default `'0'`. Existing data untouched.
 - Manual: `.\VerifyTool.ps1 -Phase RepairMapping`.
-
-**ReviewEvidence architecture (current live-tested state):**
-- Review phases use `isReviewed` as a bitmask: `1=GIFT`, `2=GFIX`, `4=DF`, `7=all`.
-- `ReviewGift`, `ReviewGfix`, `ReviewDf`, and `ReviewEvidence` all invoke `ReviewEvidence.ps1` with different `ReviewBit` values.
-- `ReviewEvidence.ps1` opens evidence workbooks from `work/evidence/<Excel_NAME>.xlsx` in mapping order and waits for Misaki to review/adjust by hand.
-- After Misaki returns to the shell and presses Enter, the script performs the final cursor relocation, sends save keys, closes the workbook, and updates mapping.
-- Cursor relocation must happen after manual review, not immediately after opening.
-- The script explicitly requests read-write open via `Workbooks.Open($file, 0, $false)` and must not update mapping if the workbook opens read-only.
-- Avoid using `$pid` as a variable name in PowerShell; it collides with the built-in read-only `$PID`.
-- Prompt wording should say `update mapping`, not `mark`, because `Mark` already means the red-rectangle phase.
-- Current pending improvement: save flow should be `Ctrl+S -> short wait -> Esc -> about 5s wait -> close -> update mapping`. Do not add a second blocking confirmation just because `$wb.Saved` remains false; the GenBa save macro can make `$wb.Saved` unreliable.
-- Prefer keeping close as `Close($false)` after explicit save, to avoid triggering a second macro save loop at close time.
-
-**Apply-LlmPatch current notes:**
-- Use the v3 patcher behavior: resolve relative paths against the script/repo directory, trim boundary newlines inside XML blocks, validate sequential patches in memory, and write each changed file once.
-- When loading a patch text file into clipboard on Windows PowerShell, use `Get-Content -Raw -Encoding UTF8 | Set-Clipboard`; otherwise Japanese text may become mojibake and `<search>` will fail.
 
 **Planned (still TODO):**
 - `GfixLodDownload` — accept dirty multiline URL paste, parse links, download to `work/DATA/GFIX_LOD`, update `GFIX_log`. Drives the `Get-GfixLogLines` stub in `ReplaceEvidence.ps1`.

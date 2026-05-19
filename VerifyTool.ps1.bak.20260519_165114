@@ -92,9 +92,6 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase MarkDf'
     Write-Host '  .\VerifyTool.ps1 -Phase ProbeShapes -ProbeFile <evidence.xlsx>'
     Write-Host '  .\VerifyTool.ps1 -Phase RepairMapping'
-    Write-Host '  .\VerifyTool.ps1 -Phase ReviewGift'
-    Write-Host '  .\VerifyTool.ps1 -Phase ReviewGfix'
-    Write-Host '  .\VerifyTool.ps1 -Phase ReviewDf'
     Write-Host '  .\VerifyTool.ps1 -Phase ReviewEvidence'
     Write-Host '  .\VerifyTool.ps1 -Phase ReviewEvidence -CursorCell A1'
     Write-Host ''
@@ -118,7 +115,7 @@ function Show-VerifyHelp([hashtable]$Config) {
         Write-Host ("  {0,-20} {1,-12}{2} {3} [{4}]" -f $p.Key, $field, $bv, $p.Label, $p.Status)
     }
     Write-Host ''
-    Write-Host 'isReplaced/isMarked/isReviewed bitmask: 1=GIFT, 2=GFIX, 4=DF. 7 = all done.'
+    Write-Host 'isReplaced bitmask: 1=GIFT, 2=GFIX, 4=DF. 7 = all done.'
     Write-Host ''
     Write-Host 'Aliases kept for old commands:'
     Write-Host '  Excel -> ExcelSnap, HmGift -> GiftHmSnap, MqGift -> GiftMqSnap'
@@ -467,27 +464,16 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         return
     }
 
-    if ($PhaseKey -eq 'ReviewGift' -or $PhaseKey -eq 'ReviewGfix' -or $PhaseKey -eq 'ReviewDf' -or $PhaseKey -eq 'ReviewEvidence') {
-        $p  = Resolve-ToolPath $Config 'Review'
-        $eh = Resolve-ToolPath $Config 'ExcelHelpers'
-        $bit = switch ($PhaseKey) {
-            'ReviewGift'     { 1 }
-            'ReviewGfix'     { 2 }
-            'ReviewDf'       { 4 }
-            'ReviewEvidence' { 7 }
-        }
+    if ($PhaseKey -eq 'ReviewEvidence') {
+        $p = Resolve-ToolPath $Config 'Review'
         $args = $base.Clone()
         $args['EvidenceDir'] = $State.EvidenceDir
         $args['CursorCell'] = $State.CursorCell
         $args['ReviewField'] = $Config.Review.Field
-        $args['ReviewBit'] = $bit
-        $args['ExcelHelpersScript'] = $eh
-        if ($Config.Review.SaveWaitMs) { $args['SaveWaitMs'] = [int]$Config.Review.SaveWaitMs }
-        if ($Config.Review.Maximize) { $args['Maximize'] = $true }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
         if ($State.DryRun) { $args['DryRun'] = $true }
-        Write-Host ("[RUN] {0} bit={1}" -f (Split-Path $p -Leaf), $bit) -ForegroundColor Green
+        Write-Host ("[RUN] {0}" -f (Split-Path $p -Leaf)) -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
         return

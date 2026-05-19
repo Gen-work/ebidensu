@@ -50,7 +50,6 @@
         CursorCell  = 'A3'
         Field       = 'isReviewed'
         Maximize    = $true
-        SaveWaitMs  = 5000
     }
 
     # Replace phase configuration
@@ -125,10 +124,7 @@
         @{ Key='MarkGift';           Field='isMarked';   BitValue=1; Label='GIFT 赤枠 mark';                  Status='implemented' }
         @{ Key='MarkGfix';           Field='isMarked';   BitValue=2; Label='GFIX 赤枠 mark';                  Status='implemented' }
         @{ Key='MarkDf';             Field='isMarked';   BitValue=4; Label='DF 赤枠 mark';                    Status='implemented' }
-        @{ Key='ReviewGift';         Field='isReviewed'; BitValue=1; Label='GIFT 目視 review';                Status='implemented' }
-        @{ Key='ReviewGfix';         Field='isReviewed'; BitValue=2; Label='GFIX 目視 review';                Status='implemented' }
-        @{ Key='ReviewDf';           Field='isReviewed'; BitValue=4; Label='DF 目視 review';                  Status='implemented' }
-        @{ Key='ReviewEvidence';     Field='isReviewed'; BitValue=7; Label='全体 目視 review + 保存';          Status='implemented' }
+        @{ Key='ReviewEvidence';     Field='isReviewed';           Label='目視 review + 保存 + mapping 更新'; Status='implemented' }
         @{ Key='Validate';           Field='';                     Label='就緒状態 診断 (read-only)';         Status='implemented' }
         @{ Key='RepairMapping';      Field='';                     Label='mapping 列補完 (auto on startup)';  Status='implemented' }
         @{ Key='ProbeShapes';        Field='';                     Label='Excel shape 座標 / AltText 一覧';    Status='implemented' }
@@ -179,13 +175,6 @@
 
         Review            = 'ReviewEvidence'
         ReviewEvidence    = 'ReviewEvidence'
-        ReviewAll         = 'ReviewEvidence'
-        ReviewGift        = 'ReviewGift'
-        Rvgift            = 'ReviewGift'
-        ReviewGfix        = 'ReviewGfix'
-        Rvgfix            = 'ReviewGfix'
-        ReviewDf          = 'ReviewDf'
-        Rvdf              = 'ReviewDf'
 
         Mark              = 'MarkGift'
         MarkGift          = 'MarkGift'

@@ -50,7 +50,7 @@
         CursorCell  = 'A3'
         Field       = 'isReviewed'
         Maximize    = $true
-        SaveWaitMs  = 5000
+        SaveWaitMs  = 1000
     }
 
     # Replace phase configuration
