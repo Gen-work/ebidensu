@@ -1,0 +1,217 @@
+﻿# ============================================================
+# Apply-LlmPatch.ps1 v3
+#   - UTF-8 BOM 保持
+#   - 原ファイルの改行コード (CRLF/LF) を保持
+#   - 比較は LF 正規化後に実施
+#   - <search> / <replace> の境界改行を 1 つだけ除去
+#   - <search> ブロックの一意性チェック
+#   - 相対パスはこのスクリプトの配置ディレクトリ基準で解決
+#   - 同一ファイルへの複数 patch を順番に仮想適用して検証
+#   - All-or-nothing: 検証パス通過後にファイル単位でまとめて適用
+#   - 自動バックアップ (*.bak.<timestamp>)
+#   - -DryRun で書込なし検証
+# ============================================================
+param(
+    [switch]$DryRun,
+    [switch]$NoBackup
+)
+
+$ErrorActionPreference = 'Stop'
+
+# --- クリップボード読込 ---
+$clip = Get-Clipboard -Raw
+if ([string]::IsNullOrWhiteSpace($clip)) {
+    Write-Warning "クリップボードが空です。"
+    exit 1
+}
+
+# --- パッチブロック抽出 ---
+$pattern = '(?s)<patch\s+file="(?<file>[^"]+)"\s*>\s*<search>(?<search>.*?)</search>\s*<replace>(?<replace>.*?)</replace>\s*</patch>'
+$blocks  = [regex]::Matches($clip, $pattern)
+if ($blocks.Count -eq 0) {
+    Write-Warning "有効な <patch> ブロックが見つかりません。"
+    exit 1
+}
+Write-Host ("[INFO] {0} 件のパッチを検出。" -f $blocks.Count) -ForegroundColor Cyan
+
+# --- ヘルパー ---
+function Norm-Eol([string]$s) {
+    if ($null -eq $s) { return '' }
+    return ($s -replace "`r`n", "`n") -replace "`r", "`n"
+}
+
+function Unwrap-PatchBlock([string]$s) {
+    if ($null -eq $s) { return '' }
+
+    # XML 可読性のために <search> 直後 / </search> 直前へ置く
+    # 境界改行だけを 1 つ除去する。本文の空行は保持する。
+    $v = $s -replace '^\r?\n', ''
+    $v = $v -replace '\r?\n$', ''
+    return $v
+}
+
+function Resolve-PatchPath([string]$File) {
+    if ([string]::IsNullOrWhiteSpace($File)) {
+        throw "patch file path is empty."
+    }
+
+    if ([System.IO.Path]::IsPathRooted($File)) {
+        return [System.IO.Path]::GetFullPath($File)
+    }
+
+    $base = $PSScriptRoot
+    if ([string]::IsNullOrWhiteSpace($base)) {
+        $base = (Get-Location).Path
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $base $File))
+}
+
+function Read-FileMeta([string]$path) {
+    $bytes  = [System.IO.File]::ReadAllBytes($path)
+    $hasBom = ($bytes.Length -ge 3) -and ($bytes[0] -eq 0xEF) -and ($bytes[1] -eq 0xBB) -and ($bytes[2] -eq 0xBF)
+    if ($hasBom) {
+        $text = [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3)
+    } else {
+        $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+    }
+    $eol = if ($text -match "`r`n") { "`r`n" }
+           elseif ($text -match "`r")   { "`r" }
+           else                         { "`n" }
+    return @{ Path = $path; Text = $text; HasBom = $hasBom; Eol = $eol }
+}
+
+function Write-FileMeta($meta, [string]$newText) {
+    # 改行コードを原ファイルに合わせて復元
+    $normalized = (Norm-Eol $newText) -replace "`n", $meta.Eol
+    $body = [System.Text.Encoding]::UTF8.GetBytes($normalized)
+    if ($meta.HasBom) {
+        $bom = [byte[]](0xEF, 0xBB, 0xBF)
+        $all = New-Object byte[] ($bom.Length + $body.Length)
+        [Array]::Copy($bom,  0, $all, 0,            $bom.Length)
+        [Array]::Copy($body, 0, $all, $bom.Length,  $body.Length)
+    } else {
+        $all = $body
+    }
+    [System.IO.File]::WriteAllBytes($meta.Path, $all)
+}
+
+# --- Pass 1: 検証のみ ---
+$plans      = @()
+$fileStates = [ordered]@{}
+$failed     = $false
+$idx        = 0
+
+foreach ($b in $blocks) {
+    $idx++
+    $fileRaw = $b.Groups['file'].Value.Trim()
+    $search  = Unwrap-PatchBlock $b.Groups['search'].Value
+    $replace = Unwrap-PatchBlock $b.Groups['replace'].Value
+
+    Write-Host ""
+    Write-Host ("[Patch {0}/{1}] {2}" -f $idx, $blocks.Count, $fileRaw) -ForegroundColor Yellow
+
+    try {
+        $file = Resolve-PatchPath $fileRaw
+    } catch {
+        Write-Host ("  [FAIL] path resolve failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+        $failed = $true
+        continue
+    }
+
+    Write-Host ("  path: {0}" -f $file) -ForegroundColor DarkGray
+
+    if (-not (Test-Path -LiteralPath $file)) {
+        Write-Host "  [FAIL] ファイルが見つかりません。" -ForegroundColor Red
+        $failed = $true
+        continue
+    }
+
+    if (-not $fileStates.Contains($file)) {
+        $meta = Read-FileMeta $file
+        $fileStates[$file] = @{
+            Meta    = $meta
+            TextN   = (Norm-Eol $meta.Text)
+            Display = $fileRaw
+        }
+    }
+
+    $state    = $fileStates[$file]
+    $textN    = [string]$state['TextN']
+    $searchN  = Norm-Eol $search
+    $replaceN = Norm-Eol $replace
+
+    if ([string]::IsNullOrEmpty($searchN)) {
+        Write-Host "  [FAIL] <search> ブロックが空です。" -ForegroundColor Red
+        $failed = $true
+        continue
+    }
+
+    # 出現回数カウント。
+    # 同一ファイルに複数 patch がある場合は、直前までの置換結果を
+    # 反映した仮想テキスト上で検証する。
+    $count = ([regex]::Matches($textN, [regex]::Escape($searchN))).Count
+
+    if ($count -eq 0) {
+        Write-Host "  [FAIL] <search> ブロックが一致しません。" -ForegroundColor Red
+        $preview = $searchN.Substring(0, [Math]::Min(120, $searchN.Length)) -replace "`n", "\n" -replace "`t", "\t"
+        Write-Host ("    先頭120文字: {0}" -f $preview) -ForegroundColor DarkGray
+        Write-Host "    ヒント: インデント / 全角空白 / タブ vs スペース / 既に適用済み を確認。" -ForegroundColor DarkGray
+        $failed = $true
+        continue
+    }
+
+    if ($count -gt 1) {
+        Write-Host ("  [FAIL] <search> ブロックが {0} 箇所一致。一意である必要があります。" -f $count) -ForegroundColor Red
+        Write-Host "    ヒント: 前後の行を含めて文脈を増やしてください。" -ForegroundColor DarkGray
+        $failed = $true
+        continue
+    }
+
+    $state['TextN'] = $textN.Replace($searchN, $replaceN)
+    $fileStates[$file] = $state
+
+    Write-Host "  [OK] 1 箇所を置換予定。" -ForegroundColor Green
+    $plans += @{
+        Path     = $file
+        FileRaw  = $fileRaw
+        SearchN  = $searchN
+        ReplaceN = $replaceN
+    }
+}
+
+if ($failed) {
+    Write-Host ""
+    Write-Host "[ABORT] 検証エラーあり。ファイルは一切変更しません。" -ForegroundColor Red
+    exit 1
+}
+
+if ($DryRun) {
+    Write-Host ""
+    Write-Host ("[DRY-RUN] 検証 OK。書込はスキップ。patch={0}, files={1}" -f $plans.Count, $fileStates.Count) -ForegroundColor Cyan
+    exit 0
+}
+
+# --- Pass 2: 適用 ---
+Write-Host ""
+Write-Host "[APPLY] 適用開始..." -ForegroundColor Cyan
+$ts = Get-Date -Format "yyyyMMdd_HHmmss"
+
+foreach ($entry in $fileStates.GetEnumerator()) {
+    $state = $entry.Value
+    $meta  = $state['Meta']
+
+    if (-not $NoBackup) {
+        $bak = "{0}.bak.{1}" -f $meta.Path, $ts
+        Copy-Item -LiteralPath $meta.Path -Destination $bak -Force
+    }
+
+    Write-FileMeta $meta ([string]$state['TextN'])
+    Write-Host ("  [DONE] {0}" -f $meta.Path) -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host ("[SUCCESS] {0} 件のパッチを {1} ファイルへ適用しました。" -f $plans.Count, $fileStates.Count) -ForegroundColor Green
+if (-not $NoBackup) {
+    Write-Host ("バックアップ拡張子: .bak.{0}" -f $ts) -ForegroundColor DarkGray
+}

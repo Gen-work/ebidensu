@@ -129,18 +129,8 @@ function Norm-Eol([string]$s) {
     return ($s -replace "`r`n", "`n") -replace "`r", "`n"
 }
 
-function Decode-XmlText([string]$s) {
-    if ($null -eq $s) { return '' }
-
-    # This script is not a full XML parser. It extracts text by regex first,
-    # then decodes entities so patch body can safely contain XML-like text.
-    return [System.Net.WebUtility]::HtmlDecode($s)
-}
-
 function Unwrap-PatchBlock([string]$s) {
     if ($null -eq $s) { return '' }
-
-    $s = Decode-XmlText $s
 
     # XML 可読性のために <search> 直後 / </search> 直前へ置く
     # 境界改行だけを 1 つ除去する。本文の空行は保持する。
@@ -192,56 +182,7 @@ function Write-FileMeta($meta, [string]$newText) {
     } else {
         $all = $body
     }
-
-    # Safety note:
-    # Do not write directly to the target path. If the process dies during
-    # WriteAllBytes(target), the target file may be left truncated.
-    # Instead, write a temp file in the same directory first, then replace.
-    $dir  = Split-Path -Parent $meta.Path
-    $name = Split-Path -Leaf $meta.Path
-    $tmp  = Join-Path $dir (".{0}.{1}.tmp" -f $name, ([guid]::NewGuid().ToString('N')))
-
-    try {
-        [System.IO.File]::WriteAllBytes($tmp, $all)
-        Move-Item -LiteralPath $tmp -Destination $meta.Path -Force
-    } catch {
-        throw ("write failed: {0}; tmp={1}; reason={2}" -f $meta.Path, $tmp, $_.Exception.Message)
-    } finally {
-        if (Test-Path -LiteralPath $tmp) {
-            Remove-Item -LiteralPath $tmp -Force
-        }
-    }
-}
-
-function Test-WritePreflight($meta) {
-    $path = [string]$meta.Path
-    $dir  = Split-Path -Parent $path
-
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "write preflight failed: target disappeared: $path"
-    }
-
-    if (-not (Test-Path -LiteralPath $dir)) {
-        throw "write preflight failed: parent directory not found: $dir"
-    }
-
-    $item = Get-Item -LiteralPath $path -ErrorAction Stop
-    if (($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
-        throw "write preflight failed: target is read-only: $path"
-    }
-
-    # This catches common permission/path problems before backup/write starts.
-    # It cannot prove the final replace will succeed; locked files can still fail at apply time.
-    $probe = Join-Path $dir (".llm_write_probe_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
-    try {
-        [System.IO.File]::WriteAllBytes($probe, [byte[]](0x00))
-    } catch {
-        throw ("write preflight failed: cannot create temp file in {0}; reason={1}" -f $dir, $_.Exception.Message)
-    } finally {
-        if (Test-Path -LiteralPath $probe) {
-            Remove-Item -LiteralPath $probe -Force
-        }
-    }
+    [System.IO.File]::WriteAllBytes($meta.Path, $all)
 }
 
 # --- Pass 1: 検証のみ ---
@@ -252,7 +193,7 @@ $idx        = 0
 
 foreach ($b in $blocks) {
     $idx++
-    $fileRaw = Decode-XmlText $b.Groups['file'].Value.Trim()
+    $fileRaw = $b.Groups['file'].Value.Trim()
     $search  = Unwrap-PatchBlock $b.Groups['search'].Value
     $replace = Unwrap-PatchBlock $b.Groups['replace'].Value
 
@@ -340,14 +281,7 @@ if ($DryRun) {
     exit 0
 }
 
-# --- Pass 2: 書込前チェック + 適用 ---
-Write-Host ""
-Write-Host "[PREFLIGHT] 書込権限を確認します..." -ForegroundColor Cyan
-foreach ($entry in $fileStates.GetEnumerator()) {
-    Test-WritePreflight $entry.Value['Meta']
-    Write-Host ("  [OK] {0}" -f $entry.Value['Meta'].Path) -ForegroundColor DarkGray
-}
-
+# --- Pass 2: 適用 ---
 Write-Host ""
 Write-Host "[APPLY] 適用開始..." -ForegroundColor Cyan
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"

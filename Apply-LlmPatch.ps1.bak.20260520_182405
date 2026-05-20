@@ -340,14 +340,7 @@ if ($DryRun) {
     exit 0
 }
 
-# --- Pass 2: 書込前チェック + 適用 ---
-Write-Host ""
-Write-Host "[PREFLIGHT] 書込権限を確認します..." -ForegroundColor Cyan
-foreach ($entry in $fileStates.GetEnumerator()) {
-    Test-WritePreflight $entry.Value['Meta']
-    Write-Host ("  [OK] {0}" -f $entry.Value['Meta'].Path) -ForegroundColor DarkGray
-}
-
+# --- Pass 2: 適用 ---
 Write-Host ""
 Write-Host "[APPLY] 適用開始..." -ForegroundColor Cyan
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"

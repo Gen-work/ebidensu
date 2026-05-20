@@ -17,25 +17,109 @@ Misaki manually verifies file-transfer migration evidence for ~hundreds of corre
 
 Migration deadline: 2026-12 (MQFX EOS). Real, billable work — be careful.
 
-# LLM出力規則（システムプロンプト / System Prompt）
+# LLM output rules
 ---------------------------------------------------------
-コードを修正する際は、絶対にファイル全体を再出力しないでください。
-代わりに、以下のXML形式の「検索と置換」ブロックのみを出力してください。
+Never output a whole file unless explicitly asked.
 
-<patch file="対象ファイル名">
-<search>
-ここに変更前の既存のコードを正確に記述してください（インデントも含める）
-</search>
-<replace>
-ここに新しいコードを記述してください
-</replace>
-</patch>
+Use one of these two patch formats only:
 
-<search> ブロックは対象ファイル内で一意となるよう、
-前後 1〜2 行のコンテキストを含めてください。
-一致箇所が 0 件または複数件の場合、Apply-LlmPatch は失敗します。
+## A. XML search/replace patch
 
-複数の箇所を修正する場合は、複数の <patch> ブロックを出力してください。
+Default for small edits, docs, non-git files, or fragile exact replacements.
+
+```xml
+&lt;patch file="path/to/file"&gt;
+&lt;search&gt;
+exact old text, with enough context to be unique
+&lt;/search&gt;
+&lt;replace&gt;
+new text
+&lt;/replace&gt;
+&lt;/patch&gt;
+Rules:
+
+Output patch blocks only. No prose inside the patch payload.
+
+<search> must match exactly one place after LF normalization.
+
+Include 1-2 context lines when useful.
+
+For multiple edits, output multiple <patch> blocks.
+
+If the patch body itself contains patch-like tags, escape them in the LLM answer as &lt;search&gt;, &lt;/search&gt;, &lt;replace&gt;, etc. Apply-LlmPatch.ps1 decodes entities before matching/writing.
+
+Prefer XML patch when the target is not tracked by Git.
+
+B. Git unified diff
+Preferred for larger code edits inside this Git repo.
+
+Rules:
+
+Output raw unified diff from repo root, starting with diff --git ....
+
+No prose inside the diff.
+
+A single fenced ```diff block is acceptable, but raw diff is safer.
+
+Apply-LlmPatch.ps1 runs git apply --check before git apply.
+
+Git diff mode does not create PatchBak; use git diff / git checkout -- file for review and recovery.
+
+Decision:
+
+Small exact edit -> XML.
+
+Big code change in repo -> Git diff.
+
+Unsure -> XML, because failure is easier to diagnose.
+
+Added Git unified-diff mode: clipboard diff --git -> git apply --check -> git apply.
+
+XML patch mode now decodes entities before matching/writing, so docs/code can contain patch-like tags safely.
+
+XML backups now live under PatchBak/.
+
+Added write preflight and temp-file write. No full rollback transaction; keep it simple and Git-backed.
+
+Updated CLAUDE.md and README.md patch output rules.
+2026-05-19 — ReviewEvidence live test + Apply-LlmPatch v3
+
+全コンテキストの抽出（初期設定・大規模型再構築用）
+
+.\Pack-LlmContext.ps1
+
+AIからのXMLパッチ自動適用
+
+.\Apply-LlmPatch.ps1
+
+退勤前の差分抽出（自宅のCursor/Claude同期用）
+
+.\Export-DailyPatch.ps1
+
+コンテキストをAIへ渡す
+
+.\Pack-LlmContext.ps1
+
+初期相談、大きめの設計変更、別環境のAIへ状況を渡すときに使います。
+
+AIの修正を適用する
+
+.\Apply-LlmPatch.ps1 -DryRun
+.\Apply-LlmPatch.ps1
+
+Apply-LlmPatch.ps1 はクリップボードを読み、形式を自動判定します。
+
+XML patch: 小さい修正、README/CLAUDE/設定ファイル、Git外ファイル向け。
+
+Git diff: repo内の大きめのコード修正向け。先に git apply --check を実行します。
+XML patch のバックアップは PatchBak/ に作られます。repo直下を .bak で汚しません。
+
+差分を確認・同期する
+
+git diff
+.\Export-DailyPatch.ps1
+
+AI修正後は必ず git diff を見てから commit / 同期してください。
 
 ## Entry point
 

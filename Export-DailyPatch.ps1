@@ -25,7 +25,6 @@ if (-not $patchData) {
 
 # 3. LLM用のプロンプトを組み立てる
 $output = "以下は本日の作業のGit差分（Patch）です。`n"
-$output += "私はこの後自宅の環境（Claude Code）で作業を続行します。`n"
 $output += "この差分内容を学習し、現在の実装状況を把握してください。コードの全体を出力する必要はありません。`n`n"
 $output += "```diff`n"
 $output += $patchData

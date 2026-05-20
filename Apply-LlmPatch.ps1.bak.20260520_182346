@@ -213,37 +213,6 @@ function Write-FileMeta($meta, [string]$newText) {
     }
 }
 
-function Test-WritePreflight($meta) {
-    $path = [string]$meta.Path
-    $dir  = Split-Path -Parent $path
-
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "write preflight failed: target disappeared: $path"
-    }
-
-    if (-not (Test-Path -LiteralPath $dir)) {
-        throw "write preflight failed: parent directory not found: $dir"
-    }
-
-    $item = Get-Item -LiteralPath $path -ErrorAction Stop
-    if (($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
-        throw "write preflight failed: target is read-only: $path"
-    }
-
-    # This catches common permission/path problems before backup/write starts.
-    # It cannot prove the final replace will succeed; locked files can still fail at apply time.
-    $probe = Join-Path $dir (".llm_write_probe_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
-    try {
-        [System.IO.File]::WriteAllBytes($probe, [byte[]](0x00))
-    } catch {
-        throw ("write preflight failed: cannot create temp file in {0}; reason={1}" -f $dir, $_.Exception.Message)
-    } finally {
-        if (Test-Path -LiteralPath $probe) {
-            Remove-Item -LiteralPath $probe -Force
-        }
-    }
-}
-
 # --- Pass 1: 検証のみ ---
 $plans      = @()
 $fileStates = [ordered]@{}
@@ -340,14 +309,7 @@ if ($DryRun) {
     exit 0
 }
 
-# --- Pass 2: 書込前チェック + 適用 ---
-Write-Host ""
-Write-Host "[PREFLIGHT] 書込権限を確認します..." -ForegroundColor Cyan
-foreach ($entry in $fileStates.GetEnumerator()) {
-    Test-WritePreflight $entry.Value['Meta']
-    Write-Host ("  [OK] {0}" -f $entry.Value['Meta'].Path) -ForegroundColor DarkGray
-}
-
+# --- Pass 2: 適用 ---
 Write-Host ""
 Write-Host "[APPLY] 適用開始..." -ForegroundColor Cyan
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
