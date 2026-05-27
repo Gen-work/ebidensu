@@ -82,6 +82,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase GiftJenkinsNoFile'
     Write-Host '  .\VerifyTool.ps1 -Phase GfixHmSnap'
     Write-Host '  .\VerifyTool.ps1 -Phase GfixJenkins'
+    Write-Host '  .\VerifyTool.ps1 -Phase GfixLog'
     Write-Host '  .\VerifyTool.ps1 -Phase Clone -CloneSourceDir <ext_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGift'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGfix -TargetIds JIGPL48S'
@@ -347,13 +348,12 @@ function Ask-RunOptions([hashtable]$State) {
 }
 
 function Show-PlannedPhase([string]$PhaseKey) {
-    Write-Host ''
-    Write-Host ("[PLAN] {0} is registered but not implemented in this build." -f $PhaseKey) -ForegroundColor Yellow
-    switch ($PhaseKey) {
-        'GfixLodDownload' {
-            Write-Host '  Planned behavior: accept dirty multiline input until EOF, parse LOD/log links, download to work\DATA\GFIX_LOD, update GFIX_log.'
-            Write-Host '  Input design: paste raw text, type EOF on its own line to finish.'
+            $a = @{ WorkDir=$WorkDir; Owner=$Owner }
+            if ($TargetIds.Count -gt 0) { $a['TargetIds'] = $TargetIds }
+            if ($Force)                 { $a['Force']     = $true }
+            & $cfg.Scripts.GfixLogDownload @a        }
         }
+        
         'DfSnap' {
             Write-Host '  Planned behavior: open C:\tools\DF\DF.exe, input 2 file paths, capture screen to work\snap\DF\<Correl_ID_S>.png, update DF_snap.'
         }
