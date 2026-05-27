@@ -1,14 +1,23 @@
 ﻿# ============================================================
 # ReviewEvidence.ps1 - manual visual review driver
 #
-# Opens evidence workbooks one by one. Misaki reviews/adjusts by hand.
-# After Enter in the shell, the script:
-#   1. places cursor on each sheet from last to first
-#      - A1 if sheet name contains the "=>" Excel sheet arrow
-#      - otherwise CursorCell, default A3
-#   2. sends Ctrl+S, waits, sends Esc to dismiss GenBa comment prompt
-#   3. closes the workbook
-#   4. updates mapping isReviewed bitmask
+# Opens evidence workbooks one by one in editable mode. Misaki reviews/adjusts by hand.
+#
+# Important behavior:
+#   - Opening a workbook does NOT move sheets/cursor, save, close, or mark reviewed.
+#   - Only after the user returns to this shell and presses Enter, the script:
+#       1. places cursor on each sheet from last to first
+#          - A1 if sheet name contains the "=>" Excel sheet arrow
+#          - otherwise CursorCell, default A3
+#       2. sends Ctrl+S, waits, sends Esc to dismiss GenBa comment prompt
+#       3. closes the workbook
+#       4. updates mapping isReviewed bitmask
+#
+# Read-only handling:
+#   - The script requests read-write open explicitly.
+#   - "Read-only recommended" is ignored.
+#   - If the file has the Windows ReadOnly attribute, the attribute is cleared before open.
+#   - If Excel still opens it as read-only, the item fails instead of silently saving nothing.
 # ============================================================
 
 param(
@@ -94,10 +103,10 @@ function Get-ExcelProcessId($Excel) {
 }
 
 function Activate-ExcelWindow($Shell, $Excel, $Workbook) {
-    $pid = Get-ExcelProcessId $Excel
-    if ($pid -gt 0) {
+    $excelPid = Get-ExcelProcessId $Excel
+    if ($excelPid -gt 0) {
         try {
-            if ($Shell.AppActivate($pid)) { return $true }
+            if ($Shell.AppActivate($excelPid)) { return $true }
         } catch {}
     }
     try {
@@ -107,6 +116,69 @@ function Activate-ExcelWindow($Shell, $Excel, $Workbook) {
         if ($Shell.AppActivate('Excel')) { return $true }
     } catch {}
     return $false
+}
+
+
+function Clear-FileReadOnlyAttribute([string]$File) {
+    try {
+        $item = Get-Item -LiteralPath $File -ErrorAction Stop
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+            $item.Attributes = ($item.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly))
+            Write-Host '  [INFO] Windows ReadOnly attribute cleared before open.' -ForegroundColor DarkGray
+        }
+    } catch {
+        Write-Host ("  [WARN] failed to clear Windows ReadOnly attribute: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+}
+
+function Open-WorkbookEditable($Excel, [string]$File) {
+    Clear-FileReadOnlyAttribute $File
+
+    $missing = [Type]::Missing
+
+    # Workbooks.Open parameters used here:
+    #   Filename, UpdateLinks, ReadOnly, Format, Password, WriteResPassword,
+    #   IgnoreReadOnlyRecommended, Origin, Delimiter, Editable, Notify,
+    #   Converter, AddToMru, Local
+    #
+    # Points:
+    #   - ReadOnly=$false requests editable open.
+    #   - IgnoreReadOnlyRecommended=$true avoids Excel's "read-only recommended" prompt/default.
+    #   - Notify=$false prevents Excel from opening a locked workbook as read-only while waiting.
+    #   - AddToMru=$false avoids polluting Recent files.
+    return $Excel.Workbooks.Open(
+        $File,
+        0,
+        $false,
+        $missing,
+        $missing,
+        $missing,
+        $true,
+        $missing,
+        $missing,
+        $true,
+        $false,
+        $missing,
+        $false,
+        $true
+    )
+}
+
+function Read-ReviewChoice([datetime]$OpenedAt) {
+    $choice = Read-Host '  Press Enter=save+close+mark, s=skip(no mark), q=quit'
+
+    # Safety guard:
+    # If blank Enter is received immediately after open, it is often an accidental/stale key input.
+    # Ask once more so the workbook does not close right after opening.
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+        $elapsed = ((Get-Date) - $OpenedAt).TotalSeconds
+        if ($elapsed -lt 2) {
+            Write-Host '  [WARN] Enter was received immediately after open. Confirm once more to close this workbook.' -ForegroundColor Yellow
+            $choice = Read-Host '  Press Enter again=save+close+mark, s=skip(no mark), q=quit'
+        }
+    }
+
+    return $choice
 }
 
 function Set-ReviewCursorAllSheets($Workbook, [string]$DefaultCell) {
@@ -254,21 +326,19 @@ try {
         try {
             Write-Host ''
             Write-Host ("[{0}/{1}] OPEN: {2}" -f ($idx + 1), $excelNames.Count, $file) -ForegroundColor Cyan
-            # Explicitly request read-write open.
-            # Workbooks.Open(Filename, UpdateLinks, ReadOnly)
-            $wb = $excel.Workbooks.Open($file, 0, $false)
+            $openedAt = Get-Date
+            $wb = Open-WorkbookEditable $excel $file
 
             if ($wb.ReadOnly) {
                 try { $wb.Close($false) } catch {}
                 $wb = $null
-                throw "Workbook opened as read-only. Close the file in other Excel windows, check file lock/permissions, then retry: $file"
+                throw "Workbook opened as read-only. Possible causes: another Excel window/user is locking it, write permission is missing, or the file/share is read-only: $file"
             }
 
-            Set-ReviewCursorAllSheets $wb $CursorCell
             [void](Activate-ExcelWindow $shell $excel $wb)
 
-            Write-Host '  Review/edit in Excel. Then return here.' -ForegroundColor DarkGray
-            $choice = Read-Host '  Enter=save+close+mark, s=skip(no mark), q=quit'
+            Write-Host '  Workbook opened in editable mode. Review/edit in Excel, then return here manually.' -ForegroundColor DarkGray
+            $choice = Read-ReviewChoice $openedAt
             if ($choice -match '^\s*q\s*$') {
                 try { $wb.Close($false) } catch {}
                 break

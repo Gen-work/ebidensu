@@ -115,8 +115,8 @@ function Click-PageBody {
     $rect = New-Object WinAPI+RECT
     [WinAPI]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
 
-    $x = $rect.Left + 200
-    $y = $rect.Top + 200
+    $x = $rect.Left + 150
+    $y = $rect.Top + 150
 
     [MouseAPI]::SetCursorPos($x, $y) | Out-Null
     Start-Sleep -Milliseconds 100
