@@ -231,11 +231,16 @@ ExcelSnap
 Registered but not implemented yet:
 
 ```text
-GfixLodDownload
 DfSnap
 ```
 
-`ReplaceGfix` writes a placeholder for the receive-side log section. Once `GfixLodDownload` lands, replace `Get-GfixLogLines` in `ReplaceEvidence.ps1` with grep against `work\log\` (see the function header comment).
+Implemented:
+
+```text
+GfixLodDownload
+```
+
+`ReplaceGfix` writes a placeholder for the receive-side log section. `GfixLodDownload` is implemented for GoAnywhere LOG download. Next improvement: replace `Get-GfixLogLines` in `ReplaceEvidence.ps1` with grep against `work\log\` (see the function header comment).
 
 ## Design rule
 

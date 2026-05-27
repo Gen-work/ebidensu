@@ -341,7 +341,10 @@ function Invoke-ToolPhase([string]$resolvedPhase) {
         }
 
         'GfixLodDownload' {
-            Write-Host '[GfixLodDownload] Not implemented yet.' -ForegroundColor Yellow
+            $a = @{ WorkDir=$WorkDir; Owner=$Owner }
+            if ($TargetIds.Count -gt 0) { $a['TargetIds'] = $TargetIds }
+            if ($Force)                 { $a['Force']     = $true }
+            & $cfg.Scripts.GfixLogDownload @a
         }
 
         'DfSnap' {

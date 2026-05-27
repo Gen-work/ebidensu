@@ -140,11 +140,12 @@ All core phases implemented and tested:
 - Validate, RepairMapping, ProbeShapes, Crop
 
 Planned (not implemented):
-- GfixLodDownload — downloads GFIX receive logs from LOD server
 - DfSnap — DF evidence screenshot
 
-`ReplaceGfix` writes `<<TODO: GFIX 受信 log>>` placeholder. Once `GfixLodDownload` lands,
-replace `Get-GfixLogLines` in `ReplaceEvidence.ps1` with grep against `work\log\`.
+Implemented recently:
+- GfixLodDownload — GoAnywhere LOG download for GFIX receive logs
+
+`ReplaceGfix` writes `<<TODO: GFIX 受信 log>>` placeholder. `GfixLodDownload` is now implemented; next improvement is replacing `Get-GfixLogLines` in `ReplaceEvidence.ps1` with grep against `work\log\`.
 
 ## Cross-environment workflow
 

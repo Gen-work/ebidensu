@@ -102,6 +102,7 @@
         Validate        = 'Validate.ps1'
         Mark            = 'Mark.ps1'
         Probe           = 'Probe-Shapes.ps1'
+        GfixLogDownload = 'GfixLogDownload.ps1'
     }
 
     # Phase entries: Field + optional BitValue.
@@ -116,7 +117,7 @@
         @{ Key='GiftJenkinsNoFile';  Field='GIFT_noGfixfile_snap'; Label='GIFT Jenkins no-GFIX 証跡';         Status='implemented' }
         @{ Key='GfixHmSnap';         Field='GFIX_HM_snap';         Label='GFIX HM 証跡';                      Status='implemented' }
         @{ Key='GfixJenkins';        Field='GFIX_Jenkins_snap';    Label='GFIX Jenkins 証跡 + DL';            Status='implemented' }
-        @{ Key='GfixLodDownload';    Field='GFIX_log';             Label='GFIX LOD download';                 Status='planned' }
+        @{ Key='GfixLodDownload';    Field='GFIX_log';             Label='GFIX LOG download';                 Status='implemented' }
         @{ Key='DfSnap';             Field='DF_snap';              Label='DF 証跡';                           Status='planned' }
         @{ Key='Clone';              Field='';                     Label='証跡 Excel 複製 (mkexcel)';         Status='implemented' }
         @{ Key='ReplaceGift';        Field='isReplaced'; BitValue=1; Label='GIFT 証跡置換';                   Status='implemented' }
@@ -159,6 +160,8 @@
         JenkinsGfix       = 'GfixJenkins'
         GfixJenkins       = 'GfixJenkins'
         GfixLod           = 'GfixLodDownload'
+        GfixLog           = 'GfixLodDownload'
+        GfixLogDownload   = 'GfixLodDownload'
         GfixLodDownload   = 'GfixLodDownload'
         Df                = 'DfSnap'
         DfSnap            = 'DfSnap'
