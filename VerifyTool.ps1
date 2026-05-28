@@ -348,10 +348,12 @@ function Ask-RunOptions([hashtable]$State) {
 }
 
 function Show-PlannedPhase([string]$PhaseKey) {
+    switch ($PhaseKey) {
+        'GfixLogDownload' {
             $a = @{ WorkDir=$WorkDir; Owner=$Owner }
             if ($TargetIds.Count -gt 0) { $a['TargetIds'] = $TargetIds }
             if ($Force)                 { $a['Force']     = $true }
-            & $cfg.Scripts.GfixLogDownload @a        }
+            & $cfg.Scripts.GfixLogDownload @a
         }
         
         'DfSnap' {
