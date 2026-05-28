@@ -129,22 +129,28 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-05-19 v2.3)
+## Current state (last bump: 2026-05-28 v2.4)
 
 All core phases implemented and tested:
 - Mapping, ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins, GiftJenkinsNoFile
 - GfixHmSnap, GfixJenkins
+- GfixLogDownload — downloads GFIX receive logs from GoAnywhere; moves .log to work\log\
+- DfSnap — DF evidence screenshot (df.exe compare + fullscreen capture)
+- MarkGfixLog — yellow-highlights the Command: line in GFIX log evidence Excel
 - Clone, ReplaceGift, ReplaceGfix, ReplaceDf
 - MarkGift, MarkGfix, MarkDf
 - ReviewGift, ReviewGfix, ReviewDf, ReviewEvidence
 - Validate, RepairMapping, ProbeShapes, Crop
 
-Planned (not implemented):
-- GfixLodDownload — downloads GFIX receive logs from LOD server
-- DfSnap — DF evidence screenshot
+`ReplaceGfix` writes `<<TODO: GFIX 受信 log>>` placeholder if log not yet downloaded.
+Once GfixLogDownload runs, `Get-GfixLogLines` in `ReplaceEvidence.ps1` greps `work\log\`.
 
-`ReplaceGfix` writes `<<TODO: GFIX 受信 log>>` placeholder. Once `GfixLodDownload` lands,
-replace `Get-GfixLogLines` in `ReplaceEvidence.ps1` with grep against `work\log\`.
+## TODOs
+
+- **GfixLogDownload: auto-set GoAnywhere max rows to 100**
+  Currently requires manual setup (default GoAnywhere list shows 20 rows — not enough for
+  busy BIZ codes). Future: use SendKeys / UI automation to set the rows-per-page dropdown
+  to 100 automatically after `Switch-ToEdge`, before the per-row search loop.
 
 ## Cross-environment workflow
 

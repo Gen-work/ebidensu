@@ -41,11 +41,15 @@ Write-Host ''
 Write-Host 'Prepare GoAnywhere page in Edge BEFORE starting:' -ForegroundColor Yellow
 Write-Host '  - Filter BIZ code (example: JRV)'
 Write-Host '  - Sort newer=up / older=down'
+Write-Host '  *** Set max rows to 100 (default 20 is not enough!) ***' -ForegroundColor Red
 Write-Host '  - Keep focus on the list page'
 Write-Host 'Then press Enter. (q to quit)' -ForegroundColor Magenta
 $resp = Read-Host
 if ($resp -eq 'q') { exit 0 }
 Switch-ToEdge
+$hWnd = [WinAPI]::GetForegroundWindow()
+[WinAPI]::ShowWindowAsync($hWnd, 3) | Out-Null  # SW_SHOWMAXIMIZED
+Start-Sleep -Milliseconds 300
 
 foreach ($row in $pending) {
     $ifRaw = [string]$row.IF
