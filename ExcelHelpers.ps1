@@ -248,6 +248,16 @@ function Add-RedRectangle($ws, [double]$left, [double]$top, [double]$width, [dou
     return $shape
 }
 
+function Set-CellRangeFill($ws, [int]$row, [int]$colStart, [int]$colEnd, [long]$oleColor) {
+    <#
+    Fill the interior of cells ($colStart..$colEnd) in $row with $oleColor.
+    oleColor is Excel OLE format: R + (G * 256) + (B * 65536).
+    Yellow RGB(255,255,0) = 65535.  None (clear) = -4142.
+    #>
+    $range = $ws.Range($ws.Cells.Item($row, $colStart), $ws.Cells.Item($row, $colEnd))
+    try { $range.Interior.Color = $oleColor } catch {}
+}
+
 function Remove-MarkShapes($ws, [string]$namePrefix) {
     <#
     Deletes every shape on $ws whose Name starts with $namePrefix.
