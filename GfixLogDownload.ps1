@@ -24,8 +24,7 @@ if ($TargetIds.Count -gt 0) {
 }
 
 $pending = $rows | Where-Object {
-    ($Force -or -not $_.GFIX_log -or $_.GFIX_log -eq '0' -or $_.GFIX_log -eq '') -and
-    ($_.isMiddle -eq '1' -or $_.isMiddle -eq 'true' -or $_.isMiddle -eq 'True')
+    $Force -or -not $_.GFIX_log -or $_.GFIX_log -eq '0' -or $_.GFIX_log -eq ''
 }
 if ($pending.Count -eq 0) {
     Write-Host '[GfixLogDownload] No pending rows.' -ForegroundColor Green
