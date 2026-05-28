@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 param(
     [ValidateSet('GiftRecv','GfixRecv','NoGfix')]
     [string]$Mode        = 'GiftRecv',
@@ -73,7 +73,7 @@ function Ensure-SnapDir([string]$folder) {
 }
 
 # ── read mapping ─────────────────────────────────────────────────────────────
-$rows = Import-Csv $mappingFile -Encoding UTF8BOM
+$rows = Import-Csv $mappingFile -Encoding UTF8
 if ($TargetIds.Count -gt 0) {
     $rows = $rows | Where-Object {
         $_.Correl_ID_S -in $TargetIds -or
@@ -224,7 +224,7 @@ foreach ($row in $pending) {
 }
 
 # ── save mapping ──────────────────────────────────────────────────────────────
-$rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8BOM
+$rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8
 Write-Host "`n[$Mode] Mapping saved." -ForegroundColor Green
 
 if ($dirty) {

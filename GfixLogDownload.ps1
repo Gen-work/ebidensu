@@ -16,7 +16,7 @@ if (-not $WorkDir) { throw '-WorkDir is required' }
 $mappingFile = Join-Path $WorkDir ($cfg.Paths.MappingPattern -f $Owner)
 if (-not (Test-Path $mappingFile)) { throw "Mapping not found: $mappingFile" }
 
-$rows = Import-Csv $mappingFile -Encoding UTF8BOM
+$rows = Import-Csv $mappingFile -Encoding UTF8
 if ($TargetIds.Count -gt 0) {
     $rows = $rows | Where-Object {
         $_.Correl_ID_S -in $TargetIds -or $_.Correl_ID_M -in $TargetIds -or $_.JOB_NAME -in $TargetIds -or $_.Excel_NAME -in $TargetIds
@@ -90,5 +90,5 @@ foreach ($row in $pending) {
     Start-Sleep -Milliseconds 800
 }
 
-$rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8BOM
+$rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8
 Write-Host "`n[GfixLogDownload] Mapping saved + step finished." -ForegroundColor Green
