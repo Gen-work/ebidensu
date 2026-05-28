@@ -27,6 +27,9 @@ param(
     [string]$CloneSourceDir = '',
     [string[]]$BizCodes     = @(),
 
+    # DfSnap override (takes precedence over VerifyConfig.psd1 -> Df.ExePath)
+    [string]$DfExePath = '',
+
     # ProbeShapes
     [string]$ProbeFile  = '',
     [string]$ProbeSheet = '',
@@ -83,6 +86,9 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase GfixHmSnap'
     Write-Host '  .\VerifyTool.ps1 -Phase GfixJenkins'
     Write-Host '  .\VerifyTool.ps1 -Phase GfixLog'
+    Write-Host '  .\VerifyTool.ps1 -Phase DfSnap -DfExePath "C:\tools\df.exe"'
+    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog'
+    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog -TargetIds JIDSU91S -Force'
     Write-Host '  .\VerifyTool.ps1 -Phase Clone -CloneSourceDir <ext_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGift'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGfix -TargetIds JIGPL48S'
@@ -349,17 +355,9 @@ function Ask-RunOptions([hashtable]$State) {
 
 function Show-PlannedPhase([string]$PhaseKey) {
     switch ($PhaseKey) {
-        'GfixLogDownload' {
-            $a = @{ WorkDir=$WorkDir; Owner=$Owner }
-            if ($TargetIds.Count -gt 0) { $a['TargetIds'] = $TargetIds }
-            if ($Force)                 { $a['Force']     = $true }
-            & $cfg.Scripts.GfixLogDownload @a
+        default {
+            Write-Host ("  Phase '{0}' is not yet implemented." -f $PhaseKey) -ForegroundColor DarkGray
         }
-        
-        'DfSnap' {
-            Write-Host '  Planned behavior: open C:\tools\DF\DF.exe, input 2 file paths, capture screen to work\snap\DF\<Correl_ID_S>.png, update DF_snap.'
-        }
-        default { }
     }
 }
 
@@ -540,8 +538,61 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         return
     }
 
-    if ($PhaseKey -eq 'GfixLodDownload' -or $PhaseKey -eq 'DfSnap') {
-        Show-PlannedPhase $PhaseKey
+    if ($PhaseKey -eq 'GfixLogDownload') {
+        $p = Resolve-ToolPath $Config 'GfixLogDownload'
+        $args = $base.Clone()
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        if ($State.Force) { $args['Force'] = $true }
+        Write-Host '[RUN] GfixLogDownload' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'DfSnap') {
+        $p = Resolve-ToolPath $Config 'DfSnap'
+        $args = $base.Clone()
+        # CLI -DfExePath overrides config
+        if (-not [string]::IsNullOrWhiteSpace($State.DfExePath)) {
+            $args['DfExePath'] = $State.DfExePath
+        }
+        if ($Config.Df) {
+            if (-not $args.ContainsKey('DfExePath') -and -not [string]::IsNullOrWhiteSpace([string]$Config.Df.ExePath)) {
+                $args['DfExePath'] = [string]$Config.Df.ExePath
+            }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.GiftDataDir)) { $args['GiftDataDir']   = [string]$Config.Df.GiftDataDir }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.GfixDataDir)) { $args['GfixDataDir']   = [string]$Config.Df.GfixDataDir }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.FilePattern)) { $args['FilePattern']   = [string]$Config.Df.FilePattern }
+            if ($Config.Df.LoadWaitSec)  { $args['LoadWaitSec']  = [int]$Config.Df.LoadWaitSec }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.CaptureMode)) { $args['CaptureMode']   = [string]$Config.Df.CaptureMode }
+        }
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        if ($State.Force)  { $args['Force']  = $true }
+        if ($State.DryRun) { $args['DryRun'] = $true }
+        Write-Host '[RUN] DfSnap' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'MarkGfixLog') {
+        $p  = Resolve-ToolPath $Config 'MarkGfixLog'
+        $eh = Resolve-ToolPath $Config 'ExcelHelpers'
+        $args = $base.Clone()
+        $args['ExcelHelpersScript'] = $eh
+        if ($Config.GfixLog) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.LogAnchor))       { $args['LogAnchor']         = [string]$Config.GfixLog.LogAnchor }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.CommandPattern))  { $args['CommandPattern']    = [string]$Config.GfixLog.CommandPattern }
+            if ($Config.GfixLog.HighlightColor)    { $args['HighlightColor']    = [long]$Config.GfixLog.HighlightColor }
+            if ($Config.GfixLog.HighlightColStart) { $args['HighlightColStart'] = [int]$Config.GfixLog.HighlightColStart }
+            if ($Config.GfixLog.HighlightColEnd)   { $args['HighlightColEnd']   = [int]$Config.GfixLog.HighlightColEnd }
+        }
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        if ($State.Force)  { $args['Force']  = $true }
+        if ($State.DryRun) { $args['DryRun'] = $true }
+        Write-Host '[RUN] MarkGfixLog' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
         return
     }
 
@@ -682,6 +733,7 @@ $state = @{
     BizCodes       = $BizCodes
     ProbeFile      = $ProbeFile
     ProbeSheet     = $ProbeSheet
+    DfExePath      = $DfExePath
     Force          = [bool]$Force.IsPresent
     Interactive    = [bool]$Interactive.IsPresent
     NoResize       = [bool]$NoResize.IsPresent

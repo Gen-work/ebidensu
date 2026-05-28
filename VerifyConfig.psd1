@@ -101,8 +101,39 @@
         Replace         = 'ReplaceEvidence.ps1'
         Validate        = 'Validate.ps1'
         Mark            = 'Mark.ps1'
+        MarkGfixLog     = 'MarkGfixLog.ps1'
         Probe           = 'Probe-Shapes.ps1'
         GfixLogDownload = 'GfixLogDownload.ps1'
+        DfSnap          = 'DfSnap.ps1'
+    }
+
+    # DF snap / mark configuration
+    Df = @{
+        # Path to df.exe comparison tool. User must set for their environment.
+        ExePath      = ''
+        # Seconds to wait after WaitForInputIdle before capturing screenshot.
+        LoadWaitSec  = 8
+        # 'fullscreen' = whole primary screen; 'window' = foreground window only.
+        CaptureMode  = 'fullscreen'
+        # Base directories containing data files to compare.
+        # Defaults to <WorkDir>\DATA\GIFT and <WorkDir>\DATA\GFIX when empty.
+        GiftDataDir  = ''
+        GfixDataDir  = ''
+        # Wildcard pattern for file lookup. {0} = Correl_ID_S.
+        FilePattern  = '{0}*'
+    }
+
+    # GFIX log cell-mark configuration
+    GfixLog = @{
+        # Exact text in column B that marks the start of each log region.
+        LogAnchor        = ''       # empty -> MarkGfixLog.ps1 uses [char]0x25BC + 'GFIX' + ...
+        # Regex matched against B column to find the row to highlight.
+        CommandPattern   = "Command:\s*'/appl/[A-Za-z0-9]+/shell/"
+        # OLE color for highlight. Yellow RGB(255,255,0) = 65535.
+        HighlightColor   = 65535
+        # Column range to highlight (B=2, AY=51).
+        HighlightColStart = 2
+        HighlightColEnd   = 51
     }
 
     # Phase entries: Field + optional BitValue.
@@ -117,8 +148,9 @@
         @{ Key='GiftJenkinsNoFile';  Field='GIFT_noGfixfile_snap'; Label='GIFT Jenkins no-GFIX 証跡';         Status='implemented' }
         @{ Key='GfixHmSnap';         Field='GFIX_HM_snap';         Label='GFIX HM 証跡';                      Status='implemented' }
         @{ Key='GfixJenkins';        Field='GFIX_Jenkins_snap';    Label='GFIX Jenkins 証跡 + DL';            Status='implemented' }
-        @{ Key='GfixLodDownload';    Field='GFIX_log';             Label='GFIX LOG download';                 Status='implemented' }
-        @{ Key='DfSnap';             Field='DF_snap';              Label='DF 証跡';                           Status='planned' }
+        @{ Key='GfixLogDownload';    Field='GFIX_log';             Label='GFIX LOG download';                 Status='implemented' }
+        @{ Key='DfSnap';             Field='DF_snap';              Label='DF 証跡 (df.exe 截图)';             Status='implemented' }
+        @{ Key='MarkGfixLog';        Field='isGfixLogMarked';      Label='GFIX log 行 黄ハイライト';            Status='implemented' }
         @{ Key='Clone';              Field='';                     Label='証跡 Excel 複製 (mkexcel)';         Status='implemented' }
         @{ Key='ReplaceGift';        Field='isReplaced'; BitValue=1; Label='GIFT 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceGfix';        Field='isReplaced'; BitValue=2; Label='GFIX 証跡置換';                   Status='implemented' }
@@ -159,10 +191,13 @@
         GfixHmSnap        = 'GfixHmSnap'
         JenkinsGfix       = 'GfixJenkins'
         GfixJenkins       = 'GfixJenkins'
-        GfixLod           = 'GfixLodDownload'
-        GfixLodDownload   = 'GfixLodDownload'
+        GfixLog           = 'GfixLogDownload'
+        GfixLogDownload   = 'GfixLogDownload'
         Df                = 'DfSnap'
         DfSnap            = 'DfSnap'
+        MarkGfixLog       = 'MarkGfixLog'
+        Mgl               = 'MarkGfixLog'
+        GfixLogMark       = 'MarkGfixLog'
 
         # New: Clone + Replace per mode
         Clone             = 'Clone'

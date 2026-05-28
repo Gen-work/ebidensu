@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  DfSnap.ps1
 #
 #  Phase: DfSnap
@@ -98,8 +98,11 @@ Write-Host ("  DryRun      : {0}" -f $dryFlag)
 Write-Host ''
 
 if (-not $dryFlag -and [string]::IsNullOrWhiteSpace($DfExePath)) {
-    Write-Host '[ERROR] -DfExePath is required. Set it in VerifyConfig.psd1 -> Df.ExePath.' -ForegroundColor Red
-    exit 1
+    Write-Host '  [NOTE] DfExePath not set. To persist: VerifyConfig.psd1 -> Df.ExePath' -ForegroundColor Yellow
+    $DfExePath = (Read-Host '  Path to df.exe').Trim()
+    if ([string]::IsNullOrWhiteSpace($DfExePath)) {
+        Write-Host '[ERROR] DfExePath required.' -ForegroundColor Red; exit 1
+    }
 }
 if (-not $dryFlag -and -not [string]::IsNullOrWhiteSpace($DfExePath) -and -not (Test-Path -LiteralPath $DfExePath)) {
     Write-Host ("[ERROR] df.exe not found: {0}" -f $DfExePath) -ForegroundColor Red; exit 1
