@@ -538,7 +538,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         return
     }
 
-    if ($PhaseKey -eq 'GfixLodDownload') {
+    if ($PhaseKey -eq 'GfixLogDownload') {
         $p = Resolve-ToolPath $Config 'GfixLogDownload'
         $args = $base.Clone()
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }

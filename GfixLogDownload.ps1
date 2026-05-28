@@ -79,12 +79,11 @@ foreach ($row in $pending) {
         if (Test-Path -LiteralPath $src) {
             Move-Item -LiteralPath $src -Destination $dst -Force
             Write-Host "  moved: $jobNum.log" -ForegroundColor Green
+            $row.GFIX_log = '1'
         } else {
             Write-Host "  [WARN] not found in Downloads: $jobNum.log" -ForegroundColor Yellow
         }
     }
-
-    $row.GFIX_log = '1'
 
     Send-Tab 2
     Send-Enter
@@ -93,6 +92,3 @@ foreach ($row in $pending) {
 
 $rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8BOM
 Write-Host "`n[GfixLogDownload] Mapping saved + step finished." -ForegroundColor Green
-`
-``n
---- File: HmSnap.ps1 ---

@@ -148,7 +148,7 @@
         @{ Key='GiftJenkinsNoFile';  Field='GIFT_noGfixfile_snap'; Label='GIFT Jenkins no-GFIX 証跡';         Status='implemented' }
         @{ Key='GfixHmSnap';         Field='GFIX_HM_snap';         Label='GFIX HM 証跡';                      Status='implemented' }
         @{ Key='GfixJenkins';        Field='GFIX_Jenkins_snap';    Label='GFIX Jenkins 証跡 + DL';            Status='implemented' }
-        @{ Key='GfixLodDownload';    Field='GFIX_log';             Label='GFIX LOG download';                 Status='implemented' }
+        @{ Key='GfixLogDownload';    Field='GFIX_log';             Label='GFIX LOG download';                 Status='implemented' }
         @{ Key='DfSnap';             Field='DF_snap';              Label='DF 証跡 (df.exe 截图)';             Status='implemented' }
         @{ Key='MarkGfixLog';        Field='isGfixLogMarked';      Label='GFIX log 行 黄ハイライト';            Status='implemented' }
         @{ Key='Clone';              Field='';                     Label='証跡 Excel 複製 (mkexcel)';         Status='implemented' }
@@ -191,8 +191,8 @@
         GfixHmSnap        = 'GfixHmSnap'
         JenkinsGfix       = 'GfixJenkins'
         GfixJenkins       = 'GfixJenkins'
-        GfixLod           = 'GfixLodDownload'
-        GfixLodDownload   = 'GfixLodDownload'
+        GfixLog           = 'GfixLogDownload'
+        GfixLogDownload   = 'GfixLogDownload'
         Df                = 'DfSnap'
         DfSnap            = 'DfSnap'
         MarkGfixLog       = 'MarkGfixLog'
