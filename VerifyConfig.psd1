@@ -1,4 +1,4 @@
-@{
+﻿@{
     # VerifyTool.ps1 remembers the last WorkDir in verify_session.json.
     DefaultWorkDir = ''
     DefaultOwner   = '厳'
