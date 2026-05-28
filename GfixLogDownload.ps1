@@ -72,19 +72,38 @@ foreach ($row in $pending) {
     Paste-Replace 'ダウンロード'
     Send-Enter
     Send-Key '{ESC}' 200
+    $beforeDownload = Get-Date          # timestamp right before clicking Download
     Send-Enter
-    Start-Sleep -Milliseconds 1200
+    Start-Sleep -Milliseconds 1800      # extra 600ms for download to land
 
     $jobNum = [string]$row.JOB_NAME
-    if ($jobNum -match '^\d{13}$') {
-        $src = Join-Path $downloadDir ("{0}.log" -f $jobNum)
-        $dst = Join-Path $logDir ("{0}.log" -f $jobNum)
-        if (Test-Path -LiteralPath $src) {
-            Move-Item -LiteralPath $src -Destination $dst -Force
-            Write-Host "  moved: $jobNum.log" -ForegroundColor Green
-            $row.GFIX_log = '1'
+
+    # Find the .log file that appeared in Downloads after we clicked
+    $newLog = Get-ChildItem -Path $downloadDir -Filter '*.log' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -gt $beforeDownload -or $_.CreationTime -gt $beforeDownload } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if ($null -ne $newLog) {
+        # Rename to {JOB_NAME}.log so Get-GfixLogLines can find it by name
+        $targetName = if (-not [string]::IsNullOrWhiteSpace($jobNum)) { "$jobNum.log" } else { $newLog.Name }
+        $dst = Join-Path $logDir $targetName
+        Move-Item -LiteralPath $newLog.FullName -Destination $dst -Force
+        Write-Host ("  moved: {0} -> log\{1}" -f $newLog.Name, $targetName) -ForegroundColor Green
+        $row.GFIX_log = '1'
+    } else {
+        # Fallback: exact filename match (for manually placed files)
+        if (-not [string]::IsNullOrWhiteSpace($jobNum)) {
+            $src = Join-Path $downloadDir "$jobNum.log"
+            if (Test-Path -LiteralPath $src) {
+                Move-Item -LiteralPath $src -Destination (Join-Path $logDir "$jobNum.log") -Force
+                Write-Host "  moved (fallback): $jobNum.log" -ForegroundColor Green
+                $row.GFIX_log = '1'
+            } else {
+                Write-Host ("  [WARN] no new .log in Downloads for [{0}]" -f $correl) -ForegroundColor Yellow
+            }
         } else {
-            Write-Host "  [WARN] not found in Downloads: $jobNum.log" -ForegroundColor Yellow
+            Write-Host ("  [WARN] no new .log in Downloads for [{0}] (JOB_NAME empty)" -f $correl) -ForegroundColor Yellow
         }
     }
 
@@ -95,3 +114,10 @@ foreach ($row in $pending) {
 
 $rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8
 Write-Host "`n[GfixLogDownload] Mapping saved + step finished." -ForegroundColor Green
+
+# Return focus to this console window
+$consoleHwnd = (Get-Process -Id $PID).MainWindowHandle
+if ($consoleHwnd -ne [IntPtr]::Zero) {
+    [WinAPI]::SetForegroundWindow($consoleHwnd) | Out-Null
+    [WinAPI]::ShowWindowAsync($consoleHwnd, 9) | Out-Null   # SW_RESTORE
+}
