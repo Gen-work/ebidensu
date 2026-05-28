@@ -355,9 +355,6 @@ function Ask-RunOptions([hashtable]$State) {
 
 function Show-PlannedPhase([string]$PhaseKey) {
     switch ($PhaseKey) {
-        'DfSnap' {
-            Write-Host '  Planned behavior: open C:\tools\DF\DF.exe, input 2 file paths, capture screen to work\snap\DF\<Correl_ID_S>.png, update DF_snap.' -ForegroundColor DarkGray
-        }
         default {
             Write-Host ("  Phase '{0}' is not yet implemented." -f $PhaseKey) -ForegroundColor DarkGray
         }
@@ -584,11 +581,11 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args = $base.Clone()
         $args['ExcelHelpersScript'] = $eh
         if ($Config.GfixLog) {
-            if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.LogAnchor))  { $args['LogAnchor']         = [string]$Config.GfixLog.LogAnchor }
-            if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.CommandPattern)) { $args['CommandPattern'] = [string]$Config.GfixLog.CommandPattern }
-            if ($Config.GfixLog.HighlightColor)     { $args['HighlightColor']    = [long]$Config.GfixLog.HighlightColor }
-            if ($Config.GfixLog.HighlightColStart)  { $args['HighlightColStart'] = [int]$Config.GfixLog.HighlightColStart }
-            if ($Config.GfixLog.HighlightColEnd)    { $args['HighlightColEnd']   = [int]$Config.GfixLog.HighlightColEnd }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.LogAnchor))       { $args['LogAnchor']         = [string]$Config.GfixLog.LogAnchor }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.CommandPattern))  { $args['CommandPattern']    = [string]$Config.GfixLog.CommandPattern }
+            if ($Config.GfixLog.HighlightColor)    { $args['HighlightColor']    = [long]$Config.GfixLog.HighlightColor }
+            if ($Config.GfixLog.HighlightColStart) { $args['HighlightColStart'] = [int]$Config.GfixLog.HighlightColStart }
+            if ($Config.GfixLog.HighlightColEnd)   { $args['HighlightColEnd']   = [int]$Config.GfixLog.HighlightColEnd }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force)  { $args['Force']  = $true }
