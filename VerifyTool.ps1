@@ -565,12 +565,42 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.FilePattern)) { $args['FilePattern']   = [string]$Config.Df.FilePattern }
             if ($Config.Df.LoadWaitSec)  { $args['LoadWaitSec']  = [int]$Config.Df.LoadWaitSec }
             if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.CaptureMode)) { $args['CaptureMode']   = [string]$Config.Df.CaptureMode }
+            foreach ($k in @('RegionX','RegionY','RegionWidth','RegionHeight','CropLeft','CropTop','CropRight','CropBottom')) {
+                if ($Config.Df.ContainsKey($k) -and $null -ne $Config.Df[$k]) { $args[$k] = [int]$Config.Df[$k] }
+            }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force)  { $args['Force']  = $true }
         if ($State.DryRun) { $args['DryRun'] = $true }
         Write-Host '[RUN] DfSnap' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'Align') {
+        $p  = Resolve-ToolPath $Config 'Align'
+        $eh = Resolve-ToolPath $Config 'ExcelHelpers'
+        $args = $base.Clone()
+        $args['ExcelHelpersScript'] = $eh
+        if ($Config.Align) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Align.J4BaseDir)) { $args['J4BaseDir'] = [string]$Config.Align.J4BaseDir }
+            if (@($Config.Align.HostSystemTypes).Count -gt 0) { $args['HostSystemTypes'] = [string[]]$Config.Align.HostSystemTypes }
+        }
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        # Align defaults to a read-only DryRun report; -Force opts into -Apply.
+        if ($State.Force) { $args['Apply'] = $true }
+        Write-Host '[RUN] Align' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'WatchProgress') {
+        $p = Resolve-ToolPath $Config 'WatchProgress'
+        $args = $base.Clone()
+        Write-Host '[RUN] Watch-MappingProgress' -ForegroundColor Green
+        if ($State.DryRun) { $args['Once'] = $true }
         & $p @args
         return
     }
