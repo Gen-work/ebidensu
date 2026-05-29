@@ -1,29 +1,31 @@
-﻿# ============================================================
-#  ReplaceEvidence.ps1
+# ============================================================
+#  ReplaceEvidence.ps1   (Phase: ReplaceGift / ReplaceGfix / ReplaceDf)
+#  UTF-8, NO BOM, ASCII source. Japanese sheet/label names come from
+#  ProjectLabels.ps1 ([char]-built), so this file is codepage-agnostic.
 #
-#  Phase: ReplaceGift / ReplaceGfix / ReplaceDf
+#  Rewritten to be PLAN-DRIVEN (spec section 6 priority):
+#    1. Build a correl-major insert plan with the pure, unit-tested
+#       EvidencePlan.ps1 (Build-Gift/Gfix/Df EvidencePlan).
+#    2. Execute it with EvidenceExecutor.ps1 against the target sheet.
+#  This replaces the old folder-major loop (all HM, then all MQ, ...),
+#  which conflicted with the review standard.
 #
-#  Process per unique Excel_NAME (groups all Correl_ID_S sharing it):
-#    1. Open work\evidence\<Excel_NAME>.xlsx
-#    2. Find target sheet by -Mode:
-#         Gift -> GIFT受信結果
-#         Gfix -> GFIX受信結果
-#         Df   -> GIFTデータvsGFIXデータ
-#    3. Reset row 3 downward (delete shapes, clear values/format/highlight)
-#    4. Insert images stacked at column B with blank rows between, picture
-#       z-order = msoSendToBack so later Mark rectangles stay visible.
-#    5. Tail per mode:
-#         Gift -> label "GFIX Jenkins フォルダ受信ファイルなし" then
-#                 GIFT_noGfixfile snaps stacked, label not repeated.
-#         Gfix -> per-correl "GFIX受信log" + log paste stub
-#                 (currently writes "<<TODO: GFIX 受信 log>>" placeholder).
-#         Df   -> nothing extra.
-#    6. Save workbook.
-#    7. On all OK: isReplaced |= bit (1=Gift, 2=Gfix, 4=Df) on every row
-#                  in the group, then save mapping.
+#  Target sheet per -Mode:
+#    Gift -> GIFT jushin kekka       (excel, then HM/MQ per correl,
+#            then a Jenkins section, then a NoGfix section)
+#    Gfix -> GFIX jushin kekka       (excel, then HM + bold log-header +
+#            whole matched log per correl, then a Jenkins section)
+#    Df   -> GIFT-vs-GFIX            (per correl: id text + DF snap;
+#            order taken from the 'Soushin data' sheet column A)
+#
+#  Completion: isReplaced |= bit (Gift=1, Gfix=2, Df=4) on every row in
+#  the Excel_NAME group, but ONLY when all REQUIRED pieces were inserted.
+#  NoGfix snaps are optional; missing ones fail the group by default
+#  unless -AllowMissingOptionalNoGfix is given (spec 8.11 / 11).
+#  Per-correl misses are written to status\progress.jsonl.
 #
 #  Usage:
-#    .\ReplaceEvidence.ps1 -Mode Gift
+#    .\ReplaceEvidence.ps1 -Mode Gift -WorkDir C:\work\proj
 #    .\ReplaceEvidence.ps1 -Mode Gfix -TargetIds JIGPL48S
 #    .\ReplaceEvidence.ps1 -Mode Df   -Force
 # ============================================================
@@ -37,26 +39,25 @@ param(
     [string]$Owner = ([char]0x53B3),
     [string[]]$TargetIds = @(),
     [switch]$Force,
+    [switch]$AllowMissingOptionalNoGfix,
 
     [string]$CommonScript = '',
     [string]$ExcelHelpersScript = '',
 
-    [int]$BlankRowsBetween = 1,
-
-    # Labels (defaults filled below if empty). Override via VerifyConfig.psd1.
+    # NoGfix section header override. Empty -> ProjectLabels default.
     [string]$GiftNoGfixLabel = '',
+    # Kept for VerifyTool back-compat; the bold log header is now the
+    # standard ProjectLabels 'GfixLogLabel' so these are unused.
     [string]$GfixLogLabel = '',
-    [string]$GfixLogTodoText = '<<TODO: GFIX 受信 log>>'
+    [string]$GfixLogTodoText = ''
 )
 
 $ErrorActionPreference = 'Stop'
-
 try {
     [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
     $OutputEncoding = [System.Text.UTF8Encoding]::new()
 } catch {}
 
-# Unblock UNC files
 try {
     Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
         ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
@@ -65,12 +66,11 @@ try {
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host 'WorkDir path' }
 if (-not (Test-Path -LiteralPath $WorkDir)) { Write-Host "[ERROR] WorkDir not found: $WorkDir" -ForegroundColor Red; exit 1 }
 
-# Resolve switch BEFORE dot-source
-$forceFlag = [bool]$Force.IsPresent
+# Capture switches BEFORE dot-source (dot-source rule).
+$forceFlag        = [bool]$Force.IsPresent
+$allowNoGfixFlag  = [bool]$AllowMissingOptionalNoGfix.IsPresent
 
-# ============================================================
-# Dot-source ExcelHelpers.ps1
-# ============================================================
+# ── dot-source ExcelHelpers (robust path resolve) + shared libs ──
 $candidates = @()
 if (-not [string]::IsNullOrWhiteSpace($ExcelHelpersScript)) { $candidates += $ExcelHelpersScript }
 $candidates += @(
@@ -80,333 +80,170 @@ $candidates += @(
 $helpersPath = $null
 foreach ($c in $candidates) {
     if (-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c)) {
-        $helpersPath = (Resolve-Path -LiteralPath $c).Path
-        break
+        $helpersPath = (Resolve-Path -LiteralPath $c).Path; break
     }
 }
 if (-not $helpersPath) { Write-Host '[ERROR] ExcelHelpers.ps1 not found.' -ForegroundColor Red; exit 1 }
 . $helpersPath
+. (Join-Path $PSScriptRoot 'MappingStore.ps1')
+. (Join-Path $PSScriptRoot 'ProgressLog.ps1')
+. (Join-Path $PSScriptRoot 'EvidencePlan.ps1')
+. (Join-Path $PSScriptRoot 'ProjectLabels.ps1')
+. (Join-Path $PSScriptRoot 'GfixLog.ps1')
+. (Join-Path $PSScriptRoot 'EvidenceExecutor.ps1')
 if (-not (Get-Command -Name 'New-ExcelApp' -ErrorAction SilentlyContinue)) {
     Write-Host '[ERROR] ExcelHelpers dot-source failed.' -ForegroundColor Red; exit 1
 }
 
-# ============================================================
-# Filter targets
-# ============================================================
-$targetSet = @{}
-foreach ($rawId in @($TargetIds)) {
-    if ($null -eq $rawId) { continue }
-    foreach ($part in ($rawId.ToString() -split ',')) {
-        $v = $part.Trim()
-        if (-not [string]::IsNullOrWhiteSpace($v)) { $targetSet[$v] = $true }
-    }
-}
-function Test-TargetRow($row) {
-    if ($targetSet.Count -eq 0) { return $true }
-    return ($targetSet.ContainsKey([string]$row.Correl_ID_S) -or
-            $targetSet.ContainsKey([string]$row.Correl_ID_M) -or
-            $targetSet.ContainsKey([string]$row.JOB_NAME) -or
-            $targetSet.ContainsKey([string]$row.Excel_NAME))
-}
-
-# ============================================================
-# Mode config (sheet names via [char] for encoding safety)
-# ============================================================
-$sheetGiftRecv = "GIFT" + [char]0x53D7 + [char]0x4FE1 + [char]0x7D50 + [char]0x679C  # GIFT受信結果
-$sheetGfixRecv = "GFIX" + [char]0x53D7 + [char]0x4FE1 + [char]0x7D50 + [char]0x679C  # GFIX受信結果
-$sheetDfDiff   = "GIFT" + [char]0x30C7 + [char]0x30FC + [char]0x30BF +              # GIFTデータ
-                 "vs" +
-                 "GFIX" + [char]0x30C7 + [char]0x30FC + [char]0x30BF                # GFIXデータ
-
-# Default label fallbacks
-$defaultGiftNoGfix = "GFIX Jenkins " +
-                     [char]0x30D5 + [char]0x30A9 + [char]0x30EB + [char]0x30C0 +    # フォルダ
-                     [char]0x53D7 + [char]0x4FE1 +                                   # 受信
-                     [char]0x30D5 + [char]0x30A1 + [char]0x30A4 + [char]0x30EB +    # ファイル
-                     [char]0x306A + [char]0x3057                                     # なし
-$defaultGfixLog    = "GFIX" + [char]0x53D7 + [char]0x4FE1 + "log"                    # GFIX受信log
-
-if ([string]::IsNullOrWhiteSpace($GiftNoGfixLabel)) { $GiftNoGfixLabel = $defaultGiftNoGfix }
-if ([string]::IsNullOrWhiteSpace($GfixLogLabel))    { $GfixLogLabel    = $defaultGfixLog }
-
+$labels = Get-ProjectLabels
 $modeCfg = switch ($Mode) {
-    'Gift' { @{
-        Sheet            = $sheetGiftRecv
-        Bit              = 1
-        UseExcelSnap     = $true
-        PerCorrelFolders = @('GIFT_HM', 'GIFT_MQ', 'GIFT_Jenkins')
-        TailKind         = 'NoGfix'
-        TailLabel        = $GiftNoGfixLabel
-        TailFolder       = 'GIFT_noGfixfile'
-    } }
-    'Gfix' { @{
-        Sheet            = $sheetGfixRecv
-        Bit              = 2
-        UseExcelSnap     = $true
-        PerCorrelFolders = @('GFIX_HM', 'GFIX_Jenkins')
-        TailKind         = 'Log'
-        TailLabel        = $GfixLogLabel
-        TailFolder       = $null
-    } }
-    'Df'   { @{
-        Sheet            = $sheetDfDiff
-        Bit              = 4
-        UseExcelSnap     = $false
-        PerCorrelFolders = @('DF')
-        TailKind         = 'None'
-        TailLabel        = $null
-        TailFolder       = $null
-    } }
+    'Gift' { @{ Sheet = $labels['SheetGiftRecv']; Bit = 1 } }
+    'Gfix' { @{ Sheet = $labels['SheetGfixRecv']; Bit = 2 } }
+    'Df'   { @{ Sheet = $labels['SheetDfCompare']; Bit = 4 } }
 }
 
-# ============================================================
-# Header
-# ============================================================
 $mappingPath = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 $evDir       = Join-Path $WorkDir 'evidence'
-$snapBase    = Join-Path $WorkDir 'snap'
-$folderExcel = Join-Path $snapBase 'excel'
+$snapRoot    = Join-Path $WorkDir 'snap'
+$logDir      = Join-Path $WorkDir 'log'
 
 Write-Host ''
 Write-Host ("===== ReplaceEvidence ({0}) =====" -f $Mode) -ForegroundColor Green
-Write-Host ("  WorkDir   : {0}" -f $WorkDir)
-Write-Host ("  Mapping   : {0}" -f $mappingPath)
-Write-Host ("  Evidence  : {0}" -f $evDir)
-Write-Host ("  Sheet     : {0}" -f $modeCfg.Sheet)
-Write-Host ("  Bit       : {0}" -f $modeCfg.Bit)
-Write-Host ("  Force     : {0}" -f $forceFlag)
-if ($targetSet.Count -gt 0) { Write-Host ("  TargetIds : {0}" -f (($targetSet.Keys | Sort-Object) -join ', ')) }
+Write-Host ("  WorkDir  : {0}" -f $WorkDir)
+Write-Host ("  Sheet    : {0}" -f $modeCfg.Sheet)
+Write-Host ("  Bit      : {0}   Force: {1}   AllowMissingNoGfix: {2}" -f $modeCfg.Bit, $forceFlag, $allowNoGfixFlag)
 Write-Host ''
 
-if (-not (Test-Path -LiteralPath $mappingPath)) {
-    Write-Host "[ERROR] mapping not found: $mappingPath" -ForegroundColor Red; exit 1
-}
-if (-not (Test-Path -LiteralPath $evDir)) {
-    Write-Host "[ERROR] evidence dir missing: $evDir  (run Clone first)" -ForegroundColor Red; exit 1
-}
+if (-not (Test-Path -LiteralPath $mappingPath)) { Write-Host "[ERROR] mapping not found: $mappingPath" -ForegroundColor Red; exit 1 }
+if (-not (Test-Path -LiteralPath $evDir))       { Write-Host "[ERROR] evidence dir missing: $evDir (run Clone first)" -ForegroundColor Red; exit 1 }
 
-$allRows = @(Import-Csv -LiteralPath $mappingPath -Encoding UTF8)
-Ensure-Column $allRows 'isReplaced' '0'
-
-$workRows = @($allRows | Where-Object { Test-TargetRow $_ })
-if ($workRows.Count -eq 0) {
-    Write-Host '[INFO] No rows after filter.' -ForegroundColor Yellow
-    return
-}
+$allRows = Import-Mapping $mappingPath
+Ensure-MappingColumns -Rows $allRows | Out-Null
+$targets  = ConvertTo-TargetIdList $TargetIds
+$workRows = @($allRows | Where-Object { Test-TargetRow $_ $targets })
+if ($workRows.Count -eq 0) { Write-Host '[INFO] No rows after filter.' -ForegroundColor Yellow; return }
 
 $groups = $workRows | Group-Object Excel_NAME | Sort-Object Name
 Write-Host ("Groups (Excel_NAME): {0}" -f $groups.Count) -ForegroundColor Cyan
+Write-ProgressEvent -WorkDir $WorkDir -Phase ("Replace:{0}" -f $Mode) -Action 'start' -Status 'info' `
+    -Message ("groups={0} force={1}" -f $groups.Count, $forceFlag)
 
-# ============================================================
-# Helpers
-# ============================================================
-function Get-SnapPath([string]$folder, [string]$key) {
-    return (Join-Path (Join-Path $snapBase $folder) ("{0}.png" -f $key))
+# Read correl order from the 'Soushin data' sheet col A (spec 7.2). Returns
+# $null when the sheet is absent so the caller can fall back to mapping order.
+function Read-SoshinDataOrder($wb) {
+    $ws = Get-SheetByName $wb $labels['SheetSoshinData']
+    if ($null -eq $ws) { return $null }
+    $last = 1
+    try { $last = [int]$ws.UsedRange.Row + [int]$ws.UsedRange.Rows.Count - 1 } catch { $last = 1 }
+    if ($last -gt 5000) { $last = 5000 }
+    $vals = [System.Collections.Generic.List[string]]::new()
+    for ($r = 1; $r -le $last; $r++) {
+        $v = $ws.Cells.Item($r, 1).Value2
+        if ($null -ne $v) { $vals.Add([string]$v) }
+    }
+    return (Select-ValidCorrelIds $vals.ToArray())
 }
 
-function Get-GfixLogLines([string]$correlIdS, [string]$workDir, [array]$mappingRows) {
-    $logDir = Join-Path $workDir 'log'
-    if (-not (Test-Path -LiteralPath $logDir)) {
-        Write-Host ("  [WARN] log dir not found: {0}" -f $logDir) -ForegroundColor Yellow
-        return @(("<<WARN: log dir not found>>"))
-    }
-    # Primary: look for {correlIdS}_*.log (naming scheme from GfixLogDownload)
-    $candidates = @(Get-ChildItem -Path $logDir -Filter ("{0}_*.log" -f $correlIdS) -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending)
-    $logFile = $null
-    if ($candidates.Count -gt 0) {
-        $logFile = $candidates[0].FullName
-    } else {
-        # Fallback: {JOB_NAME}.log (old naming or manually placed)
-        $matchRow = $null
-        foreach ($r in $mappingRows) {
-            if ([string]$r.Correl_ID_S -eq $correlIdS) { $matchRow = $r; break }
-        }
-        $jobName = if ($null -ne $matchRow) { [string]$matchRow.JOB_NAME } else { '' }
-        if (-not [string]::IsNullOrWhiteSpace($jobName)) {
-            $legacy = Join-Path $logDir ("{0}.log" -f $jobName)
-            if (Test-Path -LiteralPath $legacy) { $logFile = $legacy }
-        }
-    }
-    if ($null -eq $logFile) {
-        Write-Host ("  [WARN] log file not found for {0} (run GfixLogDownload first)" -f $correlIdS) -ForegroundColor Yellow
-        return @(("<<WARN: log file not found for {0}>>" -f $correlIdS))
-    }
-    $raw = [System.IO.File]::ReadAllBytes($logFile)
-    $hasBom = ($raw.Length -ge 3 -and $raw[0] -eq 0xEF -and $raw[1] -eq 0xBB -and $raw[2] -eq 0xBF)
-    $enc = if ($hasBom) { [System.Text.UTF8Encoding]::new($true) } else { [System.Text.UTF8Encoding]::new($false) }
-    $content = $enc.GetString($raw)
-    $lines = @($content -split "`r?`n")
-    if ($lines.Count -gt 0 -and [string]::IsNullOrEmpty($lines[-1])) {
-        $lines = $lines[0..($lines.Count - 2)]
-    }
-    if ($lines.Count -gt 100) {
-        Write-Host ("  [WARN] {0}: log has {1} lines (>100), pasting all" -f (Split-Path $logFile -Leaf), $lines.Count) -ForegroundColor Yellow
-    }
-    return $lines
-}
-
-# ============================================================
-# Main loop
-# ============================================================
 $excel = New-ExcelApp
-$cntDone = 0
-$cntSkip = 0
-$cntFail = 0
+$cntDone = 0; $cntSkip = 0; $cntFail = 0
 
 try {
     foreach ($g in $groups) {
         $first = $g.Group | Select-Object -First 1
         $excelName = [string]$first.Excel_NAME
         if ([string]::IsNullOrWhiteSpace($excelName)) { continue }
+        $jobName = [string]$first.JOB_NAME
+        $toCode  = [string]$first.TO_code
 
         Write-Host ''
         Write-Host ("=" * 72) -ForegroundColor White
         Write-Host ("  {0}   ({1} correl id)" -f $excelName, $g.Count) -ForegroundColor White
         Write-Host ("=" * 72) -ForegroundColor White
 
-        # Workbook path
         $wbPath = Join-Path $evDir ("{0}.xlsx" -f $excelName)
         if (-not (Test-Path -LiteralPath $wbPath)) {
             Write-Host ("  [SKIP] workbook missing: {0}" -f $wbPath) -ForegroundColor Yellow
-            $cntSkip++
-            continue
+            $cntSkip++; continue
         }
 
-        # Already-done bit check
-        $sampleBits = Get-BitValue $first 'isReplaced'
-        if (-not $forceFlag -and (($sampleBits -band $modeCfg.Bit) -eq $modeCfg.Bit)) {
+        $sampleBits = Get-RowProp $first 'isReplaced'
+        if (-not $forceFlag -and (Test-BitDone $sampleBits $modeCfg.Bit)) {
             Write-Host ("  [SKIP] bit {0} already set (isReplaced={1})" -f $modeCfg.Bit, $sampleBits) -ForegroundColor DarkGray
-            $cntSkip++
-            continue
+            $cntSkip++; continue
         }
+
+        $correlIds = @($g.Group | ForEach-Object { [string]$_.Correl_ID_S } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
         $wb = $null
+        $ok = $false
+        $exec = $null
         try {
             $wb = Open-Workbook $excel $wbPath
-        } catch {
-            Write-Host ("  [FAIL] open: {0}" -f $_.Exception.Message) -ForegroundColor Red
-            $cntFail++
-            continue
-        }
-
-        $allOk = $true
-        try {
             Unhide-AllSheets $wb
-
             $ws = Get-SheetByName $wb $modeCfg.Sheet
             if ($null -eq $ws) {
                 Write-Host ("  [FAIL] sheet not found: {0}" -f $modeCfg.Sheet) -ForegroundColor Red
-                $allOk = $false
             } else {
                 Reset-SheetBelowRow $ws 3 20
 
-                $anchorRow = 3
-                $correlIds = @($g.Group | ForEach-Object { [string]$_.Correl_ID_S } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                $jobName   = [string]$first.JOB_NAME
-
-                # ── ExcelSnap (Gift / Gfix) ──
-                if ($modeCfg.UseExcelSnap) {
-                    $excelPng = Join-Path $folderExcel ("{0}.png" -f $jobName)
-                    if (Test-Path -LiteralPath $excelPng) {
-                        $pic = Insert-PictureSendToBack $ws $anchorRow 2 $excelPng
-                        Set-ShapeMetadata $pic 'excel' $jobName
-                        $prevRow = $anchorRow
-                        $anchorRow = Get-NextAnchorRow $ws $pic $BlankRowsBetween
-                        Write-Host ("  [OK]   B{0}  excel\{1}.png" -f $prevRow, $jobName) -ForegroundColor Green
-                    } else {
-                        Write-Host ("  [WARN] excel\{0}.png missing" -f $jobName) -ForegroundColor Yellow
-                        $allOk = $false
+                $plan = $null
+                switch ($Mode) {
+                    'Gift' { $plan = Build-GiftEvidencePlan -SnapRoot $snapRoot -JobName $jobName -CorrelOrder $correlIds }
+                    'Gfix' { $plan = Build-GfixEvidencePlan -SnapRoot $snapRoot -JobName $jobName -CorrelOrder $correlIds -ToCode $toCode }
+                    'Df'   {
+                        $dfOrder = Read-SoshinDataOrder $wb
+                        if ($null -eq $dfOrder -or @($dfOrder).Count -eq 0) {
+                            Write-Host "  [WARN] could not read Soushin-data col A order; using mapping order" -ForegroundColor Yellow
+                            $dfOrder = $correlIds
+                        }
+                        $plan = Build-DfEvidencePlan -SnapRoot $snapRoot -CorrelOrder $dfOrder
                     }
                 }
 
-                # ── Per-correl stacked snaps ──
-                foreach ($folder in $modeCfg.PerCorrelFolders) {
-                    foreach ($cid in $correlIds) {
-                        $img = Get-SnapPath $folder $cid
-                        if (Test-Path -LiteralPath $img) {
-                            $pic = Insert-PictureSendToBack $ws $anchorRow 2 $img
-                            Set-ShapeMetadata $pic $folder $cid
-                            $prevRow = $anchorRow
-                            $anchorRow = Get-NextAnchorRow $ws $pic $BlankRowsBetween
-                            Write-Host ("  [OK]   B{0}  {1}\{2}.png" -f $prevRow, $folder, $cid) -ForegroundColor Green
-                        } else {
-                            Write-Host ("  [WARN] {0}\{1}.png missing" -f $folder, $cid) -ForegroundColor Yellow
-                            $allOk = $false
-                        }
-                    }
-                }
+                $exec = Invoke-EvidencePlan -Worksheet $ws -Plan $plan -Labels $labels `
+                            -LogDir $logDir -StartRow 3 -Col 2 -GiftNoGfixLabelOverride $GiftNoGfixLabel
 
-                # ── Tail per mode ──
-                switch ($modeCfg.TailKind) {
+                foreach ($w in @($exec.Warnings)) { Write-Host ("  [WARN] {0}" -f $w) -ForegroundColor Yellow }
 
-                    'NoGfix' {
-                        # Label once, then snaps (no repeated label)
-                        if (-not [string]::IsNullOrWhiteSpace($modeCfg.TailLabel)) {
-                            Write-PlainText $ws $anchorRow 2 $modeCfg.TailLabel
-                            Write-Host ("  [OK]   B{0}  text: {1}" -f $anchorRow, $modeCfg.TailLabel) -ForegroundColor Green
-                            $anchorRow = $anchorRow + 1
-                        }
-                        foreach ($cid in $correlIds) {
-                            $img = Get-SnapPath $modeCfg.TailFolder $cid
-                            if (Test-Path -LiteralPath $img) {
-                                $pic = Insert-PictureSendToBack $ws $anchorRow 2 $img
-                                Set-ShapeMetadata $pic $modeCfg.TailFolder $cid
-                                $prevRow = $anchorRow
-                                $anchorRow = Get-NextAnchorRow $ws $pic $BlankRowsBetween
-                                Write-Host ("  [OK]   B{0}  {1}\{2}.png" -f $prevRow, $modeCfg.TailFolder, $cid) -ForegroundColor Green
-                            } else {
-                                # NoGfix snap is optional; some files do exist on GFIX side
-                                Write-Host ("  [INFO] {0}\{1}.png absent (ok if file exists on GFIX)" -f $modeCfg.TailFolder, $cid) -ForegroundColor DarkGray
-                            }
-                        }
-                    }
-
-                    'Log' {
-                        # Per-correl: label + log lines stub
-                        foreach ($cid in $correlIds) {
-                            if (-not [string]::IsNullOrWhiteSpace($modeCfg.TailLabel)) {
-                                Write-PlainText $ws $anchorRow 2 ("{0}  ({1})" -f $modeCfg.TailLabel, $cid)
-                                $anchorRow = $anchorRow + 1
-                            }
-                            $lines = @(Get-GfixLogLines $cid $WorkDir $allRows)
-                            $anchorRow = Write-LogLines $ws $anchorRow 2 $lines
-                            $anchorRow = $anchorRow + $BlankRowsBetween
-                            Write-Host ("  [OK]   {0}: log {1} line(s)" -f $cid, $lines.Count) -ForegroundColor Green
-                        }
-                    }
-
-                    'None' { }
+                $ok = ($exec.MissingRequired.Count -eq 0)
+                if ($Mode -eq 'Gift' -and $ok -and (-not $allowNoGfixFlag) -and $exec.MissingOptional.Count -gt 0) {
+                    $ok = $false
+                    Write-Host ("  [FAIL-STRICT] {0} NoGfix snap(s) missing; pass -AllowMissingOptionalNoGfix to complete anyway." -f $exec.MissingOptional.Count) -ForegroundColor Yellow
                 }
             }
-
             $wb.Save()
         } catch {
             Write-Host ("  [FAIL] processing: {0}" -f $_.Exception.Message) -ForegroundColor Red
-            $allOk = $false
+            $ok = $false
         } finally {
             Close-Workbook $wb $false
         }
 
-        if ($allOk) {
-            # Set bit on all rows in this Excel_NAME group (in $allRows, not $workRows)
-            $groupNames = @($g.Group | ForEach-Object { [string]$_.Correl_ID_M })
+        if ($ok) {
+            $groupMs = @($g.Group | ForEach-Object { [string]$_.Correl_ID_M })
             foreach ($r in $allRows) {
-                if ($groupNames -contains [string]$r.Correl_ID_M) {
-                    Set-BitValue $r 'isReplaced' $modeCfg.Bit
-                }
+                if ($groupMs -contains [string]$r.Correl_ID_M) { Set-MappingBit -Row $r -Field 'isReplaced' -Bit $modeCfg.Bit }
             }
             Write-Host ("  isReplaced |= {0} for {1} row(s)" -f $modeCfg.Bit, $g.Count) -ForegroundColor Green
+            Write-ProgressEvent -WorkDir $WorkDir -Phase ("Replace:{0}" -f $Mode) -JobName $jobName `
+                -Action 'group' -Status 'ok' -Message ("{0}: inserted={1} log={2}" -f $excelName, $exec.Inserted, $exec.LogMatched)
             $cntDone++
         } else {
-            Write-Host '  isReplaced NOT updated (allOk=false)' -ForegroundColor Yellow
+            Write-Host '  isReplaced NOT updated (required pieces missing).' -ForegroundColor Yellow
+            if ($null -ne $exec) {
+                foreach ($m in @($exec.MissingRequired)) {
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase ("Replace:{0}" -f $Mode) -CorrelIdS ([string]$m.CorrelIdS) `
+                        -JobName $jobName -Action 'missing' -Status 'fail' -Message ("{0}: {1}" -f $m.Folder, $m.Path)
+                }
+            }
+            Write-ProgressEvent -WorkDir $WorkDir -Phase ("Replace:{0}" -f $Mode) -JobName $jobName `
+                -Action 'group' -Status 'fail' -Message ("{0}: missing required pieces" -f $excelName)
             $cntFail++
         }
     }
 
-    # Persist mapping if anything changed
     if ($cntDone -gt 0) {
-        $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
+        Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
         Write-Host ''
         Write-Host ("Mapping saved: {0}" -f $mappingPath) -ForegroundColor DarkGreen
     }
