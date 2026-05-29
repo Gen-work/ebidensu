@@ -61,6 +61,13 @@ if ($TargetIds.Count -gt 0) {
     })
 }
 
+# Ensure snap column exists in every row (StrictMode safe)
+foreach ($r in $allRows) {
+    if (-not ($r.PSObject.Properties.Name -contains $snapField)) {
+        $r | Add-Member -NotePropertyName $snapField -NotePropertyValue '0' -Force
+    }
+}
+
 $pending = @($allRows | Where-Object {
     $cur = [string]$_.$snapField
     $forceFlag -or -not $cur -or $cur -eq '0' -or $cur -eq ''
