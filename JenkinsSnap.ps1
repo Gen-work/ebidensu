@@ -102,7 +102,7 @@ Write-Host "`n===== JenkinsSnap $Mode =====" -ForegroundColor Green
 Write-Host "Pending rows: $($pending.Count)" -ForegroundColor Cyan
 
 # ── paths ─────────────────────────────────────────────────────────────────────
-$snapDir = Join-Path $WorkDir 'snap' | Join-Path -ChildPath $snapFolder
+$snapDir = Join-Path (Join-Path $WorkDir 'snap') $snapFolder
 Ensure-Dir $snapDir
 
 # ── URL cache (PS5.1-safe: no -AsHashtable) ──────────────────────────────────
