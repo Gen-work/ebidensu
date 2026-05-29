@@ -3,7 +3,74 @@
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
-## 2026-05-19 — ReviewEvidence live test + Apply-LlmPatch v3
+## 2026-05-29 - Shared MappingStore + plan-driven Replace + recovery/monitoring
+
+Large refactor toward stability, recoverability, encoding safety, and a
+review-standard evidence layout. New pure (COM-free) libraries are unit-tested;
+the rest validated by static analysis (no PowerShell/Excel in the build env).
+
+### Added - shared libraries (dot-source, ASCII source, no BOM)
+- `MappingStore.ps1` - single source of truth for mapping_<Owner>.csv:
+  `Import-Mapping`, `Export-MappingAtomic` (temp file + Move with retry +
+  backoff; never silent on a locked CSV), `Ensure-MappingColumns`,
+  `ConvertTo-TargetIdList` (array / comma / trim), `Test-TargetRow`,
+  `Get-PendingRows` (snap + bitmask), `Set-MappingBit`.
+- `GfixLog.ps1` - pure GFIX receive-log matcher. `SS_CODE = Substring(4,1)`;
+  fragment `/appl/<TO>/<TO>Ver1/gfix/recv/<id> <SS>`; 0 match = fail; many =
+  newest by timestamp + warning; returns the whole file's lines.
+- `EvidencePlan.ps1` - pure correl-major plan builders (`Build-Gift/Gfix/Df
+  EvidencePlan`) encoding the review order; Jenkins / NoGfix are trailing
+  sections; NoGfix pictures optional; `Select-ValidCorrelIds` drops #VALUE!/blank.
+- `EvidenceExecutor.ps1` - walks a plan and performs the Excel inserts;
+  reports MissingRequired / MissingOptional / Warnings.
+- `ProgressLog.ps1` - append-only `status\progress.jsonl` (UTF-8 no BOM).
+- `ProjectLabels.ps1` - Japanese sheet/label names built from `[char]` so
+  consumers stay ASCII / codepage-agnostic.
+- `ScreenRegion.ps1` - pure screen-region clamp math.
+- `AlignCompare.ps1` - pure sheet compare + migration-type classification.
+- `Tests\` - `Run-Tests.ps1` (parse-checks every .ps1 + runs units) and units
+  for MappingStore / GfixLog / EvidencePlan / ScreenRegion / AlignCompare.
+- `Check-Encoding.ps1` - enforces the no-BOM (.ps1) / BOM-required-Japanese
+  (.psd1) policy and prints constructed Japanese labels.
+- `Watch-MappingProgress.ps1` - read-only monitor; copies the mapping and tails
+  progress.jsonl, so it never locks mapping_<Owner>.csv.
+- `Align.ps1` - Align/Precheck phase: compare work evidence vs the J4 baseline
+  workbook by Excel_NAME; DryRun report by default, `-Apply` syncs values
+  (formats TODO). Migration-type branching (Host->Open = 3 receive sheets;
+  Open->Open / Open->Host add the GIFT/GFIX send-result sheets).
+
+### Changed
+- `Generate-HostOpenMapping.ps1` - removed pasted garbage at EOF (would break
+  the file); owner-match arrows built via `[char]` (raw arrows silently broke
+  matching under no-BOM PS 5.1); added `isMarked` / `isGfixLogMarked` columns;
+  on regenerate (`-Force`) old completion status is merged by Correl_ID_M so
+  finished work is not wiped; added owner / GFIX-row match counts.
+- `JenkinsSnap.ps1` - routes through MappingStore (atomic per-row write instead
+  of full-CSV re-read/re-write); emits progress events. Stable Edge/URL/
+  screenshot logic and operator prompts kept.
+- `DfSnap.ps1` - `region` capture default (df.exe window handle is flaky); waits
+  for MainWindowHandle; window mode validates the rect and falls back to region
+  (not fullscreen); per-direction crop for the asymmetric shadow.
+- `ReplaceEvidence.ps1` - rewritten plan-driven (correl-major), replacing the
+  folder-major loop. Gift/Gfix/Df builders + executor; GFIX log via the matcher;
+  `isReplaced |= bit` only when all REQUIRED pieces inserted; NoGfix optional
+  (`-AllowMissingOptionalNoGfix`); per-correl misses -> progress.jsonl.
+- `GfixLogDownload.ps1` - per-correl transaction; on a missing log it does NOT
+  blind-navigate: interactive pauses for manual download/retry/skip,
+  `-NonInteractive` stops the run. Log naming
+  `<id>_<timestamp>_<orig>.log`; GFIX_log set only when a log is really found.
+- `VerifyConfig.psd1` / `VerifyTool.ps1` - Df region/crop config; new `Align`
+  and `WatchProgress` phases, scripts, aliases; Df region args passed through.
+
+### Notes / open items
+- Snap output paths are phase-only (`snap\<type>\<Correl_ID_S>.png`); no
+  biz_code/to_code subfolders (TO_code still groups Jenkins navigation only).
+- Align full branching needs two domain inputs: the FROM_sys/TO_sys literals
+  meaning "Host" (`-HostSystemTypes`) and confirmation of per-type sheet sets.
+  Until set, type is Unknown and Align uses the Host->Open scope with a warning.
+- Replace partial state is tracked by row bits + progress.jsonl (no new columns).
+
+## 2026-05-19 - ReviewEvidence live test + Apply-LlmPatch v3
 
 ### Added / Changed
 - Added and wired `ReviewEvidence.ps1` manual review flow.
