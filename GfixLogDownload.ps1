@@ -18,15 +18,15 @@ if (-not (Test-Path $mappingFile)) { throw "Mapping not found: $mappingFile" }
 
 $rows = Import-Csv $mappingFile -Encoding UTF8BOM
 if ($TargetIds.Count -gt 0) {
-    $rows = $rows | Where-Object {
+    $rows = @($rows | Where-Object {
         $_.Correl_ID_S -in $TargetIds -or $_.Correl_ID_M -in $TargetIds -or $_.JOB_NAME -in $TargetIds -or $_.Excel_NAME -in $TargetIds
-    }
+    })
 }
 
-$pending = $rows | Where-Object {
+$pending = @($rows | Where-Object {
     ($Force -or -not $_.GFIX_log -or $_.GFIX_log -eq '0' -or $_.GFIX_log -eq '') -and
     ($_.isMiddle -eq '1' -or $_.isMiddle -eq 'true' -or $_.isMiddle -eq 'True')
-}
+})
 if ($pending.Count -eq 0) {
     Write-Host '[GfixLogDownload] No pending rows.' -ForegroundColor Green
     exit 0
@@ -93,6 +93,3 @@ foreach ($row in $pending) {
 
 $rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8BOM
 Write-Host "`n[GfixLogDownload] Mapping saved + step finished." -ForegroundColor Green
-`
-``n
---- File: HmSnap.ps1 ---
