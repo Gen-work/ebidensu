@@ -85,25 +85,20 @@ foreach ($row in $pending) {
         Select-Object -First 1
 
     if ($null -ne $newLog) {
-        # Rename to {JOB_NAME}.log so Get-GfixLogLines can find it by name
-        $targetName = if (-not [string]::IsNullOrWhiteSpace($jobNum)) { "$jobNum.log" } else { $newLog.Name }
+        # Prefix with Correl_ID_S so Get-GfixLogLines can find it, original name preserved
+        $targetName = "{0}_{1}" -f $correl, $newLog.Name
         $dst = Join-Path $logDir $targetName
         Move-Item -LiteralPath $newLog.FullName -Destination $dst -Force
         Write-Host ("  moved: {0} -> log\{1}" -f $newLog.Name, $targetName) -ForegroundColor Green
         $row.GFIX_log = '1'
     } else {
-        # Fallback: exact filename match (for manually placed files)
-        if (-not [string]::IsNullOrWhiteSpace($jobNum)) {
-            $src = Join-Path $downloadDir "$jobNum.log"
-            if (Test-Path -LiteralPath $src) {
-                Move-Item -LiteralPath $src -Destination (Join-Path $logDir "$jobNum.log") -Force
-                Write-Host "  moved (fallback): $jobNum.log" -ForegroundColor Green
-                $row.GFIX_log = '1'
-            } else {
-                Write-Host ("  [WARN] no new .log in Downloads for [{0}]" -f $correl) -ForegroundColor Yellow
-            }
+        # Fallback: look for {correl}_*.log already in logDir (manually placed)
+        $existing = @(Get-ChildItem -Path $logDir -Filter ("{0}_*.log" -f $correl) -ErrorAction SilentlyContinue)
+        if ($existing.Count -gt 0) {
+            Write-Host ("  already in log\: {0}" -f $existing[0].Name) -ForegroundColor DarkGray
+            $row.GFIX_log = '1'
         } else {
-            Write-Host ("  [WARN] no new .log in Downloads for [{0}] (JOB_NAME empty)" -f $correl) -ForegroundColor Yellow
+            Write-Host ("  [WARN] no new .log in Downloads for [{0}]" -f $correl) -ForegroundColor Yellow
         }
     }
 
