@@ -78,11 +78,12 @@ function Invoke-EvidencePlan {
             }
             'picture' {
                 if (Test-Path -LiteralPath $op.Path) {
+                    $insertRow = $anchor
                     $pic = Insert-PictureSendToBack $Worksheet $anchor $Col ([string]$op.Path)
                     Set-ShapeMetadata $pic ([string]$op.Folder) ([string]$op.Name)
                     $anchor = Get-NextAnchorRow $Worksheet $pic 0
                     $inserted++
-                    Write-Host ("    [OK]  B{0}  {1}\{2}.png" -f ($anchor), $op.Folder, $op.Name) -ForegroundColor DarkGreen
+                    Write-Host ("    [OK]  B{0}  {1}\{2}.png" -f $insertRow, $op.Folder, $op.Name) -ForegroundColor DarkGreen
                 } else {
                     $rec = [pscustomobject]@{ CorrelIdS = [string]$op.CorrelIdS; Folder = [string]$op.Folder; Path = [string]$op.Path }
                     if ($op.Required) {
