@@ -1,233 +1,323 @@
 #Requires -Version 5.1
 param(
     [ValidateSet('GiftRecv','GfixRecv','NoGfix')]
-    [string]$Mode        = 'GiftRecv',
-    [string]$WorkDir     = '',
-    [string]$Owner       = '厳',
-    [string[]]$TargetIds = @(),
+    [string]$Mode           = 'GiftRecv',
+    [string]$WorkDir        = '',
+    [string]$Owner          = '厳',
+    [string[]]$TargetIds    = @(),
     [switch]$RefreshUrls,
     [switch]$Force,
     [switch]$DryRun,
-    [int]$WindowWidth    = 1050,
-    [int]$WindowHeight   = 761,
-    [int]$CropPx         = 6,
-    [switch]$NoResize
+    [switch]$Interactive,
+    [switch]$NoResize,
+    [int]$WindowWidth       = 1050,
+    [int]$WindowHeight      = 761,
+    [int]$CropPx            = 6,
+    [int]$ActionWaitMs      = 500,
+    [int]$ResultWaitMs      = 500,
+    [string]$CommonScript   = ''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ── config ──────────────────────────────────────────────────────────────────
-$scriptDir = Split-Path $MyInvocation.MyCommand.Path
-. (Join-Path $scriptDir 'Common.ps1')
+$forceFlag    = [bool]$Force.IsPresent
+$dryFlag      = [bool]$DryRun.IsPresent
+$noResizeFlag = [bool]$NoResize.IsPresent
+$refreshFlag  = [bool]$RefreshUrls.IsPresent
 
-$cfgPath = Join-Path $scriptDir 'VerifyConfig.psd1'
-$cfg = Import-PowerShellDataFile $cfgPath
+$scriptDir = Split-Path $MyInvocation.MyCommand.Path
+if ([string]::IsNullOrWhiteSpace($CommonScript)) {
+    $CommonScript = Join-Path $scriptDir 'Common.ps1'
+}
+. $CommonScript
+
+$Global:Timing = @{ ActionWaitMs = $ActionWaitMs; ResultWaitMs = $ResultWaitMs }
 
 if (-not $WorkDir) { throw '-WorkDir is required' }
 
-$mappingFile = Join-Path $WorkDir ($cfg.Paths.MappingPattern -f $Owner)
+# ── mode config ───────────────────────────────────────────────────────────────
+# Field    : CSV column that tracks completion for this mode
+# Folder   : subfolder under snap\ for screenshots
+# GroupCol : CSV column to group rows by (navigate to Jenkins once per group)
+# SearchCol: CSV column value to Ctrl+F search on the Jenkins page
+$modeCfg = switch ($Mode) {
+    'GiftRecv' { @{
+        Field     = 'GIFT_Jenkins_snap'
+        Folder    = 'GIFT_Jenkins'
+        GroupCol  = 'TO_code'
+        SearchCol = 'JOB_NAME'
+    }}
+    'GfixRecv' { @{
+        Field     = 'GFIX_Jenkins_snap'
+        Folder    = 'GFIX_Jenkins'
+        GroupCol  = 'TO_code'
+        SearchCol = 'JOB_NAME'
+    }}
+    'NoGfix'   { @{
+        Field     = 'GIFT_noGfixfile_snap'
+        Folder    = 'GIFT_noGfixfile'
+        GroupCol  = 'TO_code'
+        SearchCol = 'JOB_NAME'
+    }}
+}
+
+$snapField  = $modeCfg.Field
+$snapFolder = $modeCfg.Folder
+$groupCol   = $modeCfg.GroupCol
+$searchCol  = $modeCfg.SearchCol
+
+# ── mapping ───────────────────────────────────────────────────────────────────
+$mappingFile = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 if (-not (Test-Path $mappingFile)) { throw "Mapping not found: $mappingFile" }
 
-$snapRoot = Join-Path $WorkDir $cfg.Paths.SnapDir
-$dataRoot = Join-Path $WorkDir $cfg.Paths.FileDir
+$allRows = @(Import-Csv $mappingFile -Encoding UTF8)
 
-# folder names per mode
-$snapFolderMap = @{
-    GiftRecv = 'GIFT_Jenkins'
-    GfixRecv = 'GFIX_Jenkins'
-    NoGfix   = 'GIFT_noGfixfile'
-}
-$snapFolder = $snapFolderMap[$Mode]
-
-# CSV field updated per mode
-$fieldMap = @{
-    GiftRecv = 'GIFT_Jenkins_snap'
-    GfixRecv = 'GFIX_Jenkins_snap'
-    NoGfix   = 'GIFT_noGfixfile_snap'
-}
-$snapField = $fieldMap[$Mode]
-
-$urlCacheFile = Join-Path $WorkDir 'jenkins_urls.json'
-
-# ── helpers ─────────────────────────────────────────────────────────────────
-function Load-UrlCache {
-    if (Test-Path $urlCacheFile) {
-        try { return Get-Content $urlCacheFile -Raw | ConvertFrom-Json -AsHashtable }
-        catch { return @{} }
-    }
-    return @{}
-}
-
-function Save-UrlCache([hashtable]$cache) {
-    $cache | ConvertTo-Json -Depth 3 | Set-Content $urlCacheFile -Encoding UTF8
-}
-
-function Get-SnapPath([string]$folder, [string]$correl) {
-    return Join-Path $snapRoot $folder "$correl.png"
-}
-
-function Ensure-SnapDir([string]$folder) {
-    $dir = Join-Path $snapRoot $folder
-    if (-not (Test-Path $dir)) { New-Item $dir -ItemType Directory | Out-Null }
-    return $dir
-}
-
-# ── read mapping ─────────────────────────────────────────────────────────────
-$rows = Import-Csv $mappingFile -Encoding UTF8BOM
 if ($TargetIds.Count -gt 0) {
-    $rows = $rows | Where-Object {
+    $allRows = @($allRows | Where-Object {
         $_.Correl_ID_S -in $TargetIds -or
         $_.Correl_ID_M -in $TargetIds -or
         $_.JOB_NAME    -in $TargetIds -or
         $_.Excel_NAME  -in $TargetIds
+    })
+}
+
+# Ensure snap column exists in every row (StrictMode safe)
+foreach ($r in $allRows) {
+    if (-not ($r.PSObject.Properties.Name -contains $snapField)) {
+        $r | Add-Member -NotePropertyName $snapField -NotePropertyValue '0' -Force
     }
 }
 
-if ($Mode -eq 'NoGfix') {
-    # NoGfix: rows that have no GFIX receive file (GIFT_noGfixfile_snap field)
-    $pending = $rows | Where-Object {
-        $Force -or -not $_.$snapField -or $_.$snapField -eq '0' -or $_.$snapField -eq ''
-    }
-} else {
-    $pending = $rows | Where-Object {
-        $Force -or -not $_.$snapField -or $_.$snapField -eq '0' -or $_.$snapField -eq ''
-    }
-}
+$pending = @($allRows | Where-Object {
+    $cur = [string]$_.$snapField
+    $forceFlag -or -not $cur -or $cur -eq '0' -or $cur -eq ''
+})
 
 if ($pending.Count -eq 0) {
     Write-Host "[$Mode] No pending rows." -ForegroundColor Green
     exit 0
 }
 
-Write-Host "[$Mode] $($pending.Count) row(s) pending." -ForegroundColor Cyan
+Write-Host "`n===== JenkinsSnap $Mode =====" -ForegroundColor Green
+Write-Host "Pending rows: $($pending.Count)" -ForegroundColor Cyan
 
-$urlCache = Load-UrlCache
-$dirty    = $false
+# ── paths ─────────────────────────────────────────────────────────────────────
+$snapDir = Join-Path (Join-Path $WorkDir 'snap') $snapFolder
+Ensure-Dir $snapDir
 
-# ── main loop ────────────────────────────────────────────────────────────────
-foreach ($row in $pending) {
-    $correl  = $row.Correl_ID_S
-    $jobName = $row.JOB_NAME
+# ── URL cache (PS5.1-safe: no -AsHashtable) ──────────────────────────────────
+$urlCacheFile = Join-Path $WorkDir 'jenkins_urls.json'
+$urlCache = @{}
+if (Test-Path $urlCacheFile) {
+    try {
+        $parsed = Get-Content $urlCacheFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        $parsed.PSObject.Properties | ForEach-Object { $urlCache[$_.Name] = $_.Value }
+    } catch {}
+}
+$urlDirty = $false
 
-    Write-Host "`n[$Mode] $correl ($jobName)" -ForegroundColor Yellow
-
-    if ($DryRun) {
-        Write-Host "  [DryRun] would snap $correl"
-        continue
+# ── inline helpers ────────────────────────────────────────────────────────────
+function Invoke-CropPng([string]$path, [int]$crop) {
+    if ($crop -le 0 -or -not (Test-Path -LiteralPath $path)) { return }
+    try {
+        $orig = [System.Drawing.Image]::FromFile($path)
+        $w = $orig.Width  - $crop * 2
+        $h = $orig.Height - $crop * 2
+        if ($w -le 0 -or $h -le 0) { $orig.Dispose(); return }
+        $bmp = New-Object System.Drawing.Bitmap($w, $h)
+        $g   = [System.Drawing.Graphics]::FromImage($bmp)
+        $g.DrawImage($orig, -$crop, -$crop)
+        $g.Dispose()
+        $orig.Dispose()
+        $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+        $bmp.Dispose()
+    } catch {
+        Write-Host ("  [WARN] crop failed: {0}" -f $_) -ForegroundColor Yellow
     }
+}
 
-    $snapPath = Get-SnapPath $snapFolder $correl
-    Ensure-SnapDir $snapFolder | Out-Null
+function Move-EdgeToWorkPos([IntPtr]$hWnd) {
+    [WinAPI]::MoveWindow($hWnd, 0, 0, $WindowWidth, $WindowHeight, $true) | Out-Null
+    Start-Sleep -Milliseconds 200
+}
 
-    # ── find Edge window ──────────────────────────────────────────────────────
-    $edgeHwnd = Get-EdgeHwnd
-    if (-not $edgeHwnd) {
-        Write-Warning "  Edge not found — skip $correl"
-        continue
+function Bring-ConsoleToFront {
+    $hwnd = (Get-Process -Id $PID).MainWindowHandle
+    if ($hwnd -ne [IntPtr]::Zero) {
+        [WinAPI]::SetForegroundWindow($hwnd) | Out-Null
+        [WinAPI]::ShowWindowAsync($hwnd, 9) | Out-Null
     }
+}
 
-    # ── navigate / refresh URL ────────────────────────────────────────────────
-    $cacheKey  = "${Mode}_${correl}"
-    $cachedUrl = $urlCache[$cacheKey]
+function Get-CurrentEdgeUrl {
+    Send-Key '^l' 300
+    Send-Key '^a' 150
+    Send-Key '^c' 300
+    Send-Key '{ESC}' 200
+    $url = [System.Windows.Forms.Clipboard]::GetText()
+    if ($url -match '^https?://') { return $url.Trim() }
+    return ''
+}
 
-    $needNav = $RefreshUrls -or -not $cachedUrl
-
-    if ($needNav) {
-        Write-Host "  Searching Jenkins for $correl …"
-
-        # activate Edge, open address bar, navigate to Jenkins search
-        Activate-Window $edgeHwnd
-        Start-Sleep -Milliseconds 300
-
-        # Use Ctrl+F to search for the correl ID on the Jenkins page
-        [System.Windows.Forms.SendKeys]::SendWait('^f')
-        Start-Sleep -Milliseconds $cfg.Timing.ActionWaitMs
-        [System.Windows.Forms.SendKeys]::SendWait($correl)
-        Start-Sleep -Milliseconds $cfg.Timing.ResultWaitMs
-    } else {
-        Write-Host "  Using cached URL: $cachedUrl"
-        Activate-Window $edgeHwnd
-        Start-Sleep -Milliseconds 300
-
-        # Navigate to cached URL
-        [System.Windows.Forms.SendKeys]::SendWait('^l')
-        Start-Sleep -Milliseconds 300
-        [System.Windows.Forms.SendKeys]::SendWait($cachedUrl)
-        Start-Sleep -Milliseconds 200
-        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-        Start-Sleep -Milliseconds ($cfg.Timing.ResultWaitSec * 1000)
-    }
-
-    # ── resize window ─────────────────────────────────────────────────────────
-    if (-not $NoResize) {
-        Resize-Window $edgeHwnd $WindowWidth $WindowHeight
-        Start-Sleep -Milliseconds 200
-    }
-
-    # ── take screenshot ───────────────────────────────────────────────────────
-    $bmp = Capture-Window $edgeHwnd $CropPx
-    if ($null -eq $bmp) {
-        Write-Warning "  Screenshot failed — skip $correl"
-        continue
-    }
-    $bmp.Save($snapPath, [System.Drawing.Imaging.ImageFormat]::Png)
-    $bmp.Dispose()
-    Write-Host "  Saved: $snapPath" -ForegroundColor Green
-
-    # ── cache URL ─────────────────────────────────────────────────────────────
-    if ($needNav) {
-        # read current URL from address bar
-        Activate-Window $edgeHwnd
-        [System.Windows.Forms.SendKeys]::SendWait('^l')
-        Start-Sleep -Milliseconds 200
-        [System.Windows.Forms.SendKeys]::SendWait('^c')
-        Start-Sleep -Milliseconds 200
-        [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
-        $currentUrl = [System.Windows.Forms.Clipboard]::GetText()
-        if ($currentUrl -match '^https?://') {
-            $urlCache[$cacheKey] = $currentUrl
-            $dirty = $true
-        }
-    }
-
-    # ── download data files (GiftRecv / GfixRecv only) ────────────────────────
-    if ($Mode -in 'GiftRecv','GfixRecv') {
-        $dataFolderName = if ($Mode -eq 'GiftRecv') { 'GIFT' } else { 'GFIX' }
-        $dataDir = Join-Path $dataRoot $dataFolderName $correl
-        if (-not (Test-Path $dataDir)) {
-            New-Item $dataDir -ItemType Directory | Out-Null
-        }
-
-        # parse Jenkins file list from page text
-        $pageTextScript = Join-Path $scriptDir 'Read-PageText.ps1'
-        $pageText = & $pageTextScript
-        if ($pageText) {
-            $parseScript = Join-Path $scriptDir 'Parse-JenkinsList.ps1'
-            $files = & $parseScript -Text $pageText
-            Write-Host "  Found $($files.Count) file(s) on Jenkins page"
-            foreach ($f in $files) {
-                $destPath = Join-Path $dataDir $f.Name
-                if (-not (Test-Path $destPath) -or $Force) {
-                    try {
-                        Invoke-WebRequest -Uri $f.Url -OutFile $destPath -UseBasicParsing
-                        Write-Host "    DL: $($f.Name)" -ForegroundColor Gray
-                    } catch {
-                        Write-Warning "    DL failed: $($f.Name) — $_"
-                    }
-                }
+function Update-MappingField([string]$correlIdS, [string]$field, [string]$val) {
+    $full = @(Import-Csv $mappingFile -Encoding UTF8)
+    foreach ($r in $full) {
+        if ([string]$r.Correl_ID_S -eq $correlIdS) {
+            if (-not ($r.PSObject.Properties.Name -contains $field)) {
+                $r | Add-Member -NotePropertyName $field -NotePropertyValue $val -Force
+            } else {
+                $r.$field = $val
             }
         }
     }
-
-    # ── update mapping ────────────────────────────────────────────────────────
-    $row.$snapField = '1'
+    $full | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8
 }
 
-# ── save mapping ──────────────────────────────────────────────────────────────
-$rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8BOM
-Write-Host "`n[$Mode] Mapping saved." -ForegroundColor Green
-
-if ($dirty) {
-    Save-UrlCache $urlCache
-    Write-Host "[$Mode] URL cache saved." -ForegroundColor Gray
+# ── Group pending rows by TO_code ─────────────────────────────────────────────
+# Build an ordered list of distinct TO_code values (preserving first-seen order)
+$groupOrder = [System.Collections.Generic.List[string]]::new()
+$groupMap   = @{}   # TO_code -> list of rows
+foreach ($row in $pending) {
+    $grp = [string]$row.$groupCol
+    if ([string]::IsNullOrWhiteSpace($grp)) { $grp = '(unknown)' }
+    if (-not $groupMap.ContainsKey($grp)) {
+        $groupMap[$grp] = [System.Collections.Generic.List[object]]::new()
+        $groupOrder.Add($grp)
+    }
+    $groupMap[$grp].Add($row)
 }
+
+Write-Host ''
+Write-Host 'Groups by TO_code:' -ForegroundColor DarkGray
+foreach ($g in $groupOrder) {
+    Write-Host ("  {0,-12} : {1} rows" -f $g, $groupMap[$g].Count) -ForegroundColor DarkGray
+}
+
+# ── Process each TO_code group ────────────────────────────────────────────────
+$cntDone = 0
+$cntSkip = 0
+$cntFail = 0
+
+foreach ($toCode in $groupOrder) {
+    $rows = $groupMap[$toCode]
+
+    Write-Host ''
+    Write-Host ("===== TO_code: {0}  ({1} rows) =====" -f $toCode, $rows.Count) -ForegroundColor Cyan
+
+    # ── Navigate Edge to this system's Jenkins folder ─────────────────────────
+    $cacheKey  = "{0}_{1}" -f $Mode, $toCode
+    $cachedUrl = if ($urlCache.ContainsKey($cacheKey)) { $urlCache[$cacheKey] } else { '' }
+
+    if (-not $refreshFlag -and $cachedUrl) {
+        Write-Host ("  [cached URL] {0}" -f $cachedUrl) -ForegroundColor DarkGray
+        Write-Host ("  Edge を {0} Jenkins フォルダのキャッシュ URL に移動します。" -f $toCode) -ForegroundColor Yellow
+        Write-Host '  確認して Enter。違う場合は r+Enter でリフレッシュ。(q=quit)' -ForegroundColor Magenta
+        $resp = Read-Host
+        if ($resp -eq 'q') { exit 0 }
+
+        if ($resp -eq 'r') {
+            # force re-navigate
+            $cachedUrl = ''
+        } else {
+            $edgeHwnd = Activate-EdgeWindow
+            if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
+            # Navigate to cached URL
+            Send-Key '^l' 300
+            [System.Windows.Forms.Clipboard]::SetText($cachedUrl)
+            Send-Key '^v' 200
+            Send-Key '{ENTER}' ($ResultWaitMs * 4)
+        }
+    }
+
+    if (-not $cachedUrl) {
+        Write-Host ''
+        Write-Host (">>> Edge を [{0}] の Jenkins フォルダページを開いてください。" -f $toCode) -ForegroundColor Yellow
+        Write-Host '    (例: IDS なら IDS Jenkins のジョブ一覧ページ)' -ForegroundColor Yellow
+        Write-Host '    開いたら Enter。(q=quit)' -ForegroundColor Magenta
+        $resp = Read-Host
+        if ($resp -eq 'q') { exit 0 }
+
+        $edgeHwnd = Activate-EdgeWindow
+        if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
+
+        # Capture and cache the URL
+        $capturedUrl = Get-CurrentEdgeUrl
+        if ($capturedUrl) {
+            $urlCache[$cacheKey] = $capturedUrl
+            $urlDirty = $true
+            Write-Host ("  [URL saved] {0}" -f $capturedUrl) -ForegroundColor Green
+        } else {
+            Write-Host '  [WARN] URL を取得できませんでした。続行します。' -ForegroundColor Yellow
+        }
+    }
+
+    # ── Per-row screenshot loop ───────────────────────────────────────────────
+    foreach ($row in $rows) {
+        $correl     = [string]$row.Correl_ID_S
+        $searchTerm = [string]$row.$searchCol
+
+        Write-Host ''
+        Write-Host ("  [$correl] search: $searchTerm") -ForegroundColor White
+
+        if ($dryFlag) {
+            Write-Host '    [DryRun] skip' -ForegroundColor DarkGray
+            $cntSkip++; continue
+        }
+
+        $snapPath = Join-Path $snapDir "$correl.png"
+
+        $edgeHwnd = Activate-EdgeWindow
+        if ($edgeHwnd -eq [IntPtr]::Zero) {
+            Write-Host "    [FAIL] Edge not found" -ForegroundColor Red
+            $cntFail++; continue
+        }
+
+        # Ctrl+F search for JOB_NAME
+        Click-PageBody
+        Send-CtrlF
+        Paste-Replace $searchTerm
+        Start-Sleep -Milliseconds $ResultWaitMs
+        # Close find bar so it doesn't clutter the screenshot
+        Send-Key '{ESC}' 200
+
+        # Take screenshot
+        $hWnd = [WinAPI]::GetForegroundWindow()
+        if ($hWnd -eq [IntPtr]::Zero) {
+            Write-Host "    [FAIL] No foreground window" -ForegroundColor Red
+            $cntFail++; continue
+        }
+
+        try {
+            Take-WindowScreenshot $hWnd $snapPath
+            if ($CropPx -gt 0) { Invoke-CropPng $snapPath $CropPx }
+            Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green
+        } catch {
+            Write-Host ("    [FAIL] screenshot: {0}" -f $_.Exception.Message) -ForegroundColor Red
+            $cntFail++; continue
+        }
+
+        # Update mapping row
+        try {
+            Update-MappingField $correl $snapField '1'
+            $cntDone++
+        } catch {
+            Write-Host ("    [WARN] mapping update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        }
+    }
+}
+
+# ── save URL cache ────────────────────────────────────────────────────────────
+if ($urlDirty) {
+    $urlCache | ConvertTo-Json -Depth 3 | Set-Content $urlCacheFile -Encoding UTF8
+    Write-Host ''
+    Write-Host "[$Mode] URL cache saved: jenkins_urls.json" -ForegroundColor DarkGray
+}
+
+# ── summary ───────────────────────────────────────────────────────────────────
+Write-Host ''
+Write-Host ("===== JenkinsSnap $Mode Done =====") -ForegroundColor Green
+Write-Host ("  Done    : {0}" -f $cntDone)
+Write-Host ("  Skipped : {0}" -f $cntSkip)
+Write-Host ("  Failed  : {0}" -f $cntFail) -ForegroundColor $(if ($cntFail -gt 0) { 'Yellow' } else { 'White' })
+
+Bring-ConsoleToFront

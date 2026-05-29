@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  ReplaceEvidence.ps1
 #
 #  Phase: ReplaceGift / ReplaceGfix / ReplaceDf
@@ -210,23 +210,27 @@ function Get-GfixLogLines([string]$correlIdS, [string]$workDir, [array]$mappingR
         Write-Host ("  [WARN] log dir not found: {0}" -f $logDir) -ForegroundColor Yellow
         return @(("<<WARN: log dir not found>>"))
     }
-    $matchRow = $null
-    foreach ($r in $mappingRows) {
-        if ([string]$r.Correl_ID_S -eq $correlIdS) { $matchRow = $r; break }
+    # Primary: look for {correlIdS}_*.log (naming scheme from GfixLogDownload)
+    $candidates = @(Get-ChildItem -Path $logDir -Filter ("{0}_*.log" -f $correlIdS) -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending)
+    $logFile = $null
+    if ($candidates.Count -gt 0) {
+        $logFile = $candidates[0].FullName
+    } else {
+        # Fallback: {JOB_NAME}.log (old naming or manually placed)
+        $matchRow = $null
+        foreach ($r in $mappingRows) {
+            if ([string]$r.Correl_ID_S -eq $correlIdS) { $matchRow = $r; break }
+        }
+        $jobName = if ($null -ne $matchRow) { [string]$matchRow.JOB_NAME } else { '' }
+        if (-not [string]::IsNullOrWhiteSpace($jobName)) {
+            $legacy = Join-Path $logDir ("{0}.log" -f $jobName)
+            if (Test-Path -LiteralPath $legacy) { $logFile = $legacy }
+        }
     }
-    if ($null -eq $matchRow) {
-        Write-Host ("  [WARN] no mapping row for {0}" -f $correlIdS) -ForegroundColor Yellow
-        return @(("<<WARN: no mapping row for {0}>>" -f $correlIdS))
-    }
-    $jobName = [string]$matchRow.JOB_NAME
-    if ([string]::IsNullOrWhiteSpace($jobName)) {
-        Write-Host ("  [WARN] JOB_NAME empty for {0}" -f $correlIdS) -ForegroundColor Yellow
-        return @(("<<WARN: JOB_NAME empty for {0}>>" -f $correlIdS))
-    }
-    $logFile = Join-Path $logDir ("{0}.log" -f $jobName)
-    if (-not (Test-Path -LiteralPath $logFile)) {
-        Write-Host ("  [WARN] log file not found: {0}.log" -f $jobName) -ForegroundColor Yellow
-        return @(("<<WARN: log file not found: {0}.log>>" -f $jobName))
+    if ($null -eq $logFile) {
+        Write-Host ("  [WARN] log file not found for {0} (run GfixLogDownload first)" -f $correlIdS) -ForegroundColor Yellow
+        return @(("<<WARN: log file not found for {0}>>" -f $correlIdS))
     }
     $raw = [System.IO.File]::ReadAllBytes($logFile)
     $hasBom = ($raw.Length -ge 3 -and $raw[0] -eq 0xEF -and $raw[1] -eq 0xBB -and $raw[2] -eq 0xBF)
@@ -237,7 +241,7 @@ function Get-GfixLogLines([string]$correlIdS, [string]$workDir, [array]$mappingR
         $lines = $lines[0..($lines.Count - 2)]
     }
     if ($lines.Count -gt 100) {
-        Write-Host ("  [WARN] {0}: log has {1} lines (>100), pasting all" -f $jobName, $lines.Count) -ForegroundColor Yellow
+        Write-Host ("  [WARN] {0}: log has {1} lines (>100), pasting all" -f (Split-Path $logFile -Leaf), $lines.Count) -ForegroundColor Yellow
     }
     return $lines
 }

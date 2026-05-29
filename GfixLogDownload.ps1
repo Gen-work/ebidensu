@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 param(
     [string]$WorkDir = '',
     [string]$Owner = '厳',
@@ -16,17 +16,16 @@ if (-not $WorkDir) { throw '-WorkDir is required' }
 $mappingFile = Join-Path $WorkDir ($cfg.Paths.MappingPattern -f $Owner)
 if (-not (Test-Path $mappingFile)) { throw "Mapping not found: $mappingFile" }
 
-$rows = Import-Csv $mappingFile -Encoding UTF8BOM
+$rows = @(Import-Csv $mappingFile -Encoding UTF8)
 if ($TargetIds.Count -gt 0) {
-    $rows = $rows | Where-Object {
+    $rows = @($rows | Where-Object {
         $_.Correl_ID_S -in $TargetIds -or $_.Correl_ID_M -in $TargetIds -or $_.JOB_NAME -in $TargetIds -or $_.Excel_NAME -in $TargetIds
-    }
+    })
 }
 
-$pending = $rows | Where-Object {
-    ($Force -or -not $_.GFIX_log -or $_.GFIX_log -eq '0' -or $_.GFIX_log -eq '') -and
-    ($_.isMiddle -eq '1' -or $_.isMiddle -eq 'true' -or $_.isMiddle -eq 'True')
-}
+$pending = @($rows | Where-Object {
+    $Force -or -not $_.GFIX_log -or $_.GFIX_log -eq '0' -or $_.GFIX_log -eq ''
+})
 if ($pending.Count -eq 0) {
     Write-Host '[GfixLogDownload] No pending rows.' -ForegroundColor Green
     exit 0
@@ -42,11 +41,15 @@ Write-Host ''
 Write-Host 'Prepare GoAnywhere page in Edge BEFORE starting:' -ForegroundColor Yellow
 Write-Host '  - Filter BIZ code (example: JRV)'
 Write-Host '  - Sort newer=up / older=down'
+Write-Host '  *** Set max rows to 100 (default 20 is not enough!) ***' -ForegroundColor Red
 Write-Host '  - Keep focus on the list page'
 Write-Host 'Then press Enter. (q to quit)' -ForegroundColor Magenta
 $resp = Read-Host
 if ($resp -eq 'q') { exit 0 }
 Switch-ToEdge
+$hWnd = [WinAPI]::GetForegroundWindow()
+[WinAPI]::ShowWindowAsync($hWnd, 3) | Out-Null  # SW_SHOWMAXIMIZED
+Start-Sleep -Milliseconds 300
 
 foreach ($row in $pending) {
     $ifRaw = [string]$row.IF
@@ -69,30 +72,47 @@ foreach ($row in $pending) {
     Paste-Replace 'ダウンロード'
     Send-Enter
     Send-Key '{ESC}' 200
+    $beforeDownload = Get-Date          # timestamp right before clicking Download
     Send-Enter
-    Start-Sleep -Milliseconds 1200
+    Start-Sleep -Milliseconds 1800      # extra 600ms for download to land
 
     $jobNum = [string]$row.JOB_NAME
-    if ($jobNum -match '^\d{13}$') {
-        $src = Join-Path $downloadDir ("{0}.log" -f $jobNum)
-        $dst = Join-Path $logDir ("{0}.log" -f $jobNum)
-        if (Test-Path -LiteralPath $src) {
-            Move-Item -LiteralPath $src -Destination $dst -Force
-            Write-Host "  moved: $jobNum.log" -ForegroundColor Green
+
+    # Find the .log file that appeared in Downloads after we clicked
+    $newLog = Get-ChildItem -Path $downloadDir -Filter '*.log' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -gt $beforeDownload -or $_.CreationTime -gt $beforeDownload } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if ($null -ne $newLog) {
+        # Prefix with Correl_ID_S so Get-GfixLogLines can find it, original name preserved
+        $targetName = "{0}_{1}" -f $correl, $newLog.Name
+        $dst = Join-Path $logDir $targetName
+        Move-Item -LiteralPath $newLog.FullName -Destination $dst -Force
+        Write-Host ("  moved: {0} -> log\{1}" -f $newLog.Name, $targetName) -ForegroundColor Green
+        $row.GFIX_log = '1'
+    } else {
+        # Fallback: look for {correl}_*.log already in logDir (manually placed)
+        $existing = @(Get-ChildItem -Path $logDir -Filter ("{0}_*.log" -f $correl) -ErrorAction SilentlyContinue)
+        if ($existing.Count -gt 0) {
+            Write-Host ("  already in log\: {0}" -f $existing[0].Name) -ForegroundColor DarkGray
+            $row.GFIX_log = '1'
         } else {
-            Write-Host "  [WARN] not found in Downloads: $jobNum.log" -ForegroundColor Yellow
+            Write-Host ("  [WARN] no new .log in Downloads for [{0}]" -f $correl) -ForegroundColor Yellow
         }
     }
-
-    $row.GFIX_log = '1'
 
     Send-Tab 2
     Send-Enter
     Start-Sleep -Milliseconds 800
 }
 
-$rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8BOM
+$rows | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8
 Write-Host "`n[GfixLogDownload] Mapping saved + step finished." -ForegroundColor Green
-`
-``n
---- File: HmSnap.ps1 ---
+
+# Return focus to this console window
+$consoleHwnd = (Get-Process -Id $PID).MainWindowHandle
+if ($consoleHwnd -ne [IntPtr]::Zero) {
+    [WinAPI]::SetForegroundWindow($consoleHwnd) | Out-Null
+    [WinAPI]::ShowWindowAsync($consoleHwnd, 9) | Out-Null   # SW_RESTORE
+}
