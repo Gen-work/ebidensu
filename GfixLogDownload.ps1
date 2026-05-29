@@ -16,16 +16,16 @@ if (-not $WorkDir) { throw '-WorkDir is required' }
 $mappingFile = Join-Path $WorkDir ($cfg.Paths.MappingPattern -f $Owner)
 if (-not (Test-Path $mappingFile)) { throw "Mapping not found: $mappingFile" }
 
-$rows = Import-Csv $mappingFile -Encoding UTF8
+$rows = @(Import-Csv $mappingFile -Encoding UTF8)
 if ($TargetIds.Count -gt 0) {
-    $rows = $rows | Where-Object {
+    $rows = @($rows | Where-Object {
         $_.Correl_ID_S -in $TargetIds -or $_.Correl_ID_M -in $TargetIds -or $_.JOB_NAME -in $TargetIds -or $_.Excel_NAME -in $TargetIds
-    }
+    })
 }
 
-$pending = $rows | Where-Object {
+$pending = @($rows | Where-Object {
     $Force -or -not $_.GFIX_log -or $_.GFIX_log -eq '0' -or $_.GFIX_log -eq ''
-}
+})
 if ($pending.Count -eq 0) {
     Write-Host '[GfixLogDownload] No pending rows.' -ForegroundColor Green
     exit 0
