@@ -44,6 +44,11 @@ param(
     [string]$CommonScript = '',
     [string]$ExcelHelpersScript = '',
 
+    # Accepted for VerifyTool back-compat (it splats Config.Replace.BlankRowsBetween).
+    # Superseded by the per-spec plan spacing in EvidencePlan.ps1 (sections 7/8/9),
+    # so it is intentionally not used.
+    [int]$BlankRowsBetween = 1,
+
     # NoGfix section header override. Empty -> ProjectLabels default.
     [string]$GiftNoGfixLabel = '',
     # Kept for VerifyTool back-compat; the bold log header is now the
