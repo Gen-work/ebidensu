@@ -105,22 +105,46 @@
         Probe           = 'Probe-Shapes.ps1'
         GfixLogDownload = 'GfixLogDownload.ps1'
         DfSnap          = 'DfSnap.ps1'
+        Align           = 'Align.ps1'
+        WatchProgress   = 'Watch-MappingProgress.ps1'
     }
 
     # DF snap / mark configuration
     Df = @{
         # Path to df.exe comparison tool. User must set for their environment.
         ExePath      = ''
-        # Seconds to wait after WaitForInputIdle before capturing screenshot.
+        # Seconds to wait after the df.exe window appears before capturing.
         LoadWaitSec  = 8
-        # 'fullscreen' = whole primary screen; 'window' = foreground window only.
-        CaptureMode  = 'fullscreen'
+        # 'region' (recommended; df.exe window handle is flaky), 'window', 'fullscreen'.
+        CaptureMode  = 'region'
+        # Fixed capture rectangle for 'region' mode (target screen ~1980x1020).
+        RegionX      = 120
+        RegionY      = 280
+        RegionWidth  = 1250
+        RegionHeight = 657
+        # Per-direction crop in px (window shadow is asymmetric).
+        CropLeft     = 0
+        CropTop      = 0
+        CropRight    = 0
+        CropBottom   = 0
         # Base directories containing data files to compare.
         # Defaults to <WorkDir>\DATA\GIFT and <WorkDir>\DATA\GFIX when empty.
         GiftDataDir  = ''
         GfixDataDir  = ''
         # Wildcard pattern for file lookup. {0} = Correl_ID_S.
         FilePattern  = '{0}*'
+    }
+
+    # Align / Precheck configuration (compare work evidence vs J4 baseline)
+    Align = @{
+        # Root folder holding the J4 baseline workbooks (searched recursively
+        # by Excel_NAME). Example:
+        #   \\Fs-f3170-1\...\REQ-000xxxxx_GIFT...\40.J4\07.GPCS
+        J4BaseDir       = ''
+        # FROM_sys / TO_sys literal values that count as "Host" (mainframe).
+        # Until set, migration type is Unknown and Align falls back to the
+        # Host->Open (3 receive sheets) scope with a warning.
+        HostSystemTypes = @()
     }
 
     # GFIX log cell-mark configuration
@@ -152,6 +176,7 @@
         @{ Key='DfSnap';             Field='DF_snap';              Label='DF 証跡 (df.exe 截图)';             Status='implemented' }
         @{ Key='MarkGfixLog';        Field='isGfixLogMarked';      Label='GFIX log 行 黄ハイライト';            Status='implemented' }
         @{ Key='Clone';              Field='';                     Label='証跡 Excel 複製 (mkexcel)';         Status='implemented' }
+        @{ Key='Align';              Field='';                     Label='J4 基準 sheet 比較/同期 (precheck)'; Status='implemented' }
         @{ Key='ReplaceGift';        Field='isReplaced'; BitValue=1; Label='GIFT 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceGfix';        Field='isReplaced'; BitValue=2; Label='GFIX 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceDf';          Field='isReplaced'; BitValue=4; Label='DF 証跡置換';                     Status='implemented' }
@@ -166,6 +191,7 @@
         @{ Key='RepairMapping';      Field='';                     Label='mapping 列補完 (auto on startup)';  Status='implemented' }
         @{ Key='ProbeShapes';        Field='';                     Label='Excel shape 座標 / AltText 一覧';    Status='implemented' }
         @{ Key='Crop';               Field='';                     Label='既存 PNG 一括 crop';                Status='implemented' }
+        @{ Key='WatchProgress';      Field='';                     Label='進捗モニタ (read-only, 非ロック)';   Status='implemented' }
     )
 
     Aliases = @{
@@ -203,6 +229,14 @@
         Clone             = 'Clone'
         MkExcel           = 'Clone'
         RenameExcel       = 'Clone'
+
+        Align             = 'Align'
+        Precheck          = 'Align'
+        AlignCompare      = 'Align'
+
+        WatchProgress     = 'WatchProgress'
+        Watch             = 'WatchProgress'
+        Progress          = 'WatchProgress'
 
         Replace           = 'ReplaceGift'    # bare "Replace" -> GIFT
         ReplaceEvidence   = 'ReplaceGift'    # legacy planned name -> GIFT

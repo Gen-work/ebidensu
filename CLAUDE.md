@@ -25,11 +25,32 @@ VerifyConfig.psd1       project config (paths, scripts, PhaseOrder, Aliases, Mar
 verify_session.json     last settings (WorkDir, Owner, WindowSize, CursorCell, CloneSourceDir)
 
 ExcelHelpers.ps1        dot-source lib: Excel COM, bitmask, shape metadata helpers (no param())
+
+  -- shared dot-source libraries (no param(); ASCII source; no BOM) --
+MappingStore.ps1        single source of truth for mapping_<Owner>.csv: read/filter/
+                        atomic-write. Import-Mapping, Export-MappingAtomic,
+                        Ensure-MappingColumns, ConvertTo-TargetIdList, Test-TargetRow,
+                        Get-PendingRows, Set-MappingBit. ALL scripts use this.
+GfixLog.ps1             pure GFIX receive-log matcher (SS_CODE=Substring(4,1); newest
+                        wins; whole-file lines). No Excel. Unit-tested.
+EvidencePlan.ps1        pure correl-major Replace plan builders (Build-Gift/Gfix/Df
+                        EvidencePlan) encoding the review order. No Excel. Unit-tested.
+EvidenceExecutor.ps1    walks an EvidencePlan and performs the Excel inserts.
+ProjectLabels.ps1       Japanese sheet/label names from [char] (keeps consumers ASCII /
+                        codepage-agnostic). Get-AlignSendSheets / Get-AlignRecvSheets.
+ProgressLog.ps1         append-only status\progress.jsonl events (UTF-8 no BOM).
+ScreenRegion.ps1        pure screen-region clamp math. Unit-tested.
+AlignCompare.ps1        pure sheet-compare + migration-type logic. Unit-tested.
+
 Clone.ps1               Phase Clone
-ReplaceEvidence.ps1     Phase ReplaceGift / ReplaceGfix / ReplaceDf
+Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
+ReplaceEvidence.ps1     Phase ReplaceGift / ReplaceGfix / ReplaceDf (plan-driven)
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf
 ReviewEvidence.ps1      Phase ReviewGift / ReviewGfix / ReviewDf / ReviewEvidence
 Validate.ps1            Phase Validate (read-only diagnostic)
+Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
+Check-Encoding.ps1      read-only encoding policy checker + label self-test
+Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1
 
 JenkinsSnap.ps1         Phase GiftJenkins / GfixJenkins / GiftJenkinsNoFile
 HmSnap.ps1              Phase GiftHmSnap / GfixHmSnap   (kept as-is)
@@ -64,8 +85,10 @@ CHANGELOG.md            iteration log
 
 ### Dot-source safety rule
 
-Only `ExcelHelpers.ps1` (which has **no** `param()` block) is ever dot-sourced.
-All other scripts have `param()` and are called via `& $path @args`.
+Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
+`MappingStore.ps1`, `GfixLog.ps1`, `EvidencePlan.ps1`, `EvidenceExecutor.ps1`,
+`ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`, `AlignCompare.ps1`,
+`Common.ps1`. All phase scripts have `param()` and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
 ```powershell
@@ -80,13 +103,18 @@ switch parameters with `$false`.
 
 | File type | Encoding | BOM |
 |-----------|----------|-----|
-| .ps1 | UTF-8 | yes (BOM) recommended for PS 5.1 |
-| .psd1 | UTF-8 | yes |
-| .json | UTF-8 | no |
-| .csv (mapping) | UTF-8 BOM | yes (Excel needs BOM) |
+| .ps1 | UTF-8 | **no** (keep source ASCII; build Japanese via `[char]`) |
+| .psd1 | UTF-8 | **yes** if it holds raw Japanese (Import-PowerShellDataFile can't use `[char]`); no if pure-ASCII |
+| .json / .jsonl | UTF-8 | no |
+| .csv (mapping) | UTF-8 | yes (BOM; Excel needs it for Japanese) |
 | .md | UTF-8 | no |
 
-`Apply-LlmPatch.ps1` preserves the original BOM state when writing patched files.
+New/rewritten `.ps1` must be ASCII-only: any Japanese used at runtime comes from
+`ProjectLabels.ps1` ([char] code points). This makes the file work on **any**
+Windows codepage. Raw Japanese in a no-BOM `.ps1` mojibakes on a JP-locale host
+(this silently broke owner-matching in Generate-HostOpenMapping). Older files
+still carry raw Japanese / a BOM; migrate them when touched. `Check-Encoding.ps1`
+enforces this policy; `Apply-LlmPatch.ps1` preserves original BOM state.
 
 ### Bitmask fields
 
@@ -98,7 +126,10 @@ Three integer CSV columns track multi-mode completion:
 | isMarked | GIFT mark | GFIX mark | DF mark | 7 |
 | isReviewed | GIFT review | GFIX review | DF review | 7 |
 
-Test: `($value -band $bit) -eq $bit`
+Test: `($value -band $bit) -eq $bit` (use `Test-BitDone` / `Set-MappingBit` from
+MappingStore). `isGfixLogMarked` is a plain 0/1 flag, not a bitmask. Replace marks
+a mode's bit only when ALL its required pieces inserted; which correl/step/file
+failed is recorded in `status\progress.jsonl`, not in extra columns.
 
 `PhaseOrder` in `VerifyConfig.psd1` has a `BitValue` key for each bitmask phase.
 
@@ -129,29 +160,40 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-05-28 v2.4)
+## Current state (last bump: 2026-05-29 v2.5)
 
-All core phases implemented and tested:
-- Mapping, ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins, GiftJenkinsNoFile
-- GfixHmSnap, GfixJenkins
-- GfixLogDownload — downloads GFIX receive logs from GoAnywhere; moves .log to work\log\
-- DfSnap — DF evidence screenshot (df.exe compare + fullscreen capture)
-- MarkGfixLog — yellow-highlights the Command: line in GFIX log evidence Excel
-- Clone, ReplaceGift, ReplaceGfix, ReplaceDf
-- MarkGift, MarkGfix, MarkDf
-- ReviewGift, ReviewGfix, ReviewDf, ReviewEvidence
-- Validate, RepairMapping, ProbeShapes, Crop
+Major refactor: shared MappingStore, plan-driven Replace, recovery + monitoring.
+Pure (COM-free) libs are unit-tested via `Tests\Run-Tests.ps1`; COM/Edge phases
+validated by static analysis only (no PowerShell/Excel in the cloud build env)
+and need a Windows + Excel 2019 run to confirm end to end.
 
-`ReplaceGfix` writes `<<TODO: GFIX 受信 log>>` placeholder if log not yet downloaded.
-Once GfixLogDownload runs, `Get-GfixLogLines` in `ReplaceEvidence.ps1` greps `work\log\`.
+Phases: Mapping, ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins,
+GiftJenkinsNoFile, GfixHmSnap, GfixJenkins, GfixLogDownload, DfSnap, MarkGfixLog,
+Clone, **Align (new)**, ReplaceGift/Gfix/Df, MarkGift/Gfix/Df,
+ReviewGift/Gfix/Df, ReviewEvidence, Validate, RepairMapping, ProbeShapes, Crop,
+**WatchProgress (new)**.
+
+Replace is now plan-driven (EvidencePlan + EvidenceExecutor), correl-major per the
+review standard. GFIX log is matched by `GfixLog.ps1` (whole file pasted) instead
+of the old TODO placeholder. All mapping I/O goes through MappingStore (atomic
+writes). Every phase appends events to `status\progress.jsonl`; watch them live
+with `Watch-MappingProgress.ps1` (read-only, never locks the CSV).
+
+To run the tests on Windows: `powershell -File Tests\Run-Tests.ps1` (parse-checks
+every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encoding.ps1`.
 
 ## Known issues / open points
 
-- **JenkinsSnap.ps1 local rewrite risk**: the local copy visible in the 2026-05-28 daily
-  diff references helper functions (`Get-EdgeHwnd`, `Activate-Window`, `Resize-Window`,
-  `Capture-Window`) that do NOT exist in Common.ps1. If Jenkins phases crash, restore
-  JenkinsSnap.ps1 from repo with `git checkout origin/claude/practical-maxwell-XvKaA -- JenkinsSnap.ps1`,
-  then re-run `Fix-Encoding.ps1`.
+- **Not yet run on Windows/Excel**: this refactor was authored in a Linux cloud
+  env without PowerShell or Excel. Run `Tests\Run-Tests.ps1`, then smoke-test
+  ReplaceGift/Gfix/Df and DfSnap on a copy before trusting them in production.
+- **Align full branching** needs two domain facts: which FROM_sys/TO_sys literals
+  mean "Host" (set `Align.HostSystemTypes` in VerifyConfig), and confirmation of
+  the per-migration-type sheet sets in `AlignCompare.ps1`. Until then Align uses
+  the Host->Open scope (3 receive sheets) and warns.
+- **Align -Apply** syncs values only (formats are TODO) and is experimental.
+- JenkinsSnap.ps1 matches the known-good repo logic (real Common.ps1 helpers); the
+  earlier `Get-EdgeHwnd`/`Capture-Window` phantom-function risk is resolved.
 
 ## TODOs
 
@@ -162,6 +204,15 @@ Once GfixLogDownload runs, `Get-GfixLogLines` in `ReplaceEvidence.ps1` greps `wo
 
 - **DfSnap: DfExePath not yet configured** — set `Df.ExePath` in `VerifyConfig.psd1` to
   the full path of df.exe so the prompt is skipped. Or just type it when prompted each run.
+
+- **DfSnap region calibration** — default capture is `region` (x=120,y=280,w=1250,h=657
+  for ~1980x1020). Tune `Df.RegionX/Y/Width/Height` and per-direction
+  `Df.CropLeft/Top/Right/Bottom` (the window shadow is asymmetric). A pixel-color
+  auto-detect of the window edge is a future option (no vision in a PS script).
+
+- **GfixLogDownload max-rows / SS_CODE** — still relies on manual "rows=100" setup.
+  Also `SS_CODE` is inferred as `Correl_ID_S.Substring(4,1)`; if a real SS column is
+  ever captured in the mapping, prefer it over the inference.
 
 ## Cross-environment workflow
 

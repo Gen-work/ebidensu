@@ -22,7 +22,9 @@
 #    .\Generate-HostOpenMapping.ps1 -WbsStartRow 1275 -WbsEndRow 2250
 #    .\Generate-HostOpenMapping.ps1 -Force
 #
-#  File encoding: save THIS file as UTF-8 with BOM, CRLF line endings.
+#  File encoding: UTF-8, NO BOM. All Japanese used at runtime (owner
+#  arrows, sheet/label names) is built from [char] code points so PS 5.1
+#  on a JP-locale host cannot mis-decode it. See Check-Encoding.ps1.
 # ============================================================
 
 param(
@@ -143,9 +145,14 @@ function Test-OwnerMatch([string]$ownerCell, [string]$ownerInput) {
     $cell  = $ownerCell.Trim()
     $input = $ownerInput.Trim()
 
+    # NOTE: the arrows are built from [char] code points on purpose. Raw
+    # "<-"/"->" Japanese arrow literals in a BOM-less .ps1 get mis-decoded
+    # by PS 5.1 on a JP-locale host, which silently breaks owner-matching.
+    $arrowLeft  = [char]0x2190   # leftwards arrow  (owner<-...)
+    $arrowRight = [char]0x2192   # rightwards arrow (...->owner)
     if ($cell -eq $input) { return $true }
-    if ($cell.StartsWith($input + "←")) { return $true }
-    if ($cell.EndsWith("→" + $input)) { return $true }
+    if ($cell.StartsWith($input + $arrowLeft)) { return $true }
+    if ($cell.EndsWith($arrowRight + $input)) { return $true }
 
     return $false
 }
@@ -304,10 +311,12 @@ $excel = New-Object -ComObject Excel.Application
     $jobNames = [System.Collections.Generic.List[string]]::new()
     $seen     = New-Object 'System.Collections.Generic.HashSet[string]'
     $excludedByFromFilter = 0
+    $ownerMatched = 0
 
     for ($r = $WbsStartRow; $r -le $WbsEndRow; $r++) {
         $ownerStr = Read-OwnerCell $wsWbs $r
         if (-not (Test-OwnerMatch $ownerStr $Owner)) { continue }
+        $ownerMatched++
 
         $i = $r - $WbsStartRow + 1
         $job_v = if ($rowCount -eq 1) { $colA } else { $colA[$i, 1] }
@@ -321,6 +330,7 @@ $excel = New-Object -ComObject Excel.Application
         if ($seen.Add($job)) { $jobNames.Add($job) }
     }
 
+    Write-Host ("  WBS owner-matched rows                 : {0}" -f $ownerMatched) -ForegroundColor Green
     Write-Host ("  Distinct JOB_NAMEs (after all filters) : {0}" -f $jobNames.Count) -ForegroundColor Green
     if ($useFromFilter) {
         Write-Host ("    Excluded by from-filter            : {0}" -f $excludedByFromFilter) -ForegroundColor DarkGray
@@ -357,6 +367,9 @@ $excel = New-Object -ComObject Excel.Application
     foreach ($jn in $jobNames) {
         Write-Host ("    {0} -> {1} row(s)" -f $jn, $jobToRows[$jn].Count) -ForegroundColor DarkGray
     }
+    $gfixMatchedRows = 0
+    foreach ($jn in $jobNames) { $gfixMatchedRows += $jobToRows[$jn].Count }
+    Write-Host ("  GFIX matched rows (total)              : {0}" -f $gfixMatchedRows) -ForegroundColor Green
 
     # ============================================================
     # Step E: Build mapping records
@@ -435,7 +448,9 @@ $excel = New-Object -ComObject Excel.Application
                 GFIX_log              = ""
                 DF_snap               = ""
                 isReplaced            = 0
+                isMarked              = 0
                 isReviewed            = 0
+                isGfixLogMarked       = 0
             }
             $records.Add($rec)
         }
@@ -512,6 +527,35 @@ $excel = New-Object -ComObject Excel.Application
         return
     }
 
+    # Carry over completion status from the existing mapping so a regenerate
+    # (e.g. after WBS/GFIX edits) does NOT wipe finished work. Matched by
+    # Correl_ID_M; only non-blank old values overwrite the fresh defaults.
+    if ($isOverwrite) {
+        $statusCols = @('Excel_snap','GIFT_HM_snap','GIFT_MQ_snap','GIFT_Jenkins_snap',
+                        'GIFT_noGfixfile_snap','GFIX_HM_snap','GFIX_Jenkins_snap','GFIX_log',
+                        'DF_snap','isReplaced','isMarked','isReviewed','isGfixLogMarked')
+        $oldByM = @{}
+        foreach ($x in $old) {
+            $key = [string]$x.Correl_ID_M
+            if (-not [string]::IsNullOrWhiteSpace($key)) { $oldByM[$key] = $x }
+        }
+        $carried = 0
+        foreach ($rec in $records) {
+            $key = [string]$rec.Correl_ID_M
+            if ($oldByM.ContainsKey($key)) {
+                $o = $oldByM[$key]
+                foreach ($col in $statusCols) {
+                    if ($o.PSObject.Properties.Name -contains $col) {
+                        $ov = [string]$o.$col
+                        if (-not [string]::IsNullOrWhiteSpace($ov)) { $rec.$col = $ov }
+                    }
+                }
+                $carried++
+            }
+        }
+        Write-Host ("  Carried over status from {0} existing row(s)." -f $carried) -ForegroundColor DarkGray
+    }
+
     Write-Host "[Step G] Writing mapping file..." -ForegroundColor Cyan
     $records | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
     Write-Host ("  Saved : {0}" -f $mappingPath) -ForegroundColor Green
@@ -543,6 +587,3 @@ finally {
 
 Write-Host ""
 Write-Host "===== Phase 1 v2 Done =====" -ForegroundColor Green
-`
-``n
---- File: GfixLogDownload.ps1 ---

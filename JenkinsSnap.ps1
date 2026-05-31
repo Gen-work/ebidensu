@@ -19,6 +19,10 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    $OutputEncoding = [System.Text.UTF8Encoding]::new()
+} catch {}
 
 $forceFlag    = [bool]$Force.IsPresent
 $dryFlag      = [bool]$DryRun.IsPresent
@@ -30,6 +34,8 @@ if ([string]::IsNullOrWhiteSpace($CommonScript)) {
     $CommonScript = Join-Path $scriptDir 'Common.ps1'
 }
 . $CommonScript
+. (Join-Path $scriptDir 'MappingStore.ps1')
+. (Join-Path $scriptDir 'ProgressLog.ps1')
 
 $Global:Timing = @{ ActionWaitMs = $ActionWaitMs; ResultWaitMs = $ResultWaitMs }
 
@@ -68,30 +74,19 @@ $searchCol  = $modeCfg.SearchCol
 
 # ── mapping ───────────────────────────────────────────────────────────────────
 $mappingFile = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
-if (-not (Test-Path $mappingFile)) { throw "Mapping not found: $mappingFile" }
 
-$allRows = @(Import-Csv $mappingFile -Encoding UTF8)
+# MappingStore: single source of truth for read/filter/write.
+# $allRows is the FULL set (so we never drop non-target rows on write);
+# $pending holds references INTO $allRows, so mutating a pending row and
+# then Export-MappingAtomic $allRows persists exactly that change.
+$allRows = Import-Mapping $mappingFile
+Ensure-MappingColumns -Rows $allRows -Extra @(@{ Name = $snapField; Default = '0' }) | Out-Null
 
-if ($TargetIds.Count -gt 0) {
-    $allRows = @($allRows | Where-Object {
-        $_.Correl_ID_S -in $TargetIds -or
-        $_.Correl_ID_M -in $TargetIds -or
-        $_.JOB_NAME    -in $TargetIds -or
-        $_.Excel_NAME  -in $TargetIds
-    })
-}
+$targets = ConvertTo-TargetIdList $TargetIds
+$pending = @(Get-PendingRows -Rows $allRows -Field $snapField -Force $forceFlag -Targets $targets)
 
-# Ensure snap column exists in every row (StrictMode safe)
-foreach ($r in $allRows) {
-    if (-not ($r.PSObject.Properties.Name -contains $snapField)) {
-        $r | Add-Member -NotePropertyName $snapField -NotePropertyValue '0' -Force
-    }
-}
-
-$pending = @($allRows | Where-Object {
-    $cur = [string]$_.$snapField
-    $forceFlag -or -not $cur -or $cur -eq '0' -or $cur -eq ''
-})
+Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -Action 'start' -Status 'info' `
+    -Message ("pending={0} force={1} targets=[{2}]" -f $pending.Count, $forceFlag, ($targets -join ','))
 
 if ($pending.Count -eq 0) {
     Write-Host "[$Mode] No pending rows." -ForegroundColor Green
@@ -157,20 +152,6 @@ function Get-CurrentEdgeUrl {
     $url = [System.Windows.Forms.Clipboard]::GetText()
     if ($url -match '^https?://') { return $url.Trim() }
     return ''
-}
-
-function Update-MappingField([string]$correlIdS, [string]$field, [string]$val) {
-    $full = @(Import-Csv $mappingFile -Encoding UTF8)
-    foreach ($r in $full) {
-        if ([string]$r.Correl_ID_S -eq $correlIdS) {
-            if (-not ($r.PSObject.Properties.Name -contains $field)) {
-                $r | Add-Member -NotePropertyName $field -NotePropertyValue $val -Force
-            } else {
-                $r.$field = $val
-            }
-        }
-    }
-    $full | Export-Csv $mappingFile -NoTypeInformation -Encoding UTF8
 }
 
 # ── Group pending rows by TO_code ─────────────────────────────────────────────
@@ -293,15 +274,24 @@ foreach ($toCode in $groupOrder) {
             Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green
         } catch {
             Write-Host ("    [FAIL] screenshot: {0}" -f $_.Exception.Message) -ForegroundColor Red
+            Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                -JobName $searchTerm -Action 'screenshot' -Status 'fail' -Message $_.Exception.Message
             $cntFail++; continue
         }
 
-        # Update mapping row
+        # Mark ONLY this correl's snap column done, then persist atomically.
+        # ($row is a reference into $allRows, so this updates the full set.)
         try {
-            Update-MappingField $correl $snapField '1'
+            $row.$snapField = '1'
+            Export-MappingAtomic -Rows $allRows -Path $mappingFile | Out-Null
+            Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                -JobName $searchTerm -Action 'snap' -Status 'ok' `
+                -Message ("snap\{0}\{1}.png" -f $snapFolder, $correl)
             $cntDone++
         } catch {
             Write-Host ("    [WARN] mapping update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+            Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                -JobName $searchTerm -Action 'mapping' -Status 'fail' -Message $_.Exception.Message
         }
     }
 }
