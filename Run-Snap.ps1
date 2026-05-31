@@ -426,6 +426,3 @@ while ($true) {
     $again = Read-Host
     if ($again -eq 'q') { break }
 }
-`
-``n
---- File: Sample-HighlightColor.ps1 ---

@@ -185,6 +185,17 @@ foreach ($toCode in $groupOrder) {
     Write-Host ''
     Write-Host ("===== TO_code: {0}  ({1} rows) =====" -f $toCode, $rows.Count) -ForegroundColor Cyan
 
+    # ── DryRun: report the plan only; never open Edge or prompt. ──────────────
+    if ($dryFlag) {
+        foreach ($row in $rows) {
+            $correl = [string]$row.Correl_ID_S
+            Write-Host ("  [DryRun] would snap {0} (search: {1}) -> snap\{2}\{0}.png" -f `
+                $correl, [string]$row.$searchCol, $snapFolder) -ForegroundColor DarkGray
+            $cntSkip++
+        }
+        continue
+    }
+
     # ── Navigate Edge to this system's Jenkins folder ─────────────────────────
     $cacheKey  = "{0}_{1}" -f $Mode, $toCode
     $cachedUrl = if ($urlCache.ContainsKey($cacheKey)) { $urlCache[$cacheKey] } else { '' }
@@ -239,11 +250,6 @@ foreach ($toCode in $groupOrder) {
 
         Write-Host ''
         Write-Host ("  [$correl] search: $searchTerm") -ForegroundColor White
-
-        if ($dryFlag) {
-            Write-Host '    [DryRun] skip' -ForegroundColor DarkGray
-            $cntSkip++; continue
-        }
 
         $snapPath = Join-Path $snapDir "$correl.png"
 

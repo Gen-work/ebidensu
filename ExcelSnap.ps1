@@ -357,6 +357,3 @@ finally {
 
 Write-Host ""
 Write-Host "===== Phase 2 Done =====" -ForegroundColor Green
-`
-``n
---- File: Export-DailyPatch.ps1 ---
