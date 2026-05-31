@@ -99,6 +99,23 @@ foreach ($f in $files) {
     }
 }
 
+# ---- Pack-LlmContext paste residue ----
+# A truncated context paste leaves a "`" / "``n" / "--- File: X ---" tail
+# that breaks the PowerShell parser. Pack-LlmContext.ps1 itself legitimately
+# emits the separator, so skip it.
+foreach ($f in $files) {
+    if ($f.Name -eq 'Pack-LlmContext.ps1') { continue }
+    if ($f.Extension.ToLower() -ne '.ps1' -and $f.Extension.ToLower() -ne '.psd1') { continue }
+    $rel  = $f.FullName.Substring($Root.Length).TrimStart('\','/')
+    $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($f.FullName))
+    if ($text -match '(?m)^\s*--- File:') {
+        $errors.Add(("{0}: contains a '--- File:' Pack-LlmContext separator (truncated paste)" -f $rel))
+    }
+    if ($text -match '(?m)^``n\s*$') {
+        $errors.Add(("{0}: contains a stray '``n' Pack-LlmContext marker (truncated paste)" -f $rel))
+    }
+}
+
 # ---- self-test: key Japanese labels must construct cleanly ----
 Write-Host '[*] Label self-test (ProjectLabels.ps1):' -ForegroundColor Cyan
 $labelsOk = $true

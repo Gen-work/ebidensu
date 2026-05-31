@@ -145,6 +145,3 @@ if (-not [string]::IsNullOrWhiteSpace($Path)) {
     Write-Host ("Cropping (batch): {0}  [{1} px]" -f $Dir, $CropPx)
     Invoke-CropDir -dir $Dir -cropPx $CropPx -Recurse:$Recurse -Force:$Force
 }
-`
-``n
---- File: ExcelHelpers.ps1 ---
