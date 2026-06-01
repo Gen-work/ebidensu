@@ -190,8 +190,10 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 - **Align full branching** needs two domain facts: which FROM_sys/TO_sys literals
   mean "Host" (set `Align.HostSystemTypes` in VerifyConfig), and confirmation of
   the per-migration-type sheet sets in `AlignCompare.ps1`. Until then Align uses
-  the Host->Open scope (3 receive sheets) and warns.
-- **Align -Apply** syncs values only (formats are TODO) and is experimental.
+  the send-result sheets (send[2], send[3]) and warns.
+- **Align recv sheets are never synced** — recv sheets hold operator-captured evidence;
+  only the host-team-managed send sheets are fetched from J4.
+- **Align -Apply** syncs values + formats (Range.Copy) and is experimental.
 - JenkinsSnap.ps1 matches the known-good repo logic (real Common.ps1 helpers); the
   earlier `Get-EdgeHwnd`/`Capture-Window` phantom-function risk is resolved.
 
