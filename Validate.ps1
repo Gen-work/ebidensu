@@ -198,11 +198,13 @@ $detailRows = @()
 
 foreach ($g in $groups) {
     $f       = $g.Group | Select-Object -First 1
-    $exName  = [string]$f.Excel_NAME
+    $exName      = [string]$f.Excel_NAME
+    $exPrefix    = if ($f.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$f.Excel_Prefix } else { '' }
+    $fullStem    = Get-ExcelFullStem -Prefix $exPrefix -Name $exName
     $jobName = [string]$f.JOB_NAME
     $cidList = @($g.Group | ForEach-Object { [string]$_.Correl_ID_S } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
-    $cloneReady = $null -ne (Find-WorkbookByExcelName -Dir $evDir -ExcelName $exName)
+    $cloneReady = $null -ne (Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem)
 
     $excelOk        = Has-Image 'excel' $jobName
     $giftHmOk       = $true

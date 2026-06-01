@@ -190,10 +190,12 @@ $cntFail = 0
 try {
     foreach ($g in $groups) {
         $first = $g.Group | Select-Object -First 1
-        $excelName = [string]$first.Excel_NAME
+        $excelName   = [string]$first.Excel_NAME
         if ([string]::IsNullOrWhiteSpace($excelName)) { continue }
+        $excelPrefix = if ($first.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$first.Excel_Prefix } else { '' }
+        $fullStem    = Get-ExcelFullStem -Prefix $excelPrefix -Name $excelName
 
-        $wbPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $excelName
+        $wbPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem
         if ($null -eq $wbPath) {
             Write-Host ("[SKIP] {0}: workbook missing" -f $excelName) -ForegroundColor Yellow
             $cntSkip++; continue

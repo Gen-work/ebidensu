@@ -327,11 +327,15 @@ if ($selectedRows.Count -eq 0) {
     return
 }
 
-$excelNames = New-Object System.Collections.Generic.List[string]
+$excelNames  = New-Object System.Collections.Generic.List[string]
+$prefixByName = @{}
 foreach ($r in $selectedRows) {
     $name = [string]$r.Excel_NAME
     if ([string]::IsNullOrWhiteSpace($name)) { continue }
-    if (-not $excelNames.Contains($name)) { $excelNames.Add($name) }
+    if (-not $excelNames.Contains($name)) {
+        $excelNames.Add($name)
+        $prefixByName[$name] = if ($r.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$r.Excel_Prefix } else { '' }
+    }
 }
 
 Write-Host ''
@@ -382,7 +386,8 @@ try {
             continue
         }
 
-        $file = Get-EvidencePath $EvidenceDir $name
+        $fullStem = Get-ExcelFullStem -Prefix ($prefixByName[$name]) -Name $name
+        $file = Get-EvidencePath $EvidenceDir $fullStem
         if (-not (Test-Path -LiteralPath $file)) {
             Write-Host ("[{0}/{1}] MISSING: {2}" -f ($idx + 1), $excelNames.Count, $file) -ForegroundColor Yellow
             $cntMissing++

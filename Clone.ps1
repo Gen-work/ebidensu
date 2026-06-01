@@ -9,8 +9,11 @@
 #        Or override with -BizCodes.)
 #    2. Fallback to template: <WorkDir>\template_<BizCode>.xlsx
 #    3. Universal fallback : <WorkDir>\template.xlsx
-#    Then copy -> <WorkDir>\evidence\<source filename> when copied from SourceDir
-#    (for example J4..._<Excel_NAME>.xlsx), or <Excel_NAME>.xlsx for templates
+#    Dest filename:
+#      From SourceDir   -> source filename preserved (e.g. J4..._LJRVWD64.xlsx)
+#      Full-stem name   -> <full stem>.xlsx  (J4..._LJRVWD64.xlsx) -- preferred for J4 upload
+#      Suffix form (_X) -> X.xlsx  (leading _ stripped)
+#      Short stem       -> <stem>.xlsx  (legacy)
 #
 #  Skip if dest exists, unless -Force.
 #
@@ -129,8 +132,10 @@ foreach ($g in $groups) {
         Write-Host '[SKIP] empty Excel_NAME row group' -ForegroundColor DarkGray
         continue
     }
+    $excelPrefix = if ($first.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$first.Excel_Prefix } else { '' }
+    $fullStem    = Get-ExcelFullStem -Prefix $excelPrefix -Name $excelName
 
-    $existingPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $excelName
+    $existingPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem
     if ($existingPath -and -not $forceFlag) {
         Write-Host ("[SKIP] {0}  (already in evidence: {1})" -f $excelName, (Split-Path $existingPath -Leaf)) -ForegroundColor DarkGray
         $cntSkip++
@@ -171,15 +176,23 @@ foreach ($g in $groups) {
             $dir = $sd.Dir
             $tag = $sd.Tag
 
-            # a) exact name
-            $exact = Join-Path $dir ("{0}.xlsx" -f $excelName)
+            # a) exact name: try full stem first (J4..._LJRVWD64.xlsx), then short name
+            $exact = Join-Path $dir ("{0}.xlsx" -f $fullStem)
             if (Test-Path -LiteralPath $exact) {
                 $foundPath = $exact
                 $foundFrom = $tag
                 break
             }
+            if ($fullStem -ne $excelName) {
+                $exact2 = Join-Path $dir ("{0}.xlsx" -f $excelName)
+                if (Test-Path -LiteralPath $exact2) {
+                    $foundPath = $exact2
+                    $foundFrom = $tag
+                    break
+                }
+            }
 
-            # b) suffix wildcard *<name>.xlsx
+            # b) suffix wildcard *<short name>.xlsx  (broad discovery)
             $hits = @(Get-ChildItem -LiteralPath $dir -Filter ("*{0}.xlsx" -f $excelName) -File -ErrorAction SilentlyContinue)
             if ($hits.Count -ge 1) {
                 $best = $hits | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -220,7 +233,7 @@ foreach ($g in $groups) {
     }
 
     try {
-        $destLeaf = if ($foundFrom -like 'source*') { Split-Path $foundPath -Leaf } else { ("{0}.xlsx" -f $excelName) }
+        $destLeaf = if ($foundFrom -like 'source*') { Split-Path $foundPath -Leaf } else { Get-ExcelDestLeaf $fullStem }
         $destPath = if ($existingPath) { $existingPath } else { Join-Path $evDir $destLeaf }
         Copy-Item -LiteralPath $foundPath -Destination $destPath -Force
         if ($foundFrom -like 'source*') {
@@ -251,7 +264,7 @@ Write-Host ("  Missing source : {0}" -f $cntMiss) -ForegroundColor $(if ($cntMis
 if ($cntMiss -gt 0) {
     Write-Host ''
     Write-Host 'Missing Excel(s) need either:' -ForegroundColor Yellow
-    Write-Host '  - <SourceDir>\<bizcode>\<Excel_NAME>.xlsx, or' -ForegroundColor DarkGray
+    Write-Host '  - <SourceDir>\<bizcode>\*<Excel_NAME>.xlsx  (full J4 name or exact stem), or' -ForegroundColor DarkGray
     Write-Host '  - <WorkDir>\template_<bizcode>.xlsx, or' -ForegroundColor DarkGray
     Write-Host '  - <WorkDir>\template.xlsx (universal fallback)' -ForegroundColor DarkGray
 }
