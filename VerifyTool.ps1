@@ -97,7 +97,8 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceDf'
     Write-Host '  .\VerifyTool.ps1 -Phase MarkGift'
     Write-Host '  .\VerifyTool.ps1 -Phase MarkGift -TargetIds KJRVWD64 -Force'
-    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfix'
+    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfix             # red rect + GfixLog highlight (auto)'
+    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog          # standalone re-run highlight only'
     Write-Host '  .\VerifyTool.ps1 -Phase MarkDf'
     Write-Host '  .\VerifyTool.ps1 -Phase ProbeShapes -ProbeFile <evidence.xlsx>'
     Write-Host '  .\VerifyTool.ps1 -Phase RepairMapping'
@@ -334,7 +335,13 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    t=TargetIds    -> limit to specific Correl_ID_S / JOB_NAME / Excel_NAME',
             '    f=Force        -> re-run rows already marked done'
         ) }
-        '^Mark(Gift|Gfix|Df)$' { @(
+        '^MarkGfix$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> overwrite existing marks',
+            '  NOTE: MarkGfixLog (yellow highlight) runs automatically after red-rectangle marking.'
+        ) }
+        '^Mark(Gift|Df)$' { @(
             '  Phase params:',
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> overwrite existing marks'
@@ -879,6 +886,25 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         Write-Host ("[RUN] Mark -Mode {0}" -f $mode) -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
+
+        # MarkGfix の後に GfixLog ハイライトを自動実行
+        if ($PhaseKey -eq 'MarkGfix') {
+            Write-Host ''
+            Write-Host '[RUN] MarkGfixLog (auto-follow)' -ForegroundColor Green
+            $pLog   = Resolve-ToolPath $Config 'MarkGfixLog'
+            $logArgs = $base.Clone()
+            $logArgs['ExcelHelpersScript'] = $eh
+            if ($Config.GfixLog) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.LogAnchor))      { $logArgs['LogAnchor']         = [string]$Config.GfixLog.LogAnchor }
+                if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.CommandPattern))  { $logArgs['CommandPattern']    = [string]$Config.GfixLog.CommandPattern }
+                if ($Config.GfixLog.HighlightColor)    { $logArgs['HighlightColor']    = [long]$Config.GfixLog.HighlightColor }
+                if ($Config.GfixLog.HighlightColStart) { $logArgs['HighlightColStart'] = [int]$Config.GfixLog.HighlightColStart }
+                if ($Config.GfixLog.HighlightColEnd)   { $logArgs['HighlightColEnd']   = [int]$Config.GfixLog.HighlightColEnd }
+            }
+            if ($State.TargetIds.Count -gt 0) { $logArgs['TargetIds'] = $State.TargetIds }
+            if ($State.Force) { $logArgs['Force'] = $true }
+            & $pLog @logArgs
+        }
         return
     }
 

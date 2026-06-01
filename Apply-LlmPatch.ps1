@@ -55,6 +55,11 @@ function Unwrap-MarkdownFence([string]$s) {
 
 $clip = Unwrap-MarkdownFence $clip
 
+# --- Normalize nested XML format ---
+# Converts: <patch><file name="X.ps1"><search>...</search><replace>...</replace></file></patch>
+# Into:     <patch file="X.ps1"><search>...</search><replace>...</replace></patch>
+$clip = $clip -replace '(?s)<file\s+name="([^"]+)"[^>]*>\s*(<search>.*?</search>)\s*(<replace>.*?</replace>)\s*</file>', '<patch file="$1">$2$3</patch>'
+
 # --- Git unified diff mode ---
 # ============================================================
 # Git差分適用のロジック改善（段階的フォールバック・フォールトトレラント対応）
