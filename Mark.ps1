@@ -247,17 +247,36 @@ try {
 
                     $idx = 0
                     foreach ($b in $boxes) {
-                        $ox = 0.0; $oy = 0.0; $bw = 100.0; $bh = 20.0; $lw = $LineWeight
-                        try { $ox = [double]$b.OffsetX } catch {}
-                        try { $oy = [double]$b.OffsetY } catch {}
-                        try { $bw = [double]$b.Width } catch {}
-                        try { $bh = [double]$b.Height } catch {}
+                        $lw = $LineWeight
                         if ($b.ContainsKey('LineWeight')) {
                             try { $lw = [double]$b.LineWeight } catch {}
                         }
 
-                        $left = $picLeft + $ox
-                        $top  = $picTop  + $oy
+                        $left = 0.0; $top = 0.0; $bw = 100.0; $bh = 20.0
+                        if ($b.ContainsKey('CellCols')) {
+                            # Cell-range positioning: place rect relative to sheet
+                            # columns/rows rather than the picture's pixel corner.
+                            $rowsFromBot = 2
+                            if ($b.ContainsKey('RowsFromBottom')) {
+                                try { $rowsFromBot = [int]$b.RowsFromBottom } catch {}
+                            }
+                            $bottomRow = Get-PictureBottomRow $ws $s
+                            $topRow    = [Math]::Max(1, $bottomRow - $rowsFromBot + 1)
+                            $rect = Get-CellRangeRect $ws ([string]$b.CellCols) $topRow $bottomRow
+                            $left = $rect.Left
+                            $top  = $rect.Top
+                            $bw   = $rect.Width
+                            $bh   = $rect.Height
+                        } else {
+                            $ox = 0.0; $oy = 0.0
+                            try { $ox = [double]$b.OffsetX } catch {}
+                            try { $oy = [double]$b.OffsetY } catch {}
+                            try { $bw = [double]$b.Width } catch {}
+                            try { $bh = [double]$b.Height } catch {}
+                            $left = $picLeft + $ox
+                            $top  = $picTop  + $oy
+                        }
+
                         $name = ("{0}{1}_{2}_{3}" -f $NamePrefix, $folder, $cid, $idx)
 
                         try {

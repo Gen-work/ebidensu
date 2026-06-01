@@ -170,6 +170,40 @@ function Get-NextAnchorRow($ws, $shape, [int]$blankRows = 1, [int]$maxScanRows =
     return ($rowAfter + [Math]::Max(0, $blankRows))
 }
 
+function Get-PictureBottomRow($ws, $shape, [int]$maxScanRows = 2000) {
+    <#
+    Returns the last row index that the shape's bottom edge falls within.
+    Get-RowAtOrBelow returns the first row R where Top(R) >= picture bottom,
+    meaning R is the row AFTER the picture; the last occupied row is R - 1.
+    #>
+    if ($null -eq $shape) { return 1 }
+    $bottom = 0.0
+    try { $bottom = [double]($shape.Top + $shape.Height) } catch { return 1 }
+    $startScan = 1
+    try { $startScan = [Math]::Max(1, [int]([Math]::Floor([double]$shape.Top / 15.0))) } catch {}
+    $rowAfter = Get-RowAtOrBelow $ws $bottom $startScan $maxScanRows
+    return [Math]::Max(1, $rowAfter - 1)
+}
+
+function Get-CellRangeRect($ws, [string]$colRange, [int]$startRow, [int]$endRow) {
+    <#
+    Returns a hashtable { Left; Top; Width; Height } (all in points) for the
+    cell area spanning $colRange (e.g. "AW:BC") and rows $startRow..$endRow.
+    Used by Mark.ps1 to place DF red rectangles by cell address rather than
+    pixel offsets from the picture corner.
+    #>
+    $parts    = $colRange -split ':'
+    $colStart = $parts[0].Trim()
+    $colEnd   = if ($parts.Count -gt 1) { $parts[1].Trim() } else { $colStart }
+
+    $left  = [double]$ws.Columns($colStart).Left
+    $right = [double]$ws.Columns($colEnd).Left + [double]$ws.Columns($colEnd).Width
+    $top   = [double]$ws.Rows($startRow).Top
+    $bot   = [double]$ws.Rows($endRow).Top + [double]$ws.Rows($endRow).Height
+
+    return @{ Left = $left; Top = $top; Width = ($right - $left); Height = ($bot - $top) }
+}
+
 # ── Inserts ─────────────────────────────────────────────────
 
 function Insert-PictureSendToBack($ws, [int]$row, [int]$col, [string]$imgPath) {
