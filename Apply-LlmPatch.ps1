@@ -56,6 +56,10 @@ function Unwrap-MarkdownFence([string]$s) {
 $clip = Unwrap-MarkdownFence $clip
 
 # --- Git unified diff mode ---
+# ============================================================
+# Git差分適用のロジック改善（段階的フォールバック・フォールトトレラント対応）
+# 関数: Invoke-GitDiffPatch
+# ============================================================
 function Invoke-GitDiffPatch([string]$PatchText) {
     $base = $PSScriptRoot
     if ([string]::IsNullOrWhiteSpace($base)) {
@@ -64,7 +68,7 @@ function Invoke-GitDiffPatch([string]$PatchText) {
 
     $git = Get-Command git -ErrorAction SilentlyContinue
     if ($null -eq $git) {
-        throw "git コマンドが見つかりません。Gitをインストールするか、XMLパッチモードを使用してください。"
+        throw "git コマンドが見つかりません。"
     }
 
     $repoRoot = (& $git.Source -C $base rev-parse --show-toplevel 2>$null)
@@ -76,33 +80,60 @@ function Invoke-GitDiffPatch([string]$PatchText) {
     $tmp = Join-Path $repoRoot (".llm_apply_patch_{0}.diff" -f ([guid]::NewGuid().ToString('N')))
 
     try {
-        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        # フロントエンドのコピーで欠落しがちな末尾の改行（EOFエラーの原因）を強制補完
         if (-not $PatchText.EndsWith("`n")) {
             $PatchText += "`n"
         }
+
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($tmp, $PatchText, $utf8NoBom)
 
-        Write-Host "[MODE] Gitユニファイド差分" -ForegroundColor Cyan
+        Write-Host "[MODE] Gitユニファイド差分 (Robust Mode)" -ForegroundColor Cyan
         Write-Host ("  repo: {0}" -f $repoRoot) -ForegroundColor DarkGray
-        Write-Host "[CHECK] git apply --check" -ForegroundColor Cyan
 
-        & $git.Source -C $repoRoot apply --check --ignore-whitespace --recount $tmp
-        if ($LASTEXITCODE -ne 0) {
-            throw "git apply --check に失敗しました。ファイルは変更されていません。"
+        # コンテキストの一致要件を徐々に緩和するフォールバック戦略
+        # -C<n>: コンテキスト行数をn行に減らす (デフォルトは3)
+        $strategies = @(
+            @{ Name = "Strict (3 lines)";   Args = @("--recount", "--ignore-whitespace") },
+            @{ Name = "Relaxed (2 lines)";  Args = @("--recount", "--ignore-whitespace", "-C2") },
+            @{ Name = "Permissive (1 line)"; Args = @("--recount", "--ignore-whitespace", "-C1") }
+        )
+
+        $success = $false
+
+        foreach ($strategy in $strategies) {
+            Write-Host ("[CHECK] 戦略テスト: {0}" -f $strategy.Name) -ForegroundColor Cyan
+            $checkArgs = @("apply", "--check") + $strategy.Args + @($tmp)
+            
+            # エラー出力を抑制して事前チェック
+            & $git.Source -C $repoRoot $checkArgs 2>$null
+            
+            if ($LASTEXITCODE -eq 0) {
+                if ($DryRun) {
+                    Write-Host "[DRY-RUN] チェック通過。適用はスキップされました。" -ForegroundColor Cyan
+                    $success = $true
+                    break
+                }
+
+                Write-Host ("[APPLY] 戦略を採用: {0}" -f $strategy.Name) -ForegroundColor Cyan
+                $applyArgs = @("apply") + $strategy.Args + @($tmp)
+                & $git.Source -C $repoRoot $applyArgs
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "[SUCCESS] パッチが適用されました。`git diff` でレビューしてください。" -ForegroundColor Green
+                    $success = $true
+                    break
+                }
+            } else {
+                Write-Host ("  -> マッチ失敗") -ForegroundColor DarkGray
+            }
         }
 
-        if ($DryRun) {
-            Write-Host "[DRY-RUN] Git差分パッチのチェックOK。適用はスキップされました。" -ForegroundColor Cyan
-            return
+        if (-not $success) {
+            # 最後の手段: Git同梱の GNU patch コマンドを利用して fuzz（曖昧マッチ）を試みるかどうかのヒントを提示
+            throw "すべてのコンテキストマッチ戦略が失敗しました。AIの出力が現在のソースコードから乖離しすぎています。"
         }
 
-        Write-Host "[APPLY] git apply" -ForegroundColor Cyan
-        & $git.Source -C $repoRoot apply --ignore-whitespace --recount $tmp
-        if ($LASTEXITCODE -ne 0) {
-            throw "check後の git apply に失敗しました。`git status` や `git diff` を確認してください。"
-        }
-
-        Write-Host "[SUCCESS] Git差分パッチが適用されました。`git diff` でレビューしてください。" -ForegroundColor Green
     } finally {
         if (Test-Path -LiteralPath $tmp) {
             Remove-Item -LiteralPath $tmp -Force
