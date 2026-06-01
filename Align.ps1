@@ -16,9 +16,8 @@
 #  falls back to the Host->Open (3 receive) scope with a warning.
 #
 #  Default is a READ-ONLY DryRun (reports which sheets would sync). -Apply
-#  performs a VALUES sync (clear work sheet contents, copy J4 UsedRange
-#  values). Cell formatting is NOT synced yet (spec 6: format diffs = TODO).
-#  -Apply is EXPERIMENTAL and untested on real Excel -- run it on a copy.
+#  performs a full sync (clear work sheet contents, copy J4 UsedRange values
+#  and formats via Range.Copy). -Apply is EXPERIMENTAL -- run it on a copy.
 #
 #  Usage:
 #    .\Align.ps1 -WorkDir C:\work\proj -J4BaseDir \\fs\...\40.J4\07.GPCS
@@ -83,7 +82,7 @@ $groups = $workRows | Group-Object Excel_NAME | Sort-Object Name
 
 Write-Host ''
 Write-Host '===== Align / Precheck =====' -ForegroundColor Green
-Write-Host ("  Mode      : {0}" -f $(if ($applyFlag) { 'APPLY (values sync)' } else { 'DryRun (report only)' }))
+Write-Host ("  Mode      : {0}" -f $(if ($applyFlag) { 'APPLY (values + formats sync)' } else { 'DryRun (report only)' }))
 Write-Host ("  J4BaseDir : {0}" -f $J4BaseDir)
 Write-Host ("  HostTypes : {0}" -f $(if (@($HostSystemTypes).Count) { ($HostSystemTypes -join ',') } else { '(none configured)' }))
 Write-Host ("  Groups    : {0}" -f $groups.Count)
@@ -121,10 +120,11 @@ function Read-SheetGrid($ws) {
 function Sync-SheetValues($workWs, $j4Ws) {
     $used = $j4Ws.UsedRange
     $r0 = [int]$used.Row; $c0 = [int]$used.Column
-    $rows = [int]$used.Rows.Count; $cols = [int]$used.Columns.Count
-    try { $workWs.UsedRange.ClearContents() | Out-Null } catch {}
-    $dst = $workWs.Range($workWs.Cells.Item($r0, $c0), $workWs.Cells.Item($r0 + $rows - 1, $c0 + $cols - 1))
-    $dst.Value2 = $used.Value2
+    try { $workWs.UsedRange.Clear() | Out-Null } catch {}
+    # Use Range.Copy(destination) instead of Value2 = Value2 to avoid PowerShell 5.1
+    # COM marshaling failure (Object[,] -> String cast) for single-row 1xN ranges.
+    # This also syncs formats, making the "formats TODO" limitation a non-issue.
+    $used.Copy($workWs.Cells.Item($r0, $c0))
 }
 
 $excel = New-ExcelApp
