@@ -135,8 +135,10 @@ $cntDiff = 0; $cntSame = 0; $cntSynced = 0; $cntSkip = 0
 try {
     foreach ($g in $groups) {
         $first = $g.Group | Select-Object -First 1
-        $excelName = [string]$first.Excel_NAME
+        $excelName   = [string]$first.Excel_NAME
         if ([string]::IsNullOrWhiteSpace($excelName)) { continue }
+        $excelPrefix = if ($first.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$first.Excel_Prefix } else { '' }
+        $fullStem    = Get-ExcelFullStem -Prefix $excelPrefix -Name $excelName
         $fromSys = ''; $toSys = ''
         if ($first.PSObject.Properties.Name -contains 'FROM_sys') { $fromSys = [string]$first.FROM_sys }
         if ($first.PSObject.Properties.Name -contains 'TO_sys')   { $toSys   = [string]$first.TO_sys }
@@ -144,9 +146,9 @@ try {
         Write-Host ''
         Write-Host ("----- {0} -----" -f $excelName) -ForegroundColor Cyan
 
-        $workPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $excelName
-        if ($null -eq $workPath) { Write-Host ("  [SKIP] work workbook missing (*{0}.xlsx)" -f $excelName) -ForegroundColor Yellow; $cntSkip++; continue }
-        $j4Path = Find-J4Workbook $excelName
+        $workPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem
+        if ($null -eq $workPath) { Write-Host ("  [SKIP] work workbook missing ({0}.xlsx)" -f $fullStem) -ForegroundColor Yellow; $cntSkip++; continue }
+        $j4Path = Find-J4Workbook $fullStem
         if ($null -eq $j4Path) { Write-Host ("  [SKIP] J4 baseline not found (*{0}.xlsx)" -f $excelName) -ForegroundColor Yellow; $cntSkip++; continue }
         Write-Host ("  work: {0}" -f (Split-Path $workPath -Leaf)) -ForegroundColor DarkGray
         Write-Host ("  J4  : {0}" -f (Split-Path $j4Path -Leaf)) -ForegroundColor DarkGray

@@ -1,38 +1,53 @@
 # ============================================================
 #  WorkbookResolver.ps1
 #
-#  Dot-source helper for resolving evidence/J4 workbook filenames from
-#  mapping Excel_NAME values.  ASCII source -- no raw Japanese.
+#  Dot-source helper for resolving evidence/J4 workbook filenames.
+#  ASCII source -- no raw Japanese literals.
 #
-#  Excel_NAME supports three forms:
-#    Full stem   : J4<title>(REQ-000xxxxx_GIFT<suffix>)_LJRVWD64
-#                  -> exact match <full>.xlsx; template output also uses full name
-#    Suffix form : _LJRVWD64   (leading _ = suffix-only shorthand)
-#                  -> strips leading _ for wildcard; template output -> LJRVWD64.xlsx
-#    Short stem  : LJRVWD64    (legacy/plain, existing behaviour unchanged)
-#                  -> exact LJRVWD64.xlsx or wildcard *_LJRVWD64.xlsx
+#  Usage pattern in callers:
+#    $fullStem = Get-ExcelFullStem -Prefix ([string]$first.Excel_Prefix) -Name ([string]$first.Excel_NAME)
+#    $wbPath   = Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem
+#    $destLeaf = Get-ExcelDestLeaf $fullStem
+#
+#  When Excel_Prefix is empty the full stem equals Excel_NAME (legacy behaviour).
 # ============================================================
 
+# Combines the J4 prefix column with the short name column.
+#   Excel_Prefix = 'J4<title>(REQ-000xxxxx_GIFT<suffix>)'  (or '')
+#   Excel_NAME   = 'LJRVWD64'
+#   -> 'J4<title>(REQ-000xxxxx_GIFT<suffix>)_LJRVWD64'    (when prefix set)
+#   -> 'LJRVWD64'                                          (when prefix empty)
+function Get-ExcelFullStem {
+    param([string]$Prefix, [string]$Name)
+    $n = [System.IO.Path]::GetFileNameWithoutExtension($Name)
+    if ([string]::IsNullOrWhiteSpace($Prefix)) { return $n }
+    return "{0}_{1}" -f $Prefix.TrimEnd('_'), $n
+}
+
+# Returns the filename to create when cloning from a template.
+#   Get-ExcelDestLeaf 'J4..._LJRVWD64'  -> 'J4..._LJRVWD64.xlsx'
+#   Get-ExcelDestLeaf 'LJRVWD64'        -> 'LJRVWD64.xlsx'
+function Get-ExcelDestLeaf {
+    param([string]$FullStem)
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($FullStem)
+    return "{0}.xlsx" -f $stem
+}
+
+# Finds the evidence/J4 workbook file for a given stem (full or short).
+# Search order:
+#   1. Exact match: <Dir>\<FullStem>.xlsx
+#   2. Wildcard:    <Dir>\*_<FullStem>.xlsx  (handles any extra prefix on disk)
+#   3. Wildcard:    <Dir>\*<FullStem>.xlsx
+# Returns newest LastWriteTime when multiple wildcard hits.
 function Find-WorkbookByExcelName([string]$Dir, [string]$ExcelName, [switch]$Recurse) {
     if ([string]::IsNullOrWhiteSpace($Dir) -or [string]::IsNullOrWhiteSpace($ExcelName) -or -not (Test-Path -LiteralPath $Dir)) { return $null }
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($ExcelName)
     $leaf = if ($ExcelName -match '\.xlsx$') { $ExcelName } else { ("{0}.xlsx" -f $stem) }
-
-    # 1) Exact match (works for full-name and short-stem forms)
     $exact = Join-Path $Dir $leaf
     if (Test-Path -LiteralPath $exact) { return (Resolve-Path -LiteralPath $exact).Path }
 
-    # 2) For suffix form (_XYZ), strip leading _ and try exact without prefix
-    $searchStem = if ($stem -match '^_(.+)$') { $Matches[1] } else { $stem }
-    if ($searchStem -ne $stem) {
-        $exact2 = Join-Path $Dir ("{0}.xlsx" -f $searchStem)
-        if (Test-Path -LiteralPath $exact2) { return (Resolve-Path -LiteralPath $exact2).Path }
-    }
-
-    # 3) Wildcard: *_<searchStem>.xlsx then *<searchStem>.xlsx
-    #    Uses searchStem (leading _ already stripped) to avoid double __ in the pattern.
     $hits = @()
-    foreach ($pattern in @(("*_{0}.xlsx" -f $searchStem), ("*{0}.xlsx" -f $searchStem))) {
+    foreach ($pattern in @(("*_{0}.xlsx" -f $stem), ("*{0}.xlsx" -f $stem))) {
         if ($Recurse.IsPresent) {
             $hits += @(Get-ChildItem -LiteralPath $Dir -Filter $pattern -File -Recurse -ErrorAction SilentlyContinue)
         } else {
@@ -42,15 +57,4 @@ function Find-WorkbookByExcelName([string]$Dir, [string]$ExcelName, [switch]$Rec
     $hits = @($hits | Sort-Object FullName -Unique)
     if ($hits.Count -eq 0) { return $null }
     return ($hits | Sort-Object @{Expression='LastWriteTime';Descending=$true}, FullName | Select-Object -First 1).FullName
-}
-
-# Returns the filename to create when cloning a template.
-#   Full stem  (no leading _) : "<full stem>.xlsx"  (includes any J4 prefix)
-#   Suffix form (_LJRVWD64)   : "LJRVWD64.xlsx"     (leading _ stripped)
-#   Short stem  (LJRVWD64)    : "LJRVWD64.xlsx"     (unchanged)
-function Get-ExcelDestLeaf {
-    param([string]$ExcelName)
-    $stem = [System.IO.Path]::GetFileNameWithoutExtension($ExcelName)
-    if ($stem -match '^_(.+)$') { $stem = $Matches[1] }
-    return "{0}.xlsx" -f $stem
 }

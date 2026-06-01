@@ -158,8 +158,10 @@ $cntDone = 0; $cntSkip = 0; $cntFail = 0
 try {
     foreach ($g in $groups) {
         $first = $g.Group | Select-Object -First 1
-        $excelName = [string]$first.Excel_NAME
+        $excelName   = [string]$first.Excel_NAME
         if ([string]::IsNullOrWhiteSpace($excelName)) { continue }
+        $excelPrefix = if ($first.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$first.Excel_Prefix } else { '' }
+        $fullStem    = Get-ExcelFullStem -Prefix $excelPrefix -Name $excelName
         $jobName = [string]$first.JOB_NAME
         $toCode  = [string]$first.TO_code
 
@@ -168,7 +170,7 @@ try {
         Write-Host ("  {0}   ({1} correl id)" -f $excelName, $g.Count) -ForegroundColor White
         Write-Host ("=" * 72) -ForegroundColor White
 
-        $wbPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $excelName
+        $wbPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem
         if ($null -eq $wbPath) {
             Write-Host ("  [SKIP] workbook missing: {0}" -f $wbPath) -ForegroundColor Yellow
             $cntSkip++; continue

@@ -25,8 +25,12 @@
 # Status columns every mapping should carry. Identity/data columns
 # (Correl_ID_*, JOB_NAME, Excel_NAME, FROM_*, TO_*, IF, Amount, ...) are
 # produced by Generate-HostOpenMapping.ps1 and are NEVER defaulted here.
+# Excel_Prefix is the J4 filename prefix entered by the operator
+# (e.g. J4<title>(REQ-000xxxxx_GIFT<suffix>)).  Full evidence filename =
+# "{Excel_Prefix}_{Excel_NAME}.xlsx" when prefix is set, else "{Excel_NAME}.xlsx".
 function Get-MappingStatusColumns {
     return @(
+        @{ Name = 'Excel_Prefix';         Default = '' },
         @{ Name = 'Excel_snap';           Default = '0' },
         @{ Name = 'GIFT_HM_snap';         Default = '0' },
         @{ Name = 'GIFT_MQ_snap';         Default = '0' },

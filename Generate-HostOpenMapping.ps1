@@ -434,6 +434,7 @@ $excel = New-Object -ComObject Excel.Application
                 Correl_ID_S           = $correlidS
                 JOB_NAME              = $jn
                 Excel_NAME            = $excelName
+                Excel_Prefix          = ''
                 FROM_sys              = $from_sys
                 FROM_code             = $from_code
                 TO_sys                = $to_sys
