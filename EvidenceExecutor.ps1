@@ -97,7 +97,7 @@ function Invoke-EvidencePlan {
                 }
             }
             'log' {
-                $res = Find-GfixLogForCorrel -LogDir $LogDir -ToCode ([string]$op.ToCode) -CorrelIdS ([string]$op.CorrelIdS)
+                $res = Find-GfixLogForCorrel -LogDir $LogDir -ToCode ([string]$op.ToCode) -CorrelIdS ([string]$op.CorrelIdS) -SsCode ([string]$op.SsCode)
                 if (-not [string]::IsNullOrWhiteSpace([string]$res.Warning)) { $warnings.Add([string]$res.Warning) }
                 if (-not [string]::IsNullOrWhiteSpace([string]$res.Error)) {
                     $missingRequired.Add([pscustomobject]@{ CorrelIdS = [string]$op.CorrelIdS; Folder = 'GFIX_log'; Path = [string]$res.Error })

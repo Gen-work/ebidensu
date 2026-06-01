@@ -119,14 +119,14 @@ function Read-SheetGrid($ws) {
     return @{ Rows = $rows; Cols = $cols; Flat = $flat.ToArray() }
 }
 
-function Sync-Sheet($workWb, $workWs, $j4Ws) {
-    $sheetName = $workWs.Name
-    $idx       = $workWs.Index
-    $workWs.Delete()
-    $insertAfter = $workWb.Sheets.Item([Math]::Min($idx, $workWb.Sheets.Count))
-    $j4Ws.Copy([System.Reflection.Missing]::Value, $insertAfter)
-    $newWs = $workWb.ActiveSheet
-    if ($newWs.Name -ne $sheetName) { $newWs.Name = $sheetName }
+function Sync-SheetValues($workWs, $j4Ws) {
+    $used = $j4Ws.UsedRange
+    $r0 = [int]$used.Row; $c0 = [int]$used.Column
+    try { $workWs.UsedRange.Clear() | Out-Null } catch {}
+    # Use Range.Copy(destination) instead of Value2 = Value2 to avoid PowerShell 5.1
+    # COM marshaling failure (Object[,] -> String cast) for single-row 1xN ranges.
+    # This also syncs formats, making the "formats TODO" limitation a non-issue.
+    $used.Copy($workWs.Cells.Item($r0, $c0))
 }
 
 $excel = New-ExcelApp
@@ -184,8 +184,8 @@ try {
                     Write-Host ("    [DIFF] {0}  ({1})" -f $sheetName, $cmp.Reason) -ForegroundColor Yellow
                     $cntDiff++
                     if ($applyFlag) {
-                        Sync-Sheet $workWb $wsW $wsJ
-                        Write-Host ("    [SYNC] {0} <- J4 (full copy: values + formats + shapes + pictures)" -f $sheetName) -ForegroundColor Green
+                        Sync-SheetValues $wsW $wsJ
+                        Write-Host ("    [SYNC] {0} <- J4 (values; formats TODO)" -f $sheetName) -ForegroundColor Green
                         $changed = $true; $cntSynced++
                     }
                 }

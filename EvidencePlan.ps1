@@ -63,6 +63,15 @@ function New-LogOp {
     @{ Kind='log'; Col=2; CorrelIdS=$CorrelIdS; ToCode=$ToCode; Required=$Required; Section='hm_log' }
 }
 
+function Resolve-GfixToCodeForCorrel {
+    param([string]$CorrelIdS, [string]$DefaultToCode, [hashtable]$CorrelToCode = $null)
+    if ($null -ne $CorrelToCode -and $CorrelToCode.ContainsKey($CorrelIdS)) {
+        $mapped = [string]$CorrelToCode[$CorrelIdS]
+        if (-not [string]::IsNullOrWhiteSpace($mapped)) { return $mapped }
+    }
+    return $DefaultToCode
+}
+
 # ---- default blank-row spacing (config can override) ----
 function Get-EvidencePlanSpacing {
     return @{
@@ -147,7 +156,8 @@ function Build-GfixEvidencePlan {
         [string]$JobName,
         [string[]]$CorrelOrder,
         [string]$ToCode,
-        [hashtable]$Spacing = $null
+        [hashtable]$Spacing = $null,
+        [hashtable]$CorrelToCode = $null
     )
     if ($null -eq $Spacing) { $Spacing = Get-EvidencePlanSpacing }
     $plan = [System.Collections.Generic.List[object]]::new()
@@ -160,7 +170,8 @@ function Build-GfixEvidencePlan {
         $plan.Add((New-PicOp -SnapRoot $SnapRoot -Folder 'GFIX_HM' -Name $cid -Required $true -CorrelIdS $cid -Section 'hm_log'))
         $plan.Add((New-BlankOp -Count $Spacing.AfterHm))
         $plan.Add((New-HeaderOp -LabelKey 'GfixLogLabel' -Section 'hm_log'))   # bold, resolved by executor
-        $plan.Add((New-LogOp -CorrelIdS $cid -ToCode $ToCode -Required $true))
+        $cidToCode = Resolve-GfixToCodeForCorrel -CorrelIdS $cid -DefaultToCode $ToCode -CorrelToCode $CorrelToCode
+        $plan.Add((New-LogOp -CorrelIdS $cid -ToCode $cidToCode -Required $true))
         $plan.Add((New-BlankOp -Count $Spacing.AfterLog))
     }
     $plan.Add((New-BlankOp -Count $Spacing.SectionGap))

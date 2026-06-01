@@ -350,12 +350,24 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> re-open already-reviewed workbooks'
         ) }
-        '^(Gift|Gfix)(HmSnap|MqSnap|Jenkins)$|^GiftJenkinsNoFile$' { @(
+        '^(Gift|Gfix)Jenkins$|^GiftJenkinsNoFile$' { @(
             '  Phase params:',
             '    t=TargetIds    -> limit rows (Correl_ID_S / JOB_NAME)',
             '    i=Interactive  -> pause before each row for manual confirmation',
             '    f=Force        -> re-capture already-done rows',
+            '    n=NoResize     -> do not resize Edge window',
+            '    w=Window       -> Edge window size',
+            '    c=CropPx       -> crop captured PNG edges',
             '    r=RefreshUrls  -> re-fetch Jenkins folder URLs (use when URLs changed)'
+        ) }
+        '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows (Correl_ID_S / JOB_NAME)',
+            '    i=Interactive  -> pause before each row for manual confirmation',
+            '    f=Force        -> re-capture already-done rows',
+            '    n=NoResize     -> do not resize Edge window',
+            '    w=Window       -> Edge window size',
+            '    c=CropPx       -> crop captured PNG edges'
         ) }
         '^GfixLogDownload$' { @(
             '  Phase params:',
@@ -367,6 +379,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  Phase params:',
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> re-capture already-done rows',
+            '    e=DfExePath    -> override df.exe path for this run',
             '  NOTE: set Df.ExePath in VerifyConfig.psd1 to skip the path prompt.'
         ) }
         '^Validate$' { @(
@@ -375,81 +388,191 @@ function Show-PhaseNotes([string]$PhaseKey) {
         ) }
         '^ProbeShapes$' { @(
             '  Phase params:',
-            '    t=TargetIds    -> limit to specific Excel_NAME'
+            '    p=ProbeFile    -> Excel file to inspect',
+            '    s=ProbeSheet   -> sheet name to inspect'
+        ) }
+        '^Crop$' { @(
+            '  Phase params:',
+            '    c=CropPx       -> crop existing PNG edges',
+            '    f=Force        -> re-crop directories already marked cropped'
         ) }
         default { @() }
     }
     foreach ($l in $lines) { Write-Host $l -ForegroundColor DarkGray }
 }
 
+function Get-PhaseOptionKeys([string]$PhaseKey) {
+    switch -Regex ($PhaseKey) {
+        '^Align$' { return @('f','apply','h','j','t') }
+        '^Clone$' { return @('d','b','t','f') }
+        '^Replace(Gift|Gfix|Df)$' { return @('t','f') }
+        '^Mark(Gift|Gfix|Df)$' { return @('t','f') }
+        '^MarkGfixLog$' { return @('t','f') }
+        '^Review(Gift|Gfix|Df|Evidence)$' { return @('a','t','f') }
+        '^(Gift|Gfix)Jenkins$|^GiftJenkinsNoFile$' { return @('t','i','f','n','w','c','r') }
+        '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { return @('t','i','f','n','w','c') }
+        '^GfixLogDownload$' { return @('t','f') }
+        '^DfSnap$' { return @('t','f','e') }
+        '^Validate$' { return @('t') }
+        '^ProbeShapes$' { return @('p','s') }
+        '^Crop$' { return @('c','f') }
+        '^Mapping$|^ExcelSnap$' { return @('f') }
+        default { return @() }
+    }
+}
+
+function Test-PhaseOption([string[]]$Allowed, [string]$Key) {
+    return (@($Allowed) -contains $Key)
+}
+
+function Write-UnusedOption([string]$PhaseKey, [string]$Key) {
+    Write-Host ("  option '{0}' is not used by phase {1}" -f $Key, $PhaseKey) -ForegroundColor Yellow
+}
+
 function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
+    $allowed = @(Get-PhaseOptionKeys $PhaseKey)
+
+    Write-Host ("Selected phase : {0}" -f $PhaseKey) -ForegroundColor Cyan
     Show-PhaseNotes $PhaseKey
     Write-Host ''
     Write-Host 'Options for this run:' -ForegroundColor Cyan
-    Write-Host ("  Force          : {0}" -f (To-BoolText $State.Force))
-    Write-Host ("  Interactive    : {0}" -f (To-BoolText $State.Interactive))
-    Write-Host ("  NoResize       : {0}" -f (To-BoolText $State.NoResize))
-    Write-Host ("  RefreshUrls    : {0}" -f (To-BoolText $State.RefreshUrls))
-    Write-Host ("  Window         : {0}x{1}" -f $State.WindowWidth, $State.WindowHeight)
-    Write-Host ("  CropPx         : {0}" -f $State.CropPx)
-    Write-Host ("  CursorCell     : {0}" -f $State.CursorCell)
-    if ($State.TargetIds.Count -gt 0)        { Write-Host ("  TargetIds      : {0}" -f ($State.TargetIds -join ', ')) }
-    if (-not [string]::IsNullOrWhiteSpace($State.CloneSourceDir)) {
-        Write-Host ("  CloneSourceDir : {0}" -f $State.CloneSourceDir)
-    }
-    if (-not [string]::IsNullOrWhiteSpace($State.J4BaseDir)) {
-        Write-Host ("  J4BaseDir      : {0}" -f $State.J4BaseDir)
-    }
-    if ($State.BizCodes.Count -gt 0)         { Write-Host ("  BizCodes       : {0}" -f ($State.BizCodes -join ', ')) }
-    if ($State.HostSystemTypes.Count -gt 0)  { Write-Host ("  HostSystemTypes: {0}" -f ($State.HostSystemTypes -join ', ')) }
+
+    if (Test-PhaseOption $allowed 'apply') { Write-Host ("  Apply(Align)   : {0}" -f (To-BoolText $State.Force)) }
+    elseif (Test-PhaseOption $allowed 'f') { Write-Host ("  Force          : {0}" -f (To-BoolText $State.Force)) }
+    if (Test-PhaseOption $allowed 'i') { Write-Host ("  Interactive    : {0}" -f (To-BoolText $State.Interactive)) }
+    if (Test-PhaseOption $allowed 'n') { Write-Host ("  NoResize       : {0}" -f (To-BoolText $State.NoResize)) }
+    if (Test-PhaseOption $allowed 'r') { Write-Host ("  RefreshUrls    : {0}" -f (To-BoolText $State.RefreshUrls)) }
+    if (Test-PhaseOption $allowed 'w') { Write-Host ("  Window         : {0}x{1}" -f $State.WindowWidth, $State.WindowHeight) }
+    if (Test-PhaseOption $allowed 'c') { Write-Host ("  CropPx         : {0}" -f $State.CropPx) }
+    if (Test-PhaseOption $allowed 'a') { Write-Host ("  CursorCell     : {0}" -f $State.CursorCell) }
+    if (Test-PhaseOption $allowed 't') { Write-Host ("  TargetIds      : {0}" -f $(if ($State.TargetIds.Count -gt 0) { $State.TargetIds -join ', ' } else { '(all)' })) }
+    if (Test-PhaseOption $allowed 'd') { Write-Host ("  CloneSourceDir : {0}" -f $State.CloneSourceDir) }
+    if (Test-PhaseOption $allowed 'j') { Write-Host ("  J4BaseDir      : {0}" -f $State.J4BaseDir) }
+    if (Test-PhaseOption $allowed 'b') { Write-Host ("  BizCodes       : {0}" -f $(if ($State.BizCodes.Count -gt 0) { $State.BizCodes -join ', ' } else { '(auto)' })) }
+    if (Test-PhaseOption $allowed 'h') { Write-Host ("  HostSystemTypes: {0}" -f $(if ($State.HostSystemTypes.Count -gt 0) { $State.HostSystemTypes -join ', ' } else { '(config/auto)' })) }
+    if (Test-PhaseOption $allowed 'e') { Write-Host ("  DfExePath      : {0}" -f $State.DfExePath) }
+    if (Test-PhaseOption $allowed 'p') { Write-Host ("  ProbeFile      : {0}" -f $State.ProbeFile) }
+    if (Test-PhaseOption $allowed 's') { Write-Host ("  ProbeSheet     : {0}" -f $State.ProbeSheet) }
+
     Write-Host ''
-    Write-Host '  f=Force, i=Interactive, n=NoResize, r=RefreshUrls'
-    Write-Host '    (for Align: f=Force toggles -Apply mode)'
-    Write-Host '  w=window size, c=crop px, t=target IDs, a=review cursor cell'
-    Write-Host '  d=Clone SourceDir, j=J4 BaseDir, b=BizCodes, h=HostSystemTypes, Enter=continue'
+    if ($allowed.Count -eq 0) {
+        Write-Host '  This phase has no interactive options. Enter=continue' -ForegroundColor DarkGray
+    } else {
+        $help = @()
+        if (Test-PhaseOption $allowed 'f') {
+            if (Test-PhaseOption $allowed 'apply') { $help += 'f/-apply=Apply mode' }
+            else { $help += 'f=Force' }
+        }
+        if (Test-PhaseOption $allowed 'i') { $help += 'i=Interactive' }
+        if (Test-PhaseOption $allowed 'n') { $help += 'n=NoResize' }
+        if (Test-PhaseOption $allowed 'r') { $help += 'r=RefreshUrls' }
+        if (Test-PhaseOption $allowed 'w') { $help += 'w=window size' }
+        if (Test-PhaseOption $allowed 'c') { $help += 'c=crop px' }
+        if (Test-PhaseOption $allowed 't') { $help += 't=target IDs' }
+        if (Test-PhaseOption $allowed 'a') { $help += 'a=review cursor cell' }
+        if (Test-PhaseOption $allowed 'd') { $help += 'd=Clone SourceDir' }
+        if (Test-PhaseOption $allowed 'j') { $help += 'j=J4 BaseDir' }
+        if (Test-PhaseOption $allowed 'b') { $help += 'b=BizCodes' }
+        if (Test-PhaseOption $allowed 'h') { $help += 'h=HostSystemTypes' }
+        if (Test-PhaseOption $allowed 'e') { $help += 'e=DfExePath' }
+        if (Test-PhaseOption $allowed 'p') { $help += 'p=ProbeFile' }
+        if (Test-PhaseOption $allowed 's') { $help += 's=ProbeSheet' }
+        Write-Host ("  {0}, Enter=continue" -f ($help -join ', '))
+    }
+
     while ($true) {
         $x = Read-Host 'option'
         if ([string]::IsNullOrWhiteSpace($x)) { break }
         switch -Regex ($x.Trim().ToLower()) {
-            '^f$'       { $State.Force = -not $State.Force }
-            '^-?apply$' { $State.Force = $true; Write-Host '  Force=ON  (Align: -Apply mode enabled)' -ForegroundColor DarkGray }
-            '^i$' { $State.Interactive = -not $State.Interactive }
-            '^n$' { $State.NoResize = -not $State.NoResize }
-            '^r$' { $State.RefreshUrls = -not $State.RefreshUrls }
+            '^f$' {
+                if (-not (Test-PhaseOption $allowed 'f')) { Write-UnusedOption $PhaseKey 'f' }
+                else {
+                    $State.Force = -not $State.Force
+                    $label = if (Test-PhaseOption $allowed 'apply') { 'Apply(Align)' } else { 'Force' }
+                    Write-Host ("  {0,-15}: {1}" -f $label, (To-BoolText $State.Force)) -ForegroundColor DarkGray
+                }
+            }
+            '^-?apply$' {
+                if (-not (Test-PhaseOption $allowed 'apply')) { Write-UnusedOption $PhaseKey 'apply' }
+                else { $State.Force = $true; Write-Host '  Apply=ON' -ForegroundColor DarkGray }
+            }
+            '^i$' {
+                if (-not (Test-PhaseOption $allowed 'i')) { Write-UnusedOption $PhaseKey 'i' }
+                else { $State.Interactive = -not $State.Interactive; Write-Host ("  Interactive    : {0}" -f (To-BoolText $State.Interactive)) -ForegroundColor DarkGray }
+            }
+            '^n$' {
+                if (-not (Test-PhaseOption $allowed 'n')) { Write-UnusedOption $PhaseKey 'n' }
+                else { $State.NoResize = -not $State.NoResize; Write-Host ("  NoResize       : {0}" -f (To-BoolText $State.NoResize)) -ForegroundColor DarkGray }
+            }
+            '^r$' {
+                if (-not (Test-PhaseOption $allowed 'r')) { Write-UnusedOption $PhaseKey 'r' }
+                else { $State.RefreshUrls = -not $State.RefreshUrls; Write-Host ("  RefreshUrls    : {0}" -f (To-BoolText $State.RefreshUrls)) -ForegroundColor DarkGray }
+            }
             '^w$' {
-                $v = Read-Choice 'Window size, e.g. 1050x761' ("{0}x{1}" -f $State.WindowWidth, $State.WindowHeight)
-                if ($v -match '^\s*(\d+)\s*[xX, ]\s*(\d+)\s*$') {
-                    $State.WindowWidth  = [int]$Matches[1]
-                    $State.WindowHeight = [int]$Matches[2]
-                } else { Write-Host '  invalid size' -ForegroundColor Yellow }
+                if (-not (Test-PhaseOption $allowed 'w')) { Write-UnusedOption $PhaseKey 'w' }
+                else {
+                    $v = Read-Choice 'Window size, e.g. 1050x761' ("{0}x{1}" -f $State.WindowWidth, $State.WindowHeight)
+                    if ($v -match '^\s*(\d+)\s*[xX, ]\s*(\d+)\s*$') {
+                        $State.WindowWidth  = [int]$Matches[1]
+                        $State.WindowHeight = [int]$Matches[2]
+                    } else { Write-Host '  invalid size' -ForegroundColor Yellow }
+                }
             }
             '^c$' {
-                $v = Read-Choice 'CropPx' ([string]$State.CropPx)
-                if ($v -match '^\d+$') { $State.CropPx = [int]$v }
+                if (-not (Test-PhaseOption $allowed 'c')) { Write-UnusedOption $PhaseKey 'c' }
+                else {
+                    $v = Read-Choice 'CropPx' ([string]$State.CropPx)
+                    if ($v -match '^\d+$') { $State.CropPx = [int]$v }
+                    else { Write-Host '  invalid crop px' -ForegroundColor Yellow }
+                }
             }
             '^a$' {
-                $State.CursorCell = Read-Choice 'Review cursor cell' $State.CursorCell
+                if (-not (Test-PhaseOption $allowed 'a')) { Write-UnusedOption $PhaseKey 'a' }
+                else { $State.CursorCell = Read-Choice 'Review cursor cell' $State.CursorCell }
             }
             '^t$' {
-                $v = Read-Choice 'Target IDs, comma-separated. Empty = all' ($State.TargetIds -join ',')
-                if ([string]::IsNullOrWhiteSpace($v)) { $State.TargetIds = @() }
-                else { $State.TargetIds = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+                if (-not (Test-PhaseOption $allowed 't')) { Write-UnusedOption $PhaseKey 't' }
+                else {
+                    $v = Read-Choice 'Target IDs, comma-separated. Empty = all' ($State.TargetIds -join ',')
+                    if ([string]::IsNullOrWhiteSpace($v)) { $State.TargetIds = @() }
+                    else { $State.TargetIds = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+                }
             }
             '^d$' {
-                $State.CloneSourceDir = Read-Choice 'Clone SourceDir (external)' $State.CloneSourceDir
+                if (-not (Test-PhaseOption $allowed 'd')) { Write-UnusedOption $PhaseKey 'd' }
+                else { $State.CloneSourceDir = Read-Choice 'Clone SourceDir (external)' $State.CloneSourceDir }
             }
             '^j$' {
-                $State.J4BaseDir = Read-Choice 'J4 BaseDir (Align baseline)' $State.J4BaseDir
+                if (-not (Test-PhaseOption $allowed 'j')) { Write-UnusedOption $PhaseKey 'j' }
+                else { $State.J4BaseDir = Read-Choice 'J4 BaseDir (Align baseline)' $State.J4BaseDir }
             }
             '^b$' {
-                $v = Read-Choice 'BizCodes, comma-separated. Empty = use TO_code/FROM_code' ($State.BizCodes -join ',')
-                if ([string]::IsNullOrWhiteSpace($v)) { $State.BizCodes = @() }
-                else { $State.BizCodes = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+                if (-not (Test-PhaseOption $allowed 'b')) { Write-UnusedOption $PhaseKey 'b' }
+                else {
+                    $v = Read-Choice 'BizCodes, comma-separated. Empty = use TO_code/FROM_code' ($State.BizCodes -join ',')
+                    if ([string]::IsNullOrWhiteSpace($v)) { $State.BizCodes = @() }
+                    else { $State.BizCodes = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+                }
             }
             '^h$' {
-                $v = Read-Choice 'HostSystemTypes, comma-separated (e.g. HOST,MF). Empty = auto-detect' ($State.HostSystemTypes -join ',')
-                if ([string]::IsNullOrWhiteSpace($v)) { $State.HostSystemTypes = @() }
-                else { $State.HostSystemTypes = @($v -split ',' | ForEach-Object { $_.Trim().ToUpper() } | Where-Object { $_ }) }
+                if (-not (Test-PhaseOption $allowed 'h')) { Write-UnusedOption $PhaseKey 'h' }
+                else {
+                    $v = Read-Choice 'HostSystemTypes, comma-separated (e.g. HOST,MF). Empty = auto-detect' ($State.HostSystemTypes -join ',')
+                    if ([string]::IsNullOrWhiteSpace($v)) { $State.HostSystemTypes = @() }
+                    else { $State.HostSystemTypes = @($v -split ',' | ForEach-Object { $_.Trim().ToUpper() } | Where-Object { $_ }) }
+                }
+            }
+            '^e$' {
+                if (-not (Test-PhaseOption $allowed 'e')) { Write-UnusedOption $PhaseKey 'e' }
+                else { $State.DfExePath = Read-Choice 'DfExePath' $State.DfExePath }
+            }
+            '^p$' {
+                if (-not (Test-PhaseOption $allowed 'p')) { Write-UnusedOption $PhaseKey 'p' }
+                else { $State.ProbeFile = Read-Choice 'Probe Excel file path' $State.ProbeFile }
+            }
+            '^s$' {
+                if (-not (Test-PhaseOption $allowed 's')) { Write-UnusedOption $PhaseKey 's' }
+                else { $State.ProbeSheet = Read-Choice 'Probe sheet name. Empty = all/first' $State.ProbeSheet }
             }
             default { Write-Host '  unknown option' -ForegroundColor Yellow }
         }

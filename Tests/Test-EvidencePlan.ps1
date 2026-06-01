@@ -59,6 +59,9 @@ $logOps = @($gfix | Where-Object { $_.Kind -eq 'log' })
 Assert-Equal 1 $logOps.Count 'GFIX: one log op per correl'
 Assert-Equal 'IDS' $logOps[0].ToCode 'GFIX: log op carries TO_code'
 Assert-True $logOps[0].Required 'GFIX: log required'
+$gfixMixed = Build-GfixEvidencePlan -SnapRoot 'X' -JobName 'J' -CorrelOrder @('JIDSM48S','JIGPM48S','JIGPMO5S') -ToCode 'IDS' -CorrelToCode @{ JIDSM48S='IDS'; JIGPM48S='IGP'; JIGPMO5S='IGP' }
+$mixedLogs = @($gfixMixed | Where-Object { $_.Kind -eq 'log' })
+Assert-Equal 'IDS|IGP|IGP' (@($mixedLogs | ForEach-Object { $_.ToCode }) -join '|') 'GFIX: log op uses per-correl TO_code map'
 # bold GFIX-log header must come immediately before the log op
 $kindsArr = @($gfix | ForEach-Object { $_.Kind })
 $logIdx = [array]::IndexOf($kindsArr, 'log')

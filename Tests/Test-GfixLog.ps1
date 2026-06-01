@@ -10,8 +10,12 @@ Reset-Tests 'GfixLog'
 
 # -- SS code + fragment --
 Assert-Equal 'F' (Get-GfixSsCode 'JIDSF48S')   'SS code = 5th char (Substring(4,1))'
+Assert-Equal 'J' (Get-GfixSsCode 'JIDSL48S')   'J-biz L receive correl uses SS code J'
+Assert-Equal 'J' (Get-GfixSsCode 'JIGPLB1S')   'J-biz L receive correl with B1 suffix uses SS code J'
+Assert-Equal 'Z' (Get-GfixSsCode 'JIDSL48S' 'Z') 'mapping SS override wins'
 Assert-Equal ''  (Get-GfixSsCode 'JID')        'short id -> empty SS'
 Assert-Equal '/appl/IDS/IDSVer1/gfix/recv/JIDSF48S F' (Get-GfixExpectedCommandFragment 'IDS' 'JIDSF48S') 'expected command fragment'
+Assert-Equal '/appl/IDS/IDSVer1/gfix/recv/JIDSL48S J' (Get-GfixExpectedCommandFragment 'IDS' 'JIDSL48S') 'J-biz L command fragment'
 
 # -- timestamp parse --
 $ts = Get-GfixLogTimestamp "2026-05-29 10:59:29 INFO Command: 'x'"

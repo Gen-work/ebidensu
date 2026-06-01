@@ -15,13 +15,20 @@
 #      2026-05-29 10:59:29 INFO Command: '/appl/IDS/shell/IDSLB053run.sh
 #        /appl/IDS/IDSVer1/gfix/recv/JIDSF48S F'
 #
-#  SS_CODE: 5th char of Correl_ID_S. .NET indexing is 0-based, so this is
-#  Substring(4,1). e.g. JIDSF48S -> index 4 = 'F'.
+#  SS_CODE default: 5th char of Correl_ID_S. .NET indexing is 0-based,
+#  so this is Substring(4,1). e.g. JIDSF48S -> index 4 = 'F'.
+#  Exception: J<biz>LxxS receive jobs use SS_CODE 'J' instead of 'L'.
+#  Optional mapping-provided SS_CODE overrides both rules.
 # ============================================================
 
 function Get-GfixSsCode {
-    param([string]$CorrelIdS)
+    param(
+        [string]$CorrelIdS,
+        [string]$SsCodeOverride = ''
+    )
+    if (-not [string]::IsNullOrWhiteSpace($SsCodeOverride)) { return $SsCodeOverride.Trim() }
     if ([string]::IsNullOrEmpty($CorrelIdS) -or $CorrelIdS.Length -lt 5) { return '' }
+    if ($CorrelIdS -match '^J[A-Za-z0-9]{3}L[A-Za-z0-9]{2}S$') { return 'J' }
     return $CorrelIdS.Substring(4, 1)
 }
 
@@ -34,9 +41,9 @@ function Get-GfixExpectedPath {
 # " <SS_CODE>" when the SS code is known, so we do not match a sibling
 # correl id that is a prefix of another.
 function Get-GfixExpectedCommandFragment {
-    param([string]$ToCode, [string]$CorrelIdS)
+    param([string]$ToCode, [string]$CorrelIdS, [string]$SsCode = '')
     $path = Get-GfixExpectedPath $ToCode $CorrelIdS
-    $ss   = Get-GfixSsCode $CorrelIdS
+    $ss   = Get-GfixSsCode $CorrelIdS $SsCode
     if ([string]::IsNullOrEmpty($ss)) { return $path }
     return ('{0} {1}' -f $path, $ss)
 }
@@ -74,7 +81,8 @@ function Find-GfixLogForCorrel {
     param(
         [string]$LogDir,
         [string]$ToCode,
-        [string]$CorrelIdS
+        [string]$CorrelIdS,
+        [string]$SsCode = ''
     )
     $result = [ordered]@{
         CorrelIdS  = $CorrelIdS
@@ -88,7 +96,7 @@ function Find-GfixLogForCorrel {
         $result.Error = 'empty Correl_ID_S'
         return [pscustomobject]$result
     }
-    $result.Fragment = Get-GfixExpectedCommandFragment $ToCode $CorrelIdS
+    $result.Fragment = Get-GfixExpectedCommandFragment $ToCode $CorrelIdS $SsCode
     if (-not (Test-Path -LiteralPath $LogDir)) {
         $result.Error = "log dir not found: $LogDir"
         return [pscustomobject]$result

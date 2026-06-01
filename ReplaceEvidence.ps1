@@ -181,6 +181,14 @@ try {
         }
 
         $correlIds = @($g.Group | ForEach-Object { [string]$_.Correl_ID_S } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $correlToCode = @{}
+        foreach ($row in @($g.Group)) {
+            $cid = [string]$row.Correl_ID_S
+            $rowToCode = [string]$row.TO_code
+            if (-not [string]::IsNullOrWhiteSpace($cid) -and -not [string]::IsNullOrWhiteSpace($rowToCode)) {
+                $correlToCode[$cid] = $rowToCode
+            }
+        }
 
         $wb = $null
         $ok = $false
@@ -197,7 +205,7 @@ try {
                 $plan = $null
                 switch ($Mode) {
                     'Gift' { $plan = Build-GiftEvidencePlan -SnapRoot $snapRoot -JobName $jobName -CorrelOrder $correlIds }
-                    'Gfix' { $plan = Build-GfixEvidencePlan -SnapRoot $snapRoot -JobName $jobName -CorrelOrder $correlIds -ToCode $toCode }
+                    'Gfix' { $plan = Build-GfixEvidencePlan -SnapRoot $snapRoot -JobName $jobName -CorrelOrder $correlIds -ToCode $toCode -CorrelToCode $correlToCode }
                     'Df'   {
                         $dfOrder = Read-SoshinDataOrder $wb
                         if ($null -eq $dfOrder -or @($dfOrder).Count -eq 0) {
