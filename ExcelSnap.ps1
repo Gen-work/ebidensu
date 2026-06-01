@@ -198,8 +198,8 @@ try {
         return 0
     }
 
-    $col_left  = Find-GS $gsTable $LBL_FROM $LBL_SYS_TYPE   # left  bound (from システム種別)
-    $col_job   = Find-GS $gsTable $LBL_SEND $LBL_JOB        # filter col  (送信 ジョブ)
+    $col_left  = Find-GS $gsTable $LBL_FROM $LBL_SYS_TYPE   # left bound (from system-type col)
+    $col_job   = Find-GS $gsTable $LBL_SEND $LBL_JOB        # filter col (send job)
     $col_right = $col_job                                    # right bound = filter col (snap ends here)
 
     if ($col_left -eq 0 -or $col_right -eq 0 -or $col_job -eq 0) {
@@ -224,9 +224,9 @@ try {
         $sendHex = ($LBL_SEND.ToCharArray()     | ForEach-Object { "{0:X4}" -f [int]$_ }) -join " "
         $srcHex  = ($LBL_SRC_FILE.ToCharArray() | ForEach-Object { "{0:X4}" -f [int]$_ }) -join " "
         $jobHex  = ($LBL_JOB.ToCharArray()      | ForEach-Object { "{0:X4}" -f [int]$_ }) -join " "
-        Write-Host ("    LBL_SEND     = [{0}]  (送信)" -f $sendHex) -ForegroundColor Yellow
-        Write-Host ("    LBL_SRC_FILE = [{0}]  (元ファイル)" -f $srcHex) -ForegroundColor Yellow
-        Write-Host ("    LBL_JOB      = [{0}]  (ジョブ)"     -f $jobHex) -ForegroundColor Yellow
+        Write-Host ("    LBL_SEND     = [{0}]  (send)" -f $sendHex) -ForegroundColor Yellow
+        Write-Host ("    LBL_SRC_FILE = [{0}]  (source file)" -f $srcHex) -ForegroundColor Yellow
+        Write-Host ("    LBL_JOB      = [{0}]  (job)" -f $jobHex) -ForegroundColor Yellow
         throw "Column resolution failed."
     }
     Write-Host ("  Snap range cols : {0} ({1}) - {2} ({3})" -f `

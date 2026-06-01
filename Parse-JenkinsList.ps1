@@ -16,7 +16,8 @@ $files = @()
 foreach ($line in ($Text -split "`r?`n")) {
     $line = $line.Trim()
     # "JIGPLB1S 2026/05/15 13:45:21 189.90 KB 参照"
-    if ($line -match '^(\S+)\s+(\d{4}/\d{2}/\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.+?)\s+参照$') {
+    $refWord = [char]0x53C2 + [char]0x7167   # 参照
+    if ($line -match ('^(\S+)\s+(\d{4}/\d{2}/\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.+?)\s+' + $refWord + '$')) {
         $dt = $null
         try {
             $dt = [datetime]::ParseExact(

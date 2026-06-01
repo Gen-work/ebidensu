@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # ReviewEvidence.ps1 - manual visual review driver
 #
 # Opens evidence workbooks one by one in editable mode. Misaki reviews/adjusts by hand.

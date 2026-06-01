@@ -38,6 +38,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$scriptDir = Split-Path $MyInvocation.MyCommand.Path
+$forceFlag = [bool]$Force.IsPresent    # capture before dot-source
+. (Join-Path $scriptDir 'MappingStore.ps1')
+
 # ── Force console to UTF-8 ──
 try {
     [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -87,7 +91,7 @@ function Find-SingleFile([string]$dir, [string]$pattern, [string]$desc) {
 }
 
 $wbsPath  = Find-SingleFile $WorkDir "*WBS*.xlsx"  "WBS"
-$gfixPath = Find-SingleFile $WorkDir "*GFIX*.xlsx" "GFIX一覧"
+$gfixPath = Find-SingleFile $WorkDir "*GFIX*.xlsx" "GFIX list"
 Write-Host ("[INFO] WBS    : {0}" -f (Split-Path -Leaf $wbsPath))
 Write-Host ("[INFO] GFIX   : {0}" -f (Split-Path -Leaf $gfixPath))
 Write-Host ""
@@ -382,7 +386,7 @@ $excel = New-Object -ComObject Excel.Application
     foreach ($jn in $jobNames) {
         $rows = $jobToRows[$jn]
         if ($rows.Count -eq 0) {
-            $warnings.Add(("JOB_NAME not in GFIX一覧: {0}" -f $jn)); continue
+            $warnings.Add(("JOB_NAME not in GFIX list: {0}" -f $jn)); continue
         }
 
         $excelName = $jn
@@ -405,7 +409,7 @@ $excel = New-Object -ComObject Excel.Application
         foreach ($r in $rows) {
             $correlidM = Read-CellStr $wsGfix $r $col_correlid
             if ([string]::IsNullOrWhiteSpace($correlidM)) {
-                $warnings.Add(("Empty 相関ID at GFIX row {0}" -f $r)); continue
+                $warnings.Add(("Empty Correl_ID at GFIX row {0}" -f $r)); continue
             }
             $correlidS = $correlidM
             if ($correlidM[$correlidM.Length - 1] -eq 'M') {
@@ -557,7 +561,7 @@ $excel = New-Object -ComObject Excel.Application
     }
 
     Write-Host "[Step G] Writing mapping file..." -ForegroundColor Cyan
-    $records | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
+    Export-MappingAtomic -Rows $records -Path $mappingPath | Out-Null
     Write-Host ("  Saved : {0}" -f $mappingPath) -ForegroundColor Green
 
     Write-Host ""

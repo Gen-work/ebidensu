@@ -66,7 +66,8 @@ function New-LogOp {
 # ---- default blank-row spacing (config can override) ----
 function Get-EvidencePlanSpacing {
     return @{
-        AfterExcel   = 2   # spec 8.3 / 9.3
+        AfterGiftExcel = 1   # spec 8.3: 1 blank after excel.png
+        AfterGfixExcel = 2   # spec 9.3: 2 blanks after excel.png
         AfterHm      = 1   # spec 8.4 / 9.5
         AfterMq      = 2   # spec 8.4
         AfterLog     = 2   # spec 9.5
@@ -104,9 +105,9 @@ function Build-GiftEvidencePlan {
     if ($null -eq $Spacing) { $Spacing = Get-EvidencePlanSpacing }
     $plan = [System.Collections.Generic.List[object]]::new()
 
-    # 1) Excel snap (named by JOB_NAME), then 2 blanks.
+    # 1) Excel snap (named by JOB_NAME), then 1 blank (spec 8.3).
     $plan.Add((New-PicOp -SnapRoot $SnapRoot -Folder 'excel' -Name $JobName -Required $true -JobName $JobName -Section 'excel'))
-    $plan.Add((New-BlankOp -Count $Spacing.AfterExcel))
+    $plan.Add((New-BlankOp -Count $Spacing.AfterGiftExcel))
 
     # 2) HM + MQ, correl-major.
     foreach ($cid in @($CorrelOrder)) {
@@ -152,7 +153,7 @@ function Build-GfixEvidencePlan {
     $plan = [System.Collections.Generic.List[object]]::new()
 
     $plan.Add((New-PicOp -SnapRoot $SnapRoot -Folder 'excel' -Name $JobName -Required $true -JobName $JobName -Section 'excel'))
-    $plan.Add((New-BlankOp -Count $Spacing.AfterExcel))
+    $plan.Add((New-BlankOp -Count $Spacing.AfterGfixExcel))
 
     foreach ($cid in @($CorrelOrder)) {
         $plan.Add((New-TextOp -Text $cid -CorrelIdS $cid -Section 'hm_log'))
