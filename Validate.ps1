@@ -184,6 +184,8 @@ if ($templates.Count -gt 0) {
 $snapBase = Join-Path $WorkDir 'snap'
 $evDir    = Join-Path $WorkDir 'evidence'
 
+. (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+
 function Has-Image([string]$folder, [string]$key) {
     if ([string]::IsNullOrWhiteSpace($folder) -or [string]::IsNullOrWhiteSpace($key)) { return $false }
     $f = Join-Path (Join-Path $snapBase $folder) ("{0}.png" -f $key)
@@ -200,7 +202,7 @@ foreach ($g in $groups) {
     $jobName = [string]$f.JOB_NAME
     $cidList = @($g.Group | ForEach-Object { [string]$_.Correl_ID_S } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
-    $cloneReady = Test-Path -LiteralPath (Join-Path $evDir ("{0}.xlsx" -f $exName))
+    $cloneReady = $null -ne (Find-WorkbookByExcelName -Dir $evDir -ExcelName $exName)
 
     $excelOk        = Has-Image 'excel' $jobName
     $giftHmOk       = $true

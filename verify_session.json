@@ -1,10 +1,11 @@
-{
+﻿{
     "WindowHeight":  761,
-    "EvidenceDir":  "\\\\fs-f3170-1\\12_生産管理\\00121.GPCS\\31.NII\\other：その他\\個人用ワーク\\厳\\Work\\0514_JRV-IDS,IGP2\\evidence",
+    "EvidenceDir":  "C:\\Users\\JP222093\\work-JRV-IDSIGP2\\evidence",
     "CropPx":  6,
+    "J4BaseDir":  "\\\\Fs-f3170-1\\12_生産管理\\00121.GPCS\\31.NII\\外部サーバー資料\\S08.共有情報\\82_発注受入領域関連\\08. 対応案件関連\\01 対応中\\REQ-000xxxxx_GIFT廃止対応\\40.J4\\07.GPCS\\JRV",
     "Owner":  "厳",
     "CloneSourceDir":  "\\\\Fs-f3170-1\\12_生産管理\\00121.GPCS\\31.NII\\外部サーバー資料\\S08.共有情報\\82_発注受入領域関連\\08. 対応案件関連\\01 対応中\\REQ-000xxxxx_GIFT廃止対応\\40.J4\\07.GPCS\\JRV",
     "WindowWidth":  1050,
     "CursorCell":  "A3",
-    "WorkDir":  "\\\\fs-f3170-1\\12_生産管理\\00121.GPCS\\31.NII\\other：その他\\個人用ワーク\\厳\\Work\\0514_JRV-IDS,IGP2"
+    "WorkDir":  "C:\\Users\\JP222093\\work-JRV-IDSIGP2"
 }

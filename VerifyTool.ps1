@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # VerifyTool.ps1 - main entry for evidence verification workflow
 #
 # Daily usage:
@@ -25,6 +25,7 @@ param(
 
     # Clone / Replace
     [string]$CloneSourceDir = '',
+    [string]$J4BaseDir      = '',
     [string[]]$BizCodes     = @(),
 
     # DfSnap override (takes precedence over VerifyConfig.psd1 -> Df.ExePath)
@@ -90,6 +91,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog'
     Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog -TargetIds JIDSU91S -Force'
     Write-Host '  .\VerifyTool.ps1 -Phase Clone -CloneSourceDir <ext_path>'
+    Write-Host '  .\VerifyTool.ps1 -Phase Align -J4BaseDir <j4_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGift'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGfix -TargetIds JIGPL48S'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceDf'
@@ -110,6 +112,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host ('  -Owner {0}             mapping_{0}.csv owner suffix. Default comes from config.' -f ([char]0x53B3))
     Write-Host '  -TargetIds A,B        Limit run by Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.'
     Write-Host '  -CloneSourceDir <p>   External path for Clone (existing evidence files per bizcode).'
+    Write-Host '  -J4BaseDir <p>        J4 baseline root for Align. If omitted, config/session/CloneSourceDir is used.'
     Write-Host '  -BizCodes A,B         Override bizcode candidate list for Clone.'
     Write-Host '  -Force                Re-run rows whose flag/bit is already set.'
     Write-Host '  -Interactive          Ask before each row in supported stages.'
@@ -168,6 +171,20 @@ function Load-Session([string]$Path) {
 
 function Save-Session([string]$Path, [hashtable]$Session) {
     try { $Session | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $Path -Encoding UTF8 } catch {}
+}
+
+
+function Resolve-AlignJ4BaseDir([hashtable]$Config, [hashtable]$State) {
+    foreach ($candidate in @(
+        [string]$State.J4BaseDir,
+        [string]$Config.Align.J4BaseDir,
+        [string]$State.CloneSourceDir
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    return ''
 }
 
 function Get-MappingPath([hashtable]$Config, [string]$Dir, [string]$OwnerName) {
@@ -308,11 +325,14 @@ function Ask-RunOptions([hashtable]$State) {
     if (-not [string]::IsNullOrWhiteSpace($State.CloneSourceDir)) {
         Write-Host ("  CloneSourceDir : {0}" -f $State.CloneSourceDir)
     }
+    if (-not [string]::IsNullOrWhiteSpace($State.J4BaseDir)) {
+        Write-Host ("  J4BaseDir      : {0}" -f $State.J4BaseDir)
+    }
     if ($State.BizCodes.Count -gt 0)    { Write-Host ("  BizCodes       : {0}" -f ($State.BizCodes -join ', ')) }
     Write-Host ''
     Write-Host '  f=Force, i=Interactive, n=NoResize, r=RefreshUrls'
     Write-Host '  w=window size, c=crop px, t=target IDs, a=review cursor cell'
-    Write-Host '  d=Clone SourceDir, b=BizCodes, Enter=continue'
+    Write-Host '  d=Clone SourceDir, j=J4 BaseDir, b=BizCodes, Enter=continue'
     while ($true) {
         $x = Read-Host 'option'
         if ([string]::IsNullOrWhiteSpace($x)) { break }
@@ -342,6 +362,9 @@ function Ask-RunOptions([hashtable]$State) {
             }
             '^d$' {
                 $State.CloneSourceDir = Read-Choice 'Clone SourceDir (external)' $State.CloneSourceDir
+            }
+            '^j$' {
+                $State.J4BaseDir = Read-Choice 'J4 BaseDir (Align baseline)' $State.J4BaseDir
             }
             '^b$' {
                 $v = Read-Choice 'BizCodes, comma-separated. Empty = use TO_code/FROM_code' ($State.BizCodes -join ',')
@@ -584,7 +607,8 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args = $base.Clone()
         $args['ExcelHelpersScript'] = $eh
         if ($Config.Align) {
-            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Align.J4BaseDir)) { $args['J4BaseDir'] = [string]$Config.Align.J4BaseDir }
+            $j4BaseDir = Resolve-AlignJ4BaseDir $Config $State
+            if (-not [string]::IsNullOrWhiteSpace($j4BaseDir)) { $args['J4BaseDir'] = $j4BaseDir }
             if (@($Config.Align.HostSystemTypes).Count -gt 0) { $args['HostSystemTypes'] = [string[]]$Config.Align.HostSystemTypes }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
@@ -729,6 +753,12 @@ elseif (-not [System.IO.Path]::IsPathRooted($EvidenceDir)) { $EvidenceDir = Join
 if ([string]::IsNullOrWhiteSpace($CloneSourceDir) -and $session.ContainsKey('CloneSourceDir')) {
     $CloneSourceDir = [string]$session['CloneSourceDir']
 }
+if ([string]::IsNullOrWhiteSpace($J4BaseDir) -and $session.ContainsKey('J4BaseDir')) {
+    $J4BaseDir = [string]$session['J4BaseDir']
+}
+if ([string]::IsNullOrWhiteSpace($J4BaseDir) -and -not [string]::IsNullOrWhiteSpace($CloneSourceDir)) {
+    $J4BaseDir = $CloneSourceDir
+}
 
 $flatTargets = @()
 foreach ($rawId in @($TargetIds)) {
@@ -760,6 +790,7 @@ $state = @{
     CursorCell     = $CursorCell
     TargetIds      = $TargetIds
     CloneSourceDir = $CloneSourceDir
+    J4BaseDir      = $J4BaseDir
     BizCodes       = $BizCodes
     ProbeFile      = $ProbeFile
     ProbeSheet     = $ProbeSheet
@@ -779,6 +810,7 @@ $session['CropPx'] = $CropPx
 $session['EvidenceDir'] = $EvidenceDir
 $session['CursorCell'] = $CursorCell
 $session['CloneSourceDir'] = $CloneSourceDir
+$session['J4BaseDir'] = $J4BaseDir
 Save-Session $sessionPath $session
 
 $mappingPath = Get-MappingPath $Config $WorkDir $Owner
@@ -800,6 +832,9 @@ Write-Host ("  EvidenceDir    : {0}" -f $EvidenceDir)
 Write-Host ("  Window         : {0}x{1}, CropPx={2}" -f $WindowWidth, $WindowHeight, $CropPx)
 if (-not [string]::IsNullOrWhiteSpace($CloneSourceDir)) {
     Write-Host ("  CloneSourceDir : {0}" -f $CloneSourceDir)
+}
+if (-not [string]::IsNullOrWhiteSpace($J4BaseDir)) {
+    Write-Host ("  J4BaseDir      : {0}" -f $J4BaseDir)
 }
 Write-Host ("  Phase          : {0}" -f $ResolvedPhase)
 
@@ -852,6 +887,7 @@ while ($true) {
     $session['EvidenceDir'] = $state.EvidenceDir
     $session['CursorCell'] = $state.CursorCell
     $session['CloneSourceDir'] = $state.CloneSourceDir
+    $session['J4BaseDir'] = $state.J4BaseDir
     Save-Session $sessionPath $session
 
     Write-Host ''

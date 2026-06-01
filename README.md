@@ -61,7 +61,7 @@ Jenkins-downloaded files keep their DATA layout, for example:
 \\fs-f3170-1\12_生産管理\00121.GPCS\31.NII\other：その他\個人用ワーク\厳\Work\0514_JRV-IDS,IGP2\DATA\GIFT\JIDSK48S
 ```
 
-`VerifyTool.ps1` remembers the last `WorkDir`, `Owner`, window size, crop size, evidence folder, review cursor cell, and `CloneSourceDir` in `verify_session.json`.
+`VerifyTool.ps1` remembers the last `WorkDir`, `Owner`, window size, crop size, evidence folder, review cursor cell, `CloneSourceDir`, and `J4BaseDir` in `verify_session.json`.
 
 ## Main commands
 
@@ -105,6 +105,15 @@ Clone evidence Excel (new):
 .\VerifyTool.ps1 -Phase Clone -Force
 ```
 
+Align / J4 precheck (read-only by default):
+
+```powershell
+# If -J4BaseDir is omitted, VerifyTool uses the remembered J4BaseDir,
+# then VerifyConfig.psd1 Align.J4BaseDir, then CloneSourceDir.
+.\VerifyTool.ps1 -Phase Align -J4BaseDir D:\path\to\40.J4\07.GPCS\JRV
+.\VerifyTool.ps1 -Phase Align
+```
+
 Replace evidence body (new):
 
 ```powershell
@@ -133,6 +142,7 @@ Visual review:
 -Owner 厳                 # mapping owner suffix. Default: 厳.
 -TargetIds A,B            # limit by Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.
 -CloneSourceDir <path>    # external path for Clone (existing evidence per bizcode).
+-J4BaseDir <path>         # J4 baseline root for Align; defaults to remembered/config/CloneSourceDir.
 -BizCodes A,B             # override bizcode candidate list for Clone.
 -Force                    # redo rows that are already marked done.
 -Interactive              # ask before each row where supported.

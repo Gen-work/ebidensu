@@ -88,7 +88,11 @@ function Test-BitDone([array]$Rows, [string]$Field, [int]$Bit) {
     return $true
 }
 
+. (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+
 function Get-EvidencePath([string]$Dir, [string]$ExcelName) {
+    $resolved = Find-WorkbookByExcelName -Dir $Dir -ExcelName $ExcelName
+    if ($null -ne $resolved) { return $resolved }
     if ($ExcelName -match '\.xlsx$') { return (Join-Path $Dir $ExcelName) }
     return (Join-Path $Dir ($ExcelName + '.xlsx'))
 }
@@ -117,7 +121,6 @@ function Activate-ExcelWindow($Shell, $Excel, $Workbook) {
     } catch {}
     return $false
 }
-
 
 function Clear-FileReadOnlyAttribute([string]$File) {
     try {

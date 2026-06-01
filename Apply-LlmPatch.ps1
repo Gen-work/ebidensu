@@ -1,26 +1,26 @@
-# ============================================================
-# Apply-LlmPatch.ps1 v4
-#   Clipboard patch applicator for LLM co-workflow.
+﻿# ============================================================
+# Apply-LlmPatch.ps1 v5
+#   LLM 協調ワークフロー向けのクリップボードパッチ適用スクリプト。
 #
-#   Modes:
-#     1) XML search/replace patch:
-#        - <patch file=""> blocks are read from clipboard.
-#        - XML/HTML entities in file/search/replace are decoded before matching.
-#        - Compare is done after LF normalization; original EOL and UTF-8 BOM are preserved.
-#        - Each <search> block must match exactly one location.
-#        - Multiple patches for the same file are validated sequentially in memory.
-#        - Files are written once after all validation passes.
+#   モード:
+#     1) XML 検索/置換パッチ:
+#        - クリップボードから <patch file=""> ブロックを読み込む。
+#        - ファイル名/検索/置換内の XML/HTML エンティティはマッチング前にデコードされる。
+#        - LF 正規化後に比較を行う。元の改行コードと UTF-8 BOM は保持される。
+#        - 各 <search> ブロックは正確に1箇所にマッチする必要がある。
+#        - 同一ファイルに対する複数のパッチはメモリ上で順次検証される。
+#        - すべての検証が完了した後、ファイルは一度だけ書き込まれる。
 #
-#     2) Git unified diff:
-#        - Raw `diff --git` / unified diff from clipboard is accepted.
-#        - `git apply --check` runs before `git apply`.
+#     2) Git ユニファイド差分:
+#        - クリップボードからの生 `diff --git` / 統一差異を受け入れる。
+#        - `git apply` の前に `git apply --check` を実行する。
 #
-#   Safety:
-#     - Relative XML patch paths resolve from this script/repo directory.
-#     - XML backups are stored under .\PatchBak\ by default.
-#     - XML mode runs write-access preflight before touching files.
-#     - XML writes go through a temp file, then replace the target.
-#     - -DryRun validates only; no writes.
+#   安全性:
+#     - 相対パスは本スクリプト/リポジトリのディレクトリから解決される。
+#     - XML モードのバックアップはデフォルトで .\PatchBak\ 配下に保存される。
+#     - XML モードはファイルを変更する前に書き込み権限の事前チェックを行う。
+#     - XML の書き込みは一時ファイルを経由し、その後対象ファイルを置換する。
+#     - -DryRun は検証のみ行い、書き込みは行わない。
 # ============================================================
 param(
     [switch]$DryRun,
@@ -32,17 +32,20 @@ $ErrorActionPreference = 'Stop'
 # --- クリップボード読込 ---
 $clip = Get-Clipboard -Raw
 if ([string]::IsNullOrWhiteSpace($clip)) {
-    Write-Warning "Clipboard is empty."
+    Write-Warning "クリップボードが空です。"
     exit 1
 }
+
+# AIのUIからコピーする際に混入する U+00A0 (ノーブレークスペース) を通常のスペース (U+0020) に置換
+$clip = $clip.Replace([char]0x00A0, ' ')
 
 # --- Markdown fence unwrap ---
 function Unwrap-MarkdownFence([string]$s) {
     if ($null -eq $s) { return '' }
 
-    # Allows copying a single fenced block such as ```diff ... ``` or ```xml ... ```.
-    # If there is any prose outside the fence, it is left untouched and validation will fail.
-    $m = [regex]::Match($s, '(?s)^\s*```(?:diff|patch|xml)?\s*\r?\n(?<body>.*?)\r?\n```\s*$')
+    # ^ と $ の制限を外し、前後にテキストが混入していてもコードブロックを抽出できるように緩和
+    $m = [regex]::Match($s, '(?s) ``` (?:diff|patch|xml)? \s*\r?\n (?<body>.*?) \r?\n``` ')
+
     if ($m.Success) {
         return $m.Groups['body'].Value
     }
@@ -61,12 +64,12 @@ function Invoke-GitDiffPatch([string]$PatchText) {
 
     $git = Get-Command git -ErrorAction SilentlyContinue
     if ($null -eq $git) {
-        throw "git command not found. Install Git or use XML patch mode."
+        throw "git コマンドが見つかりません。Gitをインストールするか、XMLパッチモードを使用してください。"
     }
 
     $repoRoot = (& $git.Source -C $base rev-parse --show-toplevel 2>$null)
     if (($LASTEXITCODE -ne 0) -or [string]::IsNullOrWhiteSpace($repoRoot)) {
-        throw "current script directory is not inside a Git repository: $base"
+        throw "現在のスクリプトディレクトリは Git リポジトリ内にありません: $base"
     }
 
     $repoRoot = [string]$repoRoot
@@ -74,29 +77,32 @@ function Invoke-GitDiffPatch([string]$PatchText) {
 
     try {
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        if (-not $PatchText.EndsWith("`n")) {
+            $PatchText += "`n"
+        }
         [System.IO.File]::WriteAllText($tmp, $PatchText, $utf8NoBom)
 
-        Write-Host "[MODE] git unified diff" -ForegroundColor Cyan
+        Write-Host "[MODE] Gitユニファイド差分" -ForegroundColor Cyan
         Write-Host ("  repo: {0}" -f $repoRoot) -ForegroundColor DarkGray
         Write-Host "[CHECK] git apply --check" -ForegroundColor Cyan
 
-        & $git.Source -C $repoRoot apply --check --whitespace=nowarn $tmp
+        & $git.Source -C $repoRoot apply --check --ignore-whitespace --recount $tmp
         if ($LASTEXITCODE -ne 0) {
-            throw "git apply --check failed. No file changed."
+            throw "git apply --check に失敗しました。ファイルは変更されていません。"
         }
 
         if ($DryRun) {
-            Write-Host "[DRY-RUN] git diff patch check OK. Apply skipped." -ForegroundColor Cyan
+            Write-Host "[DRY-RUN] Git差分パッチのチェックOK。適用はスキップされました。" -ForegroundColor Cyan
             return
         }
 
         Write-Host "[APPLY] git apply" -ForegroundColor Cyan
-        & $git.Source -C $repoRoot apply --whitespace=nowarn $tmp
+        & $git.Source -C $repoRoot apply --ignore-whitespace --recount $tmp
         if ($LASTEXITCODE -ne 0) {
-            throw "git apply failed after check. Inspect `git status` and `git diff`."
+            throw "check後の git apply に失敗しました。`git status` や `git diff` を確認してください。"
         }
 
-        Write-Host "[SUCCESS] git diff patch applied. Run `git diff` to review." -ForegroundColor Green
+        Write-Host "[SUCCESS] Git差分パッチが適用されました。`git diff` でレビューしてください。" -ForegroundColor Green
     } finally {
         if (Test-Path -LiteralPath $tmp) {
             Remove-Item -LiteralPath $tmp -Force
@@ -104,7 +110,8 @@ function Invoke-GitDiffPatch([string]$PatchText) {
     }
 }
 
-if (($clip -match '(?m)^diff --git ') -or (($clip -match '(?m)^--- ') -and ($clip -match '(?m)^\+\+\+ ') -and ($clip -match '(?m)^@@ '))) {
+# Git差分の判定でも、行頭の空白（インデントなど）を許容するように \s* を追加
+if (($clip -match '(?m)^\s*diff --git ') -or (($clip -match '(?m)^\s*--- ') -and ($clip -match '(?m)^\s*\+\+\+ ') -and ($clip -match '(?m)^\s*@@ '))) {
     try {
         Invoke-GitDiffPatch $clip
         exit 0
@@ -118,10 +125,10 @@ if (($clip -match '(?m)^diff --git ') -or (($clip -match '(?m)^--- ') -and ($cli
 $pattern = '(?s)<patch\s+file="(?<file>[^"]+)"\s*>\s*<search>(?<search>.*?)</search>\s*<replace>(?<replace>.*?)</replace>\s*</patch>'
 $blocks  = [regex]::Matches($clip, $pattern)
 if ($blocks.Count -eq 0) {
-    Write-Warning "No valid XML <patch> block or git unified diff found."
+    Write-Warning "有効な XML <patch> ブロック、または Gitユニファイド差分 が見つかりません。"
     exit 1
 }
-Write-Host ("[INFO] {0} XML patch block(s) detected." -f $blocks.Count) -ForegroundColor Cyan
+Write-Host ("[INFO] {0} 件の XML パッチを検出。" -f $blocks.Count) -ForegroundColor Cyan
 
 # --- ヘルパー ---
 function Norm-Eol([string]$s) {
@@ -131,19 +138,12 @@ function Norm-Eol([string]$s) {
 
 function Decode-XmlText([string]$s) {
     if ($null -eq $s) { return '' }
-
-    # This script is not a full XML parser. It extracts text by regex first,
-    # then decodes entities so patch body can safely contain XML-like text.
     return [System.Net.WebUtility]::HtmlDecode($s)
 }
 
 function Unwrap-PatchBlock([string]$s) {
     if ($null -eq $s) { return '' }
-
     $s = Decode-XmlText $s
-
-    # XML 可読性のために <search> 直後 / </search> 直前へ置く
-    # 境界改行だけを 1 つ除去する。本文の空行は保持する。
     $v = $s -replace '^\r?\n', ''
     $v = $v -replace '\r?\n$', ''
     return $v
@@ -151,7 +151,7 @@ function Unwrap-PatchBlock([string]$s) {
 
 function Resolve-PatchPath([string]$File) {
     if ([string]::IsNullOrWhiteSpace($File)) {
-        throw "patch file path is empty."
+        throw "パッチのファイルパスが空です。"
     }
 
     if ([System.IO.Path]::IsPathRooted($File)) {
@@ -181,7 +181,6 @@ function Read-FileMeta([string]$path) {
 }
 
 function Write-FileMeta($meta, [string]$newText) {
-    # 改行コードを原ファイルに合わせて復元
     $normalized = (Norm-Eol $newText) -replace "`n", $meta.Eol
     $body = [System.Text.Encoding]::UTF8.GetBytes($normalized)
     if ($meta.HasBom) {
@@ -193,10 +192,6 @@ function Write-FileMeta($meta, [string]$newText) {
         $all = $body
     }
 
-    # Safety note:
-    # Do not write directly to the target path. If the process dies during
-    # WriteAllBytes(target), the target file may be left truncated.
-    # Instead, write a temp file in the same directory first, then replace.
     $dir  = Split-Path -Parent $meta.Path
     $name = Split-Path -Leaf $meta.Path
     $tmp  = Join-Path $dir (".{0}.{1}.tmp" -f $name, ([guid]::NewGuid().ToString('N')))
@@ -205,7 +200,7 @@ function Write-FileMeta($meta, [string]$newText) {
         [System.IO.File]::WriteAllBytes($tmp, $all)
         Move-Item -LiteralPath $tmp -Destination $meta.Path -Force
     } catch {
-        throw ("write failed: {0}; tmp={1}; reason={2}" -f $meta.Path, $tmp, $_.Exception.Message)
+        throw ("書き込みに失敗しました: {0}; tmp={1}; 理由={2}" -f $meta.Path, $tmp, $_.Exception.Message)
     } finally {
         if (Test-Path -LiteralPath $tmp) {
             Remove-Item -LiteralPath $tmp -Force
@@ -218,25 +213,23 @@ function Test-WritePreflight($meta) {
     $dir  = Split-Path -Parent $path
 
     if (-not (Test-Path -LiteralPath $path)) {
-        throw "write preflight failed: target disappeared: $path"
+        throw "書き込み前のチェックに失敗しました: 対象が存在しません: $path"
     }
 
     if (-not (Test-Path -LiteralPath $dir)) {
-        throw "write preflight failed: parent directory not found: $dir"
+        throw "書き込み前のチェックに失敗しました: 親ディレクトリが見つかりません: $dir"
     }
 
     $item = Get-Item -LiteralPath $path -ErrorAction Stop
     if (($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
-        throw "write preflight failed: target is read-only: $path"
+        throw "書き込み前のチェックに失敗しました: 対象が読み取り専用です: $path"
     }
 
-    # This catches common permission/path problems before backup/write starts.
-    # It cannot prove the final replace will succeed; locked files can still fail at apply time.
     $probe = Join-Path $dir (".llm_write_probe_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
     try {
         [System.IO.File]::WriteAllBytes($probe, [byte[]](0x00))
     } catch {
-        throw ("write preflight failed: cannot create temp file in {0}; reason={1}" -f $dir, $_.Exception.Message)
+        throw ("書き込み前のチェックに失敗しました: {0} に一時ファイルを作成できません; 理由={1}" -f $dir, $_.Exception.Message)
     } finally {
         if (Test-Path -LiteralPath $probe) {
             Remove-Item -LiteralPath $probe -Force
@@ -262,7 +255,7 @@ foreach ($b in $blocks) {
     try {
         $file = Resolve-PatchPath $fileRaw
     } catch {
-        Write-Host ("  [FAIL] path resolve failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("  [FAIL] パスの解決に失敗しました: {0}" -f $_.Exception.Message) -ForegroundColor Red
         $failed = $true
         continue
     }
@@ -270,7 +263,7 @@ foreach ($b in $blocks) {
     Write-Host ("  path: {0}" -f $file) -ForegroundColor DarkGray
 
     if (-not (Test-Path -LiteralPath $file)) {
-        Write-Host "  [FAIL] File not found." -ForegroundColor Red
+        Write-Host "  [FAIL] ファイルが見つかりません。" -ForegroundColor Red
         $failed = $true
         continue
     }
@@ -290,28 +283,25 @@ foreach ($b in $blocks) {
     $replaceN = Norm-Eol $replace
 
     if ([string]::IsNullOrEmpty($searchN)) {
-        Write-Host "  [FAIL] <search> block is empty." -ForegroundColor Red
+        Write-Host "  [FAIL] <search> ブロックが空です。" -ForegroundColor Red
         $failed = $true
         continue
     }
 
-    # 出現回数カウント。
-    # 同一ファイルに複数 patch がある場合は、直前までの置換結果を
-    # 反映した仮想テキスト上で検証する。
     $count = ([regex]::Matches($textN, [regex]::Escape($searchN))).Count
 
     if ($count -eq 0) {
-        Write-Host "  [FAIL] <search> block does not match." -ForegroundColor Red
+        Write-Host "  [FAIL] <search> ブロックが一致しません。" -ForegroundColor Red
         $preview = $searchN.Substring(0, [Math]::Min(120, $searchN.Length)) -replace "`n", "\n" -replace "`t", "\t"
-        Write-Host ("    First 120 chars: {0}" -f $preview) -ForegroundColor DarkGray
-        Write-Host "    Hint: check indentation / full-width spaces / tabs vs spaces / already applied." -ForegroundColor DarkGray
+        Write-Host ("    先頭120文字: {0}" -f $preview) -ForegroundColor DarkGray
+        Write-Host "    ヒント: インデント / 全角空白 / タブ vs スペース / 既に適用済み を確認してください。" -ForegroundColor DarkGray
         $failed = $true
         continue
     }
 
     if ($count -gt 1) {
-        Write-Host ("  [FAIL] <search> block matches {0} locations; must be unique." -f $count) -ForegroundColor Red
-        Write-Host "    Hint: add more surrounding context lines." -ForegroundColor DarkGray
+        Write-Host ("  [FAIL] <search> ブロックが {0} 箇所一致しました。一意である必要があります。" -f $count) -ForegroundColor Red
+        Write-Host "    ヒント: 前後の行を含めて文脈を増やしてください。" -ForegroundColor DarkGray
         $failed = $true
         continue
     }
@@ -319,7 +309,7 @@ foreach ($b in $blocks) {
     $state['TextN'] = $textN.Replace($searchN, $replaceN)
     $fileStates[$file] = $state
 
-    Write-Host "  [OK] 1 replacement queued." -ForegroundColor Green
+    Write-Host "  [OK] 1 箇所を置換予定。" -ForegroundColor Green
     $plans += @{
         Path     = $file
         FileRaw  = $fileRaw
@@ -330,26 +320,26 @@ foreach ($b in $blocks) {
 
 if ($failed) {
     Write-Host ""
-    Write-Host "[ABORT] Validation errors found. No files will be changed." -ForegroundColor Red
+    Write-Host "[ABORT] 検証エラーあり。ファイルは一切変更されません。" -ForegroundColor Red
     exit 1
 }
 
 if ($DryRun) {
     Write-Host ""
-    Write-Host ("[DRY-RUN] Validation OK. Write skipped. patch={0}, files={1}" -f $plans.Count, $fileStates.Count) -ForegroundColor Cyan
+    Write-Host ("[DRY-RUN] 検証 OK。書き込みはスキップされました。patch={0}, files={1}" -f $plans.Count, $fileStates.Count) -ForegroundColor Cyan
     exit 0
 }
 
 # --- Pass 2: 書込前チェック + 適用 ---
 Write-Host ""
-Write-Host "[PREFLIGHT] Checking write permissions..." -ForegroundColor Cyan
+Write-Host "[PREFLIGHT] 書き込み権限を確認します..." -ForegroundColor Cyan
 foreach ($entry in $fileStates.GetEnumerator()) {
     Test-WritePreflight $entry.Value['Meta']
     Write-Host ("  [OK] {0}" -f $entry.Value['Meta'].Path) -ForegroundColor DarkGray
 }
 
 Write-Host ""
-Write-Host "[APPLY] Applying patches..." -ForegroundColor Cyan
+Write-Host "[APPLY] 適用開始..." -ForegroundColor Cyan
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
 
 foreach ($entry in $fileStates.GetEnumerator()) {
@@ -366,7 +356,7 @@ foreach ($entry in $fileStates.GetEnumerator()) {
 }
 
 Write-Host ""
-Write-Host ("[SUCCESS] Applied {0} patch(es) to {1} file(s)." -f $plans.Count, $fileStates.Count) -ForegroundColor Green
+Write-Host ("[SUCCESS] {0} 件のパッチを {1} ファイルへ適用しました。" -f $plans.Count, $fileStates.Count) -ForegroundColor Green
 if (-not $NoBackup) {
-    Write-Host ("Backup extension: .bak.{0}" -f $ts) -ForegroundColor DarkGray
+    Write-Host ("バックアップ拡張子: .bak.{0}" -f $ts) -ForegroundColor DarkGray
 }

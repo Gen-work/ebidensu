@@ -4,12 +4,13 @@
 #  Phase: Clone (a.k.a. mkexcel / renameexcel)
 #
 #  For each unique Excel_NAME in mapping_<Owner>.csv:
-#    1. Try existing file:  <SourceDir>\<BizCode>\<Excel_NAME>.xlsx
+#    1. Try existing file:  <SourceDir>\<BizCode>\<Excel_NAME>.xlsx or *<Excel_NAME>.xlsx
 #       (BizCode candidates: TO_code then FROM_code, deduped.
 #        Or override with -BizCodes.)
 #    2. Fallback to template: <WorkDir>\template_<BizCode>.xlsx
 #    3. Universal fallback : <WorkDir>\template.xlsx
-#    Then copy -> <WorkDir>\evidence\<Excel_NAME>.xlsx
+#    Then copy -> <WorkDir>\evidence\<source filename> when copied from SourceDir
+#    (for example J4..._<Excel_NAME>.xlsx), or <Excel_NAME>.xlsx for templates
 #
 #  Skip if dest exists, unless -Force.
 #
@@ -103,6 +104,9 @@ if ($rows.Count -eq 0) {
 
 # Evidence dir
 $evDir = Join-Path $WorkDir 'evidence'
+
+. (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+
 if (-not (Test-Path -LiteralPath $evDir)) {
     New-Item -ItemType Directory -Path $evDir -Force | Out-Null
 }
@@ -126,9 +130,9 @@ foreach ($g in $groups) {
         continue
     }
 
-    $destPath = Join-Path $evDir ("{0}.xlsx" -f $excelName)
-    if ((Test-Path -LiteralPath $destPath) -and -not $forceFlag) {
-        Write-Host ("[SKIP] {0}  (already in evidence\)" -f $excelName) -ForegroundColor DarkGray
+    $existingPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $excelName
+    if ($existingPath -and -not $forceFlag) {
+        Write-Host ("[SKIP] {0}  (already in evidence: {1})" -f $excelName, (Split-Path $existingPath -Leaf)) -ForegroundColor DarkGray
         $cntSkip++
         continue
     }
@@ -216,16 +220,18 @@ foreach ($g in $groups) {
     }
 
     try {
+        $destLeaf = if ($foundFrom -like 'source*') { Split-Path $foundPath -Leaf } else { ("{0}.xlsx" -f $excelName) }
+        $destPath = if ($existingPath) { $existingPath } else { Join-Path $evDir $destLeaf }
         Copy-Item -LiteralPath $foundPath -Destination $destPath -Force
         if ($foundFrom -like 'source*') {
             $cntFromSource++
-            Write-Host ("[COPY] {0}  <- {1}" -f $excelName, $foundFrom) -ForegroundColor Green
+            Write-Host ("[COPY] {0}  <- {1}  => {2}" -f $excelName, $foundFrom, (Split-Path $destPath -Leaf)) -ForegroundColor Green
             if ($ambigCount -gt 1) {
                 Write-Host ("       NOTE: {0} candidates matched, picked newest" -f $ambigCount) -ForegroundColor DarkYellow
             }
         } else {
             $cntFromTemplate++
-            Write-Host ("[TPL ] {0}  <- {1}" -f $excelName, $foundFrom) -ForegroundColor DarkYellow
+            Write-Host ("[TPL ] {0}  <- {1}  => {2}" -f $excelName, $foundFrom, (Split-Path $destPath -Leaf)) -ForegroundColor DarkYellow
         }
         $cntDone++
     } catch {

@@ -109,6 +109,9 @@ $modeCfg = switch ($Mode) {
 
 $mappingPath = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 $evDir       = Join-Path $WorkDir 'evidence'
+
+. (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+
 $snapRoot    = Join-Path $WorkDir 'snap'
 $logDir      = Join-Path $WorkDir 'log'
 
@@ -165,8 +168,8 @@ try {
         Write-Host ("  {0}   ({1} correl id)" -f $excelName, $g.Count) -ForegroundColor White
         Write-Host ("=" * 72) -ForegroundColor White
 
-        $wbPath = Join-Path $evDir ("{0}.xlsx" -f $excelName)
-        if (-not (Test-Path -LiteralPath $wbPath)) {
+        $wbPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $excelName
+        if ($null -eq $wbPath) {
             Write-Host ("  [SKIP] workbook missing: {0}" -f $wbPath) -ForegroundColor Yellow
             $cntSkip++; continue
         }

@@ -119,6 +119,8 @@ $modeCfg = switch ($Mode) {
 $mappingPath = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 $evDir       = Join-Path $WorkDir 'evidence'
 
+. (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+
 Write-Host ''
 Write-Host ("===== Mark ({0}) =====" -f $Mode) -ForegroundColor Green
 Write-Host ("  WorkDir   : {0}" -f $WorkDir)
@@ -177,8 +179,8 @@ try {
         $excelName = [string]$first.Excel_NAME
         if ([string]::IsNullOrWhiteSpace($excelName)) { continue }
 
-        $wbPath = Join-Path $evDir ("{0}.xlsx" -f $excelName)
-        if (-not (Test-Path -LiteralPath $wbPath)) {
+        $wbPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $excelName
+        if ($null -eq $wbPath) {
             Write-Host ("[SKIP] {0}: workbook missing" -f $excelName) -ForegroundColor Yellow
             $cntSkip++; continue
         }

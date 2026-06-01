@@ -2,8 +2,9 @@
 # ============================================================
 #  Align.ps1   (Phase: Align / Precheck)   UTF-8, NO BOM, ASCII source.
 #
-#  Compares each work evidence workbook (evidence\<Excel_NAME>.xlsx) against
-#  the same-named J4 baseline workbook, and (with -Apply) syncs the sheets
+#  Compares each work evidence workbook (evidence\<Excel_NAME>.xlsx, or
+#  a workbook whose filename ends with _<Excel_NAME>.xlsx) against the matching
+#  J4 baseline workbook, and (with -Apply) syncs the sheets
 #  that differ (spec 6).
 #
 #  Migration-type branching:
@@ -88,10 +89,10 @@ Write-Host ("  Groups    : {0}" -f $groups.Count)
 Write-Host ''
 Write-ProgressEvent -WorkDir $WorkDir -Phase 'Align' -Action 'start' -Status 'info' -Message ("apply={0} groups={1}" -f $applyFlag, $groups.Count)
 
+. (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+
 function Find-J4Workbook([string]$name) {
-    $hits = @(Get-ChildItem -LiteralPath $J4BaseDir -Filter ("{0}.xlsx" -f $name) -File -Recurse -ErrorAction SilentlyContinue)
-    if ($hits.Count -gt 0) { return $hits[0].FullName }
-    return $null
+    return (Find-WorkbookByExcelName -Dir $J4BaseDir -ExcelName $name -Recurse)
 }
 
 function Read-SheetGrid($ws) {
@@ -140,10 +141,12 @@ try {
         Write-Host ''
         Write-Host ("----- {0} -----" -f $excelName) -ForegroundColor Cyan
 
-        $workPath = Join-Path $evDir ("{0}.xlsx" -f $excelName)
-        if (-not (Test-Path -LiteralPath $workPath)) { Write-Host '  [SKIP] work workbook missing' -ForegroundColor Yellow; $cntSkip++; continue }
+        $workPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $excelName
+        if ($null -eq $workPath) { Write-Host ("  [SKIP] work workbook missing (*{0}.xlsx)" -f $excelName) -ForegroundColor Yellow; $cntSkip++; continue }
         $j4Path = Find-J4Workbook $excelName
-        if ($null -eq $j4Path) { Write-Host '  [SKIP] J4 baseline not found' -ForegroundColor Yellow; $cntSkip++; continue }
+        if ($null -eq $j4Path) { Write-Host ("  [SKIP] J4 baseline not found (*{0}.xlsx)" -f $excelName) -ForegroundColor Yellow; $cntSkip++; continue }
+        Write-Host ("  work: {0}" -f (Split-Path $workPath -Leaf)) -ForegroundColor DarkGray
+        Write-Host ("  J4  : {0}" -f (Split-Path $j4Path -Leaf)) -ForegroundColor DarkGray
 
         $migType = $MigrationTypeOverride
         if ([string]::IsNullOrWhiteSpace($migType)) { $migType = Get-MigrationType -FromSys $fromSys -ToSys $toSys -HostTypes $HostSystemTypes }
