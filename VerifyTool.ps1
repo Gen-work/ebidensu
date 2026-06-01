@@ -311,7 +311,79 @@ function Get-RecommendPhase([hashtable]$Config, [array]$Rows) {
     return 'Status'
 }
 
-function Ask-RunOptions([hashtable]$State) {
+function Show-PhaseNotes([string]$PhaseKey) {
+    $lines = switch -Regex ($PhaseKey) {
+        '^Align$' { @(
+            '  Phase params:',
+            '    f=Force        -> -Apply  : sync DIFF sheets (work <- J4 values). EXPERIMENTAL - run on a copy first.',
+            '    h=HostTypes    -> which FROM_sys / TO_sys column values count as Host (mainframe).',
+            '                      e.g. enter: HOST   (check your mapping FROM_sys/TO_sys column for the actual literal)',
+            '                      HostToOpen  = 3 receive sheets only',
+            '                      OpenToOpen / OpenToHost = GIFT+GFIX send sheets + 3 receive sheets',
+            '    j=J4BaseDir    -> root folder of J4 baseline workbooks (searched recursively)',
+            '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME'
+        ) }
+        '^Clone$' { @(
+            '  Phase params:',
+            '    d=SourceDir    -> external folder containing per-bizcode evidence files to copy',
+            '    b=BizCodes     -> override bizcode list (default: derived from mapping TO_code/FROM_code)',
+            '    t=TargetIds    -> limit rows'
+        ) }
+        '^Replace(Gift|Gfix|Df)$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit to specific Correl_ID_S / JOB_NAME / Excel_NAME',
+            '    f=Force        -> re-run rows already marked done'
+        ) }
+        '^Mark(Gift|Gfix|Df)$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> overwrite existing marks'
+        ) }
+        '^MarkGfixLog$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-highlight already-done rows'
+        ) }
+        '^Review(Gift|Gfix|Df|Evidence)$' { @(
+            '  Phase params:',
+            '    a=CursorCell   -> cell to activate when workbook opens (default: A3)',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-open already-reviewed workbooks'
+        ) }
+        '^(Gift|Gfix)(HmSnap|MqSnap|Jenkins)$|^GiftJenkinsNoFile$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows (Correl_ID_S / JOB_NAME)',
+            '    i=Interactive  -> pause before each row for manual confirmation',
+            '    f=Force        -> re-capture already-done rows',
+            '    r=RefreshUrls  -> re-fetch Jenkins folder URLs (use when URLs changed)'
+        ) }
+        '^GfixLogDownload$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-download already-done rows',
+            '  NOTE: GoAnywhere rows-per-page must be set to 100 manually before running.'
+        ) }
+        '^DfSnap$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-capture already-done rows',
+            '  NOTE: set Df.ExePath in VerifyConfig.psd1 to skip the path prompt.'
+        ) }
+        '^Validate$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows  (read-only, no mapping changes)'
+        ) }
+        '^ProbeShapes$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit to specific Excel_NAME'
+        ) }
+        default { @() }
+    }
+    foreach ($l in $lines) { Write-Host $l -ForegroundColor DarkGray }
+}
+
+function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
+    Show-PhaseNotes $PhaseKey
     Write-Host ''
     Write-Host 'Options for this run:' -ForegroundColor Cyan
     Write-Host ("  Force          : {0}" -f (To-BoolText $State.Force))
@@ -321,18 +393,20 @@ function Ask-RunOptions([hashtable]$State) {
     Write-Host ("  Window         : {0}x{1}" -f $State.WindowWidth, $State.WindowHeight)
     Write-Host ("  CropPx         : {0}" -f $State.CropPx)
     Write-Host ("  CursorCell     : {0}" -f $State.CursorCell)
-    if ($State.TargetIds.Count -gt 0)   { Write-Host ("  TargetIds      : {0}" -f ($State.TargetIds -join ', ')) }
+    if ($State.TargetIds.Count -gt 0)        { Write-Host ("  TargetIds      : {0}" -f ($State.TargetIds -join ', ')) }
     if (-not [string]::IsNullOrWhiteSpace($State.CloneSourceDir)) {
         Write-Host ("  CloneSourceDir : {0}" -f $State.CloneSourceDir)
     }
     if (-not [string]::IsNullOrWhiteSpace($State.J4BaseDir)) {
         Write-Host ("  J4BaseDir      : {0}" -f $State.J4BaseDir)
     }
-    if ($State.BizCodes.Count -gt 0)    { Write-Host ("  BizCodes       : {0}" -f ($State.BizCodes -join ', ')) }
+    if ($State.BizCodes.Count -gt 0)         { Write-Host ("  BizCodes       : {0}" -f ($State.BizCodes -join ', ')) }
+    if ($State.HostSystemTypes.Count -gt 0)  { Write-Host ("  HostSystemTypes: {0}" -f ($State.HostSystemTypes -join ', ')) }
     Write-Host ''
     Write-Host '  f=Force, i=Interactive, n=NoResize, r=RefreshUrls'
+    Write-Host '    (for Align: f=Force toggles -Apply mode)'
     Write-Host '  w=window size, c=crop px, t=target IDs, a=review cursor cell'
-    Write-Host '  d=Clone SourceDir, j=J4 BaseDir, b=BizCodes, Enter=continue'
+    Write-Host '  d=Clone SourceDir, j=J4 BaseDir, b=BizCodes, h=HostSystemTypes, Enter=continue'
     while ($true) {
         $x = Read-Host 'option'
         if ([string]::IsNullOrWhiteSpace($x)) { break }
@@ -371,6 +445,11 @@ function Ask-RunOptions([hashtable]$State) {
                 $v = Read-Choice 'BizCodes, comma-separated. Empty = use TO_code/FROM_code' ($State.BizCodes -join ',')
                 if ([string]::IsNullOrWhiteSpace($v)) { $State.BizCodes = @() }
                 else { $State.BizCodes = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+            }
+            '^h$' {
+                $v = Read-Choice 'HostSystemTypes, comma-separated (e.g. HOST,MF). Empty = auto-detect' ($State.HostSystemTypes -join ',')
+                if ([string]::IsNullOrWhiteSpace($v)) { $State.HostSystemTypes = @() }
+                else { $State.HostSystemTypes = @($v -split ',' | ForEach-Object { $_.Trim().ToUpper() } | Where-Object { $_ }) }
             }
             default { Write-Host '  unknown option' -ForegroundColor Yellow }
         }
@@ -610,7 +689,11 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($Config.Align) {
             $j4BaseDir = Resolve-AlignJ4BaseDir $Config $State
             if (-not [string]::IsNullOrWhiteSpace($j4BaseDir)) { $args['J4BaseDir'] = $j4BaseDir }
-            if (@($Config.Align.HostSystemTypes).Count -gt 0) { $args['HostSystemTypes'] = [string[]]$Config.Align.HostSystemTypes }
+            $hostTypes = @($State.HostSystemTypes)
+            if ($hostTypes.Count -eq 0 -and @($Config.Align.HostSystemTypes).Count -gt 0) {
+                $hostTypes = [string[]]$Config.Align.HostSystemTypes
+            }
+            if ($hostTypes.Count -gt 0) { $args['HostSystemTypes'] = $hostTypes }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         # Align defaults to a read-only DryRun report; -Force opts into -Apply.
@@ -782,25 +865,26 @@ foreach ($raw in @($BizCodes)) {
 $BizCodes = @($flatBiz | Select-Object -Unique)
 
 $state = @{
-    WorkDir        = $WorkDir
-    Owner          = $Owner
-    WindowWidth    = $WindowWidth
-    WindowHeight   = $WindowHeight
-    CropPx         = $CropPx
-    EvidenceDir    = $EvidenceDir
-    CursorCell     = $CursorCell
-    TargetIds      = $TargetIds
-    CloneSourceDir = $CloneSourceDir
-    J4BaseDir      = $J4BaseDir
-    BizCodes       = $BizCodes
-    ProbeFile      = $ProbeFile
-    ProbeSheet     = $ProbeSheet
-    DfExePath      = $DfExePath
-    Force          = [bool]$Force.IsPresent
-    Interactive    = [bool]$Interactive.IsPresent
-    NoResize       = [bool]$NoResize.IsPresent
-    RefreshUrls    = [bool]$RefreshUrls.IsPresent
-    DryRun         = [bool]$DryRun.IsPresent
+    WorkDir         = $WorkDir
+    Owner           = $Owner
+    WindowWidth     = $WindowWidth
+    WindowHeight    = $WindowHeight
+    CropPx          = $CropPx
+    EvidenceDir     = $EvidenceDir
+    CursorCell      = $CursorCell
+    TargetIds       = $TargetIds
+    CloneSourceDir  = $CloneSourceDir
+    J4BaseDir       = $J4BaseDir
+    BizCodes        = $BizCodes
+    HostSystemTypes = @()
+    ProbeFile       = $ProbeFile
+    ProbeSheet      = $ProbeSheet
+    DfExePath       = $DfExePath
+    Force           = [bool]$Force.IsPresent
+    Interactive     = [bool]$Interactive.IsPresent
+    NoResize        = [bool]$NoResize.IsPresent
+    RefreshUrls     = [bool]$RefreshUrls.IsPresent
+    DryRun          = [bool]$DryRun.IsPresent
 }
 
 $session['WorkDir'] = $WorkDir
@@ -877,7 +961,7 @@ while ($true) {
     if ($menu.ContainsKey($ans.Trim())) { $key = $menu[$ans.Trim()] }
     else { $key = Resolve-Phase $Config $ans.Trim() }
 
-    Ask-RunOptions $state
+    Ask-RunOptions $state $key
     Invoke-ToolPhase $key $Config $state
 
     $session['WorkDir'] = $state.WorkDir
