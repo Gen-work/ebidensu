@@ -311,7 +311,91 @@ function Get-RecommendPhase([hashtable]$Config, [array]$Rows) {
     return 'Status'
 }
 
-function Ask-RunOptions([hashtable]$State) {
+function Show-PhaseNotes([string]$PhaseKey) {
+    $lines = switch -Regex ($PhaseKey) {
+        '^Align$' { @(
+            '  Phase params:',
+            '    f=Force        -> -Apply  : sync DIFF sheets (work <- J4 values). EXPERIMENTAL - run on a copy first.',
+            '    h=HostTypes    -> which FROM_sys / TO_sys column values count as Host (mainframe).',
+            '                      e.g. enter: HOST   (check your mapping FROM_sys/TO_sys column for the actual literal)',
+            '                      HostToOpen  = 3 receive sheets only',
+            '                      OpenToOpen / OpenToHost = GIFT+GFIX send sheets + 3 receive sheets',
+            '    j=J4BaseDir    -> root folder of J4 baseline workbooks (searched recursively)',
+            '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME'
+        ) }
+        '^Clone$' { @(
+            '  Phase params:',
+            '    d=SourceDir    -> external folder containing per-bizcode evidence files to copy',
+            '    b=BizCodes     -> override bizcode list (default: derived from mapping TO_code/FROM_code)',
+            '    t=TargetIds    -> limit rows'
+        ) }
+        '^Replace(Gift|Gfix|Df)$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit to specific Correl_ID_S / JOB_NAME / Excel_NAME',
+            '    f=Force        -> re-run rows already marked done'
+        ) }
+        '^Mark(Gift|Gfix|Df)$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> overwrite existing marks'
+        ) }
+        '^MarkGfixLog$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-highlight already-done rows'
+        ) }
+        '^Review(Gift|Gfix|Df|Evidence)$' { @(
+            '  Phase params:',
+            '    a=CursorCell   -> cell to activate when workbook opens (default: A3)',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-open already-reviewed workbooks'
+        ) }
+        '^(Gift|Gfix)(HmSnap|MqSnap|Jenkins)$|^GiftJenkinsNoFile$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows (Correl_ID_S / JOB_NAME)',
+            '    i=Interactive  -> pause before each row for manual confirmation',
+            '    f=Force        -> re-capture already-done rows',
+            '    n=NoResize     -> skip Edge window resize',
+            '    r=RefreshUrls  -> re-fetch Jenkins folder URLs (use when URLs changed)'
+        ) }
+        '^GfixLogDownload$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-download already-done rows',
+            '  NOTE: GoAnywhere rows-per-page must be set to 100 manually before running.'
+        ) }
+        '^DfSnap$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-capture already-done rows',
+            '  NOTE: set Df.ExePath in VerifyConfig.psd1 to skip the path prompt.'
+        ) }
+        '^Validate$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows  (read-only, no mapping changes)'
+        ) }
+        '^ProbeShapes$' { @(
+            '  Prompts for the path to an evidence .xlsx file.',
+            '  Lists all shapes with name, AltText, and position for Mark.Boxes calibration.'
+        ) }
+        '^WatchProgress$' { @(
+            '  Read-only live monitor. Does NOT lock the mapping CSV.',
+            '  Press Ctrl+C to stop watching.'
+        ) }
+        '^RepairMapping$' { @(
+            '  Adds any missing phase columns (with value 0) to the mapping CSV.',
+            '  Safe - never modifies existing data. Runs automatically on startup too.'
+        ) }
+        default { @() }
+    }
+    if ($lines.Count -gt 0) {
+        Write-Host ''
+        foreach ($line in $lines) { Write-Host $line -ForegroundColor DarkCyan }
+    }
+}
+
+function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
+    Show-PhaseNotes $PhaseKey
     Write-Host ''
     Write-Host 'Options for this run:' -ForegroundColor Cyan
     Write-Host ("  Force          : {0}" -f (To-BoolText $State.Force))
@@ -889,7 +973,7 @@ while ($true) {
     if ($menu.ContainsKey($ans.Trim())) { $key = $menu[$ans.Trim()] }
     else { $key = Resolve-Phase $Config $ans.Trim() }
 
-    Ask-RunOptions $state
+    Ask-RunOptions $state $key
     Invoke-ToolPhase $key $Config $state
 
     $session['WorkDir'] = $state.WorkDir
