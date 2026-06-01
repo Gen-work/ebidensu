@@ -312,30 +312,30 @@ try {
         return
     }
 
-    # -- 4) apply the identical edits to the original --------
-    $wbOrig = $excel.Workbooks.Open($CheckSheetPath, 0, $false)   # ReadOnly=$false
-    if ($wbOrig.ReadOnly) {
-        Write-Host '  [HOLD] check sheet opened read-only (locked/no write access). Nothing written.' -ForegroundColor Red
-        try { $wbOrig.Close($false) } catch {}
-        $wbOrig = $null
-        return
-    }
-    $wsOrig = Get-SheetByName $wbOrig $SheetName
-    if ($null -eq $wsOrig) {
-        Write-Host ("[ERROR] sheet not found in original: {0}" -f $SheetName) -ForegroundColor Red
-        try { $wbOrig.Close($false) } catch {}
-        $wbOrig = $null
+    # -- 4) publish the previewed temp copy over the original ----
+    # The temp copy already IS the original plus the new rows, and we just
+    # verified above that the original did not change during the preview.
+    # So copy it back instead of reopening the original in Excel. This writes
+    # exactly what Misaki saw, and -- importantly -- it sidesteps Excel's
+    # ~218-char path limit: Workbooks.Open fails ("見つかりません") on the long
+    # UNC check-sheet path even though the file exists, whereas .NET Copy-Item
+    # handles the long path fine.
+    try { $wbTmp.Save() } catch {}
+    try { $wbTmp.Close($true) } catch {}
+    $wbTmp = $null
+
+    try {
+        Copy-Item -LiteralPath $tmpPath -Destination $CheckSheetPath -Force
+    } catch {
+        Write-Host ('  [HOLD] could not write the check sheet (open elsewhere or no access). Nothing written.') -ForegroundColor Red
+        Write-Host ('         {0}' -f $_.Exception.Message) -ForegroundColor Red
+        Write-ProgressEvent -WorkDir $WorkDir -Phase 'CheckSheet' -Action 'commit' -Status 'fail' -Message $_.Exception.Message
         return
     }
 
-    $committed = Apply-CheckSheetRows $wsOrig $candidates.ToArray() $true
-    $wbOrig.Save()
-    try { $wbOrig.Close($false) } catch {}
-    $wbOrig = $null
-
-    $okAdded = @($committed | Where-Object { $_.Action -eq 'add' }).Count
+    $okAdded = $added.Count
     Write-Host ("  [OK] wrote {0} row(s) to {1}" -f $okAdded, $CheckSheetPath) -ForegroundColor Green
-    foreach ($p in @($committed | Where-Object { $_.Action -eq 'add' })) {
+    foreach ($p in $added) {
         Write-ProgressEvent -WorkDir $WorkDir -Phase 'CheckSheet' -JobName $p.Target -Action 'commit' -Status 'ok' -Message ("No.{0}" -f $p.No)
     }
 } catch {
