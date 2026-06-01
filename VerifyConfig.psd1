@@ -83,7 +83,7 @@
             'GIFT_noGfixfile' = @()
             'GFIX_HM'         = @( @{ OffsetX = 384.8; OffsetY = 181.6; Width = 62.2; Height = 16.5 } ) # GIFT_HMと同じと仮定
             'GFIX_Jenkins'    = @( @{ OffsetX = 303;   OffsetY = 297;   Width = 288.8; Height = 18.8 } ) # GIFT_Jenkinsと同じと仮定
-            'DF'              = @( @{ OffsetX = 0;     OffsetY = 0;     Width = 200;   Height = 30 } )   # TODO: 後で要検証
+            'DF'              = @( @{ CellCols = 'AW:BC'; RowsFromBottom = 2 } )
         }
     }
 
