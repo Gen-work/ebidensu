@@ -36,7 +36,16 @@ param(
 
     [hashtable]$BoxesConfig = @{},
     [string]$NamePrefix = 'verifyMark_',
-    [double]$LineWeight = 1.5
+    [double]$LineWeight = 1.5,
+
+    # GFIX log yellow-highlight settings. Folded in from the old standalone
+    # MarkGfixLog phase: in -Mode Gfix the log "Command:" row is highlighted in
+    # the same pass that draws the red rectangles (one workbook open, one bit).
+    [string]$GfixLogAnchor = '',
+    [string]$GfixLogCommandPattern = "Command:\s*'/appl/[A-Za-z0-9]+/shell/",
+    [long]$GfixLogHighlightColor = 65535,
+    [int]$GfixLogColStart = 2,
+    [int]$GfixLogColEnd   = 51
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,6 +64,11 @@ if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host 'WorkDir path
 if (-not (Test-Path -LiteralPath $WorkDir)) { Write-Host "[ERROR] WorkDir not found: $WorkDir" -ForegroundColor Red; exit 1 }
 
 $forceFlag = [bool]$Force.IsPresent
+
+# Default GFIX log anchor: ▼GFIXログ (kept ASCII via [char] code points).
+if ([string]::IsNullOrWhiteSpace($GfixLogAnchor)) {
+    $GfixLogAnchor = [char]0x25BC + 'GFIX' + [char]0x30ED + [char]0x30B0
+}
 
 # ── Dot-source ExcelHelpers.ps1 ─────────────────────────────
 $candidates = @()
@@ -256,6 +270,17 @@ try {
                         }
                         $idx++
                     }
+                }
+
+                # GFIX log yellow highlight, folded in from the old MarkGfixLog
+                # phase. Best-effort: missing anchors warn but never block the
+                # isMarked bit -- the red rectangles are the gating evidence.
+                if ($Mode -eq 'Gfix') {
+                    $hl = Invoke-GfixLogHighlight -ws $ws -LogAnchor $GfixLogAnchor `
+                        -CommandPattern $GfixLogCommandPattern -HighlightColor $GfixLogHighlightColor `
+                        -ColStart $GfixLogColStart -ColEnd $GfixLogColEnd
+                    foreach ($w in @($hl.Warnings)) { Write-Host ("  [GfixLog WARN] {0}" -f $w) -ForegroundColor Yellow }
+                    Write-Host ("  [GfixLog] highlights applied: {0} (anchors: {1})" -f $hl.Applied, $hl.Anchors) -ForegroundColor DarkGray
                 }
             }
 

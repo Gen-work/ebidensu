@@ -19,7 +19,7 @@ Assert-Equal 0       (ConvertTo-TargetIdList $null).Count               'null ->
 $rows = @([pscustomobject]@{ Correl_ID_S = 'JIDSF48S'; GIFT_HM_snap = '1' })
 Ensure-MappingColumns -Rows $rows | Out-Null
 Assert-True ($rows[0].PSObject.Properties.Name -contains 'isMarked')        'adds missing isMarked'
-Assert-True ($rows[0].PSObject.Properties.Name -contains 'isGfixLogMarked') 'adds missing isGfixLogMarked'
+Assert-True ($rows[0].PSObject.Properties.Name -contains 'ReviewComment')   'adds missing ReviewComment'
 Assert-Equal '0' $rows[0].isMarked        'default isMarked = 0'
 Assert-Equal '1' $rows[0].GIFT_HM_snap    'existing value preserved'
 

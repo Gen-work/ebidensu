@@ -88,8 +88,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase GfixJenkins'
     Write-Host '  .\VerifyTool.ps1 -Phase GfixLog'
     Write-Host '  .\VerifyTool.ps1 -Phase DfSnap -DfExePath "C:\tools\df.exe"'
-    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog'
-    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog -TargetIds JIDSU91S -Force'
+    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog          # standalone re-highlight utility (folded into MarkGfix)'
     Write-Host '  .\VerifyTool.ps1 -Phase Clone -CloneSourceDir <ext_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase Align -J4BaseDir <j4_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGift'
@@ -97,8 +96,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceDf'
     Write-Host '  .\VerifyTool.ps1 -Phase MarkGift'
     Write-Host '  .\VerifyTool.ps1 -Phase MarkGift -TargetIds KJRVWD64 -Force'
-    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfix             # red rect + GfixLog highlight (auto)'
-    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog          # standalone re-run highlight only'
+    Write-Host '  .\VerifyTool.ps1 -Phase MarkGfix             # red rect + GFIX log highlight (one pass)'
     Write-Host '  .\VerifyTool.ps1 -Phase MarkDf'
     Write-Host '  .\VerifyTool.ps1 -Phase ProbeShapes -ProbeFile <evidence.xlsx>'
     Write-Host '  .\VerifyTool.ps1 -Phase RepairMapping'
@@ -107,6 +105,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase ReviewDf'
     Write-Host '  .\VerifyTool.ps1 -Phase ReviewEvidence'
     Write-Host '  .\VerifyTool.ps1 -Phase ReviewEvidence -CursorCell A1'
+    Write-Host '  .\VerifyTool.ps1 -Phase Comments            # list recorded review comments'
     Write-Host ''
     Write-Host 'Common options:'
     Write-Host '  -WorkDir <path>       Work folder. If omitted, last used path is remembered.'
@@ -339,7 +338,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  Phase params:',
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> overwrite existing marks',
-            '  NOTE: MarkGfixLog (yellow highlight) runs automatically after red-rectangle marking.'
+            '  NOTE: the GFIX log yellow-highlight is done in this same pass (folded in; no separate phase).'
         ) }
         '^Mark(Gift|Df)$' { @(
             '  Phase params:',
@@ -355,7 +354,10 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  Phase params:',
             '    a=CursorCell   -> cell to activate when workbook opens (default: A3)',
             '    t=TargetIds    -> limit rows',
-            '    f=Force        -> re-open already-reviewed workbooks'
+            '    f=Force        -> re-open already-reviewed workbooks',
+            '  NOTE: ReviewGift/Gfix/Df open the matching sheet up front. At the per-workbook',
+            '        prompt, append  -m "comment"  (works with Enter / s / q) to record a note;',
+            '        prior notes are shown on open. List all notes with the Comments phase.'
         ) }
         '^(Gift|Gfix)Jenkins$|^GiftJenkinsNoFile$' { @(
             '  Phase params:',
@@ -881,30 +883,20 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($Config.Mark.NamePrefix) { $args['NamePrefix']  = [string]$Config.Mark.NamePrefix }
             if ($Config.Mark.LineWeight) { $args['LineWeight']  = [double]$Config.Mark.LineWeight }
         }
+        # GFIX log yellow-highlight is folded into MarkGfix (no separate phase).
+        # Pass the GfixLog settings through for -Mode Gfix.
+        if ($mode -eq 'Gfix' -and $Config.GfixLog) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.LogAnchor))      { $args['GfixLogAnchor']         = [string]$Config.GfixLog.LogAnchor }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.CommandPattern)) { $args['GfixLogCommandPattern']  = [string]$Config.GfixLog.CommandPattern }
+            if ($Config.GfixLog.HighlightColor)    { $args['GfixLogHighlightColor'] = [long]$Config.GfixLog.HighlightColor }
+            if ($Config.GfixLog.HighlightColStart) { $args['GfixLogColStart']       = [int]$Config.GfixLog.HighlightColStart }
+            if ($Config.GfixLog.HighlightColEnd)   { $args['GfixLogColEnd']         = [int]$Config.GfixLog.HighlightColEnd }
+        }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
         Write-Host ("[RUN] Mark -Mode {0}" -f $mode) -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
-
-        # MarkGfix の後に GfixLog ハイライトを自動実行
-        if ($PhaseKey -eq 'MarkGfix') {
-            Write-Host ''
-            Write-Host '[RUN] MarkGfixLog (auto-follow)' -ForegroundColor Green
-            $pLog   = Resolve-ToolPath $Config 'MarkGfixLog'
-            $logArgs = $base.Clone()
-            $logArgs['ExcelHelpersScript'] = $eh
-            if ($Config.GfixLog) {
-                if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.LogAnchor))      { $logArgs['LogAnchor']         = [string]$Config.GfixLog.LogAnchor }
-                if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.CommandPattern))  { $logArgs['CommandPattern']    = [string]$Config.GfixLog.CommandPattern }
-                if ($Config.GfixLog.HighlightColor)    { $logArgs['HighlightColor']    = [long]$Config.GfixLog.HighlightColor }
-                if ($Config.GfixLog.HighlightColStart) { $logArgs['HighlightColStart'] = [int]$Config.GfixLog.HighlightColStart }
-                if ($Config.GfixLog.HighlightColEnd)   { $logArgs['HighlightColEnd']   = [int]$Config.GfixLog.HighlightColEnd }
-            }
-            if ($State.TargetIds.Count -gt 0) { $logArgs['TargetIds'] = $State.TargetIds }
-            if ($State.Force) { $logArgs['Force'] = $true }
-            & $pLog @logArgs
-        }
         return
     }
 
@@ -943,6 +935,33 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         Write-Host '[RUN] Validate' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'Comments') {
+        $mp = Get-MappingPath $Config $State.WorkDir $State.Owner
+        Write-Host '[RUN] Review comments' -ForegroundColor Green
+        Write-Host ("  Mapping: {0}" -f $mp)
+        if (-not (Test-Path -LiteralPath $mp)) {
+            Write-Host ("  mapping not found: {0}" -f $mp) -ForegroundColor Yellow; return
+        }
+        $rows  = @(Import-Csv -LiteralPath $mp -Encoding UTF8)
+        $first = $rows | Select-Object -First 1
+        if ($null -eq $first -or -not ($first.PSObject.Properties.Name -contains 'ReviewComment')) {
+            Write-Host '  no ReviewComment column yet (no comments recorded).' -ForegroundColor DarkGray; return
+        }
+        $withComments = @($rows |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.ReviewComment) } |
+            Group-Object Excel_NAME | Sort-Object Name)
+        if ($withComments.Count -eq 0) {
+            Write-Host '  (no comments recorded)' -ForegroundColor DarkGray; return
+        }
+        Write-Host ''
+        Write-Host ("===== Review comments ({0} workbook(s)) =====" -f $withComments.Count) -ForegroundColor Cyan
+        foreach ($g in $withComments) {
+            $c = [string]($g.Group | Select-Object -First 1).ReviewComment
+            Write-Host ("  {0,-28} {1}" -f $g.Name, $c)
+        }
         return
     }
 

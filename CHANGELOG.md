@@ -3,6 +3,35 @@
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
+## 2026-06-01 - Review workflow: header-fill fix, MarkGfix merge, review comments, mode sheet
+
+Host->Open focus. Five related improvements:
+
+### Fixed
+- **Replace no longer drops the N1:U1 header fill.** `Reset-SheetBelowRow`
+  (ExcelHelpers.ps1) used `Range.Clear()` on `A<start>:T<last>`, which wipes the
+  *entire* merged cell when a colored header banner merged above the start row
+  dips into the clear range. It now snapshots the fill+value of any such
+  above-anchored merge on the boundary row, clears, then restores (re-merging
+  defensively). Shared by all three Replace modes, so the fix covers
+  ReplaceGift/Gfix/Df uniformly.
+
+### Changed
+- **GFIX-log highlight folded into MarkGfix.** The yellow "Command:" highlight is
+  now applied in the same pass that draws GFIX red rectangles (one workbook open,
+  tracked by `isMarked` bit 2). The standalone `isGfixLogMarked` column and the
+  `MarkGfixLog` phase entry are removed. Core logic moved to the shared
+  `Invoke-GfixLogHighlight` in ExcelHelpers.ps1; `MarkGfixLog.ps1` stays as a
+  by-name re-highlight utility (no mapping column).
+- **Review opens the matching sheet.** ReviewGift/Gfix/Df now bring
+  GIFT/GFIX jushin kekka (or the DF compare sheet) to the front on open.
+
+### Added
+- **Review comments.** At the per-workbook Review prompt, append `-m "comment"`
+  (works with Enter / `s` / `q`) to record a note in the new `ReviewComment`
+  column (per Excel_NAME group). Prior notes are shown when the workbook opens.
+  New read-only **Comments** phase lists every recorded note.
+
 ## 2026-05-31 - Cleanup pass: paste residue, SnapConfig BOM, encoding policy, JenkinsSnap DryRun
 
 Follow-up to the review of the shared-lib refactor. The big blockers

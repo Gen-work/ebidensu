@@ -454,7 +454,7 @@ $excel = New-Object -ComObject Excel.Application
                 isReplaced            = 0
                 isMarked              = 0
                 isReviewed            = 0
-                isGfixLogMarked       = 0
+                ReviewComment         = ""
             }
             $records.Add($rec)
         }
@@ -537,7 +537,7 @@ $excel = New-Object -ComObject Excel.Application
     if ($isOverwrite) {
         $statusCols = @('Excel_snap','GIFT_HM_snap','GIFT_MQ_snap','GIFT_Jenkins_snap',
                         'GIFT_noGfixfile_snap','GFIX_HM_snap','GFIX_Jenkins_snap','GFIX_log',
-                        'DF_snap','isReplaced','isMarked','isReviewed','isGfixLogMarked')
+                        'DF_snap','isReplaced','isMarked','isReviewed','ReviewComment')
         $oldByM = @{}
         foreach ($x in $old) {
             $key = [string]$x.Correl_ID_M
