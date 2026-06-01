@@ -9,8 +9,11 @@
 #        Or override with -BizCodes.)
 #    2. Fallback to template: <WorkDir>\template_<BizCode>.xlsx
 #    3. Universal fallback : <WorkDir>\template.xlsx
-#    Then copy -> <WorkDir>\evidence\<source filename> when copied from SourceDir
-#    (for example J4..._<Excel_NAME>.xlsx), or <Excel_NAME>.xlsx for templates
+#    Dest filename:
+#      From SourceDir   -> source filename preserved (e.g. J4..._LJRVWD64.xlsx)
+#      Full-stem name   -> <full stem>.xlsx  (J4..._LJRVWD64.xlsx) -- preferred for J4 upload
+#      Suffix form (_X) -> X.xlsx  (leading _ stripped)
+#      Short stem       -> <stem>.xlsx  (legacy)
 #
 #  Skip if dest exists, unless -Force.
 #
@@ -220,7 +223,7 @@ foreach ($g in $groups) {
     }
 
     try {
-        $destLeaf = if ($foundFrom -like 'source*') { Split-Path $foundPath -Leaf } else { ("{0}.xlsx" -f $excelName) }
+        $destLeaf = if ($foundFrom -like 'source*') { Split-Path $foundPath -Leaf } else { Get-ExcelDestLeaf $excelName }
         $destPath = if ($existingPath) { $existingPath } else { Join-Path $evDir $destLeaf }
         Copy-Item -LiteralPath $foundPath -Destination $destPath -Force
         if ($foundFrom -like 'source*') {
@@ -251,7 +254,7 @@ Write-Host ("  Missing source : {0}" -f $cntMiss) -ForegroundColor $(if ($cntMis
 if ($cntMiss -gt 0) {
     Write-Host ''
     Write-Host 'Missing Excel(s) need either:' -ForegroundColor Yellow
-    Write-Host '  - <SourceDir>\<bizcode>\<Excel_NAME>.xlsx, or' -ForegroundColor DarkGray
+    Write-Host '  - <SourceDir>\<bizcode>\*<Excel_NAME>.xlsx  (full J4 name or exact stem), or' -ForegroundColor DarkGray
     Write-Host '  - <WorkDir>\template_<bizcode>.xlsx, or' -ForegroundColor DarkGray
     Write-Host '  - <WorkDir>\template.xlsx (universal fallback)' -ForegroundColor DarkGray
 }
