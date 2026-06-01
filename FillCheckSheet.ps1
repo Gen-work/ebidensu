@@ -246,6 +246,11 @@ try {
     $excel = New-ExcelApp
     $excel.Visible = $true
     try { $excel.DisplayAlerts = $false } catch {}
+    # New-ExcelApp turns ScreenUpdating OFF for headless speed. This phase
+    # shows the workbook to the operator for a visual check, so turn it back
+    # ON -- otherwise the visible window never repaints and the preview looks
+    # blank (no name, no rows/columns) even though the content is correct.
+    try { $excel.ScreenUpdating = $true } catch {}
 
     # -- DryRun: compute on a read-only open of the original, no writes --
     if ($dryRunFlag) {
