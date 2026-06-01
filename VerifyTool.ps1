@@ -329,10 +329,12 @@ function Ask-RunOptions([hashtable]$State) {
         Write-Host ("  J4BaseDir      : {0}" -f $State.J4BaseDir)
     }
     if ($State.BizCodes.Count -gt 0)    { Write-Host ("  BizCodes       : {0}" -f ($State.BizCodes -join ', ')) }
+    if ($State.HostSystemTypes.Count -gt 0) { Write-Host ("  HostSystemTypes: {0}" -f ($State.HostSystemTypes -join ', ')) }
     Write-Host ''
     Write-Host '  f=Force, i=Interactive, n=NoResize, r=RefreshUrls'
+    Write-Host '    (for Align: f=Force toggles -Apply mode)'
     Write-Host '  w=window size, c=crop px, t=target IDs, a=review cursor cell'
-    Write-Host '  d=Clone SourceDir, j=J4 BaseDir, b=BizCodes, Enter=continue'
+    Write-Host '  d=Clone SourceDir, j=J4 BaseDir, b=BizCodes, h=HostSystemTypes, Enter=continue'
     while ($true) {
         $x = Read-Host 'option'
         if ([string]::IsNullOrWhiteSpace($x)) { break }
@@ -370,6 +372,11 @@ function Ask-RunOptions([hashtable]$State) {
                 $v = Read-Choice 'BizCodes, comma-separated. Empty = use TO_code/FROM_code' ($State.BizCodes -join ',')
                 if ([string]::IsNullOrWhiteSpace($v)) { $State.BizCodes = @() }
                 else { $State.BizCodes = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+            }
+            '^h$' {
+                $v = Read-Choice 'HostSystemTypes, comma-separated (e.g. HOST,MF). Empty = auto-detect' ($State.HostSystemTypes -join ',')
+                if ([string]::IsNullOrWhiteSpace($v)) { $State.HostSystemTypes = @() }
+                else { $State.HostSystemTypes = @($v -split ',' | ForEach-Object { $_.Trim().ToUpper() } | Where-Object { $_ }) }
             }
             default { Write-Host '  unknown option' -ForegroundColor Yellow }
         }
@@ -606,11 +613,13 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $eh = Resolve-ToolPath $Config 'ExcelHelpers'
         $args = $base.Clone()
         $args['ExcelHelpersScript'] = $eh
-        if ($Config.Align) {
-            $j4BaseDir = Resolve-AlignJ4BaseDir $Config $State
-            if (-not [string]::IsNullOrWhiteSpace($j4BaseDir)) { $args['J4BaseDir'] = $j4BaseDir }
-            if (@($Config.Align.HostSystemTypes).Count -gt 0) { $args['HostSystemTypes'] = [string[]]$Config.Align.HostSystemTypes }
+        $j4BaseDir = Resolve-AlignJ4BaseDir $Config $State
+        if (-not [string]::IsNullOrWhiteSpace($j4BaseDir)) { $args['J4BaseDir'] = $j4BaseDir }
+        $hostTypes = @($State.HostSystemTypes)
+        if ($hostTypes.Count -eq 0 -and $Config.Align -and @($Config.Align.HostSystemTypes).Count -gt 0) {
+            $hostTypes = [string[]]$Config.Align.HostSystemTypes
         }
+        if ($hostTypes.Count -gt 0) { $args['HostSystemTypes'] = $hostTypes }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         # Align defaults to a read-only DryRun report; -Force opts into -Apply.
         if ($State.Force) { $args['Apply'] = $true }
@@ -780,26 +789,30 @@ foreach ($raw in @($BizCodes)) {
 }
 $BizCodes = @($flatBiz | Select-Object -Unique)
 
+$initHostTypes = @()
+if ($Config.Align -and @($Config.Align.HostSystemTypes).Count -gt 0) { $initHostTypes = [string[]]$Config.Align.HostSystemTypes }
+
 $state = @{
-    WorkDir        = $WorkDir
-    Owner          = $Owner
-    WindowWidth    = $WindowWidth
-    WindowHeight   = $WindowHeight
-    CropPx         = $CropPx
-    EvidenceDir    = $EvidenceDir
-    CursorCell     = $CursorCell
-    TargetIds      = $TargetIds
-    CloneSourceDir = $CloneSourceDir
-    J4BaseDir      = $J4BaseDir
-    BizCodes       = $BizCodes
-    ProbeFile      = $ProbeFile
-    ProbeSheet     = $ProbeSheet
-    DfExePath      = $DfExePath
-    Force          = [bool]$Force.IsPresent
-    Interactive    = [bool]$Interactive.IsPresent
-    NoResize       = [bool]$NoResize.IsPresent
-    RefreshUrls    = [bool]$RefreshUrls.IsPresent
-    DryRun         = [bool]$DryRun.IsPresent
+    WorkDir         = $WorkDir
+    Owner           = $Owner
+    WindowWidth     = $WindowWidth
+    WindowHeight    = $WindowHeight
+    CropPx          = $CropPx
+    EvidenceDir     = $EvidenceDir
+    CursorCell      = $CursorCell
+    TargetIds       = $TargetIds
+    CloneSourceDir  = $CloneSourceDir
+    J4BaseDir       = $J4BaseDir
+    BizCodes        = $BizCodes
+    HostSystemTypes = $initHostTypes
+    ProbeFile       = $ProbeFile
+    ProbeSheet      = $ProbeSheet
+    DfExePath       = $DfExePath
+    Force           = [bool]$Force.IsPresent
+    Interactive     = [bool]$Interactive.IsPresent
+    NoResize        = [bool]$NoResize.IsPresent
+    RefreshUrls     = [bool]$RefreshUrls.IsPresent
+    DryRun          = [bool]$DryRun.IsPresent
 }
 
 $session['WorkDir'] = $WorkDir

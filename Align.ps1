@@ -69,6 +69,7 @@ $evDir       = Join-Path $WorkDir 'evidence'
 
 if (-not (Test-Path -LiteralPath $mappingPath)) { Write-Host "[ERROR] mapping not found: $mappingPath" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path -LiteralPath $evDir))       { Write-Host "[ERROR] evidence dir missing: $evDir" -ForegroundColor Red; exit 1 }
+if ([string]::IsNullOrWhiteSpace($J4BaseDir)) { $J4BaseDir = Read-Host 'J4BaseDir path' }
 if ([string]::IsNullOrWhiteSpace($J4BaseDir) -or -not (Test-Path -LiteralPath $J4BaseDir)) {
     Write-Host "[ERROR] -J4BaseDir is required and must exist (baseline workbooks)." -ForegroundColor Red; exit 1
 }
