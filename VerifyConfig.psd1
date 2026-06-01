@@ -107,6 +107,64 @@
         DfSnap          = 'DfSnap.ps1'
         Align           = 'Align.ps1'
         WatchProgress   = 'Watch-MappingProgress.ps1'
+        DeliverMail     = 'DeliverMail.ps1'
+        FillCheckSheet  = 'FillCheckSheet.ps1'
+    }
+
+    # Reviewer (To / 確認者). The single "viewer" param: used as the mail
+    # recipient, the body greeting, and the check-sheet 確認者 column.
+    Reviewer = @{
+        DisplayName = 'Hiromi Kase (加瀬 弘美 GE)'
+        Address     = 'hiromi_kase_gst@jp.honda'
+        ShortName   = '加瀬'
+    }
+
+    # DeliverMail phase: one Outlook draft per Excel_NAME. Operator clicks Send.
+    Mail = @{
+        From  = 'cho_gen_gst@jp.honda'
+        # フェーズ token in the subject. 対象物 = Excel_NAME (short code).
+        Phase = 'JRV→IDS,IGP_J4'
+        # Subject = 【GIFT廃止対応】<Phase>レビュー依頼(<対象物>)  ({0}=Phase, {1}=Excel_NAME)
+        SubjectTemplate = '【GIFT廃止対応】{0}レビュー依頼({1})'
+        # UNC folder + filename shown in the body. Replace REQ-000xxxxx / path
+        # for the real case before sending.
+        EvidenceFolder   = '\\Fs-f3170-1\12_生産管理\00121.GPCS\31.NII\外部サーバー資料\S08.共有情報\82_発注受入領域関連\08. 対応案件関連\01 対応中\REQ-000xxxxx_GIFT廃止対応\40.J4\07.GPCS\JRV'
+        CheckSheetFolder = '\\Fs-f3170-1\12_生産管理\00121.GPCS\31.NII\外部サーバー資料\S08.共有情報\82_発注受入領域関連\08. 対応案件関連\01 対応中\REQ-000xxxxx_GIFT廃止対応\00.管理'
+        CheckSheetFile   = 'レビューチェックシート_REQ-000xxxxx_GIFT廃止対応_OPEN.xlsx'
+        # Body lines, joined with CRLF. Placeholders:
+        #   {0}=Reviewer.ShortName {1}=Owner {2}=EvidenceFolder
+        #   {3}=evidence filename (per Excel) {4}=CheckSheetFolder {5}=CheckSheetFile
+        BodyLines = @(
+            '{0}さん',
+            '',
+            'お疲れ様です。{1}です。',
+            '',
+            '標記件、下記レビューをお願い致します。',
+            '{2}',
+            '{3}',
+            '',
+            '・レビューチェックシート',
+            '{4}',
+            '{5}',
+            '',
+            '以上、よろしくお願いいたします。'
+        )
+    }
+
+    # CheckSheet phase: append one row per Excel to the shared review check
+    # sheet, sheet "Check Sheet_J4". Edited via a temp copy first (double-check).
+    CheckSheet = @{
+        # Actual file to edit (half-width katakana name). Replace REQ-000xxxxx.
+        Path      = '\\Fs-f3170-1\12_生産管理\00121.GPCS\31.NII\外部サーバー資料\S08.共有情報\82_発注受入領域関連\08. 対応案件関連\01 対応中\REQ-000xxxxx_GIFT廃止対応\00.管理\ﾚﾋﾞｭｰﾁｪｯｸｼｰﾄ_REQ-000xxxxx_GIFT廃止対応_OPEN.xlsx'
+        SheetName = 'Check Sheet_J4'
+        Language  = 'JAVA'          # col C  (COBOL/JAVA)
+        Phase     = 'J4内部ﾚﾋﾞｭｰ'    # col E  (確認ﾌｪｰｽﾞ)
+        # 1-indexed columns: A No. / B 記入日 / C COBOL/JAVA / D ﾘｿｰｽID /
+        # E 確認ﾌｪｰｽﾞ / F レビュー対象 / G 担当 / H 確認者 / (I 完了希望日, J~ blank)
+        ColNo = 1; ColDate = 2; ColLang = 3; ColResourceId = 4
+        ColPhase = 5; ColTarget = 6; ColOwner = 7; ColViewer = 8
+        # Fallback date format if there is no prior row to copy from.
+        DateFormat = 'yyyy/m/d'
     }
 
     # DF snap / mark configuration
@@ -187,6 +245,8 @@
         @{ Key='ReviewDf';           Field='isReviewed'; BitValue=4; Label='DF 目視 review';                  Status='implemented' }
         @{ Key='ReviewEvidence';     Field='isReviewed'; BitValue=7; Label='全体 目視 review + 保存';          Status='implemented' }
         @{ Key='Comments';           Field='';                     Label='review コメント 一覧 (read-only)';   Status='implemented' }
+        @{ Key='CheckSheet';         Field='';                     Label='レビューチェックシート 記入';        Status='implemented' }
+        @{ Key='DeliverMail';        Field='isDelivered';          Label='レビュー依頼メール 送付';            Status='implemented' }
         @{ Key='Validate';           Field='';                     Label='就緒状態 診断 (read-only)';         Status='implemented' }
         @{ Key='RepairMapping';      Field='';                     Label='mapping 列補完 (auto on startup)';  Status='implemented' }
         @{ Key='ProbeShapes';        Field='';                     Label='Excel shape 座標 / AltText 一覧';    Status='implemented' }
@@ -239,6 +299,15 @@
         WatchProgress     = 'WatchProgress'
         Watch             = 'WatchProgress'
         Progress          = 'WatchProgress'
+
+        CheckSheet        = 'CheckSheet'
+        FillCheckSheet    = 'CheckSheet'
+        RvCheck           = 'CheckSheet'
+
+        DeliverMail       = 'DeliverMail'
+        Mail              = 'DeliverMail'
+        SendMail          = 'DeliverMail'
+        Deliver           = 'DeliverMail'
 
         Replace           = 'ReplaceGift'    # bare "Replace" -> GIFT
         ReplaceEvidence   = 'ReplaceGift'    # legacy planned name -> GIFT

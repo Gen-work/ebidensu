@@ -135,6 +135,15 @@ Visual review:
 .\VerifyTool.ps1 -Phase ReviewEvidence -TargetIds JIGPL48S
 ```
 
+Delivery (final hand-off):
+
+```powershell
+.\VerifyTool.ps1 -Phase CheckSheet                          # fill the review check sheet
+.\VerifyTool.ps1 -Phase CheckSheet -CheckSheetPath "\\srv\...\check.xlsx"
+.\VerifyTool.ps1 -Phase DeliverMail                         # one Outlook draft per Excel
+.\VerifyTool.ps1 -Phase DeliverMail -TargetIds SJRVWD64
+```
+
 ## Common options
 
 ```powershell
@@ -215,6 +224,46 @@ For each pending row:
 5. The script selects `A3` by default on every sheet from last to first, saves, closes, and updates `isReviewed = 1`.
 
 Use `-CursorCell A1` if the review rule changes.
+
+## CheckSheet behavior
+
+Phase: `CheckSheet` (aliases: `FillCheckSheet`, `RvCheck`). Appends one row per
+evidence Excel (grouped by `Excel_NAME`) to the shared review check sheet, sheet
+`Check Sheet_J4`. Columns written: A No. (continued from the last numeric No.,
+only when blank), B 記入日 (today, number format copied from the row above),
+C `JAVA`, E `J4内部ﾚﾋﾞｭｰ`, F full evidence filename
+(`<Excel_Prefix>_<Excel_NAME>.xlsx`), G owner, H reviewer (`加瀬`). D/I/J~ are
+left blank.
+
+Because the check sheet is a public document the write is double-checked:
+
+1. Snapshot the original's timestamp + size.
+2. Copy it to a TEMP file, fill the planned rows there, and open it (visible) for review.
+3. Press Enter to commit, or `q` to abort (nothing written).
+4. The original is re-stat'd; the identical edits are committed **only if it is
+   unchanged** since the preview began. If it changed, the write is held so you
+   can re-run against the new content.
+
+Already-listed Excels (matched on column F) are skipped unless `-Force`. The
+path comes from `CheckSheet.Path` in `VerifyConfig.psd1`; if it does not exist
+the phase prompts and remembers the answer in `verify_session.json` (or pass
+`-CheckSheetPath`).
+
+## DeliverMail behavior
+
+Phase: `DeliverMail` (aliases: `Mail`, `SendMail`, `Deliver`). Builds one Outlook
+**draft** per `Excel_NAME` via Outlook COM (`CreateItem` + `Display`) — it never
+sends automatically. Subject is
+`【GIFT廃止対応】<Phase>レビュー依頼(<Excel_NAME>)`; the body, reviewer (`To`),
+and UNC paths are all config-driven (`Mail` / `Reviewer` in `VerifyConfig.psd1`).
+
+For each pending group:
+
+1. The draft opens in Outlook. You eyeball it and click **Send** yourself.
+2. Return to the shell and press Enter to set `isDelivered = 1` for that Excel.
+   `s` skips, `q` quits, and `-m "comment"` records a note in `DeliverComment`.
+
+Outlook is released at the end but never Quit (it may be your live session).
 
 ## Phase status
 

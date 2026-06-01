@@ -47,6 +47,13 @@ Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseli
 ReplaceEvidence.ps1     Phase ReplaceGift / ReplaceGfix / ReplaceDf (plan-driven)
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf
 ReviewEvidence.ps1      Phase ReviewGift / ReviewGfix / ReviewDf / ReviewEvidence
+FillCheckSheet.ps1      Phase CheckSheet: append a row per Excel to the shared
+                        review check sheet (Check Sheet_J4) via a temp-copy
+                        preview, then commit only if the original is unchanged.
+DeliverMail.ps1         Phase DeliverMail: one Outlook *draft* per Excel_NAME
+                        (CreateItem+Display, never auto-sent); operator clicks
+                        Send then Enter -> sets isDelivered. ASCII source;
+                        subject/body/reviewer come from config (Mail/Reviewer).
 Validate.ps1            Phase Validate (read-only diagnostic)
 Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
 Check-Encoding.ps1      read-only encoding policy checker + label self-test
@@ -136,6 +143,14 @@ A free-text `ReviewComment` column (per Excel_NAME group) holds review notes
 captured via the `-m "comment"` option at the Review prompt; list them with the
 `Comments` phase.
 
+`isDelivered` is a plain `0/1` flag (NOT a bitmask): set to `1` per Excel_NAME
+when the operator confirms the DeliverMail draft was sent. `DeliverComment` is
+its free-text note column (captured with `-m "comment"` at the DeliverMail
+prompt). Both are defaulted by MappingStore; `isDelivered` is a `PhaseOrder`
+field so it is auto-added on startup and shown in Status. The `CheckSheet` phase
+writes only to the external review check sheet workbook — it does not touch the
+mapping.
+
 `PhaseOrder` in `VerifyConfig.psd1` has a `BitValue` key for each bitmask phase.
 
 ### Excel COM rules
@@ -176,6 +191,7 @@ Phases: Mapping, ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins,
 GiftJenkinsNoFile, GfixHmSnap, GfixJenkins, GfixLogDownload, DfSnap,
 Clone, **Align (new)**, ReplaceGift/Gfix/Df, MarkGift/Gfix/Df,
 ReviewGift/Gfix/Df, ReviewEvidence, **Comments (new, review-note list)**,
+**CheckSheet (new, fill review check sheet)**, **DeliverMail (new, review-request mail)**,
 Validate, RepairMapping, ProbeShapes, Crop, **WatchProgress (new)**.
 The GFIX-log highlight is folded into MarkGfix; `MarkGfixLog.ps1` remains only as
 a standalone re-highlight utility (reachable by name, no mapping column).

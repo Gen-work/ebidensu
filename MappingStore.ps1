@@ -43,7 +43,9 @@ function Get-MappingStatusColumns {
         @{ Name = 'isReplaced';           Default = '0' },
         @{ Name = 'isMarked';             Default = '0' },
         @{ Name = 'isReviewed';           Default = '0' },
-        @{ Name = 'ReviewComment';        Default = '' }
+        @{ Name = 'ReviewComment';        Default = '' },
+        @{ Name = 'isDelivered';          Default = '0' },
+        @{ Name = 'DeliverComment';       Default = '' }
     )
 }
 

@@ -35,6 +35,9 @@ param(
     [string]$ProbeFile  = '',
     [string]$ProbeSheet = '',
 
+    # CheckSheet
+    [string]$CheckSheetPath = '',
+
     [switch]$Force,
     [switch]$Interactive,
     [switch]$NoResize,
@@ -106,6 +109,10 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase ReviewEvidence'
     Write-Host '  .\VerifyTool.ps1 -Phase ReviewEvidence -CursorCell A1'
     Write-Host '  .\VerifyTool.ps1 -Phase Comments            # list recorded review comments'
+    Write-Host '  .\VerifyTool.ps1 -Phase CheckSheet          # fill the review check sheet (temp-preview, then commit)'
+    Write-Host '  .\VerifyTool.ps1 -Phase CheckSheet -CheckSheetPath "\\srv\...\check.xlsx"'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail         # one Outlook draft per Excel; you click Send + Enter'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail -TargetIds SJRVWD64'
     Write-Host ''
     Write-Host 'Common options:'
     Write-Host '  -WorkDir <path>       Work folder. If omitted, last used path is remembered.'
@@ -405,6 +412,21 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    c=CropPx       -> crop existing PNG edges',
             '    f=Force        -> re-crop directories already marked cropped'
         ) }
+        '^CheckSheet$' { @(
+            '  Phase params:',
+            '    k=CheckSheetPath -> review check sheet .xlsx (prompts if config path is missing)',
+            '    t=TargetIds      -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
+            '    f=Force          -> add a row even if the Excel is already listed',
+            '  NOTE: edits are previewed in a TEMP copy first; you press Enter to commit.',
+            '        If the real check sheet changes during the preview, the write is held.'
+        ) }
+        '^DeliverMail$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
+            '    f=Force        -> re-draft rows already marked delivered',
+            '  NOTE: one Outlook DRAFT per Excel (never auto-sent). You click Send, then',
+            '        press Enter to mark isDelivered. Append  -m "comment"  to record a note.'
+        ) }
         default { @() }
     }
     foreach ($l in $lines) { Write-Host $l -ForegroundColor DarkGray }
@@ -425,6 +447,8 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^Validate$' { return @('t') }
         '^ProbeShapes$' { return @('p','s') }
         '^Crop$' { return @('c','f') }
+        '^CheckSheet$' { return @('t','f','k') }
+        '^DeliverMail$' { return @('t','f') }
         '^Mapping$|^ExcelSnap$' { return @('f') }
         default { return @() }
     }
@@ -462,6 +486,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'e') { Write-Host ("  DfExePath      : {0}" -f $State.DfExePath) }
     if (Test-PhaseOption $allowed 'p') { Write-Host ("  ProbeFile      : {0}" -f $State.ProbeFile) }
     if (Test-PhaseOption $allowed 's') { Write-Host ("  ProbeSheet     : {0}" -f $State.ProbeSheet) }
+    if (Test-PhaseOption $allowed 'k') { Write-Host ("  CheckSheetPath : {0}" -f $(if ([string]::IsNullOrWhiteSpace($State.CheckSheetPath)) { '(config/prompt)' } else { $State.CheckSheetPath })) }
 
     Write-Host ''
     if ($allowed.Count -eq 0) {
@@ -486,6 +511,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 'e') { $help += 'e=DfExePath' }
         if (Test-PhaseOption $allowed 'p') { $help += 'p=ProbeFile' }
         if (Test-PhaseOption $allowed 's') { $help += 's=ProbeSheet' }
+        if (Test-PhaseOption $allowed 'k') { $help += 'k=CheckSheet path' }
         Write-Host ("  {0}, Enter=continue" -f ($help -join ', '))
     }
 
@@ -582,6 +608,10 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
             '^s$' {
                 if (-not (Test-PhaseOption $allowed 's')) { Write-UnusedOption $PhaseKey 's' }
                 else { $State.ProbeSheet = Read-Choice 'Probe sheet name. Empty = all/first' $State.ProbeSheet }
+            }
+            '^k$' {
+                if (-not (Test-PhaseOption $allowed 'k')) { Write-UnusedOption $PhaseKey 'k' }
+                else { $State.CheckSheetPath = Read-Choice 'Review check sheet .xlsx path. Empty = use config' $State.CheckSheetPath }
             }
             default { Write-Host '  unknown option' -ForegroundColor Yellow }
         }
@@ -900,6 +930,63 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         return
     }
 
+    if ($PhaseKey -eq 'CheckSheet') {
+        $p  = Resolve-ToolPath $Config 'FillCheckSheet'
+        $eh = Resolve-ToolPath $Config 'ExcelHelpers'
+        $args = $base.Clone()
+        $args['ExcelHelpersScript'] = $eh
+        if ($Config.CheckSheet) {
+            $cs = $Config.CheckSheet
+            $csPath = $State.CheckSheetPath
+            if ([string]::IsNullOrWhiteSpace($csPath)) { $csPath = [string]$cs.Path }
+            if (-not [string]::IsNullOrWhiteSpace($csPath))               { $args['CheckSheetPath'] = $csPath }
+            if (-not [string]::IsNullOrWhiteSpace([string]$cs.SheetName)) { $args['SheetName']      = [string]$cs.SheetName }
+            if (-not [string]::IsNullOrWhiteSpace([string]$cs.Language))  { $args['Language']       = [string]$cs.Language }
+            if (-not [string]::IsNullOrWhiteSpace([string]$cs.Phase))     { $args['Phase']          = [string]$cs.Phase }
+            if (-not [string]::IsNullOrWhiteSpace([string]$cs.DateFormat)){ $args['DateFormat']     = [string]$cs.DateFormat }
+            foreach ($k in @('ColNo','ColDate','ColLang','ColResourceId','ColPhase','ColTarget','ColOwner','ColViewer')) {
+                if ($cs.ContainsKey($k) -and $null -ne $cs[$k]) { $args[$k] = [int]$cs[$k] }
+            }
+        }
+        if ($Config.Reviewer -and -not [string]::IsNullOrWhiteSpace([string]$Config.Reviewer.ShortName)) {
+            $args['Viewer'] = [string]$Config.Reviewer.ShortName
+        }
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        if ($State.Force) { $args['Force'] = $true }
+        Write-Host '[RUN] FillCheckSheet' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'DeliverMail') {
+        $p = Resolve-ToolPath $Config 'DeliverMail'
+        $args = $base.Clone()
+        if ($Config.Mail) {
+            $m = $Config.Mail
+            if (-not [string]::IsNullOrWhiteSpace([string]$m.From))             { $args['From']             = [string]$m.From }
+            if (-not [string]::IsNullOrWhiteSpace([string]$m.Phase))            { $args['Phase']            = [string]$m.Phase }
+            if (-not [string]::IsNullOrWhiteSpace([string]$m.SubjectTemplate))  { $args['SubjectTemplate']  = [string]$m.SubjectTemplate }
+            if ($m.BodyLines)                                                  { $args['BodyLines']        = [string[]]$m.BodyLines }
+            if (-not [string]::IsNullOrWhiteSpace([string]$m.EvidenceFolder))   { $args['EvidenceFolder']   = [string]$m.EvidenceFolder }
+            if (-not [string]::IsNullOrWhiteSpace([string]$m.CheckSheetFolder)) { $args['CheckSheetFolder'] = [string]$m.CheckSheetFolder }
+            if (-not [string]::IsNullOrWhiteSpace([string]$m.CheckSheetFile))   { $args['CheckSheetFile']   = [string]$m.CheckSheetFile }
+        }
+        if ($Config.Reviewer) {
+            $rv = $Config.Reviewer
+            if (-not [string]::IsNullOrWhiteSpace([string]$rv.Address))     { $args['ReviewerAddress'] = [string]$rv.Address }
+            if (-not [string]::IsNullOrWhiteSpace([string]$rv.DisplayName)) { $args['ReviewerDisplay'] = [string]$rv.DisplayName }
+            if (-not [string]::IsNullOrWhiteSpace([string]$rv.ShortName))   { $args['ReviewerShort']   = [string]$rv.ShortName }
+        }
+        $args['EvidenceDir'] = $State.EvidenceDir
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        if ($State.Force) { $args['Force'] = $true }
+        Write-Host '[RUN] DeliverMail' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
     if ($PhaseKey -eq 'RepairMapping') {
         $mp = Get-MappingPath $Config $State.WorkDir $State.Owner
         Write-Host '[RUN] RepairMapping' -ForegroundColor Green
@@ -1011,6 +1098,9 @@ if ([string]::IsNullOrWhiteSpace($J4BaseDir) -and $session.ContainsKey('J4BaseDi
 if ([string]::IsNullOrWhiteSpace($J4BaseDir) -and -not [string]::IsNullOrWhiteSpace($CloneSourceDir)) {
     $J4BaseDir = $CloneSourceDir
 }
+if ([string]::IsNullOrWhiteSpace($CheckSheetPath) -and $session.ContainsKey('CheckSheetPath')) {
+    $CheckSheetPath = [string]$session['CheckSheetPath']
+}
 
 $flatTargets = @()
 foreach ($rawId in @($TargetIds)) {
@@ -1048,6 +1138,7 @@ $state = @{
     ProbeFile       = $ProbeFile
     ProbeSheet      = $ProbeSheet
     DfExePath       = $DfExePath
+    CheckSheetPath  = $CheckSheetPath
     Force           = [bool]$Force.IsPresent
     Interactive     = [bool]$Interactive.IsPresent
     NoResize        = [bool]$NoResize.IsPresent
@@ -1064,6 +1155,7 @@ $session['EvidenceDir'] = $EvidenceDir
 $session['CursorCell'] = $CursorCell
 $session['CloneSourceDir'] = $CloneSourceDir
 $session['J4BaseDir'] = $J4BaseDir
+$session['CheckSheetPath'] = $CheckSheetPath
 Save-Session $sessionPath $session
 
 $mappingPath = Get-MappingPath $Config $WorkDir $Owner
@@ -1141,6 +1233,7 @@ while ($true) {
     $session['CursorCell'] = $state.CursorCell
     $session['CloneSourceDir'] = $state.CloneSourceDir
     $session['J4BaseDir'] = $state.J4BaseDir
+    $session['CheckSheetPath'] = $state.CheckSheetPath
     Save-Session $sessionPath $session
 
     Write-Host ''

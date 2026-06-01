@@ -3,6 +3,36 @@
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
+## 2026-06-01 - Delivery: review check sheet fill + review-request mail
+
+The final hand-off step. Two new phases close the workflow after review.
+
+### Added
+- **DeliverMail phase.** One Outlook **draft** per evidence Excel (grouped by
+  `Excel_NAME`), built via Outlook COM `CreateItem` + `Display` — never
+  auto-sent. Misaki eyeballs each draft, clicks Send by hand, then presses Enter
+  in the shell to set the new `isDelivered` mapping flag (`1` = sent). `s` skips,
+  `q` quits, and `-m "comment"` records a note in the new `DeliverComment` column
+  (per `Excel_NAME`, like `ReviewComment`). Subject =
+  `【GIFT廃止対応】<Phase>レビュー依頼(<Excel_NAME>)`; body + reviewer + UNC paths
+  are all config-driven (`Mail` / `Reviewer` in VerifyConfig.psd1). Outlook is
+  released but never Quit (it may be the operator's live session).
+- **CheckSheet phase.** Appends one row per Excel to the shared review check
+  sheet (sheet `Check Sheet_J4`): A No. (continued, only if blank), B 記入日
+  (today, format copied from the row above), C `JAVA`, E `J4内部ﾚﾋﾞｭｰ`,
+  F full evidence filename, G owner, H reviewer (加瀬). Because it is a public
+  document the edit is **double-checked**: a TEMP copy is filled and opened for
+  visual review; on Enter the original is re-stat'd and, only if it is unchanged
+  since the preview began, the identical edits are committed — otherwise the
+  write is **held** so the operator can re-check. Already-listed Excels are
+  skipped unless `-Force`. Path comes from `CheckSheet.Path`; if missing the
+  phase prompts (and remembers it in `verify_session.json`).
+
+### Changed
+- **MappingStore** now defaults two new columns: `isDelivered` (`0`) and
+  `DeliverComment` (`''`). `isDelivered` is a `PhaseOrder` field, so it is
+  auto-added to existing mappings on startup and shown in Status.
+
 ## 2026-06-01 - Review workflow: header-fill fix, MarkGfix merge, review comments, mode sheet
 
 Host->Open focus. Five related improvements:
