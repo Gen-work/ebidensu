@@ -174,7 +174,6 @@
         @{ Key='GfixJenkins';        Field='GFIX_Jenkins_snap';    Label='GFIX Jenkins 証跡 + DL';            Status='implemented' }
         @{ Key='GfixLogDownload';    Field='GFIX_log';             Label='GFIX LOG download';                 Status='implemented' }
         @{ Key='DfSnap';             Field='DF_snap';              Label='DF 証跡 (df.exe 截图)';             Status='implemented' }
-        @{ Key='MarkGfixLog';        Field='isGfixLogMarked';      Label='GFIX log 行 黄ハイライト';            Status='implemented' }
         @{ Key='Clone';              Field='';                     Label='証跡 Excel 複製 (mkexcel)';         Status='implemented' }
         @{ Key='Align';              Field='';                     Label='J4 基準 sheet 比較/同期 (precheck)'; Status='implemented' }
         @{ Key='ReplaceGift';        Field='isReplaced'; BitValue=1; Label='GIFT 証跡置換';                   Status='implemented' }
@@ -187,6 +186,7 @@
         @{ Key='ReviewGfix';         Field='isReviewed'; BitValue=2; Label='GFIX 目視 review';                Status='implemented' }
         @{ Key='ReviewDf';           Field='isReviewed'; BitValue=4; Label='DF 目視 review';                  Status='implemented' }
         @{ Key='ReviewEvidence';     Field='isReviewed'; BitValue=7; Label='全体 目視 review + 保存';          Status='implemented' }
+        @{ Key='Comments';           Field='';                     Label='review コメント 一覧 (read-only)';   Status='implemented' }
         @{ Key='Validate';           Field='';                     Label='就緒状態 診断 (read-only)';         Status='implemented' }
         @{ Key='RepairMapping';      Field='';                     Label='mapping 列補完 (auto on startup)';  Status='implemented' }
         @{ Key='ProbeShapes';        Field='';                     Label='Excel shape 座標 / AltText 一覧';    Status='implemented' }
@@ -221,6 +221,8 @@
         GfixLogDownload   = 'GfixLogDownload'
         Df                = 'DfSnap'
         DfSnap            = 'DfSnap'
+        # MarkGfixLog is folded into MarkGfix; these keep the standalone
+        # re-highlight utility reachable by name.
         MarkGfixLog       = 'MarkGfixLog'
         Mgl               = 'MarkGfixLog'
         GfixLogMark       = 'MarkGfixLog'
@@ -246,6 +248,9 @@
         Rgfix             = 'ReplaceGfix'
         ReplaceDf         = 'ReplaceDf'
         Rdf               = 'ReplaceDf'
+
+        Comments          = 'Comments'
+        Comment           = 'Comments'
 
         Review            = 'ReviewEvidence'
         ReviewEvidence    = 'ReviewEvidence'

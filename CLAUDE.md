@@ -127,9 +127,14 @@ Three integer CSV columns track multi-mode completion:
 | isReviewed | GIFT review | GFIX review | DF review | 7 |
 
 Test: `($value -band $bit) -eq $bit` (use `Test-BitDone` / `Set-MappingBit` from
-MappingStore). `isGfixLogMarked` is a plain 0/1 flag, not a bitmask. Replace marks
+MappingStore). The GFIX-log yellow highlight is now part of MarkGfix (bit 2 of
+`isMarked`); the old standalone `isGfixLogMarked` column was removed. Replace marks
 a mode's bit only when ALL its required pieces inserted; which correl/step/file
 failed is recorded in `status\progress.jsonl`, not in extra columns.
+
+A free-text `ReviewComment` column (per Excel_NAME group) holds review notes
+captured via the `-m "comment"` option at the Review prompt; list them with the
+`Comments` phase.
 
 `PhaseOrder` in `VerifyConfig.psd1` has a `BitValue` key for each bitmask phase.
 
@@ -168,10 +173,12 @@ validated by static analysis only (no PowerShell/Excel in the cloud build env)
 and need a Windows + Excel 2019 run to confirm end to end.
 
 Phases: Mapping, ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins,
-GiftJenkinsNoFile, GfixHmSnap, GfixJenkins, GfixLogDownload, DfSnap, MarkGfixLog,
+GiftJenkinsNoFile, GfixHmSnap, GfixJenkins, GfixLogDownload, DfSnap,
 Clone, **Align (new)**, ReplaceGift/Gfix/Df, MarkGift/Gfix/Df,
-ReviewGift/Gfix/Df, ReviewEvidence, Validate, RepairMapping, ProbeShapes, Crop,
-**WatchProgress (new)**.
+ReviewGift/Gfix/Df, ReviewEvidence, **Comments (new, review-note list)**,
+Validate, RepairMapping, ProbeShapes, Crop, **WatchProgress (new)**.
+The GFIX-log highlight is folded into MarkGfix; `MarkGfixLog.ps1` remains only as
+a standalone re-highlight utility (reachable by name, no mapping column).
 
 Replace is now plan-driven (EvidencePlan + EvidenceExecutor), correl-major per the
 review standard. GFIX log is matched by `GfixLog.ps1` (whole file pasted) instead

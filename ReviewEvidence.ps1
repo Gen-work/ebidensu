@@ -70,6 +70,7 @@ if (-not $helpersPath) {
     exit 1
 }
 . $helpersPath
+. (Join-Path $PSScriptRoot 'ProjectLabels.ps1')   # no param() -> safe to dot-source
 
 function Test-TargetRow($Row, [hashtable]$TargetSet) {
     if ($TargetSet.Count -eq 0) { return $true }
@@ -167,21 +168,72 @@ function Open-WorkbookEditable($Excel, [string]$File) {
     )
 }
 
+# Splits raw review input into an action ('' = done, 's' = skip, 'q' = quit)
+# and an optional comment introduced by  -m "comment"  (single or double
+# quotes optional). Examples:
+#   ''             -> done,  no comment
+#   's'            -> skip,  no comment
+#   '-m "looks ok"'-> done,  comment="looks ok"
+#   's -m fix font'-> skip,  comment="fix font"
+#   'q -m "stop"'  -> quit,  comment="stop"
+function Parse-ReviewInput([string]$Raw) {
+    $comment = ''
+    $action  = ''
+    if ($null -ne $Raw) {
+        $s = $Raw.Trim()
+        $m = [regex]::Match($s, '(?:^|\s)-m\s+(.+)$')
+        if ($m.Success) {
+            $comment = $m.Groups[1].Value.Trim()
+            if ($comment.Length -ge 2 -and
+                (($comment[0] -eq '"' -and $comment[-1] -eq '"') -or
+                 ($comment[0] -eq "'" -and $comment[-1] -eq "'"))) {
+                $comment = $comment.Substring(1, $comment.Length - 2)
+            }
+            $s = $s.Substring(0, $m.Index).Trim()
+        }
+        $action = $s.ToLower()
+    }
+    return [pscustomobject]@{ Action = $action; Comment = $comment }
+}
+
 function Read-ReviewChoice([datetime]$OpenedAt) {
-    $choice = Read-Host '  Press Enter=save+close+mark, s=skip(no mark), q=quit'
+    $raw    = Read-Host '  Enter=save+close+mark, s=skip, q=quit   ( add  -m "comment"  to record a note )'
+    $parsed = Parse-ReviewInput $raw
 
     # Safety guard:
-    # If blank Enter is received immediately after open, it is often an accidental/stale key input.
-    # Ask once more so the workbook does not close right after opening.
-    if ([string]::IsNullOrWhiteSpace($choice)) {
+    # A blank Enter (no action AND no comment) right after open is often an
+    # accidental/stale keypress. Ask once more so the workbook does not close
+    # immediately after opening.
+    if ([string]::IsNullOrWhiteSpace($parsed.Action) -and [string]::IsNullOrWhiteSpace($parsed.Comment)) {
         $elapsed = ((Get-Date) - $OpenedAt).TotalSeconds
         if ($elapsed -lt 2) {
             Write-Host '  [WARN] Enter was received immediately after open. Confirm once more to close this workbook.' -ForegroundColor Yellow
-            $choice = Read-Host '  Press Enter again=save+close+mark, s=skip(no mark), q=quit'
+            $raw    = Read-Host '  Enter again=save+close+mark, s=skip, q=quit   ( -m "comment" to note )'
+            $parsed = Parse-ReviewInput $raw
         }
     }
 
-    return $choice
+    return $parsed
+}
+
+# Activates the sheet relevant to the review mode (e.g. ReviewGift -> GIFT
+# jushin kekka) so it is the front sheet when Misaki starts reviewing.
+function Open-SheetForReview($Workbook, [string]$SheetName, [string]$Cell) {
+    if ([string]::IsNullOrWhiteSpace($SheetName)) { return }
+    try {
+        $ws = $null
+        foreach ($s in $Workbook.Worksheets) { if ([string]$s.Name -eq $SheetName) { $ws = $s; break } }
+        if ($null -eq $ws) {
+            Write-Host ("  [WARN] review sheet not found, leaving default: {0}" -f $SheetName) -ForegroundColor Yellow
+            return
+        }
+        try { $ws.Visible = -1 } catch {}   # xlSheetVisible
+        $ws.Activate() | Out-Null
+        try { $ws.Range($Cell).Select() | Out-Null } catch {}
+        Write-Host ("  [SHEET] opened: {0}" -f $SheetName) -ForegroundColor DarkGray
+    } catch {
+        Write-Host ("  [WARN] could not open review sheet {0}: {1}" -f $SheetName, $_.Exception.Message) -ForegroundColor Yellow
+    }
 }
 
 function Set-ReviewCursorAllSheets($Workbook, [string]$DefaultCell) {
@@ -256,6 +308,18 @@ if ($allRows.Count -eq 0) {
     exit 1
 }
 Ensure-Column $allRows $ReviewField '0'
+Ensure-Column $allRows 'ReviewComment' ''
+
+# Sheet to bring to front per review mode (ReviewGift -> GIFT jushin kekka,
+# ReviewGfix -> GFIX jushin kekka, ReviewDf -> DF compare). ReviewEvidence
+# (bit 7 = all) leaves the workbook's default sheet alone.
+$labels = Get-ProjectLabels
+$openSheetName = switch ($ReviewBit) {
+    1 { $labels['SheetGiftRecv'] }
+    2 { $labels['SheetGfixRecv'] }
+    4 { $labels['SheetDfCompare'] }
+    default { '' }
+}
 
 $selectedRows = @($allRows | Where-Object { Test-TargetRow $_ $targetSet })
 if ($selectedRows.Count -eq 0) {
@@ -338,15 +402,42 @@ try {
                 throw "Workbook opened as read-only. Possible causes: another Excel window/user is locking it, write permission is missing, or the file/share is read-only: $file"
             }
 
+            # Bring the mode's sheet to the front before review starts.
+            Open-SheetForReview $wb $openSheetName $CursorCell
             [void](Activate-ExcelWindow $shell $excel $wb)
+
+            # Surface any prior comment recorded for this workbook.
+            $priorComment = ''
+            foreach ($r in $groupRows) {
+                $cv = ''
+                if ($r.PSObject.Properties.Name -contains 'ReviewComment') { $cv = [string]$r.ReviewComment }
+                if (-not [string]::IsNullOrWhiteSpace($cv)) { $priorComment = $cv; break }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($priorComment)) {
+                Write-Host ("  [COMMENT] {0}" -f $priorComment) -ForegroundColor Yellow
+            }
 
             Write-Host '  Workbook opened in editable mode. Review/edit in Excel, then return here manually.' -ForegroundColor DarkGray
             $choice = Read-ReviewChoice $openedAt
-            if ($choice -match '^\s*q\s*$') {
+
+            # Record a -m comment (if given) on every row of this workbook group,
+            # for ALL outcomes (done / skip / quit), and persist immediately.
+            if (-not [string]::IsNullOrWhiteSpace($choice.Comment)) {
+                foreach ($r in $groupRows) {
+                    if (-not ($r.PSObject.Properties.Name -contains 'ReviewComment')) {
+                        $r | Add-Member -NotePropertyName 'ReviewComment' -NotePropertyValue '' -Force
+                    }
+                    $r.ReviewComment = $choice.Comment
+                }
+                $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
+                Write-Host ("  [COMMENT] recorded: {0}" -f $choice.Comment) -ForegroundColor DarkCyan
+            }
+
+            if ($choice.Action -eq 'q') {
                 try { $wb.Close($false) } catch {}
                 break
             }
-            if ($choice -match '^\s*s\s*$') {
+            if ($choice.Action -eq 's') {
                 try { $wb.Close($false) } catch {}
                 $cntSkip++
                 continue

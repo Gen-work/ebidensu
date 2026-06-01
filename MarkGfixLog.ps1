@@ -3,15 +3,16 @@
 #
 #  Phase: MarkGfixLog
 #
-#  In each evidence workbook's GFIX受信結果 sheet:
-#    1. Scan column B for anchor cells containing the exact text ▼GFIXログ.
-#    2. For each anchor region (anchor_row+1 .. next_anchor_row-1, or sheet end):
-#       a. Find the first row whose B cell matches $CommandPattern.
-#       b. Fill cells B:AY of that row with yellow (RGB 255,255,0).
-#    3. Updates isGfixLogMarked = 1 on all rows in the group when all OK.
+#  In each evidence workbook's GFIX jushin kekka sheet, fills the GFIX-log
+#  "Command:" row with yellow (see Invoke-GfixLogHighlight in ExcelHelpers.ps1).
 #
-#  Idempotent: clears existing yellow fill in column B:AY of every
-#  scanned row before re-applying, so re-runs are safe.
+#  NOTE: this highlight is normally performed as part of MarkGfix now (one
+#  workbook open, tracked by the single isMarked GFIX bit). This script is
+#  kept as a standalone, idempotent re-highlight utility and does NOT write a
+#  mapping column (the old isGfixLogMarked flag was removed).
+#
+#  Idempotent: clears existing yellow fill in the scanned region before
+#  re-applying, so re-runs are safe.
 #
 #  Usage:
 #    .\MarkGfixLog.ps1 -WorkDir C:\work\myproject
@@ -134,7 +135,6 @@ if (-not (Test-Path -LiteralPath $evDir)) {
 }
 
 $allRows = @(Import-Csv -LiteralPath $mappingPath -Encoding UTF8)
-Ensure-Column $allRows 'isGfixLogMarked' '0'
 
 $workRows = @($allRows | Where-Object { Test-TargetRow $_ })
 $groups   = $workRows | Group-Object Excel_NAME | Sort-Object Name
@@ -144,6 +144,9 @@ if ($groups.Count -eq 0) {
 }
 
 # ── Main loop ────────────────────────────────────────────────
+# Standalone re-highlight utility. The shared Invoke-GfixLogHighlight does the
+# actual work (same code path MarkGfix uses). No mapping column is written.
+# -Force is accepted for back-compat but is a no-op (the op is idempotent).
 $excel = New-ExcelApp
 $cntDone = 0
 $cntSkip = 0
@@ -161,13 +164,6 @@ try {
             $cntSkip++; continue
         }
 
-        $curMark = 0
-        try { $curMark = [int]$first.isGfixLogMarked } catch { $curMark = 0 }
-        if (-not $forceFlag -and $curMark -eq 1) {
-            Write-Host ("[SKIP] {0}: isGfixLogMarked already 1" -f $excelName) -ForegroundColor DarkGray
-            $cntSkip++; continue
-        }
-
         Write-Host ''
         Write-Host ("----- {0} -----" -f $excelName) -ForegroundColor Cyan
 
@@ -182,114 +178,26 @@ try {
             $cntFail++; continue
         }
 
-        $allOk        = $true
-        $marksApplied = 0
+        $hl = $null
         try {
             $ws = Get-SheetByName $wb $sheetGfixRecv
             if ($null -eq $ws) {
                 Write-Host ("  [FAIL] sheet not found: {0}" -f $sheetGfixRecv) -ForegroundColor Red
-                $allOk = $false
             } else {
-                # 1) Collect anchor rows (B column exact-match to LogAnchor)
-                $xlUp    = -4162
-                $lastRow = 0
-                try {
-                    $lastRow = [int]$ws.Cells.Item($ws.Rows.Count, 2).End($xlUp).Row
-                } catch { $lastRow = 0 }
-                if ($lastRow -lt 1) {
-                    try {
-                        $used    = $ws.UsedRange
-                        $lastRow = [int]($used.Row + $used.Rows.Count - 1)
-                    } catch { $lastRow = 200 }
-                }
-
-                $anchorRows = @()
-                for ($r = 1; $r -le $lastRow; $r++) {
-                    $v = $null
-                    try { $v = [string]$ws.Cells.Item($r, 2).Value2 } catch {}
-                    if ($v -eq $LogAnchor) { $anchorRows += $r }
-                }
-
-                if ($anchorRows.Count -eq 0) {
-                    Write-Host ("  [WARN] no '{0}' anchors found in sheet" -f $LogAnchor) -ForegroundColor Yellow
-                    $allOk = $false
-                } else {
-                    Write-Host ("  [INFO] {0} anchor(s) found: rows {1}" -f $anchorRows.Count, ($anchorRows -join ',')) -ForegroundColor DarkGray
-
-                    for ($ai = 0; $ai -lt $anchorRows.Count; $ai++) {
-                        $regionStart = $anchorRows[$ai] + 1
-                        $regionEnd   = if ($ai + 1 -lt $anchorRows.Count) { $anchorRows[$ai + 1] - 1 } else { $lastRow }
-
-                        # 2) Clear previous yellow fills in this region
-                        for ($r = $regionStart; $r -le $regionEnd; $r++) {
-                            $existFill = -1
-                            try { $existFill = [long]$ws.Cells.Item($r, $HighlightColStart).Interior.Color } catch {}
-                            if ($existFill -eq $HighlightColor) {
-                                Set-CellRangeFill $ws $r $HighlightColStart $HighlightColEnd -4142
-                            }
-                        }
-
-                        # 3) Find Command: row
-                        $targetRow = -1
-                        $matchCount = 0
-                        for ($r = $regionStart; $r -le $regionEnd; $r++) {
-                            $v = $null
-                            try { $v = [string]$ws.Cells.Item($r, 2).Value2 } catch {}
-                            if (-not [string]::IsNullOrWhiteSpace($v) -and ($v -match $CommandPattern)) {
-                                if ($matchCount -eq 0) { $targetRow = $r }
-                                $matchCount++
-                            }
-                        }
-
-                        if ($targetRow -lt 0) {
-                            Write-Host ("  [WARN] anchor row {0}: no Command: match in region {1}..{2}" -f $anchorRows[$ai], $regionStart, $regionEnd) -ForegroundColor Yellow
-                            $allOk = $false
-                            continue
-                        }
-
-                        if ($matchCount -gt 1) {
-                            Write-Host ("  [WARN] anchor row {0}: {1} Command: matches; using first (row {2})" -f $anchorRows[$ai], $matchCount, $targetRow) -ForegroundColor Yellow
-                        }
-
-                        Set-CellRangeFill $ws $targetRow $HighlightColStart $HighlightColEnd $HighlightColor
-                        $marksApplied++
-                        Write-Host ("  [MARK] anchor R{0} -> highlight R{1} (B:{2})" -f $anchorRows[$ai], $targetRow, [string]($ws.Cells.Item($targetRow, 2).Value2).Substring(0, [Math]::Min(40, ([string]($ws.Cells.Item($targetRow, 2).Value2)).Length))) -ForegroundColor Green
-                    }
-                }
-
+                $hl = Invoke-GfixLogHighlight -ws $ws -LogAnchor $LogAnchor `
+                    -CommandPattern $CommandPattern -HighlightColor $HighlightColor `
+                    -ColStart $HighlightColStart -ColEnd $HighlightColEnd
+                foreach ($w in @($hl.Warnings)) { Write-Host ("  [WARN] {0}" -f $w) -ForegroundColor Yellow }
+                Write-Host ("  highlights applied: {0} (anchors: {1})" -f $hl.Applied, $hl.Anchors) -ForegroundColor DarkGray
                 $wb.Save()
             }
         } catch {
             Write-Host ("  [FAIL] processing: {0}" -f $_.Exception.Message) -ForegroundColor Red
-            $allOk = $false
         } finally {
             Close-Workbook $wb $false
         }
 
-        Write-Host ("  highlights applied: {0}" -f $marksApplied) -ForegroundColor DarkGray
-
-        if ($allOk -and $marksApplied -gt 0) {
-            $groupNames = @($g.Group | ForEach-Object { [string]$_.Correl_ID_M })
-            foreach ($r in $allRows) {
-                if ($groupNames -contains [string]$r.Correl_ID_M) {
-                    $r.isGfixLogMarked = '1'
-                }
-            }
-            Write-Host ("  isGfixLogMarked = 1 for {0} row(s)" -f $g.Count) -ForegroundColor Green
-            $cntDone++
-        } elseif ($marksApplied -eq 0) {
-            Write-Host '  [WARN] no highlights applied' -ForegroundColor Yellow
-            $cntFail++
-        } else {
-            Write-Host '  isGfixLogMarked NOT updated (allOk=false)' -ForegroundColor Yellow
-            $cntFail++
-        }
-    }
-
-    if ($cntDone -gt 0) {
-        $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
-        Write-Host ''
-        Write-Host ("Mapping saved: {0}" -f $mappingPath) -ForegroundColor DarkGreen
+        if ($null -ne $hl -and $hl.Applied -gt 0) { $cntDone++ } else { $cntFail++ }
     }
 } finally {
     Close-ExcelApp $excel
