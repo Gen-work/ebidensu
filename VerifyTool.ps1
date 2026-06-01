@@ -315,11 +315,12 @@ function Show-PhaseNotes([string]$PhaseKey) {
     $lines = switch -Regex ($PhaseKey) {
         '^Align$' { @(
             '  Phase params:',
-            '    f=Force        -> -Apply  : sync DIFF sheets (work <- J4 values). EXPERIMENTAL - run on a copy first.',
+            '    f  or  apply   -> -Apply  : sync DIFF sheets (work <- J4 values). EXPERIMENTAL - run on a copy first.',
             '    h=HostTypes    -> which FROM_sys / TO_sys column values count as Host (mainframe).',
-            '                      e.g. enter: HOST   (check your mapping FROM_sys/TO_sys column for the actual literal)',
-            '                      HostToOpen  = 3 receive sheets only',
-            '                      OpenToOpen / OpenToHost = GIFT+GFIX send sheets + 3 receive sheets',
+            '                      e.g. enter: HOST',
+            '                      HostToOpen  = 送信データ + GIFT/GFIX送信結果 + 3 receive sheets (6 total)',
+            '                      OpenToOpen / OpenToHost = GIFT/GFIX送信結果 + 3 receive sheets (5 total)',
+            '                      HostToHost  = all 5 send sheets + 3 receive sheets (8 total)',
             '    j=J4BaseDir    -> root folder of J4 baseline workbooks (searched recursively)',
             '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME'
         ) }
@@ -423,7 +424,8 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         $x = Read-Host 'option'
         if ([string]::IsNullOrWhiteSpace($x)) { break }
         switch -Regex ($x.Trim().ToLower()) {
-            '^f$' { $State.Force = -not $State.Force }
+            '^f$'       { $State.Force = -not $State.Force }
+            '^-?apply$' { $State.Force = $true; Write-Host '  Force=ON  (Align: -Apply mode enabled)' -ForegroundColor DarkGray }
             '^i$' { $State.Interactive = -not $State.Interactive }
             '^n$' { $State.NoResize = -not $State.NoResize }
             '^r$' { $State.RefreshUrls = -not $State.RefreshUrls }

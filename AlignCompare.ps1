@@ -58,7 +58,7 @@ function Get-AlignSheetsForMigration {
     $send = @($SendSheets)
     $recv = @($RecvSheets)
     switch ($MigrationType) {
-        'HostToOpen' { return $recv }
+        'HostToOpen' { return @($send[0], $send[2], $send[3]) + $recv }   # soushin-data + GIFT/GFIX soushin + 3 recv
         'OpenToOpen' { return @($send[2], $send[3]) + $recv }   # GIFT/GFIX soushin kekka + 3 recv
         'OpenToHost' { return @($send[2], $send[3]) + $recv }
         'HostToHost' { return @($send) + $recv }
