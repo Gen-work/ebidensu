@@ -7,9 +7,11 @@
 #  J4 baseline workbook, and (with -Apply) syncs the sheets
 #  that differ (spec 6).
 #
-#  Migration-type branching:
-#    Host->Open : the 3 receive sheets only.
-#    Open->Open / Open->Host : GIFT/GFIX send-result sheets + 3 receive.
+#  Migration-type branching (recv sheets are NEVER synced -- operator's own evidence):
+#    Host->Open : send[0] + GIFT/GFIX send-result sheets (host team manages these in J4).
+#    Open->Open : GIFT/GFIX send-result sheets (coworker alignment, future use).
+#    Open->Host : GIFT/GFIX send-result sheets.
+#    Host->Host : all send sheets.
 #    (See AlignCompare.ps1 Get-AlignSheetsForMigration.)
 #  Host vs Open is decided from FROM_sys/TO_sys via -HostSystemTypes. Until
 #  those literal values are supplied, the type is 'Unknown' and Align safely

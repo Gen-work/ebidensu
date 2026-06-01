@@ -48,20 +48,25 @@ function Get-MigrationType {
 }
 
 # Which sheets Align should compare/sync for a migration type.
-# -SendSheets = the 5 send-side names; -RecvSheets = the 3 receive-side names
-# (from ProjectLabels). Known rule: Host->Open touches only the 3 receive
-# sheets. Open->Open / Open->Host additionally touch the GIFT/GFIX send-result
-# sheets (the "check 3 and 4" note). These defaults are config-overridable and
-# should be confirmed against the real workflow.
+# -SendSheets = the 5 send-side names (RecvSheets arg kept for signature compat but NEVER synced).
+#
+# Recv sheets (GIFT/GFIX jushin kekka, Df compare) hold the operator's own captured
+# evidence. Align must never overwrite them from J4.
+#
+# HostToOpen  : host team owns send[0]/send[2]/send[3] in J4; operator fetches updates.
+# OpenToOpen  : operator owns both sides; only send-result sheets kept for future
+#               coworker-alignment use.
+# OpenToHost  : operator owns send side; sync send-result sheets from J4 baseline.
+# HostToHost  : host team owns all send sheets.
+# Unknown     : fall back to the two send-result sheets (safest non-destructive guess).
 function Get-AlignSheetsForMigration {
     param([string]$MigrationType, [string[]]$SendSheets, [string[]]$RecvSheets)
     $send = @($SendSheets)
-    $recv = @($RecvSheets)
     switch ($MigrationType) {
-        'HostToOpen' { return @($send[0], $send[2], $send[3]) + $recv }   # soushin-data + GIFT/GFIX soushin + 3 recv
-        'OpenToOpen' { return @($send[2], $send[3]) + $recv }   # GIFT/GFIX soushin kekka + 3 recv
-        'OpenToHost' { return @($send[2], $send[3]) + $recv }
-        'HostToHost' { return @($send) + $recv }
-        default      { return $recv }   # Unknown -> safest (Host->Open scope) + caller warns
+        'HostToOpen' { return @($send[0], $send[2], $send[3]) }   # soushin-data + GIFT/GFIX soushin-kekka
+        'OpenToOpen' { return @($send[2], $send[3]) }              # GIFT/GFIX soushin-kekka only
+        'OpenToHost' { return @($send[2], $send[3]) }
+        'HostToHost' { return @($send) }
+        default      { return @($send[2], $send[3]) }              # Unknown -> send-result sheets only
     }
 }
