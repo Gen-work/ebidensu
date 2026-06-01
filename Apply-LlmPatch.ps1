@@ -32,7 +32,7 @@ $ErrorActionPreference = 'Stop'
 # --- クリップボード読込 ---
 $clip = Get-Clipboard -Raw
 if ([string]::IsNullOrWhiteSpace($clip)) {
-    Write-Warning "クリップボードが空です。"
+    Write-Warning "Clipboard is empty."
     exit 1
 }
 
@@ -118,10 +118,10 @@ if (($clip -match '(?m)^diff --git ') -or (($clip -match '(?m)^--- ') -and ($cli
 $pattern = '(?s)<patch\s+file="(?<file>[^"]+)"\s*>\s*<search>(?<search>.*?)</search>\s*<replace>(?<replace>.*?)</replace>\s*</patch>'
 $blocks  = [regex]::Matches($clip, $pattern)
 if ($blocks.Count -eq 0) {
-    Write-Warning "有効な XML <patch> ブロック、または Git unified diff が見つかりません。"
+    Write-Warning "No valid XML <patch> block or git unified diff found."
     exit 1
 }
-Write-Host ("[INFO] {0} 件の XML パッチを検出。" -f $blocks.Count) -ForegroundColor Cyan
+Write-Host ("[INFO] {0} XML patch block(s) detected." -f $blocks.Count) -ForegroundColor Cyan
 
 # --- ヘルパー ---
 function Norm-Eol([string]$s) {
@@ -270,7 +270,7 @@ foreach ($b in $blocks) {
     Write-Host ("  path: {0}" -f $file) -ForegroundColor DarkGray
 
     if (-not (Test-Path -LiteralPath $file)) {
-        Write-Host "  [FAIL] ファイルが見つかりません。" -ForegroundColor Red
+        Write-Host "  [FAIL] File not found." -ForegroundColor Red
         $failed = $true
         continue
     }
@@ -290,7 +290,7 @@ foreach ($b in $blocks) {
     $replaceN = Norm-Eol $replace
 
     if ([string]::IsNullOrEmpty($searchN)) {
-        Write-Host "  [FAIL] <search> ブロックが空です。" -ForegroundColor Red
+        Write-Host "  [FAIL] <search> block is empty." -ForegroundColor Red
         $failed = $true
         continue
     }
@@ -301,17 +301,17 @@ foreach ($b in $blocks) {
     $count = ([regex]::Matches($textN, [regex]::Escape($searchN))).Count
 
     if ($count -eq 0) {
-        Write-Host "  [FAIL] <search> ブロックが一致しません。" -ForegroundColor Red
+        Write-Host "  [FAIL] <search> block does not match." -ForegroundColor Red
         $preview = $searchN.Substring(0, [Math]::Min(120, $searchN.Length)) -replace "`n", "\n" -replace "`t", "\t"
-        Write-Host ("    先頭120文字: {0}" -f $preview) -ForegroundColor DarkGray
-        Write-Host "    ヒント: インデント / 全角空白 / タブ vs スペース / 既に適用済み を確認。" -ForegroundColor DarkGray
+        Write-Host ("    First 120 chars: {0}" -f $preview) -ForegroundColor DarkGray
+        Write-Host "    Hint: check indentation / full-width spaces / tabs vs spaces / already applied." -ForegroundColor DarkGray
         $failed = $true
         continue
     }
 
     if ($count -gt 1) {
-        Write-Host ("  [FAIL] <search> ブロックが {0} 箇所一致。一意である必要があります。" -f $count) -ForegroundColor Red
-        Write-Host "    ヒント: 前後の行を含めて文脈を増やしてください。" -ForegroundColor DarkGray
+        Write-Host ("  [FAIL] <search> block matches {0} locations; must be unique." -f $count) -ForegroundColor Red
+        Write-Host "    Hint: add more surrounding context lines." -ForegroundColor DarkGray
         $failed = $true
         continue
     }
@@ -319,7 +319,7 @@ foreach ($b in $blocks) {
     $state['TextN'] = $textN.Replace($searchN, $replaceN)
     $fileStates[$file] = $state
 
-    Write-Host "  [OK] 1 箇所を置換予定。" -ForegroundColor Green
+    Write-Host "  [OK] 1 replacement queued." -ForegroundColor Green
     $plans += @{
         Path     = $file
         FileRaw  = $fileRaw
@@ -330,26 +330,26 @@ foreach ($b in $blocks) {
 
 if ($failed) {
     Write-Host ""
-    Write-Host "[ABORT] 検証エラーあり。ファイルは一切変更しません。" -ForegroundColor Red
+    Write-Host "[ABORT] Validation errors found. No files will be changed." -ForegroundColor Red
     exit 1
 }
 
 if ($DryRun) {
     Write-Host ""
-    Write-Host ("[DRY-RUN] 検証 OK。書込はスキップ。patch={0}, files={1}" -f $plans.Count, $fileStates.Count) -ForegroundColor Cyan
+    Write-Host ("[DRY-RUN] Validation OK. Write skipped. patch={0}, files={1}" -f $plans.Count, $fileStates.Count) -ForegroundColor Cyan
     exit 0
 }
 
 # --- Pass 2: 書込前チェック + 適用 ---
 Write-Host ""
-Write-Host "[PREFLIGHT] 書込権限を確認します..." -ForegroundColor Cyan
+Write-Host "[PREFLIGHT] Checking write permissions..." -ForegroundColor Cyan
 foreach ($entry in $fileStates.GetEnumerator()) {
     Test-WritePreflight $entry.Value['Meta']
     Write-Host ("  [OK] {0}" -f $entry.Value['Meta'].Path) -ForegroundColor DarkGray
 }
 
 Write-Host ""
-Write-Host "[APPLY] 適用開始..." -ForegroundColor Cyan
+Write-Host "[APPLY] Applying patches..." -ForegroundColor Cyan
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
 
 foreach ($entry in $fileStates.GetEnumerator()) {
@@ -366,7 +366,7 @@ foreach ($entry in $fileStates.GetEnumerator()) {
 }
 
 Write-Host ""
-Write-Host ("[SUCCESS] {0} 件のパッチを {1} ファイルへ適用しました。" -f $plans.Count, $fileStates.Count) -ForegroundColor Green
+Write-Host ("[SUCCESS] Applied {0} patch(es) to {1} file(s)." -f $plans.Count, $fileStates.Count) -ForegroundColor Green
 if (-not $NoBackup) {
-    Write-Host ("バックアップ拡張子: .bak.{0}" -f $ts) -ForegroundColor DarkGray
+    Write-Host ("Backup extension: .bak.{0}" -f $ts) -ForegroundColor DarkGray
 }

@@ -382,14 +382,14 @@ while ($true) {
     Write-Host ("Recommended next: {0}" -f $rec) -ForegroundColor Green
     Write-Host ''
     Write-Host 'Choose phase:' -ForegroundColor Cyan
-    Write-Host '  1  Mapping        mapping 生成 / 更新'
-    Write-Host '  2  Excel          Excel 証跡'
-    Write-Host '  3  HmGift         GIFT HM 証跡'
-    Write-Host '  4  MqGift         GIFT MQ 証跡'
-    Write-Host '  5  JenkinsGift    GIFT Jenkins 証跡 + DL'
-    Write-Host '  6  NoGfix         no-GFIX 証跡'
-    Write-Host '  7  HmGfix         GFIX HM 証跡'
-    Write-Host '  8  JenkinsGfix    GFIX Jenkins 証跡 + DL'
+    Write-Host '  1  Mapping        mapping generate / update'
+    Write-Host '  2  Excel          Excel evidence'
+    Write-Host '  3  HmGift         GIFT HM evidence'
+    Write-Host '  4  MqGift         GIFT MQ evidence'
+    Write-Host '  5  JenkinsGift    GIFT Jenkins evidence + DL'
+    Write-Host '  6  NoGfix         no-GFIX evidence'
+    Write-Host '  7  HmGfix         GFIX HM evidence'
+    Write-Host '  8  JenkinsGfix    GFIX Jenkins evidence + DL'
     Write-Host '  9  Crop           old png crop batch'
     Write-Host '  s  Status only'
     Write-Host '  q  Quit'
@@ -426,6 +426,3 @@ while ($true) {
     $again = Read-Host
     if ($again -eq 'q') { break }
 }
-`
-``n
---- File: Sample-HighlightColor.ps1 ---

@@ -150,7 +150,7 @@ function Insert-PictureSendToBack($ws, [int]$row, [int]$col, [string]$imgPath) {
 function Write-PlainText($ws, [int]$row, [int]$col, [string]$text) {
     <#
     Write a plain-text label without bold / color / fill.
-    Used for "GFIX Jenkins フォルダ受信ファイルなし" and
+    Used for the NoGfix label and
     log-section labels.
     #>
     $cell = $ws.Cells.Item($row, $col)

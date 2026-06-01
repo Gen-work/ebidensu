@@ -3,7 +3,7 @@ param(
     [ValidateSet('GiftRecv','GfixRecv','NoGfix')]
     [string]$Mode           = 'GiftRecv',
     [string]$WorkDir        = '',
-    [string]$Owner          = '厳',
+    [string]$Owner          = ([char]0x53B3),
     [string[]]$TargetIds    = @(),
     [switch]$RefreshUrls,
     [switch]$Force,
@@ -185,14 +185,25 @@ foreach ($toCode in $groupOrder) {
     Write-Host ''
     Write-Host ("===== TO_code: {0}  ({1} rows) =====" -f $toCode, $rows.Count) -ForegroundColor Cyan
 
+    # ── DryRun: report the plan only; never open Edge or prompt. ──────────────
+    if ($dryFlag) {
+        foreach ($row in $rows) {
+            $correl = [string]$row.Correl_ID_S
+            Write-Host ("  [DryRun] would snap {0} (search: {1}) -> snap\{2}\{0}.png" -f `
+                $correl, [string]$row.$searchCol, $snapFolder) -ForegroundColor DarkGray
+            $cntSkip++
+        }
+        continue
+    }
+
     # ── Navigate Edge to this system's Jenkins folder ─────────────────────────
     $cacheKey  = "{0}_{1}" -f $Mode, $toCode
     $cachedUrl = if ($urlCache.ContainsKey($cacheKey)) { $urlCache[$cacheKey] } else { '' }
 
     if (-not $refreshFlag -and $cachedUrl) {
         Write-Host ("  [cached URL] {0}" -f $cachedUrl) -ForegroundColor DarkGray
-        Write-Host ("  Edge を {0} Jenkins フォルダのキャッシュ URL に移動します。" -f $toCode) -ForegroundColor Yellow
-        Write-Host '  確認して Enter。違う場合は r+Enter でリフレッシュ。(q=quit)' -ForegroundColor Magenta
+        Write-Host ("  Navigating Edge to cached Jenkins folder URL for {0}." -f $toCode) -ForegroundColor Yellow
+        Write-Host '  Press Enter to confirm, r+Enter to refresh URL, q=quit.' -ForegroundColor Magenta
         $resp = Read-Host
         if ($resp -eq 'q') { exit 0 }
 
@@ -212,9 +223,9 @@ foreach ($toCode in $groupOrder) {
 
     if (-not $cachedUrl) {
         Write-Host ''
-        Write-Host (">>> Edge を [{0}] の Jenkins フォルダページを開いてください。" -f $toCode) -ForegroundColor Yellow
-        Write-Host '    (例: IDS なら IDS Jenkins のジョブ一覧ページ)' -ForegroundColor Yellow
-        Write-Host '    開いたら Enter。(q=quit)' -ForegroundColor Magenta
+        Write-Host (">>> Open Edge to the [{0}] Jenkins folder page." -f $toCode) -ForegroundColor Yellow
+        Write-Host '    (e.g. for IDS: the IDS Jenkins job list page)' -ForegroundColor Yellow
+        Write-Host '    Press Enter when ready. (q=quit)' -ForegroundColor Magenta
         $resp = Read-Host
         if ($resp -eq 'q') { exit 0 }
 
@@ -228,7 +239,7 @@ foreach ($toCode in $groupOrder) {
             $urlDirty = $true
             Write-Host ("  [URL saved] {0}" -f $capturedUrl) -ForegroundColor Green
         } else {
-            Write-Host '  [WARN] URL を取得できませんでした。続行します。' -ForegroundColor Yellow
+            Write-Host '  [WARN] Could not capture URL. Continuing without cache.' -ForegroundColor Yellow
         }
     }
 
@@ -239,11 +250,6 @@ foreach ($toCode in $groupOrder) {
 
         Write-Host ''
         Write-Host ("  [$correl] search: $searchTerm") -ForegroundColor White
-
-        if ($dryFlag) {
-            Write-Host '    [DryRun] skip' -ForegroundColor DarkGray
-            $cntSkip++; continue
-        }
 
         $snapPath = Join-Path $snapDir "$correl.png"
 

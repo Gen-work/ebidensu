@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # VerifyTool.ps1 - main entry for evidence verification workflow
 #
 # Daily usage:
@@ -107,7 +107,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host ''
     Write-Host 'Common options:'
     Write-Host '  -WorkDir <path>       Work folder. If omitted, last used path is remembered.'
-    Write-Host '  -Owner 厳             mapping_厳.csv owner suffix. Default comes from config.'
+    Write-Host ('  -Owner {0}             mapping_{0}.csv owner suffix. Default comes from config.' -f ([char]0x53B3))
     Write-Host '  -TargetIds A,B        Limit run by Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.'
     Write-Host '  -CloneSourceDir <p>   External path for Clone (existing evidence files per bizcode).'
     Write-Host '  -BizCodes A,B         Override bizcode candidate list for Clone.'

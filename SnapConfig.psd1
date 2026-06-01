@@ -1,4 +1,4 @@
-@{
+﻿@{
     # Leave DefaultWorkDir empty on purpose. Run-Snap.ps1 will remember the last WorkDir in snap_session.json.
     DefaultWorkDir = ''
     DefaultOwner   = '厳'
@@ -49,6 +49,3 @@
         @{ Key='Df';             Field='DF_snap';              Label='DF 証跡（未実装 placeholder）' }
     )
 }
-`
-``n
---- File: Validate.ps1 ---

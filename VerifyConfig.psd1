@@ -61,7 +61,7 @@
         ClearEndColumn   = 20
         # Labels for ReplaceEvidence.ps1. Empty -> tool uses [char] defaults.
         # Edit here when final wording is confirmed.
-        GiftNoGfixLabel  = 'GFIX Jenkins フォルダ受信ファイルなし'
+        GiftNoGfixLabel  = ''
         GfixLogLabel     = 'GFIX受信log'
         GfixLogTodoText  = '<<TODO: GFIX 受信 log>>'
     }

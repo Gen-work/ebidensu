@@ -3,6 +3,34 @@
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
+## 2026-05-31 - Cleanup pass: paste residue, SnapConfig BOM, encoding policy, JenkinsSnap DryRun
+
+Follow-up to the review of the shared-lib refactor. The big blockers
+(GfixLogDownload mapping-truncation + failure recovery, DfSnap region capture,
+plan-driven Replace) were already fixed in the prior PR; this pass closes the
+gaps that survived.
+
+### Fixed
+- **Pack-LlmContext paste residue** removed from 6 files whose tails carried a
+  truncated `` ` `` / ``` ``n ``` / `--- File: X ---` separator that breaks the
+  PowerShell parser: `SnapConfig.psd1`, `Run-Snap.ps1`, `MqSnap.ps1`,
+  `HmSnap.ps1`, `Crop-Snap.ps1`, `ExcelSnap.ps1`.
+- **`SnapConfig.psd1`** holds raw Japanese labels but had NO BOM, so
+  `Import-PowerShellDataFile` would mojibake them -> added the UTF-8 BOM
+  (per the .psd1 rule in CLAUDE.md).
+- **`Fix-Encoding.ps1`** rewritten: it used to add a BOM to *every* file,
+  which violated the ".ps1 = no BOM" policy. It now enforces the documented
+  policy (.ps1 -> strip BOM, warn on non-ASCII; .psd1 -> BOM only when it holds
+  raw text; .json/.jsonl -> no BOM) and uses robust extension filtering instead
+  of the fragile `-Include` (no `-Recurse`).
+- **`JenkinsSnap.ps1 -DryRun`** no longer opens Edge or prompts for navigation;
+  it now reports the per-row capture plan and skips all UI.
+
+### Added
+- **`Check-Encoding.ps1`** now also fails on Pack-LlmContext paste residue
+  (`--- File:` separators / stray ``` ``n ``` markers) in any business script,
+  so a truncated paste is caught in CI instead of at runtime.
+
 ## 2026-05-29 - Shared MappingStore + plan-driven Replace + recovery/monitoring
 
 Large refactor toward stability, recoverability, encoding safety, and a

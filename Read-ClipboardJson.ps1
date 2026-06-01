@@ -11,7 +11,7 @@
 # ============================================================
 param(
     [string]$ExpectedSource = '',   # "GIFT" / "HM" / "MQ" / "Jenkins"
-    [int]$TimeoutSec = 10,          # bookmarklet 起動を待つ最大秒数
+    [int]$TimeoutSec = 10,          # max seconds to wait for bookmarklet
     [int]$PollMs = 250
 )
 

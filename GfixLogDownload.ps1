@@ -215,13 +215,19 @@ foreach ($row in $pending) {
                 $name = Move-LogToWork $retryNew $correl
                 Write-Host ("  moved: {0} -> log\{1}" -f $retryNew.Name, $name) -ForegroundColor Green
                 Complete-Row $row $correl $jobName ("manual moved {0}" -f $name)
-                $cntDone++; $resolved = $true; continue
+                $cntDone++; $resolved = $true
+                Write-Host '  Log saved. Return Edge to the GoAnywhere LIST page, then press Enter.' -ForegroundColor Magenta
+                if ((Read-Host) -eq 'q') { $stopRun = $true }
+                continue
             }
             $retryExisting = Get-ExistingCorrelLog $correl
             if ($null -ne $retryExisting) {
                 Write-Host ("  found in log\: {0}" -f $retryExisting.Name) -ForegroundColor Green
                 Complete-Row $row $correl $jobName ("manual present {0}" -f $retryExisting.Name)
-                $cntDone++; $resolved = $true; continue
+                $cntDone++; $resolved = $true
+                Write-Host '  Log saved. Return Edge to the GoAnywhere LIST page, then press Enter.' -ForegroundColor Magenta
+                if ((Read-Host) -eq 'q') { $stopRun = $true }
+                continue
             }
             Write-Host '  still not found.' -ForegroundColor Yellow
         }

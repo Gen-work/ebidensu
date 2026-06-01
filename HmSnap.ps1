@@ -398,6 +398,3 @@ Write-Host ("  Snapped : {0}" -f $totalDone)
 if ($totalSkipped -gt 0) {
     Write-Host ("  Skipped : {0}" -f $totalSkipped) -ForegroundColor DarkGray
 }
-`
-``n
---- File: JenkinsSnap.ps1 ---
