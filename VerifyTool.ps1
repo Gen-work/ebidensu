@@ -43,6 +43,7 @@ param(
     [switch]$NoResize,
     [switch]$RefreshUrls,
     [switch]$DryRun,
+    [switch]$MoveData,
     [switch]$Help,
 
     [string]$ConfigPath = ''
@@ -322,7 +323,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
     $lines = switch -Regex ($PhaseKey) {
         '^Align$' { @(
             '  Phase params:',
-            '    f=Force        -> -Apply  : sync DIFF sheets (work <- J4 values). EXPERIMENTAL - run on a copy first.',
+            '    diff=DiffMode  -> -DiffMode : report only (do NOT replace sheets). Default is force-replace.',
             '    h=HostTypes    -> which FROM_sys / TO_sys column values count as Host (mainframe).',
             '                      e.g. enter: HOST   (check your mapping FROM_sys/TO_sys column for the actual literal)',
             '                      HostToOpen  = 3 receive sheets only',
@@ -427,6 +428,12 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  NOTE: one Outlook DRAFT per Excel (never auto-sent). You click Send, then',
             '        press Enter to mark isDelivered. Append  -m "comment"  to record a note.'
         ) }
+        '^DeliverFiles$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
+            '    f=Force        -> re-copy files already marked delivered',
+            '    mv=MoveData    -> Move DATA files (delete source). Evidence Excel is always Copied.'
+        ) }
         default { @() }
     }
     foreach ($l in $lines) { Write-Host $l -ForegroundColor DarkGray }
@@ -434,7 +441,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
 
 function Get-PhaseOptionKeys([string]$PhaseKey) {
     switch -Regex ($PhaseKey) {
-        '^Align$' { return @('f','apply','h','j','t') }
+        '^Align$' { return @('diff','h','j','t') }
         '^Clone$' { return @('d','b','t','f') }
         '^Replace(Gift|Gfix|Df)$' { return @('t','f') }
         '^Mark(Gift|Gfix|Df)$' { return @('t','f') }
@@ -449,6 +456,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^Crop$' { return @('c','f') }
         '^CheckSheet$' { return @('t','f','k') }
         '^DeliverMail$' { return @('t','f') }
+        '^DeliverFiles$' { return @('t','f','mv') }
         '^Mapping$|^ExcelSnap$' { return @('f') }
         default { return @() }
     }
@@ -470,7 +478,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     Write-Host ''
     Write-Host 'Options for this run:' -ForegroundColor Cyan
 
-    if (Test-PhaseOption $allowed 'apply') { Write-Host ("  Apply(Align)   : {0}" -f (To-BoolText $State.Force)) }
+    if (Test-PhaseOption $allowed 'diff') { Write-Host ("  DiffMode(Align): {0}" -f (To-BoolText $State.DiffMode)) }
     elseif (Test-PhaseOption $allowed 'f') { Write-Host ("  Force          : {0}" -f (To-BoolText $State.Force)) }
     if (Test-PhaseOption $allowed 'i') { Write-Host ("  Interactive    : {0}" -f (To-BoolText $State.Interactive)) }
     if (Test-PhaseOption $allowed 'n') { Write-Host ("  NoResize       : {0}" -f (To-BoolText $State.NoResize)) }
@@ -487,16 +495,15 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'p') { Write-Host ("  ProbeFile      : {0}" -f $State.ProbeFile) }
     if (Test-PhaseOption $allowed 's') { Write-Host ("  ProbeSheet     : {0}" -f $State.ProbeSheet) }
     if (Test-PhaseOption $allowed 'k') { Write-Host ("  CheckSheetPath : {0}" -f $(if ([string]::IsNullOrWhiteSpace($State.CheckSheetPath)) { '(config/prompt)' } else { $State.CheckSheetPath })) }
+    if (Test-PhaseOption $allowed 'mv') { Write-Host ("  MoveData       : {0}" -f (To-BoolText $State.MoveData)) }
 
     Write-Host ''
     if ($allowed.Count -eq 0) {
         Write-Host '  This phase has no interactive options. Enter=continue' -ForegroundColor DarkGray
     } else {
         $help = @()
-        if (Test-PhaseOption $allowed 'f') {
-            if (Test-PhaseOption $allowed 'apply') { $help += 'f/-apply=Apply mode' }
-            else { $help += 'f=Force' }
-        }
+        if (Test-PhaseOption $allowed 'diff') { $help += 'diff=DiffMode (toggle report-only)' }
+        elseif (Test-PhaseOption $allowed 'f') { $help += 'f=Force' }
         if (Test-PhaseOption $allowed 'i') { $help += 'i=Interactive' }
         if (Test-PhaseOption $allowed 'n') { $help += 'n=NoResize' }
         if (Test-PhaseOption $allowed 'r') { $help += 'r=RefreshUrls' }
@@ -512,6 +519,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 'p') { $help += 'p=ProbeFile' }
         if (Test-PhaseOption $allowed 's') { $help += 's=ProbeSheet' }
         if (Test-PhaseOption $allowed 'k') { $help += 'k=CheckSheet path' }
+        if (Test-PhaseOption $allowed 'mv') { $help += 'mv=MoveData' }
         Write-Host ("  {0}, Enter=continue" -f ($help -join ', '))
     }
 
@@ -858,8 +866,8 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($hostTypes.Count -gt 0) { $args['HostSystemTypes'] = $hostTypes }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
-        # Align defaults to a read-only DryRun report; -Force opts into -Apply.
-        if ($State.Force) { $args['Apply'] = $true }
+        # Align default is force-replace; -DiffMode switches to report-only.
+        if ($State.DiffMode) { $args['DiffMode'] = $true }
         Write-Host '[RUN] Align' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
@@ -1144,6 +1152,8 @@ $state = @{
     NoResize        = [bool]$NoResize.IsPresent
     RefreshUrls     = [bool]$RefreshUrls.IsPresent
     DryRun          = [bool]$DryRun.IsPresent
+    DiffMode        = $false
+    MoveData        = [bool]$MoveData.IsPresent
 }
 
 $session['WorkDir'] = $WorkDir
