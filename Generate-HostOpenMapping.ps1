@@ -33,6 +33,9 @@ param(
     [int]$WbsEndRow   = 0,
     [string]$Owner       = ([char]0x53B3),  # 厳
     [string]$FromBizCode = "",
+    [string[]]$CorrelIdsM = @(),
+    [string[]]$JobNames = @(),
+    [switch]$AllowTempMapping,
     [switch]$Force
 )
 
@@ -51,6 +54,34 @@ try {
 # ── Interactive fallback ──
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host "WorkDir path" }
 
+function Convert-ToCleanList([object[]]$Values) {
+    $out = @()
+    foreach ($raw in @($Values)) {
+        if ($null -eq $raw) { continue }
+        foreach ($part in ([string]$raw -split ',')) {
+            $v = $part.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($v)) { $out += $v }
+        }
+    }
+    return @($out | Select-Object -Unique)
+}
+
+function Read-YesNo([string]$Prompt, [bool]$DefaultYes = $true) {
+    $suffix = if ($DefaultYes) { 'Y/n' } else { 'y/N' }
+    while ($true) {
+        $v = Read-Host ("{0} [{1}]" -f $Prompt, $suffix)
+        if ([string]::IsNullOrWhiteSpace($v)) { return $DefaultYes }
+        switch ($v.Trim().ToLower()) {
+            { $_ -in @('y','yes','1','true') } { return $true }
+            { $_ -in @('n','no','0','false') } { return $false }
+            default { Write-Host '  please enter y or n.' -ForegroundColor Yellow }
+        }
+    }
+}
+
+$CorrelIdsM = @(Convert-ToCleanList $CorrelIdsM)
+$JobNames   = @(Convert-ToCleanList $JobNames)
+
 $useRowRange   = ($WbsStartRow -gt 0 -and $WbsEndRow -gt 0)
 $useFromFilter = -not [string]::IsNullOrWhiteSpace($FromBizCode)
 
@@ -60,6 +91,9 @@ Write-Host ("  WorkDir     : {0}" -f $WorkDir)
 Write-Host ("  Owner       : {0}" -f $Owner)
 Write-Host ("  FromBizCode : {0}" -f $(if ($useFromFilter) { $FromBizCode } else { "(none)" }))
 Write-Host ("  Row range   : {0}" -f $(if ($useRowRange) { "$WbsStartRow - $WbsEndRow" } else { "(full WBS scan)" }))
+Write-Host ("  CorrelIdsM  : {0}" -f $(if ($CorrelIdsM.Count -gt 0) { $CorrelIdsM -join ", " } else { "(none)" }))
+Write-Host ("  JobNames    : {0}" -f $(if ($JobNames.Count -gt 0) { $JobNames -join ", " } else { "(none)" }))
+Write-Host ("  TempMapping : {0}" -f $AllowTempMapping.IsPresent)
 Write-Host ("  Force       : {0}" -f $Force.IsPresent)
 Write-Host ""
 
@@ -133,6 +167,12 @@ function Read-OwnerCell($ws, [int]$r) {
     }
     if ($null -eq $v) { return "" }
     return ([string]$v).Trim()
+}
+
+function Add-UniqueJobName($List, $Seen, [string]$JobName) {
+    $job = ([string]$JobName).Trim()
+    if ([string]::IsNullOrWhiteSpace($job)) { return }
+    if ($Seen.Add($job)) { $List.Add($job) }
 }
 
 function Test-OwnerMatch([string]$ownerCell, [string]$ownerInput) {
@@ -314,6 +354,7 @@ $excel = New-Object -ComObject Excel.Application
 
     $jobNames = [System.Collections.Generic.List[string]]::new()
     $seen     = New-Object 'System.Collections.Generic.HashSet[string]'
+    $warnings = [System.Collections.Generic.List[string]]::new()
     $excludedByFromFilter = 0
     $ownerMatched = 0
 
@@ -344,6 +385,67 @@ $excel = New-Object -ComObject Excel.Application
     } else {
         Write-Host ("    (first 10) " + (($jobNames | Select-Object -First 10) -join ", ")) -ForegroundColor DarkGray
     }
+    if ($jobNames.Count -eq 0 -or $CorrelIdsM.Count -gt 0 -or $JobNames.Count -gt 0) {
+        if ($jobNames.Count -eq 0) {
+            Write-Host "[WARN] No matching JOB_NAMEs from WBS." -ForegroundColor Yellow
+        } else {
+            Write-Host "[INFO] Explicit Correl_ID_M / JOB_NAME list supplied; using GFIX-selected temp JOB_NAMEs instead of full WBS list." -ForegroundColor Yellow
+        }
+
+        $useTemp = $false
+        if ($CorrelIdsM.Count -gt 0 -or $JobNames.Count -gt 0) {
+            $useTemp = $true
+            $jobNames = [System.Collections.Generic.List[string]]::new()
+            $seen     = New-Object 'System.Collections.Generic.HashSet[string]'
+        } elseif ($AllowTempMapping.IsPresent) {
+            Write-Host "  WBS may be incomplete. You can create a temporary mapping from GFIX Correl_ID_M or JOB_NAME." -ForegroundColor Yellow
+            $useTemp = Read-YesNo "Create temp mapping_$Owner from GFIX directly?" $true
+        }
+
+        if (-not $useTemp) {
+            Write-Host "[ABORT] No matching JOB_NAMEs." -ForegroundColor Yellow; return
+        }
+
+        if ($CorrelIdsM.Count -eq 0 -and $JobNames.Count -eq 0) {
+            $rawIds = Read-Host "Correl_ID_M list, comma-separated (example: JIDSC02M,JIDSC03M). Empty = skip"
+            $CorrelIdsM = @(Convert-ToCleanList @($rawIds))
+            $rawJobs = Read-Host "JOB_NAME list, comma-separated (example: CJODJDEI,CJODJDB7). Empty = skip"
+            $JobNames = @(Convert-ToCleanList @($rawJobs))
+        }
+
+        if ($CorrelIdsM.Count -eq 0 -and $JobNames.Count -eq 0) {
+            Write-Host "[ABORT] No Correl_ID_M or JOB_NAME supplied for temp mapping." -ForegroundColor Yellow; return
+        }
+
+        Write-Host "[Step C2] Building temp JOB_NAME list from GFIX..." -ForegroundColor Cyan
+        $wantedIds = New-Object 'System.Collections.Generic.HashSet[string]'
+        foreach ($id in $CorrelIdsM) { [void]$wantedIds.Add($id) }
+        foreach ($jn in $JobNames) { Add-UniqueJobName $jobNames $seen $jn }
+
+        $startRow = 6
+        for ($r = $startRow; $r -le $lastRow; $r++) {
+            $cid = Read-CellStr $wsGfix $r $col_correlid
+            if ([string]::IsNullOrWhiteSpace($cid) -or -not $wantedIds.Contains($cid)) { continue }
+            $jn = Read-CellStr $wsGfix $r $col_job
+            if ([string]::IsNullOrWhiteSpace($jn)) {
+                $warnings.Add(("Correl_ID_M has empty JOB at GFIX row {0}: {1}" -f $r, $cid)); continue
+            }
+            Add-UniqueJobName $jobNames $seen $jn
+        }
+
+        foreach ($id in $CorrelIdsM) {
+            $found = $false
+            for ($r = $startRow; $r -le $lastRow; $r++) {
+                if ((Read-CellStr $wsGfix $r $col_correlid) -eq $id) { $found = $true; break }
+            }
+            if (-not $found) { $warnings.Add(("Correl_ID_M not in GFIX list: {0}" -f $id)) }
+        }
+
+        Write-Host ("  Temp Owner / mapping name : {0} / mapping_{0}.csv" -f $Owner) -ForegroundColor Green
+        Write-Host ("  Temp distinct JOB_NAMEs   : {0}" -f $jobNames.Count) -ForegroundColor Green
+        foreach ($j in $jobNames) { Write-Host ("    - {0}" -f $j) -ForegroundColor DarkGray }
+    }
+
     if ($jobNames.Count -eq 0) {
         Write-Host "[ABORT] No matching JOB_NAMEs." -ForegroundColor Yellow; return
     }
@@ -381,7 +483,6 @@ $excel = New-Object -ComObject Excel.Application
     Write-Host "[Step E] Building mapping records..." -ForegroundColor Cyan
 
     $records  = [System.Collections.Generic.List[psobject]]::new()
-    $warnings = [System.Collections.Generic.List[string]]::new()
 
     foreach ($jn in $jobNames) {
         $rows = $jobToRows[$jn]
