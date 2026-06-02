@@ -2,6 +2,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Capture at dot-source time: here $MyInvocation.MyCommand is ExternalScriptInfo (has .Path).
+# Inside a function it becomes FunctionInfo (no .Path) — so cache it now.
+$_JD_ScriptDir = Split-Path $MyInvocation.MyCommand.Path
+
 function ConvertTo-JenkinsDownloadUri {
     param(
         [Parameter(Mandatory)][string]$FolderUrl,
@@ -59,9 +63,8 @@ function Invoke-JenkinsFileDownload {
         [string]$ParserScript = ''
     )
 
-    $scriptDir = Split-Path $MyInvocation.MyCommand.Path
     if ([string]::IsNullOrWhiteSpace($ParserScript)) {
-        $ParserScript = Join-Path $scriptDir 'Parse-JenkinsList.ps1'
+        $ParserScript = Join-Path $_JD_ScriptDir 'Parse-JenkinsList.ps1'
     }
     if (-not (Test-Path -LiteralPath $ParserScript)) { throw "Parser not found: $ParserScript" }
 

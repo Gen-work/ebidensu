@@ -336,7 +336,8 @@ foreach ($toCode in $groupOrder) {
                         -JobName $searchJob -Action 'download' -Status 'warn' -Message 'page text or folder URL is empty'
                 } else {
                     $dl = Invoke-JenkinsFileDownload -WorkDir $WorkDir -Mode $Mode -FolderUrl $folderUrl `
-                        -PageText $pageText -CorrelId $correl -JobName $searchJob -Force:$forceFlag
+                        -PageText $pageText -CorrelId $correl -JobName $searchJob -Force:$forceFlag `
+                        -ParserScript (Join-Path $scriptDir 'Parse-JenkinsList.ps1')
                     Write-Host ("    Jenkins files: found={0} matched={1} downloaded={2} skipped={3} failed={4} -> DATA\{5}" -f `
                         $dl.Found, $dl.Matched, $dl.Downloaded, $dl.Skipped, $dl.Failed, $dl.DataKind) -ForegroundColor DarkGray
                     foreach ($f in @($dl.Files)) {
