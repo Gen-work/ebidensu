@@ -92,13 +92,12 @@ if ($missingCols.Count -eq 0) {
     Write-Host ("  Required cols : MISSING {0}" -f ($missingCols -join ', ')) -ForegroundColor Red
 }
 
-# isReplaced bitmask distribution
-$hasIsReplaced = $first.PSObject.Properties.Name -contains 'isReplaced'
-if ($hasIsReplaced) {
+# Status bitmask distribution helper
+function Show-BitStatus([string]$FieldName, [object[]]$Rows) {
     $bitDist = @{}
-    foreach ($r in $rows) {
+    foreach ($r in $Rows) {
         $v = 0
-        try { $v = [int]$r.isReplaced } catch { $v = 0 }
+        try { $v = [int]$r.$FieldName } catch { $v = 0 }
         if ($v -lt 0 -or $v -gt 7) { $v = -1 }
         if (-not $bitDist.ContainsKey($v)) { $bitDist[$v] = 0 }
         $bitDist[$v]++
@@ -120,9 +119,75 @@ if ($hasIsReplaced) {
             $parts += ("{0}={1}" -f $labels[$k], $bitDist[$k])
         }
     }
-    Write-Host ("  isReplaced    : {0}" -f ($parts -join ', '))
+    return ($parts -join ', ')
+}
+
+# isReplaced bitmask distribution
+$hasIsReplaced = $first.PSObject.Properties.Name -contains 'isReplaced'
+if ($hasIsReplaced) {
+    Write-Host ("  isReplaced    : {0}" -f (Show-BitStatus 'isReplaced' $rows))
 } else {
     Write-Host '  isReplaced    : column not yet present (added on first Replace run)' -ForegroundColor DarkGray
+}
+
+# isMarked bitmask distribution
+$hasIsMarked = $first.PSObject.Properties.Name -contains 'isMarked'
+if ($hasIsMarked) {
+    Write-Host ("  isMarked      : {0}" -f (Show-BitStatus 'isMarked' $rows))
+} else {
+    Write-Host '  isMarked      : column not yet present (added on first Mark run)' -ForegroundColor DarkGray
+}
+
+# isReviewed bitmask distribution
+$hasIsReviewed = $first.PSObject.Properties.Name -contains 'isReviewed'
+if ($hasIsReviewed) {
+    Write-Host ("  isReviewed    : {0}" -f (Show-BitStatus 'isReviewed' $rows))
+} else {
+    Write-Host '  isReviewed    : column not yet present (added on first Review run)' -ForegroundColor DarkGray
+}
+
+# isDelivered flag distribution (0/1, not a bitmask)
+$hasIsDelivered = $first.PSObject.Properties.Name -contains 'isDelivered'
+if ($hasIsDelivered) {
+    $delivDist = @{}
+    foreach ($r in $rows) {
+        $v = [string]$r.isDelivered
+        if ([string]::IsNullOrWhiteSpace($v)) { $v = '0' }
+        if (-not $delivDist.ContainsKey($v)) { $delivDist[$v] = 0 }
+        $delivDist[$v]++
+    }
+    $parts = @()
+    foreach ($k in ('0','1','')) {
+        if ($delivDist.ContainsKey($k) -and $delivDist[$k] -gt 0) {
+            $label = if ($k -eq '1') { 'sent' } elseif ($k -eq '0') { 'pending' } else { 'blank' }
+            $parts += ("{0}={1}" -f $label, $delivDist[$k])
+        }
+    }
+    Write-Host ("  isDelivered   : {0}" -f ($parts -join ', '))
+} else {
+    Write-Host '  isDelivered   : column not yet present (added on first DeliverMail run)' -ForegroundColor DarkGray
+}
+
+# isFilesDelivered flag distribution (0/1, per Excel_NAME)
+$hasIsFilesDelivered = $first.PSObject.Properties.Name -contains 'isFilesDelivered'
+if ($hasIsFilesDelivered) {
+    $fileDist = @{}
+    foreach ($r in $rows) {
+        $v = [string]$r.isFilesDelivered
+        if ([string]::IsNullOrWhiteSpace($v)) { $v = '0' }
+        if (-not $fileDist.ContainsKey($v)) { $fileDist[$v] = 0 }
+        $fileDist[$v]++
+    }
+    $parts = @()
+    foreach ($k in ('0','1','')) {
+        if ($fileDist.ContainsKey($k) -and $fileDist[$k] -gt 0) {
+            $label = if ($k -eq '1') { 'copied' } elseif ($k -eq '0') { 'pending' } else { 'blank' }
+            $parts += ("{0}={1}" -f $label, $fileDist[$k])
+        }
+    }
+    Write-Host ("  isFilesDeliv. : {0}" -f ($parts -join ', '))
+} else {
+    Write-Host '  isFilesDeliv. : column not yet present (added on first DeliverFiles run)' -ForegroundColor DarkGray
 }
 
 # Target-filtered workset

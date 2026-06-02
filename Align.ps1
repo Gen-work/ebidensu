@@ -17,14 +17,14 @@
 #  those literal values are supplied, the type is 'Unknown' and Align safely
 #  falls back to the Host->Open (3 receive) scope with a warning.
 #
-#  Default is a READ-ONLY DryRun (reports which sheets would sync). -Apply
-#  performs a full sync (clear work sheet contents, copy J4 UsedRange values
-#  and formats via Range.Copy). -Apply is EXPERIMENTAL -- run it on a copy.
+#  Default is force-replace (Apply always on); -DiffMode switches to report-only.
+#  -Apply is kept for backward compatibility (now a no-op; Apply is always active
+#  unless -DiffMode is set).
 #
 #  Usage:
 #    .\Align.ps1 -WorkDir C:\work\proj -J4BaseDir \\fs\...\40.J4\07.GPCS
 #    .\Align.ps1 -WorkDir ... -J4BaseDir ... -HostSystemTypes HOST,MF
-#    .\Align.ps1 -WorkDir ... -J4BaseDir ... -Apply
+#    .\Align.ps1 -WorkDir ... -J4BaseDir ... -DiffMode    # report only, no sync
 # ============================================================
 
 param(
@@ -35,6 +35,7 @@ param(
     [string[]]$HostSystemTypes = @(),
     [string]$MigrationTypeOverride = '',
     [switch]$Apply,
+    [switch]$DiffMode,
     [string]$ExcelHelpersScript = ''
 )
 
@@ -47,7 +48,8 @@ try {
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host 'WorkDir path' }
 if (-not (Test-Path -LiteralPath $WorkDir)) { Write-Host "[ERROR] WorkDir not found: $WorkDir" -ForegroundColor Red; exit 1 }
 
-$applyFlag = [bool]$Apply.IsPresent
+$diffFlag  = [bool]$DiffMode.IsPresent
+$applyFlag = -not $diffFlag
 
 # dot-source ExcelHelpers + shared libs
 $helpersPath = $null
@@ -84,7 +86,7 @@ $groups = $workRows | Group-Object Excel_NAME | Sort-Object Name
 
 Write-Host ''
 Write-Host '===== Align / Precheck =====' -ForegroundColor Green
-Write-Host ("  Mode      : {0}" -f $(if ($applyFlag) { 'APPLY (values + formats sync)' } else { 'DryRun (report only)' }))
+Write-Host ("  Mode      : {0}" -f $(if ($diffFlag) { 'DiffMode (report only)' } else { 'Apply (force replace: work <- J4)' }))
 Write-Host ("  J4BaseDir : {0}" -f $J4BaseDir)
 Write-Host ("  HostTypes : {0}" -f $(if (@($HostSystemTypes).Count) { ($HostSystemTypes -join ',') } else { '(none configured)' }))
 Write-Host ("  Groups    : {0}" -f $groups.Count)
@@ -172,8 +174,21 @@ try {
             foreach ($sheetName in $sheets) {
                 $wsW = Get-SheetByName $workWb $sheetName
                 $wsJ = Get-SheetByName $j4Wb $sheetName
-                if ($null -eq $wsW -or $null -eq $wsJ) {
-                    Write-Host ("    [WARN] sheet missing in {0}: {1}" -f $(if ($null -eq $wsW) { 'work' } else { 'J4' }), $sheetName) -ForegroundColor Yellow
+                if ($null -eq $wsJ) {
+                    Write-Host ("    [WARN] sheet missing in J4: {0}" -f $sheetName) -ForegroundColor Yellow
+                    continue
+                }
+                if ($null -eq $wsW) {
+                    if ($applyFlag) {
+                        $insertAfter2 = $workWb.Sheets.Item($workWb.Sheets.Count)
+                        $wsJ.Copy([System.Reflection.Missing]::Value, $insertAfter2)
+                        $newWs2 = $workWb.ActiveSheet
+                        if ($newWs2.Name -ne $sheetName) { try { $newWs2.Name = $sheetName } catch {} }
+                        Write-Host ("    [ADD]  {0} (missing in work, copied from J4)" -f $sheetName) -ForegroundColor Green
+                        $cntSynced++; $changed = $true
+                    } else {
+                        Write-Host ("    [MISS] {0} (in J4, not in work -- run without -DiffMode to copy)" -f $sheetName) -ForegroundColor Yellow
+                    }
                     continue
                 }
                 $gw = Read-SheetGrid $wsW
@@ -213,6 +228,6 @@ Write-Host ("  Sheets same   : {0}" -f $cntSame)
 Write-Host ("  Sheets diff   : {0}" -f $cntDiff)
 Write-Host ("  Sheets synced : {0}" -f $cntSynced) -ForegroundColor $(if ($applyFlag) { 'Green' } else { 'DarkGray' })
 Write-Host ("  Groups skipped: {0}" -f $cntSkip)
-if (-not $applyFlag -and $cntDiff -gt 0) {
-    Write-Host '  (DryRun: re-run with -Apply to sync the DIFF sheets)' -ForegroundColor Magenta
+if ($diffFlag -and $cntDiff -gt 0) {
+    Write-Host '  (DiffMode: re-run without -DiffMode to sync the DIFF sheets)' -ForegroundColor Magenta
 }
