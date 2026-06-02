@@ -48,14 +48,14 @@ work\
     GFIX_Jenkins\
     DF\
   DATA\
-    GIFT\<Correl_ID_S>\
-    GFIX\<Correl_ID_S>\
+    GIFT\<Correl_ID_S>*
+    GFIX\<Correl_ID_S>*
     GFIX_LOD\
   evidence\
     <Excel_NAME>.xlsx
 ```
 
-Jenkins-downloaded files keep their DATA layout, for example:
+Jenkins-downloaded receive files are saved under `DATA\GIFT` or `DATA\GFIX` with their Jenkins filename, so downstream delivery can pick up `Correl_ID_S*` files. For example:
 
 ```text
 \\fs-f3170-1\12_生産管理\00121.GPCS\31.NII\other：その他\個人用ワーク\厳\Work\0514_JRV-IDS,IGP2\DATA\GIFT\JIDSK48S

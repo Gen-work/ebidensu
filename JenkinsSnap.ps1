@@ -36,6 +36,7 @@ if ([string]::IsNullOrWhiteSpace($CommonScript)) {
 . $CommonScript
 . (Join-Path $scriptDir 'MappingStore.ps1')
 . (Join-Path $scriptDir 'ProgressLog.ps1')
+. (Join-Path $scriptDir 'JenkinsDownload.ps1')
 
 $Global:Timing = @{ ActionWaitMs = $ActionWaitMs; ResultWaitMs = $ResultWaitMs }
 
@@ -102,7 +103,9 @@ Write-Host "Pending rows: $($pending.Count)" -ForegroundColor Cyan
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 $snapDir = Join-Path (Join-Path $WorkDir 'snap') $snapFolder
+$dataRoot = Join-Path $WorkDir 'DATA'
 Ensure-Dir $snapDir
+if ($Mode -in 'GiftRecv','GfixRecv') { Ensure-Dir $dataRoot }
 
 # ── URL cache (PS5.1-safe: no -AsHashtable) ──────────────────────────────────
 $urlCacheFile = Join-Path $WorkDir 'jenkins_urls.json'
@@ -135,7 +138,34 @@ function Invoke-CropPng([string]$path, [int]$crop) {
     }
 }
 
+function Get-EdgeMainWindowHandle {
+    $edge = @(Get-Process -Name 'msedge' -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+        Select-Object -First 1)
+    if ($edge.Count -gt 0) { return [IntPtr]$edge[0].MainWindowHandle }
+    return [IntPtr]::Zero
+}
+
+function Activate-JenkinsEdgeWindow {
+    $hWnd = Get-EdgeMainWindowHandle
+    if ($hWnd -eq [IntPtr]::Zero) {
+        [void]$Shell.AppActivate('Microsoft Edge')
+        Start-Sleep -Milliseconds 700
+        $hWnd = Get-EdgeMainWindowHandle
+    }
+    if ($hWnd -eq [IntPtr]::Zero) {
+        Write-Host '  [WARN] Edge window not found.' -ForegroundColor Yellow
+        return [IntPtr]::Zero
+    }
+
+    [WinAPI]::ShowWindowAsync($hWnd, 9) | Out-Null
+    [WinAPI]::SetForegroundWindow($hWnd) | Out-Null
+    Start-Sleep -Milliseconds 400
+    return $hWnd
+}
+
 function Move-EdgeToWorkPos([IntPtr]$hWnd) {
+    if ($hWnd -eq [IntPtr]::Zero) { return }
     [WinAPI]::MoveWindow($hWnd, 0, 0, $WindowWidth, $WindowHeight, $true) | Out-Null
     Start-Sleep -Milliseconds 200
 }
@@ -215,7 +245,7 @@ foreach ($toCode in $groupOrder) {
             # force re-navigate
             $cachedUrl = ''
         } else {
-            $edgeHwnd = Activate-EdgeWindow
+            $edgeHwnd = Activate-JenkinsEdgeWindow
             if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
             # Navigate to cached URL
             Send-Key '^l' 300
@@ -233,9 +263,7 @@ foreach ($toCode in $groupOrder) {
         $resp = Read-Host
         if ($resp -eq 'q') { exit 0 }
 
-        Switch-ToEdge
-
-        $edgeHwnd = Activate-EdgeWindow
+        $edgeHwnd = Activate-JenkinsEdgeWindow
         if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
 
         # Capture and cache the URL
@@ -260,7 +288,7 @@ foreach ($toCode in $groupOrder) {
 
         $snapPath = Join-Path $snapDir "$correl.png"
 
-        $edgeHwnd = Activate-EdgeWindow
+        $edgeHwnd = Activate-JenkinsEdgeWindow
         if ($edgeHwnd -eq [IntPtr]::Zero) {
             Write-Host "    [FAIL] Edge not found" -ForegroundColor Red
             $cntFail++; continue
@@ -274,15 +302,16 @@ foreach ($toCode in $groupOrder) {
         # Close find bar so it doesn't clutter the screenshot
         Send-Key '{ESC}' 200
 
-        # Take screenshot
-        $hWnd = [WinAPI]::GetForegroundWindow()
-        if ($hWnd -eq [IntPtr]::Zero) {
-            Write-Host "    [FAIL] No foreground window" -ForegroundColor Red
+        # Take screenshot from the Edge handle we just activated; never use the
+        # foreground handle here because the console can remain foreground after
+        # Read-Host on some terminals.
+        if ($edgeHwnd -eq [IntPtr]::Zero) {
+            Write-Host "    [FAIL] No Edge window handle" -ForegroundColor Red
             $cntFail++; continue
         }
 
         try {
-            Take-WindowScreenshot $hWnd $snapPath
+            Take-WindowScreenshot $edgeHwnd $snapPath
             if ($CropPx -gt 0) { Invoke-CropPng $snapPath $CropPx }
             Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green
         } catch {
@@ -290,6 +319,40 @@ foreach ($toCode in $groupOrder) {
             Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
                 -JobName $searchJob -Action 'screenshot' -Status 'fail' -Message $_.Exception.Message
             $cntFail++; continue
+        }
+
+        # Download the matching Jenkins receive file into DATA\GIFT or DATA\GFIX.
+        if ($Mode -in 'GiftRecv','GfixRecv') {
+            try {
+                Click-PageBody
+                $pageTextScript = Join-Path $scriptDir 'Read-PageText.ps1'
+                $pageText = & $pageTextScript -SelectWaitMs $ActionWaitMs -CopyWaitMs $ResultWaitMs
+                $folderUrl = Get-CurrentEdgeUrl
+                if ([string]::IsNullOrWhiteSpace($folderUrl)) { $folderUrl = $cachedUrl }
+
+                if ([string]::IsNullOrWhiteSpace($pageText) -or [string]::IsNullOrWhiteSpace($folderUrl)) {
+                    Write-Host '    [WARN] download skipped: page text or Jenkins folder URL is empty' -ForegroundColor Yellow
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                        -JobName $searchJob -Action 'download' -Status 'warn' -Message 'page text or folder URL is empty'
+                } else {
+                    $dl = Invoke-JenkinsFileDownload -WorkDir $WorkDir -Mode $Mode -FolderUrl $folderUrl `
+                        -PageText $pageText -CorrelId $correl -JobName $searchJob -Force:$forceFlag
+                    Write-Host ("    Jenkins files: found={0} matched={1} downloaded={2} skipped={3} failed={4} -> DATA\{5}" -f `
+                        $dl.Found, $dl.Matched, $dl.Downloaded, $dl.Skipped, $dl.Failed, $dl.DataKind) -ForegroundColor DarkGray
+                    foreach ($f in @($dl.Files)) {
+                        $color = if ($f.Status -eq 'ok') { 'Gray' } elseif ($f.Status -eq 'skip') { 'DarkGray' } else { 'Yellow' }
+                        Write-Host ("      [{0}] {1}" -f $f.Status, $f.Name) -ForegroundColor $color
+                    }
+                    $dlStatus = if ($dl.Failed -gt 0) { 'fail' } elseif ($dl.Matched -eq 0) { 'warn' } else { 'ok' }
+                    $dlMessage = "DATA\$($dl.DataKind): found=$($dl.Found) matched=$($dl.Matched) downloaded=$($dl.Downloaded) skipped=$($dl.Skipped) failed=$($dl.Failed)"
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                        -JobName $searchJob -Action 'download' -Status $dlStatus -Message $dlMessage
+                }
+            } catch {
+                Write-Host ("    [WARN] download failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                    -JobName $searchJob -Action 'download' -Status 'fail' -Message $_.Exception.Message
+            }
         }
 
         # Mark ONLY this correl's snap column done, then persist atomically.
