@@ -33,6 +33,25 @@ function Get-ExcelDestLeaf {
     return "{0}.xlsx" -f $stem
 }
 
+# Inverse of Get-ExcelFullStem: given a real workbook filename and the short
+# Excel_NAME, recover the J4 prefix that precedes "_<Excel_NAME>".
+#   Get-PrefixFromFilename 'J4title(REQ-...)_LJRVWD64.xlsx' 'LJRVWD64'
+#       -> 'J4title(REQ-...)'
+#   Get-PrefixFromFilename 'LJRVWD64.xlsx' 'LJRVWD64' -> ''   (no prefix)
+# Returns '' when the filename does not carry a recoverable prefix.
+function Get-PrefixFromFilename {
+    param([string]$FileName, [string]$Name)
+    if ([string]::IsNullOrWhiteSpace($FileName) -or [string]::IsNullOrWhiteSpace($Name)) { return '' }
+    $stem  = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
+    $short = [System.IO.Path]::GetFileNameWithoutExtension($Name)
+    if ($stem -eq $short) { return '' }
+    $suffix = '_' + $short
+    if ($stem.EndsWith($suffix)) {
+        return $stem.Substring(0, $stem.Length - $suffix.Length)
+    }
+    return ''
+}
+
 # Finds the evidence/J4 workbook file for a given stem (full or short).
 # Search order:
 #   1. Exact match: <Dir>\<FullStem>.xlsx

@@ -138,7 +138,34 @@ function Invoke-CropPng([string]$path, [int]$crop) {
     }
 }
 
+function Get-EdgeMainWindowHandle {
+    $edge = @(Get-Process -Name 'msedge' -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+        Select-Object -First 1)
+    if ($edge.Count -gt 0) { return [IntPtr]$edge[0].MainWindowHandle }
+    return [IntPtr]::Zero
+}
+
+function Activate-JenkinsEdgeWindow {
+    $hWnd = Get-EdgeMainWindowHandle
+    if ($hWnd -eq [IntPtr]::Zero) {
+        [void]$Shell.AppActivate('Microsoft Edge')
+        Start-Sleep -Milliseconds 700
+        $hWnd = Get-EdgeMainWindowHandle
+    }
+    if ($hWnd -eq [IntPtr]::Zero) {
+        Write-Host '  [WARN] Edge window not found.' -ForegroundColor Yellow
+        return [IntPtr]::Zero
+    }
+
+    [WinAPI]::ShowWindowAsync($hWnd, 9) | Out-Null
+    [WinAPI]::SetForegroundWindow($hWnd) | Out-Null
+    Start-Sleep -Milliseconds 400
+    return $hWnd
+}
+
 function Move-EdgeToWorkPos([IntPtr]$hWnd) {
+    if ($hWnd -eq [IntPtr]::Zero) { return }
     [WinAPI]::MoveWindow($hWnd, 0, 0, $WindowWidth, $WindowHeight, $true) | Out-Null
     Start-Sleep -Milliseconds 200
 }
@@ -218,7 +245,7 @@ foreach ($toCode in $groupOrder) {
             # force re-navigate
             $cachedUrl = ''
         } else {
-            $edgeHwnd = Activate-EdgeWindow
+            $edgeHwnd = Activate-JenkinsEdgeWindow
             if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
             # Navigate to cached URL
             Send-Key '^l' 300
@@ -236,9 +263,7 @@ foreach ($toCode in $groupOrder) {
         $resp = Read-Host
         if ($resp -eq 'q') { exit 0 }
 
-        Switch-ToEdge
-
-        $edgeHwnd = Activate-EdgeWindow
+        $edgeHwnd = Activate-JenkinsEdgeWindow
         if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
 
         # Capture and cache the URL
@@ -263,7 +288,7 @@ foreach ($toCode in $groupOrder) {
 
         $snapPath = Join-Path $snapDir "$correl.png"
 
-        $edgeHwnd = Activate-EdgeWindow
+        $edgeHwnd = Activate-JenkinsEdgeWindow
         if ($edgeHwnd -eq [IntPtr]::Zero) {
             Write-Host "    [FAIL] Edge not found" -ForegroundColor Red
             $cntFail++; continue
@@ -277,15 +302,16 @@ foreach ($toCode in $groupOrder) {
         # Close find bar so it doesn't clutter the screenshot
         Send-Key '{ESC}' 200
 
-        # Take screenshot
-        $hWnd = [WinAPI]::GetForegroundWindow()
-        if ($hWnd -eq [IntPtr]::Zero) {
-            Write-Host "    [FAIL] No foreground window" -ForegroundColor Red
+        # Take screenshot from the Edge handle we just activated; never use the
+        # foreground handle here because the console can remain foreground after
+        # Read-Host on some terminals.
+        if ($edgeHwnd -eq [IntPtr]::Zero) {
+            Write-Host "    [FAIL] No Edge window handle" -ForegroundColor Red
             $cntFail++; continue
         }
 
         try {
-            Take-WindowScreenshot $hWnd $snapPath
+            Take-WindowScreenshot $edgeHwnd $snapPath
             if ($CropPx -gt 0) { Invoke-CropPng $snapPath $CropPx }
             Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green
         } catch {

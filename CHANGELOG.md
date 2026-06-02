@@ -3,6 +3,42 @@
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
+## 2026-06-02 - Incremental mapping add + Excel_Prefix auto-capture
+
+### Added
+- **Incremental mapping add (`-Add`).** `Generate-HostOpenMapping.ps1 -Add`
+  merges freshly-selected rows INTO an existing `mapping_<Owner>.csv` instead
+  of overwriting it. Existing rows — and ALL their progress (snaps, isReplaced,
+  isMarked, isReviewed, Excel_Prefix, delivery flags, comments) — are kept
+  verbatim; only `Correl_ID_M` values not already present are appended. Use it
+  to grow the map day by day:
+  `-Add -JobNames CJODJDEU,CJODJDB5` / `-Add -CorrelIdsM JIDSC09M` /
+  `-Add -ExcelNames LJRVWD64` / `-Add -WbsStartRow 2300 -WbsEndRow 2400`.
+  Reachable from the menu (`add` toggle) and the `Mapping` phase wiring.
+- **`-ExcelNames` selector** for Generate/VerifyTool — accepts Excel_NAME(s)
+  and reverse-maps each to its JOB_NAME (index-5 `W`→`J`) to look the row up
+  in GFIX. Menu key `ex`.
+- **`Get-PrefixFromFilename`** in `WorkbookResolver.ps1` — inverse of
+  `Get-ExcelFullStem`; recovers the J4 prefix that precedes `_<Excel_NAME>`.
+
+### Fixed
+- **JenkinsSnap keeps window ops on Edge (folded in from codex's fix).** After
+  `Read-Host`, some terminals keep the console as the foreground window, so the
+  old code resized/screenshotted the **CLI** instead of Edge. JenkinsSnap now
+  resolves the real `msedge` MainWindowHandle (`Activate-JenkinsEdgeWindow`),
+  drops the `Switch-ToEdge` Alt+Tab dance, and screenshots via the activated
+  `$edgeHwnd` rather than `GetForegroundWindow()`. Returns a zero handle (and
+  fails the row) instead of operating on the wrong window. New `.ps1` files
+  normalized to no-BOM per encoding policy.
+
+### Changed
+- **Clone now captures `Excel_Prefix`.** When a workbook is cloned from
+  `-SourceDir` (real filename `<prefix>_<Excel_NAME>.xlsx`), Clone extracts the
+  prefix and writes it back into the mapping (per `Excel_NAME`, atomic write).
+  This is the missing "input point" for `Excel_Prefix` — downstream phases
+  (CheckSheet / DeliverMail / DeliverFiles) now get the exact J4 filename
+  without any manual entry. Existing rows/progress are untouched.
+
 ## 2026-06-01 - Delivery: review check sheet fill + review-request mail
 
 The final hand-off step. Two new phases close the workflow after review.
