@@ -79,11 +79,12 @@ function Read-YesNo([string]$Prompt, [bool]$DefaultYes = $true) {
     }
 }
 
-$CorrelIdsM = @(Convert-ToCleanList $CorrelIdsM)
-$JobNames   = @(Convert-ToCleanList $JobNames)
+$requestedCorrelIdsM = @(Convert-ToCleanList $CorrelIdsM)
+$requestedJobNames   = @(Convert-ToCleanList $JobNames)
 
 $useRowRange   = ($WbsStartRow -gt 0 -and $WbsEndRow -gt 0)
 $useFromFilter = -not [string]::IsNullOrWhiteSpace($FromBizCode)
+$useExplicitTempSelectors = ($requestedCorrelIdsM.Count -gt 0 -or $requestedJobNames.Count -gt 0)
 
 Write-Host ""
 Write-Host "===== Generate-HostOpenMapping (Phase 1 v2) =====" -ForegroundColor Green
@@ -91,8 +92,8 @@ Write-Host ("  WorkDir     : {0}" -f $WorkDir)
 Write-Host ("  Owner       : {0}" -f $Owner)
 Write-Host ("  FromBizCode : {0}" -f $(if ($useFromFilter) { $FromBizCode } else { "(none)" }))
 Write-Host ("  Row range   : {0}" -f $(if ($useRowRange) { "$WbsStartRow - $WbsEndRow" } else { "(full WBS scan)" }))
-Write-Host ("  CorrelIdsM  : {0}" -f $(if ($CorrelIdsM.Count -gt 0) { $CorrelIdsM -join ", " } else { "(none)" }))
-Write-Host ("  JobNames    : {0}" -f $(if ($JobNames.Count -gt 0) { $JobNames -join ", " } else { "(none)" }))
+Write-Host ("  CorrelIdsM  : {0}" -f $(if ($requestedCorrelIdsM.Count -gt 0) { $requestedCorrelIdsM -join ", " } else { "(none)" }))
+Write-Host ("  JobNames    : {0}" -f $(if ($requestedJobNames.Count -gt 0) { $requestedJobNames -join ", " } else { "(none)" }))
 Write-Host ("  TempMapping : {0}" -f $AllowTempMapping.IsPresent)
 Write-Host ("  Force       : {0}" -f $Force.IsPresent)
 Write-Host ""
@@ -295,7 +296,7 @@ $excel = New-Object -ComObject Excel.Application
     # ============================================================
     # Step B (optional): GFIX from-code filter -> gfixSet of JOB_NAMEs
     # ============================================================
-    $gfixSet = New-Object 'System.Collections.Generic.HashSet[string]'
+    $gfixSet = New-Object 'System.Collections.Generic.HashSet[System.String]'
     $lastRow = $wsGfix.UsedRange.Rows.Count
 
     if ($useFromFilter) {
@@ -331,72 +332,78 @@ $excel = New-Object -ComObject Excel.Application
     # ============================================================
     # Step C: Read WBS -> distinct JOB_NAMEs (Owner [∩ gfixSet])
     # ============================================================
-    Write-Host "[Step C] Reading WBS..." -ForegroundColor Cyan
-    $wbWbs = $excel.Workbooks.Open($wbsPath, $false, $true)
-    $wsWbs = $null
-    foreach ($ws in $wbWbs.Worksheets) {
-        if ($ws.Name -eq $LBL_WBS_SHEET) { $wsWbs = $ws; break }
-    }
-    if (-not $wsWbs) { throw ("WBS sheet '{0}' not found." -f $LBL_WBS_SHEET) }
+    $jobNameList = (New-Object 'System.Collections.Generic.List[System.String]')
+    $seen        = New-Object 'System.Collections.Generic.HashSet[System.String]'
+    $warnings    = (New-Object 'System.Collections.Generic.List[System.String]')
 
-    if (-not $useRowRange) {
-        $ur = $wsWbs.UsedRange
-        $WbsStartRow = $ur.Row
-        $WbsEndRow   = $ur.Row + $ur.Rows.Count - 1
-        Write-Host ("  Full UsedRange scan: row {0} - {1}" -f $WbsStartRow, $WbsEndRow)
+    if ($useExplicitTempSelectors) {
+        Write-Host "[Step C] Explicit Correl_ID_M / JOB_NAME supplied; skip WBS scan." -ForegroundColor Cyan
     } else {
-        Write-Host ("  Given row range: row {0} - {1}" -f $WbsStartRow, $WbsEndRow)
-    }
-    $rowCount = $WbsEndRow - $WbsStartRow + 1
-
-    $colA_range = $wsWbs.Range($wsWbs.Cells.Item($WbsStartRow, 1), $wsWbs.Cells.Item($WbsEndRow, 1))
-    $colA = $colA_range.Value2
-
-    $jobNames = [System.Collections.Generic.List[string]]::new()
-    $seen     = New-Object 'System.Collections.Generic.HashSet[string]'
-    $warnings = [System.Collections.Generic.List[string]]::new()
-    $excludedByFromFilter = 0
-    $ownerMatched = 0
-
-    for ($r = $WbsStartRow; $r -le $WbsEndRow; $r++) {
-        $ownerStr = Read-OwnerCell $wsWbs $r
-        if (-not (Test-OwnerMatch $ownerStr $Owner)) { continue }
-        $ownerMatched++
-
-        $i = $r - $WbsStartRow + 1
-        $job_v = if ($rowCount -eq 1) { $colA } else { $colA[$i, 1] }
-        if ($null -eq $job_v) { continue }
-        $job = ([string]$job_v).Trim()
-        if ([string]::IsNullOrWhiteSpace($job)) { continue }
-
-        if ($useFromFilter -and -not $gfixSet.Contains($job)) {
-            $excludedByFromFilter++; continue
+        Write-Host "[Step C] Reading WBS..." -ForegroundColor Cyan
+        $wbWbs = $excel.Workbooks.Open($wbsPath, $false, $true)
+        $wsWbs = $null
+        foreach ($ws in $wbWbs.Worksheets) {
+            if ($ws.Name -eq $LBL_WBS_SHEET) { $wsWbs = $ws; break }
         }
-        if ($seen.Add($job)) { $jobNames.Add($job) }
+        if (-not $wsWbs) { throw ("WBS sheet '{0}' not found." -f $LBL_WBS_SHEET) }
+
+        if (-not $useRowRange) {
+            $ur = $wsWbs.UsedRange
+            $WbsStartRow = $ur.Row
+            $WbsEndRow   = $ur.Row + $ur.Rows.Count - 1
+            Write-Host ("  Full UsedRange scan: row {0} - {1}" -f $WbsStartRow, $WbsEndRow)
+        } else {
+            Write-Host ("  Given row range: row {0} - {1}" -f $WbsStartRow, $WbsEndRow)
+        }
+        $rowCount = $WbsEndRow - $WbsStartRow + 1
+
+        $colA_range = $wsWbs.Range($wsWbs.Cells.Item($WbsStartRow, 1), $wsWbs.Cells.Item($WbsEndRow, 1))
+        $colA = $colA_range.Value2
+
+        $excludedByFromFilter = 0
+        $ownerMatched = 0
+
+        for ($r = $WbsStartRow; $r -le $WbsEndRow; $r++) {
+            $ownerStr = Read-OwnerCell $wsWbs $r
+            if (-not (Test-OwnerMatch $ownerStr $Owner)) { continue }
+            $ownerMatched++
+
+            $i = $r - $WbsStartRow + 1
+            $job_v = if ($rowCount -eq 1) { $colA } else { $colA[$i, 1] }
+            if ($null -eq $job_v) { continue }
+            $job = ([string]$job_v).Trim()
+            if ([string]::IsNullOrWhiteSpace($job)) { continue }
+
+            if ($useFromFilter -and -not $gfixSet.Contains($job)) {
+                $excludedByFromFilter++; continue
+            }
+            if ($seen.Add($job)) { $jobNameList.Add($job) }
+        }
+
+        Write-Host ("  WBS owner-matched rows                 : {0}" -f $ownerMatched) -ForegroundColor Green
+        Write-Host ("  Distinct JOB_NAMEs (after all filters) : {0}" -f $jobNameList.Count) -ForegroundColor Green
+        if ($useFromFilter) {
+            Write-Host ("    Excluded by from-filter            : {0}" -f $excludedByFromFilter) -ForegroundColor DarkGray
+        }
+        if ($jobNameList.Count -le 30) {
+            foreach ($j in $jobNameList) { Write-Host ("    - {0}" -f $j) -ForegroundColor DarkGray }
+        } else {
+            Write-Host ("    (first 10) " + (($jobNameList | Select-Object -First 10) -join ", ")) -ForegroundColor DarkGray
+        }
     }
 
-    Write-Host ("  WBS owner-matched rows                 : {0}" -f $ownerMatched) -ForegroundColor Green
-    Write-Host ("  Distinct JOB_NAMEs (after all filters) : {0}" -f $jobNames.Count) -ForegroundColor Green
-    if ($useFromFilter) {
-        Write-Host ("    Excluded by from-filter            : {0}" -f $excludedByFromFilter) -ForegroundColor DarkGray
-    }
-    if ($jobNames.Count -le 30) {
-        foreach ($j in $jobNames) { Write-Host ("    - {0}" -f $j) -ForegroundColor DarkGray }
-    } else {
-        Write-Host ("    (first 10) " + (($jobNames | Select-Object -First 10) -join ", ")) -ForegroundColor DarkGray
-    }
-    if ($jobNames.Count -eq 0 -or $CorrelIdsM.Count -gt 0 -or $JobNames.Count -gt 0) {
-        if ($jobNames.Count -eq 0) {
+    if ($jobNameList.Count -eq 0 -or $useExplicitTempSelectors) {
+        if ($useExplicitTempSelectors) {
+            Write-Host "[INFO] Explicit Correl_ID_M / JOB_NAME list supplied; using GFIX-selected temp JOB_NAMEs instead of WBS list." -ForegroundColor Yellow
+        } elseif ($jobNameList.Count -eq 0) {
             Write-Host "[WARN] No matching JOB_NAMEs from WBS." -ForegroundColor Yellow
-        } else {
-            Write-Host "[INFO] Explicit Correl_ID_M / JOB_NAME list supplied; using GFIX-selected temp JOB_NAMEs instead of full WBS list." -ForegroundColor Yellow
         }
 
         $useTemp = $false
-        if ($CorrelIdsM.Count -gt 0 -or $JobNames.Count -gt 0) {
+        if ($useExplicitTempSelectors) {
             $useTemp = $true
-            $jobNames = [System.Collections.Generic.List[string]]::new()
-            $seen     = New-Object 'System.Collections.Generic.HashSet[string]'
+            $jobNameList = (New-Object 'System.Collections.Generic.List[System.String]')
+            $seen        = New-Object 'System.Collections.Generic.HashSet[System.String]'
         } elseif ($AllowTempMapping.IsPresent) {
             Write-Host "  WBS may be incomplete. You can create a temporary mapping from GFIX Correl_ID_M or JOB_NAME." -ForegroundColor Yellow
             $useTemp = Read-YesNo "Create temp mapping_$Owner from GFIX directly?" $true
@@ -406,21 +413,21 @@ $excel = New-Object -ComObject Excel.Application
             Write-Host "[ABORT] No matching JOB_NAMEs." -ForegroundColor Yellow; return
         }
 
-        if ($CorrelIdsM.Count -eq 0 -and $JobNames.Count -eq 0) {
+        if ($requestedCorrelIdsM.Count -eq 0 -and $requestedJobNames.Count -eq 0) {
             $rawIds = Read-Host "Correl_ID_M list, comma-separated (example: JIDSC02M,JIDSC03M). Empty = skip"
-            $CorrelIdsM = @(Convert-ToCleanList @($rawIds))
+            $requestedCorrelIdsM = @(Convert-ToCleanList @($rawIds))
             $rawJobs = Read-Host "JOB_NAME list, comma-separated (example: CJODJDEI,CJODJDB7). Empty = skip"
-            $JobNames = @(Convert-ToCleanList @($rawJobs))
+            $requestedJobNames = @(Convert-ToCleanList @($rawJobs))
         }
 
-        if ($CorrelIdsM.Count -eq 0 -and $JobNames.Count -eq 0) {
+        if ($requestedCorrelIdsM.Count -eq 0 -and $requestedJobNames.Count -eq 0) {
             Write-Host "[ABORT] No Correl_ID_M or JOB_NAME supplied for temp mapping." -ForegroundColor Yellow; return
         }
 
         Write-Host "[Step C2] Building temp JOB_NAME list from GFIX..." -ForegroundColor Cyan
-        $wantedIds = New-Object 'System.Collections.Generic.HashSet[string]'
-        foreach ($id in $CorrelIdsM) { [void]$wantedIds.Add($id) }
-        foreach ($jn in $JobNames) { Add-UniqueJobName $jobNames $seen $jn }
+        $wantedIds = New-Object 'System.Collections.Generic.HashSet[System.String]'
+        foreach ($id in $requestedCorrelIdsM) { [void]$wantedIds.Add($id) }
+        foreach ($jn in $requestedJobNames) { Add-UniqueJobName $jobNameList $seen $jn }
 
         $startRow = 6
         for ($r = $startRow; $r -le $lastRow; $r++) {
@@ -430,10 +437,10 @@ $excel = New-Object -ComObject Excel.Application
             if ([string]::IsNullOrWhiteSpace($jn)) {
                 $warnings.Add(("Correl_ID_M has empty JOB at GFIX row {0}: {1}" -f $r, $cid)); continue
             }
-            Add-UniqueJobName $jobNames $seen $jn
+            Add-UniqueJobName $jobNameList $seen $jn
         }
 
-        foreach ($id in $CorrelIdsM) {
+        foreach ($id in $requestedCorrelIdsM) {
             $found = $false
             for ($r = $startRow; $r -le $lastRow; $r++) {
                 if ((Read-CellStr $wsGfix $r $col_correlid) -eq $id) { $found = $true; break }
@@ -442,11 +449,11 @@ $excel = New-Object -ComObject Excel.Application
         }
 
         Write-Host ("  Temp Owner / mapping name : {0} / mapping_{0}.csv" -f $Owner) -ForegroundColor Green
-        Write-Host ("  Temp distinct JOB_NAMEs   : {0}" -f $jobNames.Count) -ForegroundColor Green
-        foreach ($j in $jobNames) { Write-Host ("    - {0}" -f $j) -ForegroundColor DarkGray }
+        Write-Host ("  Temp distinct JOB_NAMEs   : {0}" -f $jobNameList.Count) -ForegroundColor Green
+        foreach ($j in $jobNameList) { Write-Host ("    - {0}" -f $j) -ForegroundColor DarkGray }
     }
 
-    if ($jobNames.Count -eq 0) {
+    if ($jobNameList.Count -eq 0) {
         Write-Host "[ABORT] No matching JOB_NAMEs." -ForegroundColor Yellow; return
     }
 
@@ -460,7 +467,7 @@ $excel = New-Object -ComObject Excel.Application
     $jobRowCount = $lastRow - $startRow + 1
 
     $jobToRows = @{}
-    foreach ($jn in $jobNames) { $jobToRows[$jn] = [System.Collections.Generic.List[int]]::new() }
+    foreach ($jn in $jobNameList) { $jobToRows[$jn] = (New-Object 'System.Collections.Generic.List[System.Int32]') }
 
     for ($i = 1; $i -le $jobRowCount; $i++) {
         $v = if ($jobRowCount -eq 1) { $jobArr } else { $jobArr[$i, 1] }
@@ -470,11 +477,11 @@ $excel = New-Object -ComObject Excel.Application
             $jobToRows[$jc].Add($startRow + $i - 1)
         }
     }
-    foreach ($jn in $jobNames) {
+    foreach ($jn in $jobNameList) {
         Write-Host ("    {0} -> {1} row(s)" -f $jn, $jobToRows[$jn].Count) -ForegroundColor DarkGray
     }
     $gfixMatchedRows = 0
-    foreach ($jn in $jobNames) { $gfixMatchedRows += $jobToRows[$jn].Count }
+    foreach ($jn in $jobNameList) { $gfixMatchedRows += $jobToRows[$jn].Count }
     Write-Host ("  GFIX matched rows (total)              : {0}" -f $gfixMatchedRows) -ForegroundColor Green
 
     # ============================================================
@@ -482,9 +489,9 @@ $excel = New-Object -ComObject Excel.Application
     # ============================================================
     Write-Host "[Step E] Building mapping records..." -ForegroundColor Cyan
 
-    $records  = [System.Collections.Generic.List[psobject]]::new()
+    $records  = (New-Object 'System.Collections.Generic.List[System.Management.Automation.PSObject]')
 
-    foreach ($jn in $jobNames) {
+    foreach ($jn in $jobNameList) {
         $rows = $jobToRows[$jn]
         if ($rows.Count -eq 0) {
             $warnings.Add(("JOB_NAME not in GFIX list: {0}" -f $jn)); continue
@@ -499,7 +506,7 @@ $excel = New-Object -ComObject Excel.Application
             $warnings.Add(("JOB_NAME[5] != 'J', EXCEL_NAME = JOB_NAME: {0}" -f $jn))
         }
 
-        $toCodeSet = New-Object 'System.Collections.Generic.HashSet[string]'
+        $toCodeSet = New-Object 'System.Collections.Generic.HashSet[System.String]'
         foreach ($r in $rows) {
             $tc = Read-CellStr $wsGfix $r $col_to_code
             if (-not [string]::IsNullOrWhiteSpace($tc)) { [void]$toCodeSet.Add($tc) }
@@ -581,13 +588,13 @@ $excel = New-Object -ComObject Excel.Application
         Write-Host "===== Diff Report =====" -ForegroundColor Cyan
         $old = @(Import-Csv -LiteralPath $mappingPath -Encoding UTF8)
 
-        $oldIds = New-Object 'System.Collections.Generic.HashSet[string]'
+        $oldIds = New-Object 'System.Collections.Generic.HashSet[System.String]'
         $oldIdToJob = @{}
         foreach ($x in $old) {
             [void]$oldIds.Add($x.Correl_ID_M)
             $oldIdToJob[$x.Correl_ID_M] = $x.JOB_NAME
         }
-        $newIds = New-Object 'System.Collections.Generic.HashSet[string]'
+        $newIds = New-Object 'System.Collections.Generic.HashSet[System.String]'
         $newIdToJob = @{}
         foreach ($x in $records) {
             [void]$newIds.Add($x.Correl_ID_M)
