@@ -1,8 +1,8 @@
 # ============================================================
-#  MqSnap.ps1  (Phase 4, v2 — self-contained capture/crop)
+#  MqSnap.ps1  (Phase 4, v2  Eself-contained capture/crop)
 #
 #  For each pending Correl_ID_S in mapping_<Owner>.csv:
-#    1. Tab to 照会 button -> Enter (open inquiry form)
+#    1. Tab to 照企Ebutton -> Enter (open inquiry form)
 #    2. Tab to 相関ID input -> Paste Correl_ID_S -> Enter (search)
 #    3. Capture Edge main window, crop border, save snap/GIFT_MQ/<Correl_ID_S>.png
 #    4. Update mapping.GIFT_MQ_snap = 1
@@ -362,12 +362,6 @@ foreach ($item in $pendingItems) {
     Update-MappingSnapField $item.Correl_ID_M $snapField
     Write-Host ("    -> {0} = 1, saved {1}" -f $snapField, (Split-Path -Leaf $outPath)) -ForegroundColor Green
     $totalDone++
-
-    # Step 12: reset for next iteration
-    Reset-FocusToBody
-    Send-Tab $TabsToInquiry
-    Send-Enter
-    Start-Sleep -Milliseconds 600
 }
 
 Bring-ShellToFront

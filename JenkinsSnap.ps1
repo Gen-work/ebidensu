@@ -51,19 +51,22 @@ $modeCfg = switch ($Mode) {
         Field     = 'GIFT_Jenkins_snap'
         Folder    = 'GIFT_Jenkins'
         GroupCol  = 'TO_code'
-        SearchCol = 'JOB_NAME'
+        SearchCol = 'CORREL_ID_S'
+        JOB       = 'JOB_NAME'
     }}
     'GfixRecv' { @{
         Field     = 'GFIX_Jenkins_snap'
         Folder    = 'GFIX_Jenkins'
         GroupCol  = 'TO_code'
-        SearchCol = 'JOB_NAME'
+        SearchCol = 'CORREL_ID_S'
+        JOB       = 'JOB_NAME'
     }}
     'NoGfix'   { @{
         Field     = 'GIFT_noGfixfile_snap'
         Folder    = 'GIFT_noGfixfile'
         GroupCol  = 'TO_code'
-        SearchCol = 'JOB_NAME'
+        SearchCol = 'CORREL_ID_S'
+        JOB       = 'JOB_NAME'
     }}
 }
 
@@ -71,6 +74,7 @@ $snapField  = $modeCfg.Field
 $snapFolder = $modeCfg.Folder
 $groupCol   = $modeCfg.GroupCol
 $searchCol  = $modeCfg.SearchCol
+$job        = $modeCfg.JOB
 
 # ── mapping ───────────────────────────────────────────────────────────────────
 $mappingFile = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
@@ -229,6 +233,8 @@ foreach ($toCode in $groupOrder) {
         $resp = Read-Host
         if ($resp -eq 'q') { exit 0 }
 
+        Switch-ToEdge
+
         $edgeHwnd = Activate-EdgeWindow
         if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
 
@@ -246,6 +252,7 @@ foreach ($toCode in $groupOrder) {
     # ── Per-row screenshot loop ───────────────────────────────────────────────
     foreach ($row in $rows) {
         $correl     = [string]$row.Correl_ID_S
+        $searchJob        = [string]$row.$job
         $searchTerm = [string]$row.$searchCol
 
         Write-Host ''
@@ -259,7 +266,7 @@ foreach ($toCode in $groupOrder) {
             $cntFail++; continue
         }
 
-        # Ctrl+F search for JOB_NAME
+        # Ctrl+F search for CORREL_ID_S
         Click-PageBody
         Send-CtrlF
         Paste-Replace $searchTerm
@@ -281,7 +288,7 @@ foreach ($toCode in $groupOrder) {
         } catch {
             Write-Host ("    [FAIL] screenshot: {0}" -f $_.Exception.Message) -ForegroundColor Red
             Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                -JobName $searchTerm -Action 'screenshot' -Status 'fail' -Message $_.Exception.Message
+                -JobName $searchJob -Action 'screenshot' -Status 'fail' -Message $_.Exception.Message
             $cntFail++; continue
         }
 
@@ -291,13 +298,13 @@ foreach ($toCode in $groupOrder) {
             $row.$snapField = '1'
             Export-MappingAtomic -Rows $allRows -Path $mappingFile | Out-Null
             Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                -JobName $searchTerm -Action 'snap' -Status 'ok' `
+                -JobName $searchJob -Action 'snap' -Status 'ok' `
                 -Message ("snap\{0}\{1}.png" -f $snapFolder, $correl)
             $cntDone++
         } catch {
             Write-Host ("    [WARN] mapping update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
             Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                -JobName $searchTerm -Action 'mapping' -Status 'fail' -Message $_.Exception.Message
+                -JobName $searchJob -Action 'mapping' -Status 'fail' -Message $_.Exception.Message
         }
     }
 }
