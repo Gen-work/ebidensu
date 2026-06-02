@@ -46,6 +46,20 @@ function Read-Choice([string]$Prompt, [string]$Default = '') {
     return $v
 }
 
+function ConvertTo-TargetIdSelection([object]$RawValue) {
+    $items = @()
+    foreach ($raw in @($RawValue)) {
+        if ($null -eq $raw) { continue }
+        foreach ($part in ($raw.ToString() -split ',')) {
+            $v = $part.Trim()
+            if ([string]::IsNullOrWhiteSpace($v)) { continue }
+            if ($v -ieq 'all') { return @() }
+            $items += $v
+        }
+    }
+    return @($items | Select-Object -Unique)
+}
+
 function To-BoolText([bool]$v) {
     if ($v) { return 'ON' }
     return 'off'
@@ -165,9 +179,9 @@ function Ask-RunOptions([hashtable]$State) {
                 if ($v -match '^\d+$') { $State.CropPx = [int]$v }
             }
             '^t$' {
-                $v = Read-Choice 'Target IDs, comma-separated. Empty = all' ($State.TargetIds -join ',')
-                if ([string]::IsNullOrWhiteSpace($v)) { $State.TargetIds = @() }
-                else { $State.TargetIds = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+                $currentTargets = if ($State.TargetIds.Count -gt 0) { $State.TargetIds -join ',' } else { 'all' }
+                $v = Read-Choice 'Target IDs, comma-separated. Enter=keep, all=all' $currentTargets
+                $State.TargetIds = @(ConvertTo-TargetIdSelection $v)
             }
             default { Write-Host '  unknown option' -ForegroundColor Yellow }
         }
@@ -326,15 +340,7 @@ if ($WindowWidth -le 0)  { $WindowWidth  = [int]$Config.Window.Width }
 if ($WindowHeight -le 0) { $WindowHeight = [int]$Config.Window.Height }
 if ($CropPx -lt 0)       { $CropPx       = [int]$Config.Window.CropPx }
 
-$flatTargets = @()
-foreach ($rawId in @($TargetIds)) {
-    if ($null -eq $rawId) { continue }
-    foreach ($part in ($rawId.ToString() -split ',')) {
-        $v = $part.Trim()
-        if (-not [string]::IsNullOrWhiteSpace($v)) { $flatTargets += $v }
-    }
-}
-$TargetIds = @($flatTargets | Select-Object -Unique)
+$TargetIds = @(ConvertTo-TargetIdSelection $TargetIds)
 
 $state = @{
     WorkDir      = $WorkDir
