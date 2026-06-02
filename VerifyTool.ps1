@@ -114,6 +114,8 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase CheckSheet -CheckSheetPath "\\srv\...\check.xlsx"'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail         # one Outlook draft per Excel; you click Send + Enter'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail -TargetIds SJRVWD64'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles       # copy evidence Excel + DATA to J4'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -MoveData  # move DATA files'
     Write-Host ''
     Write-Host 'Common options:'
     Write-Host '  -WorkDir <path>       Work folder. If omitted, last used path is remembered.'
@@ -621,6 +623,20 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
                 if (-not (Test-PhaseOption $allowed 'k')) { Write-UnusedOption $PhaseKey 'k' }
                 else { $State.CheckSheetPath = Read-Choice 'Review check sheet .xlsx path. Empty = use config' $State.CheckSheetPath }
             }
+            '^-?diff$' {
+                if (-not (Test-PhaseOption $allowed 'diff')) { Write-UnusedOption $PhaseKey 'diff' }
+                else {
+                    $State.DiffMode = -not $State.DiffMode
+                    Write-Host ("  DiffMode(Align): {0}" -f (To-BoolText $State.DiffMode)) -ForegroundColor DarkGray
+                }
+            }
+            '^-?mv$' {
+                if (-not (Test-PhaseOption $allowed 'mv')) { Write-UnusedOption $PhaseKey 'mv' }
+                else {
+                    $State.MoveData = -not $State.MoveData
+                    Write-Host ("  MoveData       : {0}" -f (To-BoolText $State.MoveData)) -ForegroundColor DarkGray
+                }
+            }
             default { Write-Host '  unknown option' -ForegroundColor Yellow }
         }
     }
@@ -990,6 +1006,32 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
         Write-Host '[RUN] DeliverMail' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'DeliverFiles') {
+        $p = Resolve-ToolPath $Config 'DeliverFiles'
+        $args = $base.Clone()
+        $j4Ev = ''
+        if ($Config.DeliverFiles) {
+            $df = $Config.DeliverFiles
+            if (-not [string]::IsNullOrWhiteSpace([string]$df.J4EvidenceDir)) { $j4Ev = [string]$df.J4EvidenceDir; $args['J4EvidenceDir'] = $j4Ev }
+            if (-not [string]::IsNullOrWhiteSpace([string]$df.J4GfixDataDir)) { $args['J4GfixDataDir'] = [string]$df.J4GfixDataDir }
+            if (-not [string]::IsNullOrWhiteSpace([string]$df.J4GiftDataDir)) { $args['J4GiftDataDir'] = [string]$df.J4GiftDataDir }
+            if ($df.MoveData -or $State.MoveData)  { $args['MoveData'] = $true }
+        }
+        if ([string]::IsNullOrWhiteSpace($j4Ev)) {
+            # Fall back to Mail.EvidenceFolder
+            if ($Config.Mail -and -not [string]::IsNullOrWhiteSpace([string]$Config.Mail.EvidenceFolder)) {
+                $args['J4EvidenceDir'] = [string]$Config.Mail.EvidenceFolder
+            }
+        }
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        if ($State.Force) { $args['Force'] = $true }
+        $args['EvidenceDir'] = $State.EvidenceDir
+        Write-Host '[RUN] DeliverFiles' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
         return

@@ -77,6 +77,43 @@ function Parse-DeliverInput([string]$Raw) {
     return [pscustomobject]@{ Action = $action; Comment = $comment }
 }
 
+function ConvertTo-HtmlSafe([string]$Text) {
+    return $Text -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;' -replace '"','&quot;'
+}
+
+function ConvertUnc-ToFileUrl([string]$Unc) {
+    # \\server\share\path -> file://server/share/path (spaces -> %20)
+    return ('file://' + ($Unc.Substring(2) -replace '\\','/' -replace ' ','%20'))
+}
+
+function Build-HtmlBody([string]$PlainBody) {
+    $lines = $PlainBody -split "`r`n|`n"
+    $sb = [System.Text.StringBuilder]::new()
+    foreach ($line in $lines) {
+        if ([string]::IsNullOrEmpty($line)) {
+            [void]$sb.Append('<p class=MsoNormal><o:p>&nbsp;</o:p></p>')
+        } elseif ($line -match '^\\\\') {
+            $href = ConvertUnc-ToFileUrl $line
+            $disp = ConvertTo-HtmlSafe $line
+            [void]$sb.Append("<p class=MsoNormal><span style='font-size:10.0pt;font-family:""Meiryo UI"";mso-ligatures:none'><a href=""$href"">$disp</a><o:p></o:p></span></p>")
+        } else {
+            $disp = ConvertTo-HtmlSafe $line
+            [void]$sb.Append("<p class=MsoNormal><span style='font-size:10.0pt;font-family:""Meiryo UI"";mso-ligatures:none'>$disp<o:p></o:p></span></p>")
+        }
+    }
+    return @"
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta http-equiv=Content-Type content='text/html; charset=utf-8'>
+<style>
+p.MsoNormal, li.MsoNormal, div.MsoNormal {margin:0mm;font-size:10.0pt;font-family:"Meiryo UI";mso-ligatures:none;}
+a:link, span.MsoHyperlink {color:#467886;text-decoration:underline;}
+</style></head>
+<body lang=JA style='word-wrap:break-word;text-justify-trim:punctuation'><div>
+$($sb.ToString())
+</div></body></html>
+"@
+}
+
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host 'WorkDir path' }
 if (-not (Test-Path -LiteralPath $WorkDir)) {
     Write-Host "[ERROR] WorkDir not found: $WorkDir" -ForegroundColor Red; exit 1
@@ -190,7 +227,7 @@ try {
             $mail = $outlook.CreateItem(0)   # olMailItem
             $mail.To = $To
             $mail.Subject = $subject
-            $mail.Body = $body
+            $mail.HTMLBody = Build-HtmlBody $body
             if (-not [string]::IsNullOrWhiteSpace($From)) {
                 try { $mail.SentOnBehalfOfName = $From } catch {}
             }

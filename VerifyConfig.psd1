@@ -108,6 +108,7 @@
         Align           = 'Align.ps1'
         WatchProgress   = 'Watch-MappingProgress.ps1'
         DeliverMail     = 'DeliverMail.ps1'
+        DeliverFiles    = 'DeliverFiles.ps1'
         FillCheckSheet  = 'FillCheckSheet.ps1'
     }
 
@@ -149,6 +150,22 @@
             '',
             '以上、よろしくお願いいたします。'
         )
+    }
+
+    # DeliverFiles phase: copy evidence Excel + DATA files to J4 destination.
+    DeliverFiles = @{
+        # Root J4 folder for evidence Excel files.
+        # Defaults to Mail.EvidenceFolder if blank.
+        J4EvidenceDir = ''
+        # Destination for DATA\GFIX files.
+        # Defaults to J4EvidenceDir + '\DATA\GFIX' if blank.
+        J4GfixDataDir = ''
+        # Destination for DATA\GIFT files.
+        # Defaults to J4EvidenceDir + '\DATA\GIFT' if blank.
+        J4GiftDataDir = ''
+        # true = Move DATA files (delete source after copy).
+        # false = Copy only (evidence Excel is always copied, never moved).
+        MoveData = $false
     }
 
     # CheckSheet phase: append one row per Excel to the shared review check
@@ -246,6 +263,7 @@
         @{ Key='ReviewEvidence';     Field='isReviewed'; BitValue=7; Label='全体 目視 review + 保存';          Status='implemented' }
         @{ Key='Comments';           Field='';                     Label='review コメント 一覧 (read-only)';   Status='implemented' }
         @{ Key='CheckSheet';         Field='';                     Label='レビューチェックシート 記入';        Status='implemented' }
+        @{ Key='DeliverFiles';       Field='isFilesDelivered';     Label='J4 ﾌｧｲﾙ転送 (証跡Excel + DATA)';   Status='implemented' }
         @{ Key='DeliverMail';        Field='isDelivered';          Label='レビュー依頼メール 送付';            Status='implemented' }
         @{ Key='Validate';           Field='';                     Label='就緒状態 診断 (read-only)';         Status='implemented' }
         @{ Key='RepairMapping';      Field='';                     Label='mapping 列補完 (auto on startup)';  Status='implemented' }
@@ -308,6 +326,11 @@
         Mail              = 'DeliverMail'
         SendMail          = 'DeliverMail'
         Deliver           = 'DeliverMail'
+
+        DeliverFiles      = 'DeliverFiles'
+        FilesDeliver      = 'DeliverFiles'
+        CopyJ4            = 'DeliverFiles'
+        MoveJ4            = 'DeliverFiles'
 
         Replace           = 'ReplaceGift'    # bare "Replace" -> GIFT
         ReplaceEvidence   = 'ReplaceGift'    # legacy planned name -> GIFT

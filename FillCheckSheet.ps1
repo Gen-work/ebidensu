@@ -238,9 +238,8 @@ Write-Host ("  Force      : {0}" -f $forceFlag)
 if ($targets.Count -gt 0) { Write-Host ("  TargetIds  : {0}" -f ($targets -join ', ')) }
 
 $excel = $null
-$wbTmp = $null
-$wbOrig = $null
-$tmpPath = $null
+$wbCs  = $null
+$mappedLetter = $null
 
 try {
     $excel = New-ExcelApp
@@ -267,92 +266,79 @@ try {
         return
     }
 
-    # -- 1) snapshot original --------------------------------
-    $origItem = Get-Item -LiteralPath $CheckSheetPath
-    $snapTime = $origItem.LastWriteTimeUtc
-    $snapLen  = [long]$origItem.Length
+    # Map temp drive for long UNC paths (PS5.1 MAX_PATH workaround)
+    function Get-FreeDriveLetter {
+        $used = @(Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Name) + @('A','B','C')
+        foreach ($l in 'Z','Y','X','W','V','U','T','S','R','Q','P') {
+            if ($used -notcontains $l) { return $l }
+        }
+        return $null
+    }
 
-    # -- 2) preview on a temp copy ---------------------------
-    $tmpPath = Join-Path $env:TEMP ("checksheet_preview_{0}_{1}.xlsx" -f $PID, (Get-Date -Format 'yyyyMMddHHmmss'))
-    Copy-Item -LiteralPath $CheckSheetPath -Destination $tmpPath -Force
+    $effectivePath = $CheckSheetPath
+    $csParent = Split-Path $CheckSheetPath -Parent
+    $csLeaf   = Split-Path $CheckSheetPath -Leaf
 
-    $wbTmp = $excel.Workbooks.Open($tmpPath)
-    $wsTmp = Get-SheetByName $wbTmp $SheetName
-    if ($null -eq $wsTmp) {
-        Write-Host ("[ERROR] sheet not found in workbook: {0}" -f $SheetName) -ForegroundColor Red
+    if ($CheckSheetPath.Length -gt 200 -and $CheckSheetPath -match '^\\\\') {
+        $letter = Get-FreeDriveLetter
+        if ($letter) {
+            $netOut = & net use "${letter}:" $csParent /persistent:no 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $mappedLetter  = $letter
+                $effectivePath = "${letter}:\${csLeaf}"
+                Write-Host ("  [INFO] mapped {0}: to shorten UNC path" -f $letter) -ForegroundColor DarkGray
+            } else {
+                Write-Host ("  [WARN] net use failed: {0}" -f ($netOut -join ' ')) -ForegroundColor Yellow
+            }
+        }
+    }
+
+    $wbCs = $excel.Workbooks.Open($effectivePath)
+    $wsCs = Get-SheetByName $wbCs $SheetName
+    if ($null -eq $wsCs) {
+        Write-Host ("[ERROR] sheet not found: {0}" -f $SheetName) -ForegroundColor Red
         return
     }
-    try { $wsTmp.Visible = -1 } catch {}
-    $wsTmp.Activate() | Out-Null
+    try { $wsCs.Visible = -1 } catch {}
+    $wsCs.Activate() | Out-Null
 
-    $plan = Apply-CheckSheetRows $wsTmp $candidates.ToArray() $true
+    # Preview (read-only pass, no writes)
+    $plan = Apply-CheckSheetRows $wsCs $candidates.ToArray() $false
     $added = @($plan | Where-Object { $_.Action -eq 'add' })
-    try { $wbTmp.Save() } catch {}
-
     Show-Plan $plan
-    if ($added.Count -gt 0) {
-        try { $wsTmp.Range($wsTmp.Cells.Item($added[0].Row, 1), $wsTmp.Cells.Item($added[-1].Row, $ColViewer)).Select() | Out-Null } catch {}
-    }
 
     if ($added.Count -eq 0) {
         Write-Host '  Nothing to add (all candidates already listed). Use -Force to add anyway.' -ForegroundColor Yellow
         return
     }
 
+    try { $wsCs.Range($wsCs.Cells.Item($added[0].Row, 1), $wsCs.Cells.Item($added[-1].Row, $ColViewer)).Select() | Out-Null } catch {}
     Write-Host ''
-    Write-Host '  PREVIEW open (temp copy). Check the rows above in Excel.' -ForegroundColor DarkGray
-    $ans = Read-Host '  Enter=commit to the real check sheet, q=abort (nothing written)'
+    Write-Host '  Planned rows shown above. Check workbook, then confirm.' -ForegroundColor DarkGray
+    $ans = Read-Host '  Enter=write to check sheet, q=abort'
     if ($ans.Trim().ToLower() -eq 'q') {
-        Write-Host '  [ABORT] no changes written to the check sheet.' -ForegroundColor Yellow
+        Write-Host '  [ABORT] no changes written.' -ForegroundColor Yellow
         return
     }
 
-    # -- 3) verify the original did not change during preview --
-    $origItem2 = Get-Item -LiteralPath $CheckSheetPath
-    if ($origItem2.LastWriteTimeUtc -ne $snapTime -or [long]$origItem2.Length -ne $snapLen) {
-        Write-Host ''
-        Write-Host '  [HOLD] the check sheet changed on disk during the preview.' -ForegroundColor Red
-        Write-Host '         Nothing was written. Re-run CheckSheet to rebuild against the new content.' -ForegroundColor Red
-        Write-ProgressEvent -WorkDir $WorkDir -Phase 'CheckSheet' -Action 'commit' -Status 'skip' -Message 'original changed during preview'
-        return
-    }
+    # Commit: write rows and save
+    $plan2  = Apply-CheckSheetRows $wsCs $candidates.ToArray() $true
+    $added2 = @($plan2 | Where-Object { $_.Action -eq 'add' })
+    $wbCs.Save()
 
-    # -- 4) publish the previewed temp copy over the original ----
-    # The temp copy already IS the original plus the new rows, and we just
-    # verified above that the original did not change during the preview.
-    # So copy it back instead of reopening the original in Excel. This writes
-    # exactly what Misaki saw, and -- importantly -- it sidesteps Excel's
-    # ~218-char path limit: Workbooks.Open fails ("見つかりません") on the long
-    # UNC check-sheet path even though the file exists, whereas .NET Copy-Item
-    # handles the long path fine.
-    try { $wbTmp.Save() } catch {}
-    try { $wbTmp.Close($true) } catch {}
-    $wbTmp = $null
-
-    try {
-        Copy-Item -LiteralPath $tmpPath -Destination $CheckSheetPath -Force
-    } catch {
-        Write-Host ('  [HOLD] could not write the check sheet (open elsewhere or no access). Nothing written.') -ForegroundColor Red
-        Write-Host ('         {0}' -f $_.Exception.Message) -ForegroundColor Red
-        Write-ProgressEvent -WorkDir $WorkDir -Phase 'CheckSheet' -Action 'commit' -Status 'fail' -Message $_.Exception.Message
-        return
-    }
-
-    $okAdded = $added.Count
+    $okAdded = $added2.Count
     Write-Host ("  [OK] wrote {0} row(s) to {1}" -f $okAdded, $CheckSheetPath) -ForegroundColor Green
-    foreach ($p in $added) {
+    foreach ($p in $added2) {
         Write-ProgressEvent -WorkDir $WorkDir -Phase 'CheckSheet' -JobName $p.Target -Action 'commit' -Status 'ok' -Message ("No.{0}" -f $p.No)
     }
+
 } catch {
     Write-Host ("[ERROR] {0}" -f $_.Exception.Message) -ForegroundColor Red
     Write-ProgressEvent -WorkDir $WorkDir -Phase 'CheckSheet' -Action 'commit' -Status 'fail' -Message $_.Exception.Message
 } finally {
-    if ($wbOrig) { try { $wbOrig.Close($false) } catch {} }
-    if ($wbTmp)  { try { $wbTmp.Close($false) } catch {} }
-    if ($excel)  { Close-ExcelApp $excel }
-    if ($tmpPath -and (Test-Path -LiteralPath $tmpPath)) {
-        try { Remove-Item -LiteralPath $tmpPath -Force -ErrorAction SilentlyContinue } catch {}
-    }
+    if ($wbCs)  { try { $wbCs.Close($false) } catch {} }
+    if ($excel) { Close-ExcelApp $excel }
+    if ($mappedLetter) { try { & net use "${mappedLetter}:" /delete /y 2>&1 | Out-Null } catch {} }
 }
 
 Write-Host ''
