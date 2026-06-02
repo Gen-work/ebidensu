@@ -21,6 +21,16 @@ Bump the date heading whenever a new bundle is delivered.
 - **`Get-PrefixFromFilename`** in `WorkbookResolver.ps1` — inverse of
   `Get-ExcelFullStem`; recovers the J4 prefix that precedes `_<Excel_NAME>`.
 
+### Fixed
+- **JenkinsSnap keeps window ops on Edge (folded in from codex's fix).** After
+  `Read-Host`, some terminals keep the console as the foreground window, so the
+  old code resized/screenshotted the **CLI** instead of Edge. JenkinsSnap now
+  resolves the real `msedge` MainWindowHandle (`Activate-JenkinsEdgeWindow`),
+  drops the `Switch-ToEdge` Alt+Tab dance, and screenshots via the activated
+  `$edgeHwnd` rather than `GetForegroundWindow()`. Returns a zero handle (and
+  fails the row) instead of operating on the wrong window. New `.ps1` files
+  normalized to no-BOM per encoding policy.
+
 ### Changed
 - **Clone now captures `Excel_Prefix`.** When a workbook is cloned from
   `-SourceDir` (real filename `<prefix>_<Excel_NAME>.xlsx`), Clone extracts the
