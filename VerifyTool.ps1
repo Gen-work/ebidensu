@@ -15,6 +15,13 @@ param(
     [string]$Owner   = '',
     [string]$Phase   = 'Menu',
 
+    # Mapping
+    [string]$FromBizCode = '',
+    [int]$WbsStartRow = 0,
+    [int]$WbsEndRow = 0,
+    [string[]]$CorrelIdsM = @(),
+    [string[]]$JobNames = @(),
+
     [int]$WindowWidth  = 0,
     [int]$WindowHeight = 0,
     [int]$CropPx       = -1,
@@ -44,6 +51,7 @@ param(
     [switch]$RefreshUrls,
     [switch]$DryRun,
     [switch]$MoveData,
+    [switch]$AllowTempMapping,
     [switch]$Help,
 
     [string]$ConfigPath = ''
@@ -82,7 +90,8 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Help'
     Write-Host '  .\VerifyTool.ps1 -Phase Status'
     Write-Host '  .\VerifyTool.ps1 -Phase Validate'
-    Write-Host '  .\VerifyTool.ps1 -Phase Mapping -Force'
+    Write-Host '  .\VerifyTool.ps1 -Phase Mapping -Owner 0602 -Force'
+    Write-Host '  .\VerifyTool.ps1 -Phase Mapping -Owner 0602 -CorrelIdsM JIDSC02M,JIDSC03M -AllowTempMapping -Force'
     Write-Host '  .\VerifyTool.ps1 -Phase ExcelSnap'
     Write-Host '  .\VerifyTool.ps1 -Phase GiftHmSnap -TargetIds JIGPL48S'
     Write-Host '  .\VerifyTool.ps1 -Phase GiftMqSnap -TargetIds JIGPL48S,JIDSL48S'
@@ -125,6 +134,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  -J4BaseDir <p>        J4 baseline root for Align. If omitted, config/session/CloneSourceDir is used.'
     Write-Host '  -BizCodes A,B         Override bizcode candidate list for Clone.'
     Write-Host '  -Force                Re-run rows whose flag/bit is already set.'
+    Write-Host '  Mapping options      owner/-Owner, from/-FromBizCode, range, cm/-CorrelIdsM, jobs/-JobNames, temp.'
     Write-Host '  -Interactive          Ask before each row in supported stages.'
     Write-Host '  -WindowWidth 1050 -WindowHeight 761 -CropPx 6'
     Write-Host '  -NoResize             Do not resize Edge window.'
@@ -323,6 +333,16 @@ function Get-RecommendPhase([hashtable]$Config, [array]$Rows) {
 
 function Show-PhaseNotes([string]$PhaseKey) {
     $lines = switch -Regex ($PhaseKey) {
+        '^Mapping$' { @(
+            '  Phase params:',
+            '    owner=Owner        -> set mapping owner suffix, e.g. 0602 creates mapping_0602.csv',
+            '    from=FromBizCode   -> filter GFIX from biz code',
+            '    range              -> WBS row range, e.g. 1275-2250',
+            '    cm=Correl_ID_M     -> temp mode: comma-separated M IDs, finds JOB in GFIX',
+            '    jobs=JOB_NAME      -> temp mode: comma-separated JOB names',
+            '    temp               -> if WBS has no matching rows, ask to create temp mapping from GFIX',
+            '    f=Force            -> overwrite mapping_<owner>.csv if it already exists'
+        ) }
         '^Align$' { @(
             '  Phase params:',
             '    diff=DiffMode  -> -DiffMode : report only (do NOT replace sheets). Default is force-replace.',
@@ -459,7 +479,8 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^CheckSheet$' { return @('t','f','k') }
         '^DeliverMail$' { return @('t','f') }
         '^DeliverFiles$' { return @('t','f','mv') }
-        '^Mapping$|^ExcelSnap$' { return @('f') }
+        '^Mapping$' { return @('f','owner','from','range','cm','jobs','temp') }
+        '^ExcelSnap$' { return @('f') }
         default { return @() }
     }
 }
@@ -482,6 +503,12 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
 
     if (Test-PhaseOption $allowed 'diff') { Write-Host ("  DiffMode(Align): {0}" -f (To-BoolText $State.DiffMode)) }
     elseif (Test-PhaseOption $allowed 'f') { Write-Host ("  Force          : {0}" -f (To-BoolText $State.Force)) }
+    if (Test-PhaseOption $allowed 'owner') { Write-Host ("  Owner          : {0}" -f $State.Owner) }
+    if (Test-PhaseOption $allowed 'from') { Write-Host ("  FromBizCode    : {0}" -f $(if ([string]::IsNullOrWhiteSpace($State.FromBizCode)) { '(none)' } else { $State.FromBizCode })) }
+    if (Test-PhaseOption $allowed 'range') { Write-Host ("  WBS range      : {0}" -f $(if ($State.WbsStartRow -gt 0 -and $State.WbsEndRow -gt 0) { "$($State.WbsStartRow)-$($State.WbsEndRow)" } else { '(full)' })) }
+    if (Test-PhaseOption $allowed 'cm') { Write-Host ("  CorrelIdsM     : {0}" -f $(if ($State.CorrelIdsM.Count -gt 0) { $State.CorrelIdsM -join ', ' } else { '(none)' })) }
+    if (Test-PhaseOption $allowed 'jobs') { Write-Host ("  JobNames       : {0}" -f $(if ($State.JobNames.Count -gt 0) { $State.JobNames -join ', ' } else { '(none)' })) }
+    if (Test-PhaseOption $allowed 'temp') { Write-Host ("  TempMapping    : {0}" -f (To-BoolText $State.AllowTempMapping)) }
     if (Test-PhaseOption $allowed 'i') { Write-Host ("  Interactive    : {0}" -f (To-BoolText $State.Interactive)) }
     if (Test-PhaseOption $allowed 'n') { Write-Host ("  NoResize       : {0}" -f (To-BoolText $State.NoResize)) }
     if (Test-PhaseOption $allowed 'r') { Write-Host ("  RefreshUrls    : {0}" -f (To-BoolText $State.RefreshUrls)) }
@@ -522,6 +549,12 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 's') { $help += 's=ProbeSheet' }
         if (Test-PhaseOption $allowed 'k') { $help += 'k=CheckSheet path' }
         if (Test-PhaseOption $allowed 'mv') { $help += 'mv=MoveData' }
+        if (Test-PhaseOption $allowed 'owner') { $help += 'owner=Owner' }
+        if (Test-PhaseOption $allowed 'from') { $help += 'from=FromBizCode' }
+        if (Test-PhaseOption $allowed 'range') { $help += 'r/range=WBS rows' }
+        if (Test-PhaseOption $allowed 'cm') { $help += 'cm=Correl_ID_M list' }
+        if (Test-PhaseOption $allowed 'jobs') { $help += 'jobs=JOB_NAME list' }
+        if (Test-PhaseOption $allowed 'temp') { $help += 'temp=AllowTempMapping' }
         Write-Host ("  {0}, Enter=continue" -f ($help -join ', '))
     }
 
@@ -550,7 +583,14 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
                 else { $State.NoResize = -not $State.NoResize; Write-Host ("  NoResize       : {0}" -f (To-BoolText $State.NoResize)) -ForegroundColor DarkGray }
             }
             '^r$' {
-                if (-not (Test-PhaseOption $allowed 'r')) { Write-UnusedOption $PhaseKey 'r' }
+                if (Test-PhaseOption $allowed 'range') {
+                    $defaultRange = if ($State.WbsStartRow -gt 0 -and $State.WbsEndRow -gt 0) { "{0}-{1}" -f $State.WbsStartRow, $State.WbsEndRow } else { '' }
+                    $v = Read-Choice 'WBS row range, e.g. 1275-2250. Empty = full WBS scan' $defaultRange
+                    if ([string]::IsNullOrWhiteSpace($v)) { $State.WbsStartRow = 0; $State.WbsEndRow = 0 }
+                    elseif ($v -match '^\s*(\d+)\s*[-,~ ]\s*(\d+)\s*$') { $State.WbsStartRow = [int]$Matches[1]; $State.WbsEndRow = [int]$Matches[2] }
+                    else { Write-Host '  invalid range' -ForegroundColor Yellow }
+                    Write-Host ("  WBS range      : {0}" -f $(if ($State.WbsStartRow -gt 0 -and $State.WbsEndRow -gt 0) { "{0}-{1}" -f $State.WbsStartRow, $State.WbsEndRow } else { '(full)' })) -ForegroundColor DarkGray
+                } elseif (-not (Test-PhaseOption $allowed 'r')) { Write-UnusedOption $PhaseKey 'r' }
                 else { $State.RefreshUrls = -not $State.RefreshUrls; Write-Host ("  RefreshUrls    : {0}" -f (To-BoolText $State.RefreshUrls)) -ForegroundColor DarkGray }
             }
             '^w$' {
@@ -623,6 +663,55 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
                 if (-not (Test-PhaseOption $allowed 'k')) { Write-UnusedOption $PhaseKey 'k' }
                 else { $State.CheckSheetPath = Read-Choice 'Review check sheet .xlsx path. Empty = use config' $State.CheckSheetPath }
             }
+
+            '^-?owner$|^o$' {
+                if (-not (Test-PhaseOption $allowed 'owner')) { Write-UnusedOption $PhaseKey 'owner' }
+                else {
+                    $State.Owner = Read-Choice 'Mapping owner suffix (example: 0602)' $State.Owner
+                    Write-Host ("  Owner          : {0}" -f $State.Owner) -ForegroundColor DarkGray
+                }
+            }
+            '^-?from(bizcode)?$' {
+                if (-not (Test-PhaseOption $allowed 'from')) { Write-UnusedOption $PhaseKey 'from' }
+                else {
+                    $State.FromBizCode = Read-Choice 'FromBizCode. Empty = no GFIX from-code filter' $State.FromBizCode
+                    Write-Host ("  FromBizCode    : {0}" -f $(if ([string]::IsNullOrWhiteSpace($State.FromBizCode)) { '(none)' } else { $State.FromBizCode })) -ForegroundColor DarkGray
+                }
+            }
+            '^-?range$' {
+                if (-not (Test-PhaseOption $allowed 'range')) { Write-UnusedOption $PhaseKey 'range' }
+                else {
+                    $defaultRange = if ($State.WbsStartRow -gt 0 -and $State.WbsEndRow -gt 0) { "{0}-{1}" -f $State.WbsStartRow, $State.WbsEndRow } else { '' }
+                    $v = Read-Choice 'WBS row range, e.g. 1275-2250. Empty = full WBS scan' $defaultRange
+                    if ([string]::IsNullOrWhiteSpace($v)) { $State.WbsStartRow = 0; $State.WbsEndRow = 0 }
+                    elseif ($v -match '^\s*(\d+)\s*[-,~ ]\s*(\d+)\s*$') { $State.WbsStartRow = [int]$Matches[1]; $State.WbsEndRow = [int]$Matches[2] }
+                    else { Write-Host '  invalid range' -ForegroundColor Yellow }
+                    Write-Host ("  WBS range      : {0}" -f $(if ($State.WbsStartRow -gt 0 -and $State.WbsEndRow -gt 0) { "{0}-{1}" -f $State.WbsStartRow, $State.WbsEndRow } else { '(full)' })) -ForegroundColor DarkGray
+                }
+            }
+            '^-?cm$|^-?correl(idsm|idm)?$' {
+                if (-not (Test-PhaseOption $allowed 'cm')) { Write-UnusedOption $PhaseKey 'cm' }
+                else {
+                    $v = Read-Choice 'Correl_ID_M list, comma-separated (example: JIDSC02M,JIDSC03M). Empty = none' ($State.CorrelIdsM -join ',')
+                    if ([string]::IsNullOrWhiteSpace($v)) { $State.CorrelIdsM = @() }
+                    else { $State.CorrelIdsM = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique) }
+                }
+            }
+            '^-?jobs?$|^-?jobnames?$' {
+                if (-not (Test-PhaseOption $allowed 'jobs')) { Write-UnusedOption $PhaseKey 'jobs' }
+                else {
+                    $v = Read-Choice 'JOB_NAME list, comma-separated (example: CJODJDEI,CJODJDB7). Empty = none' ($State.JobNames -join ',')
+                    if ([string]::IsNullOrWhiteSpace($v)) { $State.JobNames = @() }
+                    else { $State.JobNames = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique) }
+                }
+            }
+            '^-?temp$' {
+                if (-not (Test-PhaseOption $allowed 'temp')) { Write-UnusedOption $PhaseKey 'temp' }
+                else {
+                    $State.AllowTempMapping = -not $State.AllowTempMapping
+                    Write-Host ("  TempMapping    : {0}" -f (To-BoolText $State.AllowTempMapping)) -ForegroundColor DarkGray
+                }
+            }
             '^-?diff$' {
                 if (-not (Test-PhaseOption $allowed 'diff')) { Write-UnusedOption $PhaseKey 'diff' }
                 else {
@@ -658,6 +747,12 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $p = Resolve-ToolPath $Config 'GenerateMapping'
         $args = $base.Clone()
         if ($State.Force) { $args['Force'] = $true }
+        if (-not [string]::IsNullOrWhiteSpace($State.FromBizCode)) { $args['FromBizCode'] = $State.FromBizCode }
+        if ($State.WbsStartRow -gt 0) { $args['WbsStartRow'] = $State.WbsStartRow }
+        if ($State.WbsEndRow -gt 0) { $args['WbsEndRow'] = $State.WbsEndRow }
+        if ($State.CorrelIdsM.Count -gt 0) { $args['CorrelIdsM'] = $State.CorrelIdsM }
+        if ($State.JobNames.Count -gt 0) { $args['JobNames'] = $State.JobNames }
+        if ($State.AllowTempMapping) { $args['AllowTempMapping'] = $true }
         Write-Host ("[RUN] {0}" -f (Split-Path $p -Leaf)) -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
@@ -1172,6 +1267,26 @@ foreach ($raw in @($BizCodes)) {
 }
 $BizCodes = @($flatBiz | Select-Object -Unique)
 
+$flatCorrelIdsM = @()
+foreach ($raw in @($CorrelIdsM)) {
+    if ($null -eq $raw) { continue }
+    foreach ($part in ($raw.ToString() -split ',')) {
+        $v = $part.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($v)) { $flatCorrelIdsM += $v }
+    }
+}
+$CorrelIdsM = @($flatCorrelIdsM | Select-Object -Unique)
+
+$flatJobNames = @()
+foreach ($raw in @($JobNames)) {
+    if ($null -eq $raw) { continue }
+    foreach ($part in ($raw.ToString() -split ',')) {
+        $v = $part.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($v)) { $flatJobNames += $v }
+    }
+}
+$JobNames = @($flatJobNames | Select-Object -Unique)
+
 $state = @{
     WorkDir         = $WorkDir
     Owner           = $Owner
@@ -1184,6 +1299,12 @@ $state = @{
     CloneSourceDir  = $CloneSourceDir
     J4BaseDir       = $J4BaseDir
     BizCodes        = $BizCodes
+    FromBizCode    = $FromBizCode
+    WbsStartRow    = $WbsStartRow
+    WbsEndRow      = $WbsEndRow
+    CorrelIdsM     = $CorrelIdsM
+    JobNames       = $JobNames
+    AllowTempMapping = [bool]$AllowTempMapping.IsPresent
     HostSystemTypes = @()
     ProbeFile       = $ProbeFile
     ProbeSheet      = $ProbeSheet
@@ -1287,6 +1408,7 @@ while ($true) {
     $session['J4BaseDir'] = $state.J4BaseDir
     $session['CheckSheetPath'] = $state.CheckSheetPath
     Save-Session $sessionPath $session
+    $mappingPath = Get-MappingPath $Config $state.WorkDir $state.Owner
 
     Write-Host ''
     Write-Host 'Back to VerifyTool menu. Enter to refresh / q to quit : ' -ForegroundColor Magenta -NoNewline
