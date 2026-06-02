@@ -26,6 +26,16 @@ try {
     Set-Content -LiteralPath $nested -Value 'nested' -Encoding UTF8
     Assert-Equal $null (Find-WorkbookByExcelName -Dir $root -ExcelName 'LJRVWD64') 'does not recurse by default'
     Assert-Equal $nested (Find-WorkbookByExcelName -Dir $root -ExcelName 'LJRVWD64' -Recurse) 'recurse finds nested suffix workbook'
+
+    # Get-PrefixFromFilename: inverse of Get-ExcelFullStem
+    Assert-Equal 'J4baseline_REQ-000xxxxx' (Get-PrefixFromFilename -FileName 'J4baseline_REQ-000xxxxx_CJRVWD50.xlsx' -Name 'CJRVWD50') 'recovers prefix before _Excel_NAME'
+    Assert-Equal '' (Get-PrefixFromFilename -FileName 'CJRVWD50.xlsx' -Name 'CJRVWD50') 'no prefix when filename equals Excel_NAME'
+    Assert-Equal '' (Get-PrefixFromFilename -FileName 'somethingCJRVWD50.xlsx' -Name 'CJRVWD50') 'no prefix without underscore separator'
+    Assert-Equal '' (Get-PrefixFromFilename -FileName '' -Name 'CJRVWD50') 'empty filename -> empty prefix'
+    # round-trips with Get-ExcelFullStem
+    $rtPrefix = 'J4xyz(REQ-00012345_GIFT)'
+    $rtStem   = Get-ExcelFullStem -Prefix $rtPrefix -Name 'LJRVWD64'
+    Assert-Equal $rtPrefix (Get-PrefixFromFilename -FileName ("{0}.xlsx" -f $rtStem) -Name 'LJRVWD64') 'round-trips Get-ExcelFullStem prefix'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }

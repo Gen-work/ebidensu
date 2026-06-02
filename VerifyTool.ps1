@@ -21,6 +21,7 @@ param(
     [int]$WbsEndRow = 0,
     [string[]]$CorrelIdsM = @(),
     [string[]]$JobNames = @(),
+    [string[]]$ExcelNames = @(),
 
     [int]$WindowWidth  = 0,
     [int]$WindowHeight = 0,
@@ -52,6 +53,7 @@ param(
     [switch]$DryRun,
     [switch]$MoveData,
     [switch]$AllowTempMapping,
+    [switch]$Add,
     [switch]$Help,
 
     [string]$ConfigPath = ''
@@ -92,6 +94,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase Validate'
     Write-Host '  .\VerifyTool.ps1 -Phase Mapping -Owner 0602 -Force'
     Write-Host '  .\VerifyTool.ps1 -Phase Mapping -Owner 0602 -CorrelIdsM JIDSC02M,JIDSC03M -AllowTempMapping -Force'
+    Write-Host '  .\VerifyTool.ps1 -Phase Mapping -Owner 0602 -Add -JobNames CJODJDEU,CJODJDB5   # grow map, keep progress'
     Write-Host '  .\VerifyTool.ps1 -Phase ExcelSnap'
     Write-Host '  .\VerifyTool.ps1 -Phase GiftHmSnap -TargetIds JIGPL48S'
     Write-Host '  .\VerifyTool.ps1 -Phase GiftMqSnap -TargetIds JIGPL48S,JIDSL48S'
@@ -479,7 +482,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^CheckSheet$' { return @('t','f','k') }
         '^DeliverMail$' { return @('t','f') }
         '^DeliverFiles$' { return @('t','f','mv') }
-        '^Mapping$' { return @('f','owner','from','range','cm','jobs','temp') }
+        '^Mapping$' { return @('f','owner','from','range','cm','jobs','ex','temp','add') }
         '^ExcelSnap$' { return @('f') }
         default { return @() }
     }
@@ -508,7 +511,9 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'range') { Write-Host ("  WBS range      : {0}" -f $(if ($State.WbsStartRow -gt 0 -and $State.WbsEndRow -gt 0) { "$($State.WbsStartRow)-$($State.WbsEndRow)" } else { '(full)' })) }
     if (Test-PhaseOption $allowed 'cm') { Write-Host ("  CorrelIdsM     : {0}" -f $(if ($State.CorrelIdsM.Count -gt 0) { $State.CorrelIdsM -join ', ' } else { '(none)' })) }
     if (Test-PhaseOption $allowed 'jobs') { Write-Host ("  JobNames       : {0}" -f $(if ($State.JobNames.Count -gt 0) { $State.JobNames -join ', ' } else { '(none)' })) }
+    if (Test-PhaseOption $allowed 'ex') { Write-Host ("  ExcelNames     : {0}" -f $(if ($State.ExcelNames.Count -gt 0) { $State.ExcelNames -join ', ' } else { '(none)' })) }
     if (Test-PhaseOption $allowed 'temp') { Write-Host ("  TempMapping    : {0}" -f (To-BoolText $State.AllowTempMapping)) }
+    if (Test-PhaseOption $allowed 'add') { Write-Host ("  Add (merge)    : {0}" -f (To-BoolText $State.AddRows)) }
     if (Test-PhaseOption $allowed 'i') { Write-Host ("  Interactive    : {0}" -f (To-BoolText $State.Interactive)) }
     if (Test-PhaseOption $allowed 'n') { Write-Host ("  NoResize       : {0}" -f (To-BoolText $State.NoResize)) }
     if (Test-PhaseOption $allowed 'r') { Write-Host ("  RefreshUrls    : {0}" -f (To-BoolText $State.RefreshUrls)) }
@@ -554,7 +559,9 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 'range') { $help += 'r/range=WBS rows' }
         if (Test-PhaseOption $allowed 'cm') { $help += 'cm=Correl_ID_M list' }
         if (Test-PhaseOption $allowed 'jobs') { $help += 'jobs=JOB_NAME list' }
+        if (Test-PhaseOption $allowed 'ex') { $help += 'ex=Excel_NAME list' }
         if (Test-PhaseOption $allowed 'temp') { $help += 'temp=AllowTempMapping' }
+        if (Test-PhaseOption $allowed 'add') { $help += 'add=incremental merge' }
         Write-Host ("  {0}, Enter=continue" -f ($help -join ', '))
     }
 
@@ -705,11 +712,26 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
                     else { $State.JobNames = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique) }
                 }
             }
+            '^-?ex$|^-?excelnames?$' {
+                if (-not (Test-PhaseOption $allowed 'ex')) { Write-UnusedOption $PhaseKey 'ex' }
+                else {
+                    $v = Read-Choice 'Excel_NAME list, comma-separated (example: LJRVWD64,LJRVWD65). Empty = none' ($State.ExcelNames -join ',')
+                    if ([string]::IsNullOrWhiteSpace($v)) { $State.ExcelNames = @() }
+                    else { $State.ExcelNames = @($v -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique) }
+                }
+            }
             '^-?temp$' {
                 if (-not (Test-PhaseOption $allowed 'temp')) { Write-UnusedOption $PhaseKey 'temp' }
                 else {
                     $State.AllowTempMapping = -not $State.AllowTempMapping
                     Write-Host ("  TempMapping    : {0}" -f (To-BoolText $State.AllowTempMapping)) -ForegroundColor DarkGray
+                }
+            }
+            '^-?add$' {
+                if (-not (Test-PhaseOption $allowed 'add')) { Write-UnusedOption $PhaseKey 'add' }
+                else {
+                    $State.AddRows = -not $State.AddRows
+                    Write-Host ("  Add (merge)    : {0}" -f (To-BoolText $State.AddRows)) -ForegroundColor DarkGray
                 }
             }
             '^-?diff$' {
@@ -752,7 +774,9 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($State.WbsEndRow -gt 0) { $args['WbsEndRow'] = $State.WbsEndRow }
         if ($State.CorrelIdsM.Count -gt 0) { $args['CorrelIdsM'] = $State.CorrelIdsM }
         if ($State.JobNames.Count -gt 0) { $args['JobNames'] = $State.JobNames }
+        if ($State.ExcelNames.Count -gt 0) { $args['ExcelNames'] = $State.ExcelNames }
         if ($State.AllowTempMapping) { $args['AllowTempMapping'] = $true }
+        if ($State.AddRows) { $args['Add'] = $true }
         Write-Host ("[RUN] {0}" -f (Split-Path $p -Leaf)) -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
@@ -1287,6 +1311,16 @@ foreach ($raw in @($JobNames)) {
 }
 $JobNames = @($flatJobNames | Select-Object -Unique)
 
+$flatExcelNames = @()
+foreach ($raw in @($ExcelNames)) {
+    if ($null -eq $raw) { continue }
+    foreach ($part in ($raw.ToString() -split ',')) {
+        $v = $part.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($v)) { $flatExcelNames += $v }
+    }
+}
+$ExcelNames = @($flatExcelNames | Select-Object -Unique)
+
 $state = @{
     WorkDir         = $WorkDir
     Owner           = $Owner
@@ -1304,7 +1338,9 @@ $state = @{
     WbsEndRow      = $WbsEndRow
     CorrelIdsM     = $CorrelIdsM
     JobNames       = $JobNames
+    ExcelNames     = $ExcelNames
     AllowTempMapping = [bool]$AllowTempMapping.IsPresent
+    AddRows        = [bool]$Add.IsPresent
     HostSystemTypes = @()
     ProbeFile       = $ProbeFile
     ProbeSheet      = $ProbeSheet

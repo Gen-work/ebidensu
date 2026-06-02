@@ -22,6 +22,14 @@
 #    .\Generate-HostOpenMapping.ps1 -WbsStartRow 1275 -WbsEndRow 2250
 #    .\Generate-HostOpenMapping.ps1 -Force
 #
+#  Incremental add (grow an existing mapping, keep all done progress):
+#    .\Generate-HostOpenMapping.ps1 -Add -JobNames CJODJDEU,CJODJDB5
+#    .\Generate-HostOpenMapping.ps1 -Add -CorrelIdsM JIDSC09M
+#    .\Generate-HostOpenMapping.ps1 -Add -ExcelNames LJRVWD64
+#    .\Generate-HostOpenMapping.ps1 -Add -WbsStartRow 2300 -WbsEndRow 2400
+#    -Add appends only Correl_ID_M values not already in mapping_<Owner>.csv;
+#    existing rows (and their snap/replace/mark/review state) are untouched.
+#
 #  File encoding: UTF-8, NO BOM. All Japanese used at runtime (owner
 #  arrows, sheet/label names) is built from [char] code points so PS 5.1
 #  on a JP-locale host cannot mis-decode it. See Check-Encoding.ps1.
@@ -35,7 +43,9 @@ param(
     [string]$FromBizCode = "",
     [string[]]$CorrelIdsM = @(),
     [string[]]$JobNames = @(),
+    [string[]]$ExcelNames = @(),
     [switch]$AllowTempMapping,
+    [switch]$Add,
     [switch]$Force
 )
 
@@ -82,6 +92,21 @@ function Read-YesNo([string]$Prompt, [bool]$DefaultYes = $true) {
 $requestedCorrelIdsM = @(Convert-ToCleanList $CorrelIdsM)
 $requestedJobNames   = @(Convert-ToCleanList $JobNames)
 
+# Excel_NAME selectors are accepted too (incremental add by sheet name).
+# An Excel_NAME is the JOB_NAME with index-5 'J' swapped to 'W' (8 chars),
+# so reverse that to recover the JOB_NAME used to look the row up in GFIX.
+$requestedExcelNames = @(Convert-ToCleanList $ExcelNames)
+foreach ($en in $requestedExcelNames) {
+    $jobFromExcel = $en
+    if ($en.Length -eq 8 -and $en[4] -eq 'W') {
+        $jobFromExcel = $en.Substring(0, 4) + 'J' + $en.Substring(5)
+    }
+    $requestedJobNames += $jobFromExcel
+}
+$requestedJobNames = @($requestedJobNames | Select-Object -Unique)
+
+$addFlag = [bool]$Add.IsPresent
+
 $useRowRange   = ($WbsStartRow -gt 0 -and $WbsEndRow -gt 0)
 $useFromFilter = -not [string]::IsNullOrWhiteSpace($FromBizCode)
 $useExplicitTempSelectors = ($requestedCorrelIdsM.Count -gt 0 -or $requestedJobNames.Count -gt 0)
@@ -94,7 +119,9 @@ Write-Host ("  FromBizCode : {0}" -f $(if ($useFromFilter) { $FromBizCode } else
 Write-Host ("  Row range   : {0}" -f $(if ($useRowRange) { "$WbsStartRow - $WbsEndRow" } else { "(full WBS scan)" }))
 Write-Host ("  CorrelIdsM  : {0}" -f $(if ($requestedCorrelIdsM.Count -gt 0) { $requestedCorrelIdsM -join ", " } else { "(none)" }))
 Write-Host ("  JobNames    : {0}" -f $(if ($requestedJobNames.Count -gt 0) { $requestedJobNames -join ", " } else { "(none)" }))
+Write-Host ("  ExcelNames  : {0}" -f $(if ($requestedExcelNames.Count -gt 0) { $requestedExcelNames -join ", " } else { "(none)" }))
 Write-Host ("  TempMapping : {0}" -f $AllowTempMapping.IsPresent)
+Write-Host ("  Add (merge) : {0}" -f $addFlag)
 Write-Host ("  Force       : {0}" -f $Force.IsPresent)
 Write-Host ""
 
@@ -582,6 +609,64 @@ $excel = New-Object -ComObject Excel.Application
     # Step F: Diff with existing mapping_<Owner>.csv
     # ============================================================
     $isOverwrite = Test-Path -LiteralPath $mappingPath
+
+    # ------------------------------------------------------------
+    # Step F0 (incremental add): -Add merges the freshly-built records
+    # INTO the existing mapping. Existing rows -- and all their progress
+    # (snaps / isReplaced / isMarked / isReviewed / Excel_Prefix / ...) --
+    # are kept verbatim; only Correl_ID_M values not already present are
+    # appended. Use this to grow the mapping day by day (new JOB_NAMEs /
+    # Correl_IDs / Excel_NAMEs / WBS range) without losing finished work.
+    # ------------------------------------------------------------
+    if ($addFlag -and $isOverwrite) {
+        Write-Host ""
+        Write-Host "===== Add (incremental merge) =====" -ForegroundColor Cyan
+        $existing = @(Import-Csv -LiteralPath $mappingPath -Encoding UTF8)
+        $existingM = New-Object 'System.Collections.Generic.HashSet[System.String]'
+        foreach ($x in $existing) {
+            $k = [string]$x.Correl_ID_M
+            if (-not [string]::IsNullOrWhiteSpace($k)) { [void]$existingM.Add($k) }
+        }
+
+        $newRecs  = (New-Object 'System.Collections.Generic.List[System.Management.Automation.PSObject]')
+        $dupCount = 0
+        foreach ($rec in $records) {
+            if ($existingM.Contains([string]$rec.Correl_ID_M)) { $dupCount++; continue }
+            $newRecs.Add($rec)
+        }
+
+        Write-Host ("  Existing rows        : {0}" -f $existing.Count)
+        Write-Host ("  Built from selectors : {0}" -f $records.Count)
+        Write-Host ("  Already present      : {0}" -f $dupCount) -ForegroundColor DarkGray
+        Write-Host ("  New rows to add      : {0}" -f $newRecs.Count) -ForegroundColor $(if ($newRecs.Count) { 'Green' } else { 'DarkGray' })
+        foreach ($r in $newRecs) {
+            Write-Host ("    + {0}  (JOB: {1}, Excel: {2})" -f $r.Correl_ID_M, $r.JOB_NAME, $r.Excel_NAME) -ForegroundColor Green
+        }
+        if ($warnings.Count -gt 0) {
+            Write-Host ("  Warnings ({0}):" -f $warnings.Count) -ForegroundColor Yellow
+            foreach ($w in $warnings) { Write-Host ("    [WARN] {0}" -f $w) -ForegroundColor Yellow }
+        }
+
+        if ($newRecs.Count -eq 0) {
+            Write-Host "[INFO] Nothing new to add; mapping left unchanged." -ForegroundColor Yellow
+            return
+        }
+
+        # Union = existing (untouched) + new. Ensure-MappingColumns aligns the
+        # schema (adds any status columns the existing file already carries,
+        # e.g. isDelivered, to the fresh rows) so the CSV header is complete.
+        $combined = (New-Object 'System.Collections.Generic.List[System.Management.Automation.PSObject]')
+        foreach ($x in $existing) { $combined.Add($x) }
+        foreach ($r in $newRecs)  { $combined.Add($r) }
+        Ensure-MappingColumns -Rows $combined.ToArray() | Out-Null
+
+        Export-MappingAtomic -Rows $combined.ToArray() -Path $mappingPath | Out-Null
+        Write-Host ("  Saved : {0} ({1} -> {2} rows)" -f $mappingPath, $existing.Count, $combined.Count) -ForegroundColor Green
+        return
+    }
+    if ($addFlag -and -not $isOverwrite) {
+        Write-Host "[INFO] -Add given but no existing mapping; creating a fresh one." -ForegroundColor Yellow
+    }
 
     if ($isOverwrite) {
         Write-Host ""

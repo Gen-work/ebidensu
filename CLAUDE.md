@@ -64,7 +64,10 @@ HmSnap.ps1              Phase GiftHmSnap / GfixHmSnap   (kept as-is)
 MqSnap.ps1              Phase GiftMqSnap                (kept as-is)
 ExcelSnap.ps1           Phase ExcelSnap                 (legacy, kept as-is)
 Common.ps1              shared WinAPI/screenshot/SendKeys helpers (dot-sourceable)
-Generate-HostOpenMapping.ps1  generates mapping CSV from wipGFIX一覧.xlsx
+Generate-HostOpenMapping.ps1  generates mapping CSV from wipGFIX一覧.xlsx.
+                        -Add merges new selectors (JobNames / CorrelIdsM /
+                        ExcelNames / WBS range) into an existing mapping,
+                        keeping every existing row + its progress.
 
 Calibrate-HmGeometry.ps1  4-click WinForms calibration for HM geometry offsets
 Find-Abend.ps1          template-match for HM status cell
@@ -180,7 +183,11 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-05-29 v2.5)
+## Current state (last bump: 2026-06-02 v2.6)
+
+v2.6: incremental mapping `-Add` (grow the map day by day, keep progress) and
+Clone now auto-captures `Excel_Prefix` from the real source filename (the
+missing input point for the J4 filename prefix).
 
 Major refactor: shared MappingStore, plan-driven Replace, recovery + monitoring.
 Pure (COM-free) libs are unit-tested via `Tests\Run-Tests.ps1`; COM/Edge phases

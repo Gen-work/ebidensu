@@ -52,6 +52,12 @@ if (-not (Test-Path -LiteralPath $WorkDir)) { Write-Host "[ERROR] WorkDir not fo
 # Resolve switch BEFORE any dot-source
 $forceFlag = [bool]$Force.IsPresent
 
+# Dot-source MappingStore EARLY (it has no param() so it is safe) so the
+# local single-arg Test-TargetRow defined below overrides MappingStore's
+# two-arg version. We use Export-MappingAtomic / Update-MappingRows /
+# Ensure-MappingColumns to write the captured Excel_Prefix back.
+. (Join-Path $PSScriptRoot 'MappingStore.ps1')
+
 # Optional target narrowing
 $targetSet = @{}
 foreach ($rawId in @($TargetIds)) {
@@ -98,8 +104,10 @@ if (-not (Test-Path -LiteralPath $mappingPath)) {
     Write-Host "[ERROR] mapping not found: $mappingPath" -ForegroundColor Red
     exit 1
 }
-$rows = @(Import-Csv -LiteralPath $mappingPath -Encoding UTF8)
-$rows = @($rows | Where-Object { Test-TargetRow $_ })
+# $allRows = full set (so prefix write-back never drops non-target rows).
+# $rows    = target-filtered references INTO $allRows (used for processing).
+$allRows = @(Import-Csv -LiteralPath $mappingPath -Encoding UTF8)
+$rows = @($allRows | Where-Object { Test-TargetRow $_ })
 if ($rows.Count -eq 0) {
     Write-Host '[INFO] No rows after filter.' -ForegroundColor Yellow
     return
@@ -124,6 +132,8 @@ $cntSkip = 0
 $cntMiss = 0
 $cntFromSource = 0
 $cntFromTemplate = 0
+$cntPrefix = 0
+$mappingDirty = $false
 
 foreach ($g in $groups) {
     $first = $g.Group | Select-Object -First 1
@@ -242,6 +252,20 @@ foreach ($g in $groups) {
             if ($ambigCount -gt 1) {
                 Write-Host ("       NOTE: {0} candidates matched, picked newest" -f $ambigCount) -ForegroundColor DarkYellow
             }
+
+            # Capture the J4 filename prefix from the real source filename so
+            # downstream phases (CheckSheet / DeliverMail / DeliverFiles) get
+            # the exact <prefix>_<Excel_NAME>.xlsx name. This is the operator's
+            # "input point" for Excel_Prefix -- no manual entry needed.
+            $capPrefix = Get-PrefixFromFilename -FileName (Split-Path $foundPath -Leaf) -Name $excelName
+            if (-not [string]::IsNullOrWhiteSpace($capPrefix) -and $capPrefix -ne $excelPrefix) {
+                $n = Update-MappingRows -Rows $allRows -KeyField 'Excel_NAME' -KeyValue $excelName -Updates @{ Excel_Prefix = $capPrefix }
+                if ($n -gt 0) {
+                    $mappingDirty = $true
+                    $cntPrefix++
+                    Write-Host ("       Excel_Prefix captured: {0}" -f $capPrefix) -ForegroundColor DarkCyan
+                }
+            }
         } else {
             $cntFromTemplate++
             Write-Host ("[TPL ] {0}  <- {1}  => {2}" -f $excelName, $foundFrom, (Split-Path $destPath -Leaf)) -ForegroundColor DarkYellow
@@ -252,11 +276,25 @@ foreach ($g in $groups) {
     }
 }
 
+# Persist any captured Excel_Prefix values (atomic write; retries if the CSV
+# is open in Excel). Existing rows/progress are untouched.
+if ($mappingDirty) {
+    try {
+        Ensure-MappingColumns -Rows $allRows | Out-Null
+        Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+        Write-Host ''
+        Write-Host ("[INFO] Excel_Prefix captured for {0} Excel_NAME(s) into mapping." -f $cntPrefix) -ForegroundColor Cyan
+    } catch {
+        Write-Host ("[WARN] could not write Excel_Prefix back to mapping: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+}
+
 Write-Host ''
 Write-Host '===== Clone Done =====' -ForegroundColor Green
 Write-Host ("  Done           : {0}" -f $cntDone)
 Write-Host ("    from source  : {0}" -f $cntFromSource)
 Write-Host ("    from template: {0}" -f $cntFromTemplate)
+Write-Host ("  Prefix captured: {0}" -f $cntPrefix)
 Write-Host ("  Skipped exists : {0}" -f $cntSkip)
 Write-Host ("  Missing source : {0}" -f $cntMiss) -ForegroundColor $(if ($cntMiss -gt 0) { 'Yellow' } else { 'White' })
 
