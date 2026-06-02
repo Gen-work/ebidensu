@@ -77,12 +77,12 @@
         # AutoShape とその親となる Picture のオフセット差分を読み取る。
         Boxes = @{
             'excel'           = @()
-            'GIFT_HM'         = @( @{ OffsetX = 384.8; OffsetY = 181.6; Width = 62.2; Height = 16.5 } )
-            'GIFT_MQ'         = @( @{ OffsetX = 155.2; OffsetY = 170.2; Width = 528.8; Height = 63 } )
-            'GIFT_Jenkins'    = @( @{ OffsetX = 303;   OffsetY = 297;   Width = 288.8; Height = 18.8 } )
+            'GIFT_HM'         = @( @{ OffsetX = 395.3; OffsetY = 189.2; Width = 62.2; Height = 16.5 } )
+            'GIFT_MQ'         = @( @{ OffsetX = 167.9; OffsetY = 176.9; Width = 528.8; Height = 63 } )
+            'GIFT_Jenkins'    = @( @{ OffsetX = 301.5; OffsetY = 282.0; Width = 288.8; Height = 18.8 } )
             'GIFT_noGfixfile' = @()
-            'GFIX_HM'         = @( @{ OffsetX = 384.8; OffsetY = 181.6; Width = 62.2; Height = 16.5 } ) # GIFT_HMと同じと仮定
-            'GFIX_Jenkins'    = @( @{ OffsetX = 303;   OffsetY = 297;   Width = 288.8; Height = 18.8 } ) # GIFT_Jenkinsと同じと仮定
+            'GFIX_HM'         = @( @{ OffsetX = 395.3; OffsetY = 189.2; Width = 62.2; Height = 16.5 } )
+            'GFIX_Jenkins'    = @( @{ OffsetX = 301.5; OffsetY = 282.0; Width = 288.8; Height = 18.8 } )
             'DF'              = @( @{ CellCols = 'AW:BC'; RowsFromBottom = 2 } )
         }
     }

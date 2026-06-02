@@ -294,13 +294,12 @@ foreach ($toCode in $groupOrder) {
             $cntFail++; continue
         }
 
-        # Ctrl+F search for CORREL_ID_S
+        # Ctrl+F search for CORREL_ID_S; leave find bar open so the screenshot
+        # shows the highlighted match (ESC is sent after the screenshot below).
         Click-PageBody
         Send-CtrlF
         Paste-Replace $searchTerm
         Start-Sleep -Milliseconds $ResultWaitMs
-        # Close find bar so it doesn't clutter the screenshot
-        Send-Key '{ESC}' 200
 
         # Take screenshot from the Edge handle we just activated; never use the
         # foreground handle here because the console can remain foreground after
@@ -313,6 +312,8 @@ foreach ($toCode in $groupOrder) {
         try {
             Take-WindowScreenshot $edgeHwnd $snapPath
             if ($CropPx -gt 0) { Invoke-CropPng $snapPath $CropPx }
+            # Dismiss find bar now that the screenshot is captured.
+            Send-Key '{ESC}' 200
             Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green
         } catch {
             Write-Host ("    [FAIL] screenshot: {0}" -f $_.Exception.Message) -ForegroundColor Red
