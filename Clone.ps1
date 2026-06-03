@@ -67,12 +67,29 @@ foreach ($rawId in @($TargetIds)) {
         if (-not [string]::IsNullOrWhiteSpace($v)) { $targetSet[$v] = $true }
     }
 }
+function Get-CloneRowValue($row, [string]$Name) {
+    if ($null -eq $row) { return '' }
+    if ($row.PSObject.Properties.Name -contains $Name) {
+        $v = $row.$Name
+        if ($null -ne $v) { return [string]$v }
+    }
+    return ''
+}
+
+function Get-TargetMatchFields($row) {
+    $matches = @()
+    foreach ($field in @('Correl_ID_S', 'Correl_ID_M', 'JOB_NAME', 'Excel_NAME')) {
+        $v = Get-CloneRowValue $row $field
+        if (-not [string]::IsNullOrWhiteSpace($v) -and $targetSet.ContainsKey($v)) {
+            $matches += ("{0}={1}" -f $field, $v)
+        }
+    }
+    return @($matches)
+}
+
 function Test-TargetRow($row) {
     if ($targetSet.Count -eq 0) { return $true }
-    return ($targetSet.ContainsKey([string]$row.Correl_ID_S) -or
-            $targetSet.ContainsKey([string]$row.Correl_ID_M) -or
-            $targetSet.ContainsKey([string]$row.JOB_NAME) -or
-            $targetSet.ContainsKey([string]$row.Excel_NAME))
+    return (@(Get-TargetMatchFields $row).Count -gt 0)
 }
 
 # Header
@@ -111,6 +128,28 @@ $rows = @($allRows | Where-Object { Test-TargetRow $_ })
 if ($rows.Count -eq 0) {
     Write-Host '[INFO] No rows after filter.' -ForegroundColor Yellow
     return
+}
+
+if ($targetSet.Count -gt 0) {
+    Write-Host ("  Matched rows : {0}" -f $rows.Count) -ForegroundColor Cyan
+    $targetSummary = [ordered]@{}
+    foreach ($t in ($targetSet.Keys | Sort-Object)) { $targetSummary[$t] = [System.Collections.Generic.List[string]]::new() }
+    foreach ($r in $rows) {
+        $excel = Get-CloneRowValue $r 'Excel_NAME'
+        foreach ($m in @(Get-TargetMatchFields $r)) {
+            $parts = $m -split '=', 2
+            if ($parts.Count -lt 2 -or -not $targetSummary.Contains($parts[1])) { continue }
+            $targetSummary[$parts[1]].Add(("{0} -> Excel_NAME={1}" -f $parts[0], $excel))
+        }
+    }
+    foreach ($t in $targetSummary.Keys) {
+        $items = @($targetSummary[$t].ToArray() | Select-Object -Unique)
+        if ($items.Count -gt 0) {
+            Write-Host ("    {0}: {1}" -f $t, ($items -join '; ')) -ForegroundColor DarkCyan
+        } else {
+            Write-Host ("    {0}: no matching row" -f $t) -ForegroundColor Yellow
+        }
+    }
 }
 
 # Evidence dir
@@ -170,6 +209,7 @@ foreach ($g in $groups) {
     $foundPath = $null
     $foundFrom = ''
     $ambigCount = 0
+    $searchedDirs = @()
     if (-not [string]::IsNullOrWhiteSpace($SourceDir)) {
         $searchDirs = @()
         foreach ($code in $codes) {
@@ -185,6 +225,7 @@ foreach ($g in $groups) {
         foreach ($sd in $searchDirs) {
             $dir = $sd.Dir
             $tag = $sd.Tag
+            $searchedDirs += ("{0}={1}" -f $tag, $dir)
 
             # a) exact name: try full stem first (J4..._LJRVWD64.xlsx), then short name
             $exact = Join-Path $dir ("{0}.xlsx" -f $fullStem)
@@ -238,6 +279,10 @@ foreach ($g in $groups) {
 
     if (-not $foundPath) {
         Write-Host ("[MISS] {0}  (codes tried: {1})" -f $excelName, ($codes -join ',')) -ForegroundColor Red
+        if ($searchedDirs.Count -gt 0) {
+            Write-Host ("       searched: {0}" -f (($searchedDirs | Select-Object -Unique) -join '; ')) -ForegroundColor DarkGray
+            Write-Host ("       patterns: {0}.xlsx, {1}.xlsx, *{1}.xlsx" -f $fullStem, $excelName) -ForegroundColor DarkGray
+        }
         $cntMiss++
         continue
     }
