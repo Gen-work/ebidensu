@@ -67,7 +67,7 @@ function Get-RowProp {
 function ConvertTo-TargetIdList {
     param([object]$TargetIds)
     $out = [System.Collections.Generic.List[string]]::new()
-    if ($null -eq $TargetIds) { return @() }
+    if ($null -eq $TargetIds) { return ,@() }
     foreach ($item in @($TargetIds)) {
         if ($null -eq $item) { continue }
         foreach ($part in ([string]$item -split ',')) {
