@@ -18,7 +18,7 @@
 
 param(
     [string]$WorkDir,
-    [string]$Owner = ([char]0x53B3),  # 厳
+    [string]$Owner = '',
     [switch]$Visible,
     [switch]$Force
 )

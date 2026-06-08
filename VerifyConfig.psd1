@@ -1,7 +1,7 @@
 ﻿@{
     # VerifyTool.ps1 remembers the last WorkDir in verify_session.json.
     DefaultWorkDir = ''
-    DefaultOwner   = '厳'
+    DefaultOwner   = ''
 
     Paths = @{
         MappingPattern  = 'mapping_{0}.csv'
@@ -115,22 +115,22 @@
     # Reviewer (To / 確認者). The single "viewer" param: used as the mail
     # recipient, the body greeting, and the check-sheet 確認者 column.
     Reviewer = @{
-        DisplayName = 'Hiromi Kase (加瀬 弘美 GE)'
-        Address     = 'hiromi_kase_gst@jp.honda'
-        ShortName   = '加瀬'
+        DisplayName = ''
+        Address     = ''
+        ShortName   = ''
     }
 
     # DeliverMail phase: one Outlook draft per Excel_NAME. Operator clicks Send.
     Mail = @{
-        From  = 'cho_gen_gst@jp.honda'
+        From  = ''
         # フェーズ token in the subject. 対象物 = Excel_NAME (short code).
         Phase = 'JRV→IDS,IGP_J4'
         # Subject = 【GIFT廃止対応】<Phase>レビュー依頼(<対象物>)  ({0}=Phase, {1}=Excel_NAME)
         SubjectTemplate = '【GIFT廃止対応】{0}レビュー依頼({1})'
         # UNC folder + filename shown in the body. Replace REQ-000xxxxx / path
         # for the real case before sending.
-        EvidenceFolder   = '\\Fs-f3170-1\12_生産管理\00121.GPCS\31.NII\外部サーバー資料\S08.共有情報\82_発注受入領域関連\08. 対応案件関連\01 対応中\REQ-000xxxxx_GIFT廃止対応\40.J4\07.GPCS\JRV'
-        CheckSheetFolder = '\\Fs-f3170-1\12_生産管理\00121.GPCS\31.NII\外部サーバー資料\S08.共有情報\82_発注受入領域関連\08. 対応案件関連\01 対応中\REQ-000xxxxx_GIFT廃止対応\00.管理'
+        EvidenceFolder   = ''
+        CheckSheetFolder = ''
         CheckSheetFile   = 'レビューチェックシート_REQ-000xxxxx_GIFT廃止対応_OPEN.xlsx'
         # Body lines, joined with CRLF. Placeholders:
         #   {0}=Reviewer.ShortName {1}=Owner {2}=EvidenceFolder
@@ -172,7 +172,7 @@
     # sheet, sheet "Check Sheet_J4". Edited via a temp copy first (double-check).
     CheckSheet = @{
         # Actual file to edit (half-width katakana name). Replace REQ-000xxxxx.
-        Path      = '\\Fs-f3170-1\12_生産管理\00121.GPCS\31.NII\外部サーバー資料\S08.共有情報\82_発注受入領域関連\08. 対応案件関連\01 対応中\REQ-000xxxxx_GIFT廃止対応\00.管理\ﾚﾋﾞｭｰﾁｪｯｸｼｰﾄ_REQ-000xxxxx_GIFT廃止対応_OPEN.xlsx'
+        Path      = ''
         SheetName = 'Check Sheet_J4'
         Language  = 'JAVA'          # col C  (COBOL/JAVA)
         Phase     = 'J4内部ﾚﾋﾞｭｰ'    # col E  (確認ﾌｪｰｽﾞ)
@@ -214,7 +214,7 @@
     Align = @{
         # Root folder holding the J4 baseline workbooks (searched recursively
         # by Excel_NAME). Example:
-        #   \\Fs-f3170-1\...\REQ-000xxxxx_GIFT...\40.J4\07.GPCS
+        #   \\server\share\...\project\40.J4\07.GPCS
         J4BaseDir       = ''
         # FROM_sys / TO_sys literal values that count as "Host" (mainframe).
         # Until set, migration type is Unknown and Align falls back to the

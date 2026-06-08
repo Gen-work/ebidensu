@@ -8,9 +8,9 @@
 #    - *GFIX*.xlsx    sheet "GFIX送受信一覧" (columns resolved via headers)
 #
 #  Filtering (AND when both given):
-#    Owner          : WBS col P matches -Owner (default: 厳)
+#    Owner          : WBS col P matches -Owner (no personal default)
 #                     counted when: Owner, Owner←*, or *→Owner
-#                     example: 厳 / 厳←ニンヌ / 小野→厳 = counted; ニンヌ←厳 = not counted
+#                     example: Owner / Owner←Other / Other→Owner = counted; Other←Owner = not counted
 #    FromBizCode    : GFIX from 業務コード == -FromBizCode  (optional)
 #    Row range      : WBS rows in [-WbsStartRow, -WbsEndRow]  (optional;
 #                     unset -> scan full WBS UsedRange)
@@ -18,7 +18,7 @@
 #  Usage:
 #    .\Generate-HostOpenMapping.ps1
 #    .\Generate-HostOpenMapping.ps1 -FromBizCode JRV
-#    .\Generate-HostOpenMapping.ps1 -FromBizCode JRV -Owner 厳
+#    .\Generate-HostOpenMapping.ps1 -FromBizCode JRV -Owner <Owner>
 #    .\Generate-HostOpenMapping.ps1 -WbsStartRow 1275 -WbsEndRow 2250
 #    .\Generate-HostOpenMapping.ps1 -Force
 #
@@ -39,7 +39,7 @@ param(
     [string]$WorkDir,
     [int]$WbsStartRow = 0,
     [int]$WbsEndRow   = 0,
-    [string]$Owner       = ([char]0x53B3),  # 厳
+    [string]$Owner       = '',
     [string]$FromBizCode = "",
     [string[]]$CorrelIdsM = @(),
     [string[]]$JobNames = @(),
@@ -206,10 +206,10 @@ function Add-UniqueJobName($List, $Seen, [string]$JobName) {
 function Test-OwnerMatch([string]$ownerCell, [string]$ownerInput) {
     # Match the current owner represented by -Owner.
     # Count only these patterns:
-    #   1) exact owner              : 厳
-    #   2) owner followed by ←...   : 厳←ニンヌ / 厳←小野
-    #   3) ... followed by →owner   : 小野→厳
-    # Do NOT count reverse direction such as ニンヌ←厳.
+    #   1) exact owner              : Owner
+    #   2) owner followed by ←...   : Owner←Other
+    #   3) ... followed by →owner   : Other→Owner
+    # Do NOT count reverse direction such as Other←Owner.
     if ([string]::IsNullOrWhiteSpace($ownerCell) -or [string]::IsNullOrWhiteSpace($ownerInput)) {
         return $false
     }

@@ -145,7 +145,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host ''
     Write-Host 'Common options:'
     Write-Host '  -WorkDir <path>       Work folder. If omitted, last used path is remembered.'
-    Write-Host ('  -Owner {0}             mapping_{0}.csv owner suffix. Default comes from config.' -f ([char]0x53B3))
+    Write-Host '  -Owner <Owner>        mapping_<Owner>.csv owner suffix. No personal default is configured.'
     Write-Host '  -TargetIds A,B        Limit run by Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.'
     Write-Host '  -CloneSourceDir <p>   External path for Clone (existing evidence files per bizcode).'
     Write-Host '  -J4BaseDir <p>        J4 baseline root for Align. If omitted, config/session/CloneSourceDir is used.'

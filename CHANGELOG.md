@@ -46,7 +46,7 @@ The final hand-off step. Two new phases close the workflow after review.
 ### Added
 - **DeliverMail phase.** One Outlook **draft** per evidence Excel (grouped by
   `Excel_NAME`), built via Outlook COM `CreateItem` + `Display` — never
-  auto-sent. Misaki eyeballs each draft, clicks Send by hand, then presses Enter
+  auto-sent. The operator eyeballs each draft, clicks Send by hand, then presses Enter
   in the shell to set the new `isDelivered` mapping flag (`1` = sent). `s` skips,
   `q` quits, and `-m "comment"` records a note in the new `DeliverComment` column
   (per `Excel_NAME`, like `ReviewComment`). Subject =
@@ -56,7 +56,7 @@ The final hand-off step. Two new phases close the workflow after review.
 - **CheckSheet phase.** Appends one row per Excel to the shared review check
   sheet (sheet `Check Sheet_J4`): A No. (continued, only if blank), B 記入日
   (today, format copied from the row above), C `JAVA`, E `J4内部ﾚﾋﾞｭｰ`,
-  F full evidence filename, G owner, H reviewer (加瀬). Because it is a public
+  F full evidence filename, G owner, H reviewer. Because it is a public
   document the edit is **double-checked**: a TEMP copy is filled and opened for
   visual review; on Enter the original is re-stat'd and, only if it is unchanged
   since the preview began, the identical edits are committed — otherwise the

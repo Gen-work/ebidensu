@@ -34,7 +34,7 @@ Expected work folder:
 
 ```text
 work\
-  mapping_厳.csv
+  mapping_<Owner>.csv
   wipGFIX一覧.xlsx
   template.xlsx                  (universal template, optional)
   template_<bizcode>.xlsx        (per-bizcode template, optional)
@@ -58,7 +58,7 @@ work\
 Jenkins-downloaded receive files are saved under `DATA\GIFT` or `DATA\GFIX` with their Jenkins filename, so downstream delivery can pick up `Correl_ID_S*` files. For example:
 
 ```text
-\\fs-f3170-1\12_生産管理\00121.GPCS\31.NII\other：その他\個人用ワーク\厳\Work\0514_JRV-IDS,IGP2\DATA\GIFT\JIDSK48S
+C:\path\to\work\DATA\GIFT\JIDSK48S
 ```
 
 `VerifyTool.ps1` remembers the last `WorkDir`, `Owner`, window size, crop size, evidence folder, review cursor cell, `CloneSourceDir`, and `J4BaseDir` in `verify_session.json`.
@@ -148,7 +148,7 @@ Delivery (final hand-off):
 
 ```powershell
 -WorkDir <path>           # work folder. If omitted, the last one is reused.
--Owner 厳                 # mapping owner suffix. Default: 厳.
+-Owner <Owner>            # mapping owner suffix. No personal default is configured.
 -TargetIds A,B            # limit by Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.
 -CloneSourceDir <path>    # external path for Clone (existing evidence per bizcode).
 -J4BaseDir <path>         # J4 baseline root for Align; defaults to remembered/config/CloneSourceDir.
@@ -213,7 +213,7 @@ Bits are only set when every image for that mode actually existed and was insert
 
 ## ReviewEvidence behavior
 
-`ReviewEvidence.ps1` opens files from `work\evidence` according to `mapping_厳.csv`.
+`ReviewEvidence.ps1` opens files from `work\evidence` according to `mapping_<Owner>.csv`.
 
 For each pending row:
 
@@ -232,7 +232,7 @@ evidence Excel (grouped by `Excel_NAME`) to the shared review check sheet, sheet
 `Check Sheet_J4`. Columns written: A No. (continued from the last numeric No.,
 only when blank), B 記入日 (today, number format copied from the row above),
 C `JAVA`, E `J4内部ﾚﾋﾞｭｰ`, F full evidence filename
-(`<Excel_Prefix>_<Excel_NAME>.xlsx`), G owner, H reviewer (`加瀬`). D/I/J~ are
+(`<Excel_Prefix>_<Excel_NAME>.xlsx`), G owner, H reviewer (configured reviewer). D/I/J~ are
 left blank.
 
 Because the check sheet is a public document the write is double-checked:

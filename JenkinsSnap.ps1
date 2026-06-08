@@ -3,7 +3,7 @@ param(
     [ValidateSet('GiftRecv','GfixRecv','NoGfix')]
     [string]$Mode           = 'GiftRecv',
     [string]$WorkDir        = '',
-    [string]$Owner          = ([char]0x53B3),
+    [string]$Owner          = '',
     [string[]]$TargetIds    = @(),
     [switch]$RefreshUrls,
     [switch]$Force,

@@ -19,7 +19,7 @@
 
 param(
     [string]$WorkDir = '',
-    [string]$Owner   = ([char]0x53B3),   # default owner (0x53B3)
+    [string]$Owner   = '',
     [int]$IntervalSec = 5,
     [int]$Tail        = 15,
     [switch]$Once

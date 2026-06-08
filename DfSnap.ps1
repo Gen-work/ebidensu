@@ -24,7 +24,7 @@
 
 param(
     [string]$WorkDir,
-    [string]$Owner = ([char]0x53B3),     # default owner (0x53B3)
+    [string]$Owner = ''
     [string[]]$TargetIds = @(),
     [switch]$Force,
 
