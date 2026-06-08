@@ -5,7 +5,7 @@ Read this file first when opening the project from an IDE or LLM session.
 ## Project purpose
 
 **VerifyTool** automates GIFT→GFIX migration evidence collection at Honda Japan.
-Operator: 厳 (Misaki). Environment: Windows 10/11 + PowerShell 5.1 + Excel 2019.
+Operator: project user. Environment: Windows 10/11 + PowerShell 5.1 + Excel 2019.
 
 The tool captures screenshots from HM / MQ / Jenkins, inserts them into evidence Excel
 workbooks, draws red rectangles on the relevant cells, and tracks completion state in
@@ -15,7 +15,7 @@ a CSV mapping file.
 
 Remote: `gen-work/ebidensu`
 Branch convention: `claude/<slug>`
-Local clone (office): `\\fs-f3170-1\...\厳\Work\0514_JRV-IDS,IGP2\`
+Local clone: configure per environment (do not commit personal paths).
 
 ## File map
 
@@ -265,7 +265,7 @@ today diff →  Export-DailyPatch.ps1 → clipboard → git push from home
 
 Remembered between runs:
 - `WorkDir` — last work folder path
-- `Owner` — mapping owner suffix (default: 厳)
+- `Owner` — mapping owner suffix (no personal default)
 - `WindowWidth`, `WindowHeight`, `CropPx` — screenshot window size
 - `CursorCell` — review cursor cell (default: A3)
 - `CloneSourceDir` — external path for Clone phase

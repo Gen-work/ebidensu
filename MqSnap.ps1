@@ -22,7 +22,7 @@
 
 param(
     [string]$WorkDir,
-    [string]$Owner               = ([char]0x53B3),  # 厳
+    [string]$Owner               = '',
 
     [int]$TabsToInquiry          = 1,
     [int]$TabsToCorrelid         = 4,
@@ -302,7 +302,7 @@ if ($pendingItems.Count -eq 0) {
 # ============================================================
 # Main loop (single page, no appl grouping)
 # ============================================================
-$mqUrl = "https://bizver.hm.jp.honda.com/vergift/index.html"
+$mqUrl = "https://<mq-host>/vergift/index.html"
 
 Bring-ShellToFront
 Write-Host ""

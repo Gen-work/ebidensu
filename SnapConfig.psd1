@@ -1,7 +1,7 @@
 ﻿@{
     # Leave DefaultWorkDir empty on purpose. Run-Snap.ps1 will remember the last WorkDir in snap_session.json.
     DefaultWorkDir = ''
-    DefaultOwner   = '厳'
+    DefaultOwner   = ''
 
     Window = @{
         Width    = 1050

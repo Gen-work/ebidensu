@@ -26,7 +26,7 @@ param(
     [string]$Stage,
 
     [string]$WorkDir,
-    [string]$Owner               = ([char]0x53B3),  # 厳
+    [string]$Owner               = '',
 
     [int]$TabsToCorrelid         = 1,
     [int]$TabsBackFromSearch     = 1,
@@ -328,7 +328,7 @@ foreach ($g in $grouped) {
     $appl       = $g.Name
     $items      = @($g.Group)
     $applLower  = $appl.ToLower()
-    $hmUrlGuess = "https://bizver.hm.jp.honda.com/{0}9a21/x/x0/{1}X0011A.do" -f $applLower, $appl
+    $hmUrlGuess = "https://<hm-host>/{0}9a21/x/x0/{1}X0011A.do" -f $applLower, $appl
 
     Bring-ShellToFront
     Write-Host ""

@@ -22,7 +22,7 @@
 
 param(
     [string]$WorkDir = '',
-    [string]$Owner = ([char]0x53B3),
+    [string]$Owner = '',
     [string]$EvidenceDir = '',
     [string]$CursorCell = 'A3',
     [string]$ReviewField = 'isReviewed',
