@@ -11,6 +11,9 @@
         ExcelWorkbook   = 'wipGFIX一覧.xlsx'
         TemplatePrefix  = 'template_'    # template_<bizcode>.xlsx in WorkDir
         TemplateGeneric = 'template.xlsx'
+        # Per-work-folder JSON overlay file (lives in WorkDir). Deep-merged over
+        # this .psd1 at startup; JSON wins. Generate it with -Phase InitConfig.
+        OverlayName     = 'verify_config.json'
     }
 
     Window = @{
@@ -51,6 +54,12 @@
         Field       = 'isReviewed'
         Maximize    = $true
         SaveWaitMs  = 5000
+    }
+
+    # Clone phase: external source folder of existing evidence files (per bizcode).
+    # Blank -> falls back to the -CloneSourceDir CLI arg / last session value.
+    Clone = @{
+        SourceDir = ''
     }
 
     # Replace phase configuration
@@ -97,6 +106,7 @@
         Review          = 'ReviewEvidence.ps1'
         Common          = 'Common.ps1'
         ExcelHelpers    = 'ExcelHelpers.ps1'
+        ConfigOverlay   = 'ConfigOverlay.ps1'
         Clone           = 'Clone.ps1'
         Replace         = 'ReplaceEvidence.ps1'
         Validate        = 'Validate.ps1'
@@ -235,10 +245,21 @@
         HighlightColEnd   = 51
     }
 
+    # Expected_Time helper (Resolve-ExpectedTime.ps1). The time VALUES live per
+    # row in the mapping CSV (not JSON, since they are per-correl); these are the
+    # centralized defaults for that helper. Override per work folder in the JSON.
+    ExpectedTime = @{
+        TimeColumn    = 'Expected_Time'
+        IdColumn      = 'Correl_ID_S'
+        LookbackHours = 1.0
+        TimeFormat    = 'yyyy/MM/dd HH:mm:ss'
+    }
+
     # Phase entries: Field + optional BitValue.
     # If BitValue > 0, the field is read as a bitmask and "done" means
     # (value -band BitValue) -eq BitValue.
     PhaseOrder = @(
+        @{ Key='InitConfig';         Field='';                     Label='work-folder config JSON (verify_config.json)'; Status='implemented' }
         @{ Key='Mapping';            Field='';                     Label='mapping 生成 / 更新';               Status='implemented' }
         @{ Key='ExcelSnap';          Field='Excel_snap';           Label='Excel 証跡';                        Status='legacy' }
         @{ Key='GiftHmSnap';         Field='GIFT_HM_snap';         Label='GIFT HM 証跡';                      Status='implemented' }
@@ -374,5 +395,10 @@
         Probe             = 'ProbeShapes'
 
         Crop              = 'Crop'
+
+        InitConfig        = 'InitConfig'
+        Config            = 'InitConfig'
+        MakeConfig        = 'InitConfig'
+        EditConfig        = 'InitConfig'
     }
 }

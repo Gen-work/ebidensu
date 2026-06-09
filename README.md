@@ -28,6 +28,29 @@ Daily use:
 .\Export-DailyPatch.ps1
 ```
 
+## Per-work-folder config (verify_config.json)
+
+`VerifyConfig.psd1` holds the project defaults. Each work folder may also carry
+a `verify_config.json` that is **deep-merged over** those defaults at startup,
+so a single case can customize almost everything without editing the shared
+`.psd1`.
+
+Precedence: **CLI args > work-folder `verify_config.json` > `VerifyConfig.psd1`**.
+
+Generate a starter file (pre-filled from the current effective config):
+
+```powershell
+.\VerifyTool.ps1 -Phase InitConfig
+.\VerifyTool.ps1 -Phase InitConfig -Force   # regenerate, keeps a .bak
+```
+
+Then edit values such as `DefaultOwner`, `Window`, `Mark.Boxes` (red-rectangle
+positions), `Mail` (subject/body templates), `Reviewer`, `CheckSheet`, `Df`
+(capture region) and `ExpectedTime`. Save as UTF-8; Japanese text is fine.
+Re-run any phase; the banner prints `Config overlay : ...` when it loaded.
+
+See `verify_config.example.json` in the repo for a ready-to-copy starter.
+
 ## Folder layout
 
 Expected work folder:

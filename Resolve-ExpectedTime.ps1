@@ -14,7 +14,8 @@ param(
     [Parameter(Mandatory)][string]$MappingPath,
     [string]$TimeColumn = 'Expected_Time',
     [double]$DefaultLookbackHours = 1.0,
-    [string]$IdColumn = 'Correl_ID_S'
+    [string]$IdColumn = 'Correl_ID_S',
+    [string]$TimeFormat = 'yyyy/MM/dd HH:mm:ss'
 )
 $ErrorActionPreference = 'Stop'
 
@@ -35,21 +36,21 @@ $row = $mapping | Where-Object { $_.$IdColumn -eq $CorrelId } | Select-Object -F
 if (-not $row) { throw "Correl '$CorrelId' not in column '$IdColumn'." }
 
 $existing = $row.$TimeColumn
-$recent   = (Get-Date).AddHours(-$DefaultLookbackHours).ToString('yyyy/MM/dd HH:mm:ss')
+$recent   = (Get-Date).AddHours(-$DefaultLookbackHours).ToString($TimeFormat)
 
 Write-Host ""
 Write-Host ("Correl  : {0}" -f $CorrelId) -ForegroundColor Cyan
 if ([string]::IsNullOrWhiteSpace($existing)) {
     Write-Host "Current : (none)" -ForegroundColor DarkGray
     Write-Host ("  [Enter] use recent ({0})" -f $recent)
-    Write-Host  "  or type: yyyy/MM/dd HH:mm:ss"
+    Write-Host ("  or type: {0}" -f $TimeFormat)
     $resp = Read-Host "Time"
     if ([string]::IsNullOrWhiteSpace($resp)) { $resp = $recent }
 } else {
     Write-Host ("Current : {0}" -f $existing)
     Write-Host  "  [Enter] keep current"
     Write-Host ("  r       use recent ({0})" -f $recent)
-    Write-Host  "  or type: yyyy/MM/dd HH:mm:ss"
+    Write-Host ("  or type: {0}" -f $TimeFormat)
     $resp = Read-Host "Time"
     if     ([string]::IsNullOrWhiteSpace($resp)) { $resp = $existing }
     elseif ($resp -eq 'r')                       { $resp = $recent }
@@ -58,9 +59,9 @@ if ([string]::IsNullOrWhiteSpace($existing)) {
 # 解析
 $dt = $null
 try {
-    $dt = [datetime]::ParseExact($resp, 'yyyy/MM/dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
+    $dt = [datetime]::ParseExact($resp, $TimeFormat, [System.Globalization.CultureInfo]::InvariantCulture)
 } catch {
-    throw "Invalid time format: '$resp' (expected yyyy/MM/dd HH:mm:ss)"
+    throw "Invalid time format: '$resp' (expected $TimeFormat)"
 }
 
 # 書き戻し（値が変わった場合のみ）

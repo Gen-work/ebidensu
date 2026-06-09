@@ -3,6 +3,47 @@
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
+## 2026-06-09 - Per-work-folder JSON config overlay
+
+### Added
+- **Per-work-folder config overlay (`verify_config.json`).** Each work folder
+  may now carry a JSON file that is deep-merged over `VerifyConfig.psd1` at
+  startup, so every case can fully customize its settings without touching the
+  shared `.psd1`. Precedence is **CLI args > work-folder JSON > .psd1 defaults**.
+  Because almost every phase already gets its values from the merged `$Config`
+  (via `Invoke-ToolPhase`), the overlay reaches them all: owner, window size +
+  crop, mark boxes (`Mark.Boxes`), mail subject/body (`Mail`), reviewer, check
+  sheet, Df region, GFIX-log highlight, Replace labels, Align J4 dir,
+  DeliverFiles targets, timing, and more.
+  - File name is configurable via `Paths.OverlayName` (default
+    `verify_config.json`); it lives in the WorkDir.
+  - Japanese in the overlay (mail templates) is plain UTF-8 - no BOM and no
+    `[char]` gymnastics, cleaner than the BOM'd `.psd1`.
+  - The startup banner shows `Config overlay : ...` when one is loaded; a
+    bad/unparseable overlay only warns, it never blocks startup.
+- **`InitConfig` phase** (aliases `Config` / `MakeConfig` / `EditConfig`).
+  Writes a starter `verify_config.json` into the WorkDir, pre-filled from the
+  current effective config so the operator edits real values, not a blank
+  template. `-Force` regenerates and keeps a `.bak`. Structural keys
+  (`Scripts` / `PhaseOrder` / `Aliases`) are left out, but any `.psd1` key can
+  be added by hand.
+- **`ConfigOverlay.ps1`** - new pure, dot-sourced lib (no `param()`, ASCII, no
+  BOM) with the deep-merge + JSON<->hashtable + generator helpers. Unit-tested
+  by `Tests\Test-ConfigOverlay.ps1` (covers the PS 5.1 empty-array-as-"" and
+  `\uXXXX`-escape quirks so Mark boxes survive a write/read round-trip).
+- **Centralized `ExpectedTime` settings** in `VerifyConfig.psd1` (`TimeColumn` /
+  `IdColumn` / `LookbackHours` / `TimeFormat`). `Resolve-ExpectedTime.ps1` now
+  takes a `-TimeFormat` param instead of hard-coding the format. The time
+  VALUES stay per-row in the mapping CSV (per-correl, not global) - that is the
+  one deliberately non-JSON 'expected time' piece.
+- **`Clone.SourceDir`** key so the Clone source folder can be set per work
+  folder too (CLI > overlay > session).
+
+### Notes
+- Run `Tests\Run-Tests.ps1` on Windows to parse-check every `.ps1` and run
+  the new overlay unit tests before trusting this on a live case (the cloud
+  build env has no PowerShell).
+
 ## 2026-06-02 - Incremental mapping add + Excel_Prefix auto-capture
 
 ### Added

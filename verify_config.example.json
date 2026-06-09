@@ -1,0 +1,49 @@
+{
+  "_README": [
+    "EXAMPLE per-work-folder config overlay. Copy this to  <WorkDir>/verify_config.json  and edit.",
+    "It is deep-merged over VerifyConfig.psd1 at startup. Precedence: CLI args > this JSON > .psd1.",
+    "Only include the keys you want to override - every other setting falls back to VerifyConfig.psd1.",
+    "Tip: run  VerifyTool.ps1 -Phase InitConfig  inside your WorkDir to generate a FULL file",
+    "pre-filled from the live config (including the Japanese Mail / CheckSheet templates).",
+    "Save as UTF-8 (no BOM). Japanese text is fine as plain UTF-8."
+  ],
+
+  "DefaultOwner": "0602",
+
+  "Window":     { "Width": 1050, "Height": 761, "CropPx": 6, "NoResize": false },
+  "Timing":     { "ActionWaitMs": 500, "ResultWaitSec": 2, "ResultWaitMs": 500 },
+  "Review":     { "CursorCell": "A3", "EvidenceDir": "evidence", "SaveWaitMs": 5000, "Maximize": true },
+
+  "Clone":      { "SourceDir": "" },
+  "Align":      { "J4BaseDir": "", "HostSystemTypes": [] },
+  "CheckSheet": { "Path": "", "SheetName": "Check Sheet_J4", "Language": "JAVA" },
+  "Reviewer":   { "DisplayName": "", "Address": "", "ShortName": "" },
+
+  "Df": {
+    "ExePath": "",
+    "CaptureMode": "region",
+    "LoadWaitSec": 8,
+    "RegionX": 120, "RegionY": 280, "RegionWidth": 1250, "RegionHeight": 657,
+    "CropLeft": 0, "CropTop": 0, "CropRight": 0, "CropBottom": 0
+  },
+
+  "ExpectedTime": {
+    "TimeColumn": "Expected_Time",
+    "IdColumn": "Correl_ID_S",
+    "LookbackHours": 1.0,
+    "TimeFormat": "yyyy/MM/dd HH:mm:ss"
+  },
+
+  "Mark": {
+    "NamePrefix": "verifyMark_",
+    "LineWeight": 1.5,
+    "Boxes": {
+      "GIFT_HM":      [ { "OffsetX": 395.3, "OffsetY": 189.2, "Width": 62.2,  "Height": 16.5 } ],
+      "GIFT_MQ":      [ { "OffsetX": 167.9, "OffsetY": 176.9, "Width": 528.8, "Height": 63 } ],
+      "GIFT_Jenkins": [ { "OffsetX": 301.5, "OffsetY": 282.0, "Width": 288.8, "Height": 18.8 } ],
+      "GFIX_HM":      [ { "OffsetX": 395.3, "OffsetY": 189.2, "Width": 62.2,  "Height": 16.5 } ],
+      "GFIX_Jenkins": [ { "OffsetX": 301.5, "OffsetY": 282.0, "Width": 288.8, "Height": 18.8 } ],
+      "DF":           [ { "CellCols": "AW:BC", "RowsFromBottom": 2 } ]
+    }
+  }
+}
