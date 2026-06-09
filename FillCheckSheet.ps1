@@ -19,7 +19,7 @@
 #   C (COBOL/JAVA)   : Language   (JAVA)
 #   D (resource id)  : left blank
 #   E (kakunin phase): Phase      (J4 internal review label)
-#   F (review target): full evidence filename  <Excel_Prefix>_<Excel_NAME>.xlsx
+#   F (review target): full evidence filename  <Workbook.ExcelPrefix>_<Excel_NAME>.xlsx
 #   G (tantou)       : Owner
 #   H (kakuninsha)   : Viewer     (reviewer short name)
 #   I (kanryou kibou-bi) / J~ : left blank
@@ -34,6 +34,7 @@ param(
     [string[]]$TargetIds = @(),
 
     [string]$CheckSheetPath = '',
+    [string]$ExcelPrefix = '',
     [string]$SheetName = 'Check Sheet_J4',
     [string]$Language = 'JAVA',
     [string]$Phase = '',
@@ -219,7 +220,7 @@ foreach ($r in $allRows) {
     if ([string]::IsNullOrWhiteSpace($name)) { continue }
     if ($seen.ContainsKey($name)) { continue }
     $seen[$name] = $true
-    $fullStem = Get-ExcelFullStem -Prefix (Get-RowProp $r 'Excel_Prefix') -Name $name
+    $fullStem = Get-ExcelFullStem -Prefix (Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix) -Name $name
     $candidates.Add([pscustomobject]@{ ExcelName = $name; TargetFile = (Get-ExcelDestLeaf $fullStem) })
 }
 if ($candidates.Count -eq 0) {

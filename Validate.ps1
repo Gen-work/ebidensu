@@ -24,6 +24,7 @@ param(
     [string]$WorkDir,
     [string]$Owner = '',
     [string[]]$TargetIds = @(),
+    [string]$ExcelPrefix = '',
     [switch]$Compact,
     [string]$CommonScript = ''
 )
@@ -264,7 +265,7 @@ $detailRows = @()
 foreach ($g in $groups) {
     $f       = $g.Group | Select-Object -First 1
     $exName      = [string]$f.Excel_NAME
-    $exPrefix    = if ($f.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$f.Excel_Prefix } else { '' }
+    $exPrefix    = Resolve-ExcelPrefix -Row $f -DefaultPrefix $ExcelPrefix
     $fullStem    = Get-ExcelFullStem -Prefix $exPrefix -Name $exName
     $jobName = [string]$f.JOB_NAME
     $cidList = @($g.Group | ForEach-Object { [string]$_.Correl_ID_S } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })

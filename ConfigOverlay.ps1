@@ -15,10 +15,12 @@
 # Public functions:
 #   ConvertTo-ConfigHashtable   PSCustomObject/array tree -> hashtable/array tree
 #   ConvertFrom-ConfigJson      JSON text -> config hashtable
+#   Remove-ConfigMetadataKeys   drop _README/_comment docs before runtime merge
 #   Merge-ConfigHashtable       deep-merge overlay onto base (base wins structure)
 #   New-ConfigOverlaySnapshot   curated, operator-facing subset of a config
 #   Remove-ConfigEmptyArray     drop empty arrays (PS 5.1 serializes them as "")
 #   ConvertFrom-JsonUnicodeEscape  turn \uXXXX (>=0x80) back into real chars
+#   Get-ConfigOverlayReadmeText separate field guide for InitConfig
 #   Get-ConfigOverlayJson       config hashtable -> pretty, readable JSON text
 # ============================================================
 
@@ -56,6 +58,31 @@ function ConvertTo-ConfigHashtable {
     return $Value
 }
 
+
+function Remove-ConfigMetadataKeys {
+    # Strip human-readable metadata keys before merging an overlay into runtime
+    # config. This lets verify_config.json stay valid JSON while carrying a small
+    # _README pointer without leaking documentation into $Config.
+    param([object]$Value)
+
+    if ($Value -is [System.Collections.IDictionary]) {
+        $out = @{}
+        foreach ($k in @($Value.Keys)) {
+            if ([string]$k -match '^_(README|COMMENT|COMMENTS|SCHEMA|HELP)$') { continue }
+            $out[$k] = Remove-ConfigMetadataKeys $Value[$k]
+        }
+        return $out
+    }
+
+    if (($Value -is [System.Collections.IEnumerable]) -and ($Value -isnot [string])) {
+        $list = @()
+        foreach ($item in $Value) { $list += ,(Remove-ConfigMetadataKeys $item) }
+        return ,$list
+    }
+
+    return $Value
+}
+
 function ConvertFrom-ConfigJson {
     # JSON text -> config hashtable (empty hashtable when blank / not an object).
     param([string]$Json)
@@ -63,7 +90,7 @@ function ConvertFrom-ConfigJson {
     if ([string]::IsNullOrWhiteSpace($Json)) { return @{} }
     $obj = $Json | ConvertFrom-Json
     $h = ConvertTo-ConfigHashtable $obj
-    if ($h -is [hashtable]) { return $h }
+    if ($h -is [hashtable]) { return (Remove-ConfigMetadataKeys $h) }
     return @{}
 }
 
@@ -130,15 +157,12 @@ function New-ConfigOverlaySnapshot {
 
     $snap = @{}
     $snap['_README'] = @(
-        'This file overrides VerifyConfig.psd1 for THIS work folder only.',
-        'JSON values win over the .psd1 defaults; CLI args still win over JSON.',
-        'Any VerifyConfig.psd1 key may be added here - this is just a starter set.',
-        'Regenerate with:  VerifyTool.ps1 -Phase InitConfig -Force   (keeps a .bak)',
-        'Save as UTF-8. Mail / CheckSheet Japanese text is fine as plain UTF-8.'
+        'Clean JSON only: see verify_config.README.txt for field explanations.',
+        'Precedence: CLI args > this JSON > VerifyConfig.psd1 > session fallback.'
     )
 
     $copyKeys = @(
-        'DefaultOwner', 'Window', 'Timing', 'Review', 'Replace', 'Mark',
+        'DefaultOwner', 'Workbook', 'Window', 'Timing', 'Review', 'Replace', 'Mark',
         'GfixLog', 'Df', 'Align', 'Clone', 'Reviewer', 'Mail', 'CheckSheet',
         'DeliverFiles', 'ExpectedTime', 'Paths'
     )
@@ -147,6 +171,47 @@ function New-ConfigOverlaySnapshot {
     }
 
     return (Remove-ConfigEmptyArray $snap)
+}
+
+
+function Get-ConfigOverlayReadmeText {
+    param([string]$OverlayName = 'verify_config.json')
+
+    $lines = @(
+        '# verify_config.json field guide',
+        '',
+        ('This text is generated next to {0}. Keep the JSON itself clean and valid.' -f $OverlayName),
+        '',
+        'Precedence',
+        '- CLI arguments win first.',
+        ('- Work-folder {0} overrides VerifyConfig.psd1 defaults.' -f $OverlayName),
+        '- verify_session.json is only a last-used fallback/cache for values that still support it.',
+        '',
+        'Important rules',
+        '- Do not put WorkDir in this JSON. The tool must know WorkDir before it can load this file.',
+        '- Standard JSON has no // or /* */ comments. Use this README for comments.',
+        '- Save as UTF-8. Japanese strings are OK.',
+        '',
+        'Common fields',
+        '- DefaultOwner: owner suffix for mapping_<Owner>.csv and operator name used by phases.',
+        '- Workbook.ExcelPrefix: fixed project prefix before _<Excel_NAME>. Example: J4 review title (REQ-000xxxxx_GIFT project).',
+        '- Window.Width / Height / CropPx / NoResize: browser screenshot window and crop behavior for HM/MQ/Jenkins snapshots.',
+        '- Review.EvidenceDir: evidence workbook folder. Relative paths are based on WorkDir.',
+        '- Review.CursorCell: initial cell for visual review.',
+        '- Clone.SourceDir: source folder used by Clone. If Align.J4BaseDir is blank, Align can reuse this path.',
+        '- Align.J4BaseDir: J4 baseline folder for Align. Set only when different from Clone.SourceDir.',
+        '- Align.HostSystemTypes: FROM_sys / TO_sys values treated as Host; empty means auto/legacy fallback.',
+        '- CheckSheet.Path: shared review check sheet workbook path.',
+        '- Reviewer.* and Mail.*: Outlook draft recipient, subject and body templates.',
+        '- Df.*: df.exe path, capture mode, region, crop and data file lookup.',
+        '- Mark.Boxes: red rectangle definitions per snap folder.',
+        '- DeliverFiles.*: final copy/move destinations.',
+        '',
+        'Workbook prefix note',
+        '- New mappings no longer generate Excel_Prefix.',
+        '- Existing mapping rows with legacy Excel_Prefix still override Workbook.ExcelPrefix for compatibility or rare per-workbook exceptions.'
+    )
+    return ($lines -join "`r`n")
 }
 
 function ConvertFrom-JsonUnicodeEscape {

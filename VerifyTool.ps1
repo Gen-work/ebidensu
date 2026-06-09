@@ -34,6 +34,7 @@ param(
     # Clone / Replace
     [string]$CloneSourceDir = '',
     [string]$J4BaseDir      = '',
+    [string]$ExcelPrefix    = '',
     [string[]]$BizCodes     = @(),
 
     # DfSnap override (takes precedence over VerifyConfig.psd1 -> Df.ExePath)
@@ -152,7 +153,8 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  -Owner <Owner>        mapping_<Owner>.csv owner suffix. No personal default is configured.'
     Write-Host '  -TargetIds A,B        Limit run by Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.'
     Write-Host '  -CloneSourceDir <p>   External path for Clone (existing evidence files per bizcode).'
-    Write-Host '  -J4BaseDir <p>        J4 baseline root for Align. If omitted, config/session/CloneSourceDir is used.'
+    Write-Host '  -J4BaseDir <p>        J4 baseline root for Align. If omitted, config/CloneSourceDir/session is used.'
+    Write-Host '  -ExcelPrefix <text>   Evidence workbook filename prefix before _<Excel_NAME>.'
     Write-Host '  -BizCodes A,B         Override bizcode candidate list for Clone.'
     Write-Host '  -Force                Re-run rows whose flag/bit is already set.'
     Write-Host '  Mapping options      owner/-Owner, from/-FromBizCode, range, cm/-CorrelIdsM, jobs/-JobNames, temp.'
@@ -938,6 +940,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             'ReviewEvidence' { 7 }
         }
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $args['EvidenceDir'] = $State.EvidenceDir
         $args['CursorCell'] = $State.CursorCell
         $args['ReviewField'] = $Config.Review.Field
@@ -957,6 +960,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
     if ($PhaseKey -eq 'Clone') {
         $p = Resolve-ToolPath $Config 'Clone'
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         if (-not [string]::IsNullOrWhiteSpace($State.CloneSourceDir)) { $args['SourceDir'] = $State.CloneSourceDir }
         if ($State.BizCodes.Count -gt 0) { $args['BizCodes'] = $State.BizCodes }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
@@ -976,6 +980,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             'ReplaceDf'   { 'Df' }
         }
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $args['Mode'] = $mode
         $args['CommonScript'] = $common
         $args['ExcelHelpersScript'] = $eh
@@ -1043,6 +1048,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $p  = Resolve-ToolPath $Config 'Align'
         $eh = Resolve-ToolPath $Config 'ExcelHelpers'
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $args['ExcelHelpersScript'] = $eh
         if ($Config.Align) {
             $j4BaseDir = Resolve-AlignJ4BaseDir $Config $State
@@ -1075,6 +1081,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $p  = Resolve-ToolPath $Config 'MarkGfixLog'
         $eh = Resolve-ToolPath $Config 'ExcelHelpers'
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $args['ExcelHelpersScript'] = $eh
         if ($Config.GfixLog) {
             if (-not [string]::IsNullOrWhiteSpace([string]$Config.GfixLog.LogAnchor))       { $args['LogAnchor']         = [string]$Config.GfixLog.LogAnchor }
@@ -1101,6 +1108,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             'MarkDf'   { 'Df' }
         }
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $args['Mode'] = $mode
         $args['CommonScript'] = $common
         $args['ExcelHelpersScript'] = $eh
@@ -1130,6 +1138,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $p  = Resolve-ToolPath $Config 'FillCheckSheet'
         $eh = Resolve-ToolPath $Config 'ExcelHelpers'
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $args['ExcelHelpersScript'] = $eh
         if ($Config.CheckSheet) {
             $cs = $Config.CheckSheet
@@ -1158,6 +1167,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
     if ($PhaseKey -eq 'DeliverMail') {
         $p = Resolve-ToolPath $Config 'DeliverMail'
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         if ($Config.Mail) {
             $m = $Config.Mail
             if (-not [string]::IsNullOrWhiteSpace([string]$m.From))             { $args['From']             = [string]$m.From }
@@ -1186,6 +1196,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
     if ($PhaseKey -eq 'DeliverFiles') {
         $p = Resolve-ToolPath $Config 'DeliverFiles'
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $j4Ev = ''
         if ($Config.DeliverFiles) {
             $df = $Config.DeliverFiles
@@ -1240,6 +1251,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
     if ($PhaseKey -eq 'Validate') {
         $p = Resolve-ToolPath $Config 'Validate'
         $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         Write-Host '[RUN] Validate' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
@@ -1294,7 +1306,11 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             Write-Host ("  [backup] {0}" -f $bak) -ForegroundColor DarkGray
         }
         [System.IO.File]::WriteAllText($dest, $json, (New-Object System.Text.UTF8Encoding($false)))
+        $readmePath = Join-Path $State.WorkDir 'verify_config.README.txt'
+        $readmeText = Get-ConfigOverlayReadmeText $overlayName
+        [System.IO.File]::WriteAllText($readmePath, $readmeText, (New-Object System.Text.UTF8Encoding($false)))
         Write-Host '  [OK] wrote work-folder config overlay (UTF-8, no BOM).' -ForegroundColor Green
+        Write-Host ("  [OK] wrote config field guide: {0}" -f $readmePath) -ForegroundColor Green
         Write-Host '       Edit values, then re-run any phase. JSON overrides VerifyConfig.psd1.' -ForegroundColor DarkGray
         return
     }
@@ -1356,14 +1372,29 @@ if ([string]::IsNullOrWhiteSpace($CloneSourceDir) -and $Config.ContainsKey('Clon
 if ([string]::IsNullOrWhiteSpace($CloneSourceDir) -and $session.ContainsKey('CloneSourceDir')) {
     $CloneSourceDir = [string]$session['CloneSourceDir']
 }
-if ([string]::IsNullOrWhiteSpace($J4BaseDir) -and $session.ContainsKey('J4BaseDir')) {
-    $J4BaseDir = [string]$session['J4BaseDir']
+
+# J4BaseDir: CLI > work-folder config Align.J4BaseDir > CloneSourceDir fallback > last session.
+if ([string]::IsNullOrWhiteSpace($J4BaseDir) -and $Config.Align -and -not [string]::IsNullOrWhiteSpace([string]$Config.Align.J4BaseDir)) {
+    $J4BaseDir = [string]$Config.Align.J4BaseDir
 }
 if ([string]::IsNullOrWhiteSpace($J4BaseDir) -and -not [string]::IsNullOrWhiteSpace($CloneSourceDir)) {
     $J4BaseDir = $CloneSourceDir
 }
+if ([string]::IsNullOrWhiteSpace($J4BaseDir) -and $session.ContainsKey('J4BaseDir')) {
+    $J4BaseDir = [string]$session['J4BaseDir']
+}
+
+# CheckSheetPath: CLI > work-folder config CheckSheet.Path > last session.
+if ([string]::IsNullOrWhiteSpace($CheckSheetPath) -and $Config.CheckSheet -and -not [string]::IsNullOrWhiteSpace([string]$Config.CheckSheet.Path)) {
+    $CheckSheetPath = [string]$Config.CheckSheet.Path
+}
 if ([string]::IsNullOrWhiteSpace($CheckSheetPath) -and $session.ContainsKey('CheckSheetPath')) {
     $CheckSheetPath = [string]$session['CheckSheetPath']
+}
+
+# Project-level evidence workbook prefix: CLI > work-folder config Workbook.ExcelPrefix.
+if ([string]::IsNullOrWhiteSpace($ExcelPrefix) -and $Config.Workbook -and -not [string]::IsNullOrWhiteSpace([string]$Config.Workbook.ExcelPrefix)) {
+    $ExcelPrefix = [string]$Config.Workbook.ExcelPrefix
 }
 
 $TargetIds = @(ConvertTo-TargetIdSelection $TargetIds)
@@ -1419,6 +1450,7 @@ $state = @{
     TargetIds       = $TargetIds
     CloneSourceDir  = $CloneSourceDir
     J4BaseDir       = $J4BaseDir
+    ExcelPrefix     = $ExcelPrefix
     BizCodes        = $BizCodes
     FromBizCode    = $FromBizCode
     WbsStartRow    = $WbsStartRow
@@ -1435,7 +1467,7 @@ $state = @{
     CheckSheetPath  = $CheckSheetPath
     Force           = [bool]$Force.IsPresent
     Interactive     = [bool]$Interactive.IsPresent
-    NoResize        = [bool]$NoResize.IsPresent
+    NoResize        = ([bool]$NoResize.IsPresent -or ($Config.Window -and [bool]$Config.Window.NoResize))
     RefreshUrls     = [bool]$RefreshUrls.IsPresent
     DryRun          = [bool]$DryRun.IsPresent
     DiffMode        = $false
@@ -1477,6 +1509,9 @@ if (-not [string]::IsNullOrWhiteSpace($CloneSourceDir)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($J4BaseDir)) {
     Write-Host ("  J4BaseDir      : {0}" -f $J4BaseDir)
+}
+if (-not [string]::IsNullOrWhiteSpace($ExcelPrefix)) {
+    Write-Host ("  ExcelPrefix    : {0}" -f $ExcelPrefix)
 }
 Write-Host ("  Phase          : {0}" -f $ResolvedPhase)
 

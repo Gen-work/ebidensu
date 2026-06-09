@@ -38,6 +38,7 @@ param(
     [string]$WorkDir,
     [string]$Owner = '',
     [string[]]$TargetIds = @(),
+    [string]$ExcelPrefix = '',
     [switch]$Force,
     [switch]$AllowMissingOptionalNoGfix,
 
@@ -160,7 +161,7 @@ try {
         $first = $g.Group | Select-Object -First 1
         $excelName   = [string]$first.Excel_NAME
         if ([string]::IsNullOrWhiteSpace($excelName)) { continue }
-        $excelPrefix = if ($first.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$first.Excel_Prefix } else { '' }
+        $excelPrefix = Resolve-ExcelPrefix -Row $first -DefaultPrefix $ExcelPrefix
         $fullStem    = Get-ExcelFullStem -Prefix $excelPrefix -Name $excelName
         $jobName = [string]$first.JOB_NAME
         $toCode  = [string]$first.TO_code

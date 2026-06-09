@@ -21,6 +21,11 @@ Assert-Equal '1.5' $box['OffsetX'] 'box OffsetX value preserved'
 Assert-Equal 0 (ConvertFrom-ConfigJson '').Count 'blank JSON -> empty hashtable'
 Assert-Equal 0 (ConvertFrom-ConfigJson '[1,2,3]').Count 'top-level array -> empty hashtable'
 
+$meta = ConvertFrom-ConfigJson '{"_README":["help"],"Window":{"_comment":"doc","Width":123}}'
+Assert-True (-not $meta.ContainsKey('_README')) 'metadata _README stripped from runtime config'
+Assert-True (-not $meta['Window'].ContainsKey('_comment')) 'nested metadata _comment stripped from runtime config'
+Assert-Equal '123' $meta['Window']['Width'] 'real config key survives metadata stripping'
+
 # --- Merge-ConfigHashtable : nested hashtables merge, arrays/scalars replace.
 $base = @{ A = 1; B = @{ X = 1; Y = 2 }; L = @(1, 2) }
 $ov   = @{ B = @{ Y = 9; Z = 3 }; L = @(9); C = 5 }
@@ -51,6 +56,7 @@ Assert-Equal 'a\u0022b' (ConvertFrom-JsonUnicodeEscape 'a\u0022b') 'keeps ASCII 
 # --- New-ConfigOverlaySnapshot : curated subset, no structural keys, no empties.
 $cfg = @{
     DefaultOwner = '0602'
+    Workbook = @{ ExcelPrefix = 'ProjectPrefix' }
     Mark   = @{ Boxes = @{ GIFT_HM = @( @{ OffsetX = 1.0; OffsetY = 2.0; Width = 3.0; Height = 4.0 } ); excel = @() } }
     Align  = @{ HostSystemTypes = @(); J4BaseDir = '' }
     Scripts = @{ Foo = 'bar' }
@@ -58,6 +64,7 @@ $cfg = @{
 $snap = New-ConfigOverlaySnapshot $cfg
 Assert-True ($snap.ContainsKey('_README'))        'snapshot carries _README guidance'
 Assert-True ($snap.ContainsKey('DefaultOwner'))   'snapshot carries DefaultOwner'
+Assert-True ($snap.ContainsKey('Workbook'))       'snapshot carries Workbook prefix config'
 Assert-True ($snap.ContainsKey('Mark'))           'snapshot carries Mark'
 Assert-True (-not $snap.ContainsKey('Scripts'))   'snapshot excludes structural Scripts'
 Assert-True ($snap['Mark']['Boxes'].ContainsKey('GIFT_HM'))      'non-empty box folder kept'
@@ -68,6 +75,7 @@ Assert-True (-not $snap['Align'].ContainsKey('HostSystemTypes')) 'empty HostSyst
 $jpJson = Get-ConfigOverlayJson $snap
 $rt = ConvertFrom-ConfigJson $jpJson
 Assert-Equal '0602' $rt['DefaultOwner'] 'round-trip DefaultOwner'
+Assert-Equal 'ProjectPrefix' $rt['Workbook']['ExcelPrefix'] 'round-trip Workbook.ExcelPrefix'
 $rtBox = $rt['Mark']['Boxes']['GIFT_HM'][0]
 Assert-True ($rtBox.ContainsKey('OffsetX')) 'round-trip box stays a hashtable'
 
