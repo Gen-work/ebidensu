@@ -66,6 +66,9 @@ try {
     $OutputEncoding = [System.Text.UTF8Encoding]::new()
 } catch {}
 
+# Per-work-folder JSON config overlay helpers (pure; unit-tested). No param().
+. (Join-Path $PSScriptRoot 'ConfigOverlay.ps1')
+
 function Read-Choice([string]$Prompt, [string]$Default = '') {
     if ([string]::IsNullOrWhiteSpace($Default)) { return (Read-Host $Prompt) }
     $v = Read-Host ("{0} [{1}]" -f $Prompt, $Default)
@@ -142,6 +145,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail -TargetIds SJRVWD64'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles       # copy evidence Excel + DATA to J4'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -MoveData  # move DATA files'
+    Write-Host '  .\VerifyTool.ps1 -Phase InitConfig          # write per-folder verify_config.json (overrides .psd1)'
     Write-Host ''
     Write-Host 'Common options:'
     Write-Host '  -WorkDir <path>       Work folder. If omitted, last used path is remembered.'
@@ -166,6 +170,10 @@ function Show-VerifyHelp([hashtable]$Config) {
     }
     Write-Host ''
     Write-Host 'isReplaced/isMarked/isReviewed bitmask: 1=GIFT, 2=GFIX, 4=DF. 7 = all done.'
+    Write-Host ''
+    Write-Host 'Per-work-folder config overlay:'
+    Write-Host '  <WorkDir>\verify_config.json overrides VerifyConfig.psd1 (JSON wins; CLI still wins).'
+    Write-Host '  Create or refresh it with:  .\VerifyTool.ps1 -Phase InitConfig'
     Write-Host ''
     Write-Host 'Aliases kept for old commands:'
     Write-Host '  Excel -> ExcelSnap, HmGift -> GiftHmSnap, MqGift -> GiftMqSnap'
@@ -208,6 +216,30 @@ function Load-Session([string]$Path) {
 
 function Save-Session([string]$Path, [hashtable]$Session) {
     try { $Session | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $Path -Encoding UTF8 } catch {}
+}
+
+function Import-ConfigOverlay([hashtable]$Config, [string]$WorkDir) {
+    # Find the per-work-folder overlay (Paths.OverlayName, default
+    # verify_config.json) and deep-merge it over $Config in place. JSON wins.
+    # Returns @{ Loaded=<bool>; Path=<string>; Overlay=<hashtable> }.
+    $name = [string]$Config.Paths.OverlayName
+    if ([string]::IsNullOrWhiteSpace($name)) { $name = 'verify_config.json' }
+    $path = Join-Path $WorkDir $name
+    $result = @{ Loaded = $false; Path = $path; Overlay = @{} }
+    if (-not (Test-Path -LiteralPath $path)) { return $result }
+    try {
+        $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $result }
+        $overlay = ConvertFrom-ConfigJson $raw
+        if (($overlay -is [hashtable]) -and ($overlay.Count -gt 0)) {
+            Merge-ConfigHashtable $Config $overlay | Out-Null
+            $result.Loaded = $true
+            $result.Overlay = $overlay
+        }
+    } catch {
+        Write-Host ("[WARN] config overlay not loaded ({0}): {1}" -f $path, $_.Exception.Message) -ForegroundColor Yellow
+    }
+    return $result
 }
 
 
@@ -370,6 +402,12 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    j=J4BaseDir    -> root folder of J4 baseline workbooks (searched recursively)',
             '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME'
         ) }
+        '^InitConfig$' { @(
+            '  Writes verify_config.json in the work folder: a JSON overlay that',
+            '  overrides VerifyConfig.psd1 for THIS folder only (owner, window,',
+            '  mail format, mark boxes, expected-time defaults, ...).',
+            '  Edit the file, then re-run any phase. f=Force regenerates (keeps a .bak).'
+        ) }
         '^Clone$' { @(
             '  Phase params:',
             '    d=SourceDir    -> external folder containing per-bizcode evidence files to copy',
@@ -498,6 +536,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^DeliverFiles$' { return @('t','f','mv') }
         '^Mapping$' { return @('f','owner','from','range','cm','jobs','ex','temp','add') }
         '^ExcelSnap$' { return @('f') }
+        '^InitConfig$' { return @('f') }
         default { return @() }
     }
 }
@@ -1235,6 +1274,31 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         return
     }
 
+    if ($PhaseKey -eq 'InitConfig') {
+        $overlayName = [string]$Config.Paths.OverlayName
+        if ([string]::IsNullOrWhiteSpace($overlayName)) { $overlayName = 'verify_config.json' }
+        $dest = Join-Path $State.WorkDir $overlayName
+        Write-Host '[RUN] InitConfig' -ForegroundColor Green
+        Write-Host ("  Overlay target : {0}" -f $dest)
+        $exists = Test-Path -LiteralPath $dest
+        if ($exists -and -not $State.Force) {
+            Write-Host '  [SKIP] overlay already exists. Edit it directly, or re-run with -Force to regenerate.' -ForegroundColor Yellow
+            return
+        }
+        if ($State.DryRun) { Write-Host '  [dry-run] would write the overlay snapshot.' -ForegroundColor DarkGray; return }
+        $snap = New-ConfigOverlaySnapshot $Config
+        $json = Get-ConfigOverlayJson $snap
+        if ($exists) {
+            $bak = ('{0}.bak.{1}' -f $dest, (Get-Date -Format 'yyyyMMdd_HHmmss'))
+            Copy-Item -LiteralPath $dest -Destination $bak -Force
+            Write-Host ("  [backup] {0}" -f $bak) -ForegroundColor DarkGray
+        }
+        [System.IO.File]::WriteAllText($dest, $json, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host '  [OK] wrote work-folder config overlay (UTF-8, no BOM).' -ForegroundColor Green
+        Write-Host '       Edit values, then re-run any phase. JSON overrides VerifyConfig.psd1.' -ForegroundColor DarkGray
+        return
+    }
+
     if ($PhaseKey -eq 'Status') { return }
     throw "Unknown phase: $PhaseKey"
 }
@@ -1246,11 +1310,7 @@ if ($Help.IsPresent -or $ResolvedPhase -eq 'Help') { Show-VerifyHelp $Config; re
 $sessionPath = Join-Path $PSScriptRoot 'verify_session.json'
 $session = Load-Session $sessionPath
 
-if ([string]::IsNullOrWhiteSpace($Owner)) {
-    if ($session.ContainsKey('Owner') -and -not [string]::IsNullOrWhiteSpace([string]$session['Owner'])) { $Owner = [string]$session['Owner'] }
-    else { $Owner = [string]$Config.DefaultOwner }
-}
-
+# WorkDir must be resolved first: the per-work-folder config overlay lives under it.
 if ([string]::IsNullOrWhiteSpace($WorkDir)) {
     $candidate = ''
     if ($session.ContainsKey('WorkDir')) { $candidate = [string]$session['WorkDir'] }
@@ -1265,6 +1325,23 @@ if ([string]::IsNullOrWhiteSpace($WorkDir)) {
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { throw 'WorkDir is empty.' }
 if (-not (Test-Path -LiteralPath $WorkDir)) { throw "WorkDir not found: $WorkDir" }
 
+# Per-work-folder JSON overlay: deep-merged over VerifyConfig.psd1 (JSON wins,
+# CLI args still win over JSON). Lets each work folder fully customize owner,
+# window size, mark boxes, mail format, etc. without editing the .psd1.
+$overlayInfo = Import-ConfigOverlay $Config $WorkDir
+$overlay     = $overlayInfo.Overlay
+
+# Owner: CLI > overlay (DefaultOwner) > last session > psd1 default.
+if ([string]::IsNullOrWhiteSpace($Owner)) {
+    if ($overlay.ContainsKey('DefaultOwner') -and -not [string]::IsNullOrWhiteSpace([string]$overlay['DefaultOwner'])) {
+        $Owner = [string]$overlay['DefaultOwner']
+    } elseif ($session.ContainsKey('Owner') -and -not [string]::IsNullOrWhiteSpace([string]$session['Owner'])) {
+        $Owner = [string]$session['Owner']
+    } else {
+        $Owner = [string]$Config.DefaultOwner
+    }
+}
+
 if ($WindowWidth -le 0)  { $WindowWidth  = [int]$Config.Window.Width }
 if ($WindowHeight -le 0) { $WindowHeight = [int]$Config.Window.Height }
 if ($CropPx -lt 0)       { $CropPx       = [int]$Config.Window.CropPx }
@@ -1272,6 +1349,10 @@ if ([string]::IsNullOrWhiteSpace($CursorCell)) { $CursorCell = [string]$Config.R
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir ([string]$Config.Review.EvidenceDir) }
 elseif (-not [System.IO.Path]::IsPathRooted($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir $EvidenceDir }
 
+# CloneSourceDir: CLI > overlay (Clone.SourceDir) > last session.
+if ([string]::IsNullOrWhiteSpace($CloneSourceDir) -and $Config.ContainsKey('Clone') -and -not [string]::IsNullOrWhiteSpace([string]$Config.Clone.SourceDir)) {
+    $CloneSourceDir = [string]$Config.Clone.SourceDir
+}
 if ([string]::IsNullOrWhiteSpace($CloneSourceDir) -and $session.ContainsKey('CloneSourceDir')) {
     $CloneSourceDir = [string]$session['CloneSourceDir']
 }
@@ -1376,7 +1457,7 @@ Save-Session $sessionPath $session
 $mappingPath = Get-MappingPath $Config $WorkDir $Owner
 
 # Auto-repair: ensure every PhaseOrder field has a column in the mapping.
-# Safe — never modifies existing data, only adds missing columns with '0'.
+# Safe - never modifies existing data, only adds missing columns with '0'.
 if (Test-Path -LiteralPath $mappingPath) {
     Ensure-PhaseColumns $Config $mappingPath | Out-Null
 }
@@ -1389,6 +1470,7 @@ Write-Host ("  WorkDir        : {0}" -f $WorkDir)
 Write-Host ("  Owner          : {0}" -f $Owner)
 Write-Host ("  Mapping        : {0}" -f $mappingPath)
 Write-Host ("  EvidenceDir    : {0}" -f $EvidenceDir)
+if ($overlayInfo.Loaded) { Write-Host ("  Config overlay : {0}" -f $overlayInfo.Path) -ForegroundColor DarkGray }
 Write-Host ("  Window         : {0}x{1}, CropPx={2}" -f $WindowWidth, $WindowHeight, $CropPx)
 if (-not [string]::IsNullOrWhiteSpace($CloneSourceDir)) {
     Write-Host ("  CloneSourceDir : {0}" -f $CloneSourceDir)

@@ -23,6 +23,10 @@ Local clone: configure per environment (do not commit personal paths).
 VerifyTool.ps1          main entry, menu, phase router, status display
 VerifyConfig.psd1       project config (paths, scripts, PhaseOrder, Aliases, Mark.Boxes)
 verify_session.json     last settings (WorkDir, Owner, WindowSize, CursorCell, CloneSourceDir)
+verify_config.json      OPTIONAL per-work-folder JSON overlay (lives in WorkDir): deep-
+                        merged over VerifyConfig.psd1 (JSON wins; CLI still wins).
+                        Generate via -Phase InitConfig. Customizes owner / window /
+                        Mark.Boxes / Mail / Reviewer / Df / ExpectedTime / etc.
 
 ExcelHelpers.ps1        dot-source lib: Excel COM, bitmask, shape metadata helpers (no param())
 
@@ -41,6 +45,8 @@ ProjectLabels.ps1       Japanese sheet/label names from [char] (keeps consumers 
 ProgressLog.ps1         append-only status\progress.jsonl events (UTF-8 no BOM).
 ScreenRegion.ps1        pure screen-region clamp math. Unit-tested.
 AlignCompare.ps1        pure sheet-compare + migration-type logic. Unit-tested.
+ConfigOverlay.ps1       pure per-work-folder JSON overlay: deep-merge + JSON<->hashtable
+                        + InitConfig snapshot/generator helpers. Unit-tested.
 
 Clone.ps1               Phase Clone
 Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
@@ -98,7 +104,7 @@ CHANGELOG.md            iteration log
 Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
 `MappingStore.ps1`, `GfixLog.ps1`, `EvidencePlan.ps1`, `EvidenceExecutor.ps1`,
 `ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`, `AlignCompare.ps1`,
-`Common.ps1`. All phase scripts have `param()` and are called via `& $path @args`.
+`ConfigOverlay.ps1`, `Common.ps1`. All phase scripts have `param()` and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
 ```powershell
@@ -183,7 +189,15 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-02 v2.6)
+## Current state (last bump: 2026-06-09 v2.7)
+
+v2.7: per-work-folder JSON config overlay (`verify_config.json`, deep-merged over
+VerifyConfig.psd1; generate with `-Phase InitConfig`) makes every case highly
+customizable without editing the shared .psd1. Precedence: CLI > overlay > .psd1.
+Almost all phases already read the merged `$Config`, so the overlay reaches them
+all (owner, window, Mark.Boxes, Mail, Reviewer, Df, etc.). Centralized
+`ExpectedTime` defaults + `-TimeFormat`; `Clone.SourceDir`; new pure unit-tested
+lib `ConfigOverlay.ps1`.
 
 v2.6: incremental mapping `-Add` (grow the map day by day, keep progress) and
 Clone now auto-captures `Excel_Prefix` from the real source filename (the
@@ -194,7 +208,7 @@ Pure (COM-free) libs are unit-tested via `Tests\Run-Tests.ps1`; COM/Edge phases
 validated by static analysis only (no PowerShell/Excel in the cloud build env)
 and need a Windows + Excel 2019 run to confirm end to end.
 
-Phases: Mapping, ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins,
+Phases: Mapping, InitConfig (new), ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins,
 GiftJenkinsNoFile, GfixHmSnap, GfixJenkins, GfixLogDownload, DfSnap,
 Clone, **Align (new)**, ReplaceGift/Gfix/Df, MarkGift/Gfix/Df,
 ReviewGift/Gfix/Df, ReviewEvidence, **Comments (new, review-note list)**,
