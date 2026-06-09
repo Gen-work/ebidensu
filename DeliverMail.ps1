@@ -35,6 +35,7 @@ param(
     [string]$CheckSheetFile = '',
 
     [string]$EvidenceDir = '',
+    [string]$ExcelPrefix = '',
 
     [switch]$Force,
     [switch]$DryRun
@@ -151,7 +152,7 @@ foreach ($r in $allRows) {
     if ([string]::IsNullOrWhiteSpace($name)) { continue }
     if (-not $names.Contains($name)) {
         $names.Add($name)
-        $prefixByName[$name] = Get-RowProp $r 'Excel_Prefix'
+        $prefixByName[$name] = Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix
     }
 }
 

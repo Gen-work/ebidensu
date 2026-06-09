@@ -569,7 +569,6 @@ $excel = New-Object -ComObject Excel.Application
                 Correl_ID_S           = $correlidS
                 JOB_NAME              = $jn
                 Excel_NAME            = $excelName
-                Excel_Prefix          = ''
                 FROM_sys              = $from_sys
                 FROM_code             = $from_code
                 TO_sys                = $to_sys
@@ -613,7 +612,7 @@ $excel = New-Object -ComObject Excel.Application
     # ------------------------------------------------------------
     # Step F0 (incremental add): -Add merges the freshly-built records
     # INTO the existing mapping. Existing rows -- and all their progress
-    # (snaps / isReplaced / isMarked / isReviewed / Excel_Prefix / ...) --
+    # (snaps / isReplaced / isMarked / isReviewed / delivery flags / comments / legacy columns) --
     # are kept verbatim; only Correl_ID_M values not already present are
     # appended. Use this to grow the mapping day by day (new JOB_NAMEs /
     # Correl_IDs / Excel_NAMEs / WBS range) without losing finished work.

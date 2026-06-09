@@ -193,15 +193,15 @@ $forceFlag = [bool]$Force.IsPresent
 
 v2.7: per-work-folder JSON config overlay (`verify_config.json`, deep-merged over
 VerifyConfig.psd1; generate with `-Phase InitConfig`) makes every case highly
-customizable without editing the shared .psd1. Precedence: CLI > overlay > .psd1.
+customizable without editing the shared .psd1. Precedence: CLI > overlay > .psd1 > limited session fallback.
 Almost all phases already read the merged `$Config`, so the overlay reaches them
 all (owner, window, Mark.Boxes, Mail, Reviewer, Df, etc.). Centralized
-`ExpectedTime` defaults + `-TimeFormat`; `Clone.SourceDir`; new pure unit-tested
-lib `ConfigOverlay.ps1`.
+`ExpectedTime` defaults + `-TimeFormat`; `Clone.SourceDir`; project-level
+`Workbook.ExcelPrefix`; new pure unit-tested lib `ConfigOverlay.ps1`.
 
-v2.6: incremental mapping `-Add` (grow the map day by day, keep progress) and
-Clone now auto-captures `Excel_Prefix` from the real source filename (the
-missing input point for the J4 filename prefix).
+v2.6: incremental mapping `-Add` (grow the map day by day, keep progress).
+Workbook filename prefix now lives in work-folder config; legacy mapping
+`Excel_Prefix` is still honored only as a compatibility/per-row override.
 
 Major refactor: shared MappingStore, plan-driven Replace, recovery + monitoring.
 Pure (COM-free) libs are unit-tested via `Tests\Run-Tests.ps1`; COM/Edge phases

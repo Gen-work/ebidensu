@@ -3,6 +3,23 @@
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
+
+## 2026-06-09 - Work-folder config precedence + workbook prefix
+
+### Changed
+- **Project-level workbook prefix.** `Workbook.ExcelPrefix` now configures the
+  fixed prefix before `_<Excel_NAME>` for J4 evidence files. New mappings no
+  longer generate an `Excel_Prefix` column; existing mapping rows that already
+  carry `Excel_Prefix` still override the project prefix for compatibility or
+  rare per-workbook exceptions.
+- **Cleaner `InitConfig`.** `InitConfig` now writes a separate
+  `verify_config.README.txt` field guide next to `verify_config.json`, keeping
+  the JSON valid and compact while still explaining what each field affects.
+  Runtime overlay loading strips metadata keys such as `_README` / `_comment`.
+- **Config precedence tightened.** `Window.NoResize`, `Align.J4BaseDir`,
+  `CheckSheet.Path`, and `Workbook.ExcelPrefix` now follow the intended order:
+  CLI args > work-folder JSON > defaults/session fallback.
+
 ## 2026-06-09 - Per-work-folder JSON config overlay
 
 ### Added

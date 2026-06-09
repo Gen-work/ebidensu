@@ -23,6 +23,7 @@ param(
     [string]$J4GfixDataDir = '',
     [string]$J4GiftDataDir = '',
     [string]$EvidenceDir   = '',
+    [string]$ExcelPrefix   = '',
     [switch]$MoveData,
     [switch]$Force,
     [switch]$DryRun
@@ -120,7 +121,7 @@ foreach ($r in $allRows) {
     if ([string]::IsNullOrWhiteSpace($name)) { continue }
     if (-not $names.Contains($name)) {
         $names.Add($name)
-        $prefixByName[$name] = Get-RowProp $r 'Excel_Prefix'
+        $prefixByName[$name] = Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix
         $rowsByName[$name]   = [System.Collections.Generic.List[object]]::new()
     }
     $rowsByName[$name].Add($r)

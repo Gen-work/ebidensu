@@ -16,6 +16,13 @@
         OverlayName     = 'verify_config.json'
     }
 
+    # Evidence/J4 workbook naming. ExcelPrefix is a project-level prefix before
+    # _<Excel_NAME>, e.g. J4 review title (REQ-000xxxxx_GIFT project).
+    # Legacy mapping rows with Excel_Prefix still override this for compatibility.
+    Workbook = @{
+        ExcelPrefix = ''
+    }
+
     Window = @{
         Width    = 1050
         Height   = 761

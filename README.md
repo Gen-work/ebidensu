@@ -35,7 +35,7 @@ a `verify_config.json` that is **deep-merged over** those defaults at startup,
 so a single case can customize almost everything without editing the shared
 `.psd1`.
 
-Precedence: **CLI args > work-folder `verify_config.json` > `VerifyConfig.psd1`**.
+Precedence: **CLI args > work-folder `verify_config.json` > `VerifyConfig.psd1` > session fallback** (for the few values that still support session fallback).
 
 Generate a starter file (pre-filled from the current effective config):
 
@@ -44,10 +44,13 @@ Generate a starter file (pre-filled from the current effective config):
 .\VerifyTool.ps1 -Phase InitConfig -Force   # regenerate, keeps a .bak
 ```
 
-Then edit values such as `DefaultOwner`, `Window`, `Mark.Boxes` (red-rectangle
-positions), `Mail` (subject/body templates), `Reviewer`, `CheckSheet`, `Df`
-(capture region) and `ExpectedTime`. Save as UTF-8; Japanese text is fine.
-Re-run any phase; the banner prints `Config overlay : ...` when it loaded.
+`InitConfig` also writes `verify_config.README.txt` next to the JSON with field
+explanations, so the JSON can stay clean (standard JSON does not support
+`//` comments). Then edit values such as `DefaultOwner`,
+`Workbook.ExcelPrefix`, `Window`, `Mark.Boxes` (red-rectangle positions),
+`Mail` (subject/body templates), `Reviewer`, `CheckSheet`, `Df` (capture
+region) and `ExpectedTime`. Save as UTF-8; Japanese text is fine. Re-run any
+phase; the banner prints `Config overlay : ...` when it loaded.
 
 See `verify_config.example.json` in the repo for a ready-to-copy starter.
 
@@ -174,7 +177,7 @@ Delivery (final hand-off):
 -Owner <Owner>            # mapping owner suffix. No personal default is configured.
 -TargetIds A,B            # limit by Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.
 -CloneSourceDir <path>    # external path for Clone (existing evidence per bizcode).
--J4BaseDir <path>         # J4 baseline root for Align; defaults to remembered/config/CloneSourceDir.
+-J4BaseDir <path>         # J4 baseline root for Align; defaults to config/CloneSourceDir/session.
 -BizCodes A,B             # override bizcode candidate list for Clone.
 -Force                    # redo rows that are already marked done.
 -Interactive              # ask before each row where supported.
@@ -182,6 +185,7 @@ Delivery (final hand-off):
 -NoResize                 # do not resize Edge.
 -RefreshUrls              # recapture Jenkins folder URLs.
 -DryRun                   # print child-script arguments instead of running.
+-ExcelPrefix <text>        # prefix before _<Excel_NAME>. CLI overrides config.
 ```
 
 ## Clone behavior
@@ -190,10 +194,12 @@ Phase: `Clone` (aliases: `MkExcel`, `RenameExcel`).
 
 For each unique `Excel_NAME` in mapping (groups all rows sharing it):
 
-1. Try `<SourceDir>\<bizcode>\<Excel_NAME>.xlsx` for each bizcode candidate.
+1. Try `<SourceDir>\<bizcode>\<Workbook.ExcelPrefix>_<Excel_NAME>.xlsx` and
+   `<SourceDir>\<bizcode>\<Excel_NAME>.xlsx` for each bizcode candidate.
 2. Fallback to `<WorkDir>\template_<bizcode>.xlsx`.
 3. Universal fallback to `<WorkDir>\template.xlsx`.
-4. Copy -> `<WorkDir>\evidence\<Excel_NAME>.xlsx`.
+4. Copy -> `<WorkDir>\evidence\<Workbook.ExcelPrefix>_<Excel_NAME>.xlsx`
+   (or `<Excel_NAME>.xlsx` when the prefix is blank).
 
 Bizcode candidates come from `-BizCodes`, otherwise from the row's `TO_code` and `FROM_code` (deduplicated).
 
@@ -205,7 +211,7 @@ Phases: `ReplaceGift`, `ReplaceGfix`, `ReplaceDf`. All call `ReplaceEvidence.ps1
 
 Per unique `Excel_NAME` (groups all `Correl_ID_S` sharing it):
 
-1. Open `work\evidence\<Excel_NAME>.xlsx`.
+1. Open `work\evidence\<Workbook.ExcelPrefix>_<Excel_NAME>.xlsx` (or the legacy row `Excel_Prefix` override if present).
 2. Find target sheet by mode:
     - Gift -> `GIFT受信結果`
     - Gfix -> `GFIX受信結果`
@@ -255,7 +261,7 @@ evidence Excel (grouped by `Excel_NAME`) to the shared review check sheet, sheet
 `Check Sheet_J4`. Columns written: A No. (continued from the last numeric No.,
 only when blank), B 記入日 (today, number format copied from the row above),
 C `JAVA`, E `J4内部ﾚﾋﾞｭｰ`, F full evidence filename
-(`<Excel_Prefix>_<Excel_NAME>.xlsx`), G owner, H reviewer (configured reviewer). D/I/J~ are
+(`<Workbook.ExcelPrefix>_<Excel_NAME>.xlsx`; legacy row `Excel_Prefix` still overrides when present), G owner, H reviewer (configured reviewer). D/I/J~ are
 left blank.
 
 Because the check sheet is a public document the write is double-checked:
@@ -334,7 +340,7 @@ This avoids the dot-source bug pattern where a child utility script can accident
 ```text
 VerifyTool.ps1          main entry, menu, phase router, status display
 VerifyConfig.psd1       project config (paths, scripts, phase order, aliases, labels)
-verify_session.json     remembers last settings between runs
+verify_session.json     last-used cache; WorkDir fallback and legacy/session fallbacks
 
 ExcelHelpers.ps1        dot-source library: Excel COM helpers, bitmask helpers
 Clone.ps1               Clone phase

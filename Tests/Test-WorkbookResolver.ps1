@@ -36,6 +36,12 @@ try {
     $rtPrefix = 'J4xyz(REQ-00012345_GIFT)'
     $rtStem   = Get-ExcelFullStem -Prefix $rtPrefix -Name 'LJRVWD64'
     Assert-Equal $rtPrefix (Get-PrefixFromFilename -FileName ("{0}.xlsx" -f $rtStem) -Name 'LJRVWD64') 'round-trips Get-ExcelFullStem prefix'
+
+    # Resolve-ExcelPrefix: project config default, legacy row override.
+    $rowNoPrefix = [pscustomobject]@{ Excel_NAME = 'CJRVWD50' }
+    $rowOverride = [pscustomobject]@{ Excel_NAME = 'CJRVWD50'; Excel_Prefix = 'RowPrefix' }
+    Assert-Equal 'ProjectPrefix' (Resolve-ExcelPrefix -Row $rowNoPrefix -DefaultPrefix 'ProjectPrefix') 'uses project-level default prefix'
+    Assert-Equal 'RowPrefix' (Resolve-ExcelPrefix -Row $rowOverride -DefaultPrefix 'ProjectPrefix') 'legacy row Excel_Prefix overrides default'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }

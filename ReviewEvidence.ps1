@@ -24,6 +24,7 @@ param(
     [string]$WorkDir = '',
     [string]$Owner = '',
     [string]$EvidenceDir = '',
+    [string]$ExcelPrefix = '',
     [string]$CursorCell = 'A3',
     [string]$ReviewField = 'isReviewed',
     [int]$ReviewBit = 7,
@@ -334,7 +335,7 @@ foreach ($r in $selectedRows) {
     if ([string]::IsNullOrWhiteSpace($name)) { continue }
     if (-not $excelNames.Contains($name)) {
         $excelNames.Add($name)
-        $prefixByName[$name] = if ($r.PSObject.Properties.Name -contains 'Excel_Prefix') { [string]$r.Excel_Prefix } else { '' }
+        $prefixByName[$name] = Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix
     }
 }
 

@@ -5,15 +5,16 @@
 #  ASCII source -- no raw Japanese literals.
 #
 #  Usage pattern in callers:
-#    $fullStem = Get-ExcelFullStem -Prefix ([string]$first.Excel_Prefix) -Name ([string]$first.Excel_NAME)
+#    $prefix   = Resolve-ExcelPrefix -Row $first -DefaultPrefix $ExcelPrefix
+#    $fullStem = Get-ExcelFullStem -Prefix $prefix -Name ([string]$first.Excel_NAME)
 #    $wbPath   = Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem
 #    $destLeaf = Get-ExcelDestLeaf $fullStem
 #
-#  When Excel_Prefix is empty the full stem equals Excel_NAME (legacy behaviour).
+#  When the effective prefix is empty the full stem equals Excel_NAME (legacy behaviour).
 # ============================================================
 
-# Combines the J4 prefix column with the short name column.
-#   Excel_Prefix = 'J4<title>(REQ-000xxxxx_GIFT<suffix>)'  (or '')
+# Combines the effective J4 prefix with the short name column.
+#   Prefix     = 'J4<title>(REQ-000xxxxx_GIFT<suffix>)'  (or '')
 #   Excel_NAME   = 'LJRVWD64'
 #   -> 'J4<title>(REQ-000xxxxx_GIFT<suffix>)_LJRVWD64'    (when prefix set)
 #   -> 'LJRVWD64'                                          (when prefix empty)
@@ -27,6 +28,21 @@ function Get-ExcelFullStem {
 # Returns the filename to create when cloning from a template.
 #   Get-ExcelDestLeaf 'J4..._LJRVWD64'  -> 'J4..._LJRVWD64.xlsx'
 #   Get-ExcelDestLeaf 'LJRVWD64'        -> 'LJRVWD64.xlsx'
+
+# Resolve the effective workbook prefix. A project-level prefix should normally
+# come from verify_config.json / VerifyConfig.psd1. The legacy per-row
+# Excel_Prefix column is still honored as an override for old mappings or rare
+# per-workbook exceptions.
+function Resolve-ExcelPrefix {
+    param([object]$Row, [string]$DefaultPrefix = '')
+    $rowPrefix = ''
+    if ($null -ne $Row -and ($Row.PSObject.Properties.Name -contains 'Excel_Prefix')) {
+        $rowPrefix = [string]$Row.Excel_Prefix
+    }
+    if (-not [string]::IsNullOrWhiteSpace($rowPrefix)) { return $rowPrefix }
+    return [string]$DefaultPrefix
+}
+
 function Get-ExcelDestLeaf {
     param([string]$FullStem)
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($FullStem)
