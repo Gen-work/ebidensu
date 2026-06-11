@@ -126,4 +126,105 @@ $csvSend.RowNumberGuess = '123'
 $cmpCsv = Compare-SendGiftMetadata $csvSend $gift
 Assert-Equal 'match' $cmpCsv.Verdict 'string-typed send row (CSV round-trip) still matches'
 
+# ============================================================
+# Stage 2 evidence-verdict helpers (operator review rules)
+# ============================================================
+# Japanese fragments built from code points (test source stays ASCII).
+$shiyou  = [string]([char]0x4F7F) + [char]0x7528                                  # 'used'
+$dataNo  = [string]([char]0x30C7) + [char]0x30FC + [char]0x30BF + [char]0x306E   # 'de-ta no'
+$hajime  = $dataNo + [char]0x59CB + [char]0x3081                                  # 'de-ta no hajime'
+$owari   = $dataNo + [char]0x7D42 + [char]0x308F + [char]0x308A                   # 'de-ta no owari'
+$owari2  = $dataNo + [char]0x7D42 + [char]0x308A                                  # alt spelling 'owari'
+
+# -- Get-SendRowLabel --
+Assert-Equal '000001' (Get-SendRowLabel 1)       'row 1 -> 000001'
+Assert-Equal '004644' (Get-SendRowLabel 4644)    'row 4644 -> 004644'
+Assert-Equal '1234567' (Get-SendRowLabel 1234567) 'wider than 6 digits kept'
+
+# -- Test-SendRowNumberPresent --
+Assert-True (Test-SendRowNumberPresent @('000003 X2 DATA') '000003')        'leading row label found'
+Assert-True (Test-SendRowNumberPresent @('xx 004644 tail') '004644')        'mid-line row label found'
+Assert-True (-not (Test-SendRowNumberPresent @('0000031 DATA') '000003'))   'longer digit run does not count'
+Assert-True (-not (Test-SendRowNumberPresent @('no labels') '000003'))      'absent label'
+
+# -- Find-SendRecordByRowNumber --
+$ocrHead = @(
+    'VIEW LJOD.C.VER.JOD155',
+    '000001 0000001001B40500015A FOO',
+    '000002 0000002001B40500015A'
+)
+Assert-Equal '0000001001B40500015A FOO' (Find-SendRecordByRowNumber $ocrHead '000001') 'record text after row label'
+Assert-Equal 'X2REST' (Find-SendRecordByRowNumber @('000003X2REST') '000003') 'glued label still split'
+Assert-True ($null -eq (Find-SendRecordByRowNumber $ocrHead '000009')) 'missing label -> null'
+Assert-True ($null -eq (Find-SendRecordByRowNumber @('0000031 DATA') '000003')) 'lookahead rejects longer digit run'
+
+# -- Test-SendZeroByteImage --
+$cylZero = @('LJOD.C.VER.JOD382', ($shiyou + ' CYLINDERS . . : 0'))
+$cylUsed = @(($shiyou + ' CYLINDERS . . : 1'))
+Assert-True (Test-SendZeroByteImage $cylZero)            'used CYLINDERS 0 -> zero'
+Assert-True (-not (Test-SendZeroByteImage $cylUsed))     'used CYLINDERS 1 -> not zero'
+$beginEndSame = @($hajime, $owari2)
+Assert-True (Test-SendZeroByteImage $beginEndSame)       'begin+end markers, no 000001 -> zero'
+$beginEndData = @($hajime, '000001 SOMEDATA', $owari)
+Assert-True (-not (Test-SendZeroByteImage $beginEndData)) 'begin+end with 000001 -> not zero'
+Assert-True (-not (Test-SendZeroByteImage @($hajime)))    'begin only (head image) -> not zero'
+Assert-True (Test-SendZeroByteImage @('EMPTY-MARK') 'EMPTY-MARK') 'custom pattern override'
+
+# -- Get-SendPrefixSimilarity --
+Assert-Equal 1 ([int](Get-SendPrefixSimilarity 'ABCDEF' 'ABCDEF')) 'identical -> 1.0'
+Assert-True ((Get-SendPrefixSimilarity '0000001001B40500015AXX' '0000801001B40500015AXX' 20) -ge 0.9) 'one OCR slip in 20 chars stays high'
+Assert-True ((Get-SendPrefixSimilarity 'TOTALLYDIFFERENT' '0000001001B4050001' 20) -lt 0.5) 'different strings score low'
+Assert-Equal 0 ([int](Get-SendPrefixSimilarity '' 'ABC')) 'one empty side -> 0'
+
+# -- Compare-SendGiftEvidence: 0-byte gift --
+function New-GiftMetaRow([long]$Size, [int]$Rows, [string]$First, [string]$Last) {
+    [pscustomobject]@{
+        FileName = 'JIDSC03S'; SizeBytes = $Size; MaxRowNumber = $Rows
+        FirstRecord = $First; LastRecord = $Last
+        FirstRecordToken = (Get-SendFirstToken $First); LastRecordToken = (Get-SendFirstToken $Last)
+    }
+}
+$giftZero2 = New-GiftMetaRow 0 0 '' ''
+$cmpZeroOk = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(,@($cylZero))
+Assert-Equal 'ok' $cmpZeroOk.Verdict 'gift 0 bytes + CYLINDERS-0 image -> ok'
+$cmpZeroNg = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(,@(@('000001 DATA HERE')))
+Assert-Equal 'ng' $cmpZeroNg.Verdict 'gift 0 bytes but send shows 000001 -> ng'
+$cmpZeroUnk = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(,@(@('NOISE ONLY')))
+Assert-Equal 'unknown' $cmpZeroUnk.Verdict 'gift 0 bytes, no evidence either way -> unknown'
+
+# -- Compare-SendGiftEvidence: data gift --
+$gift3 = New-GiftMetaRow 300 3 '0000001001B40500015A TAIL' '0001548003X2 END'
+$headImg = @('000001 0000001001B40500015A TAIL', '000002 MIDDLE', '000003 0001548003X2 END')
+$cmpOk = Compare-SendGiftEvidence -GiftRow $gift3 -ImageTextSets @(,@($headImg))
+Assert-Equal 'ok' $cmpOk.Verdict 'max row found + first/last tokens match -> ok'
+
+$badImg = @('000001 ZZZZZZZZZZZZZZZZZZZZZ', '000003 0001548003X2 END')
+$cmpNg = Compare-SendGiftEvidence -GiftRow $gift3 -ImageTextSets @(,@($badImg))
+Assert-Equal 'ng' $cmpNg.Verdict 'first record disagrees -> ng'
+
+$noMaxImg = @('000001 0000001001B40500015A TAIL', '000002 MIDDLE')
+$cmpUnk = Compare-SendGiftEvidence -GiftRow $gift3 -ImageTextSets @(,@($noMaxImg))
+Assert-Equal 'unknown' $cmpUnk.Verdict 'max row number not visible -> unknown'
+
+# fuzzy: token differs by one OCR slip but 20-char prefix stays >= 80%
+$fuzzyImg = @('000001 0000001001B40500015B TAIL', '000003 0001548003X2 END')
+$cmpFuzzy = Compare-SendGiftEvidence -GiftRow $gift3 -ImageTextSets @(,@($fuzzyImg))
+Assert-Equal 'ok' $cmpFuzzy.Verdict 'single OCR slip passes via prefix similarity'
+$fuzzyCheck = @($cmpFuzzy.Checks | Where-Object { $_.Name -eq 'FirstRecord' })[0]
+Assert-Equal 'fuzzy' $fuzzyCheck.Status 'slip is reported as fuzzy, not exact match'
+
+# two images (head strip + tail strip), tail carries the max row
+$gift4644 = New-GiftMetaRow 1672702 4644 '0000001001B40500015A X' '0001548003X2'
+$head4644 = @('000001 0000001001B40500015A X', '000017 SOMETHING')
+$tail4644 = @('004628 NEARTAIL', '004644 0001548003X2')
+$cmpTwo = Compare-SendGiftEvidence -GiftRow $gift4644 -ImageTextSets @(@($head4644), @($tail4644))
+Assert-Equal 'ok' $cmpTwo.Verdict 'head+tail images combine to ok'
+
+# CSV round-trip gift row (strings everywhere)
+$giftCsv = $gift3 | Select-Object *
+$giftCsv.SizeBytes = '300'
+$giftCsv.MaxRowNumber = '3'
+$cmpCsv2 = Compare-SendGiftEvidence -GiftRow $giftCsv -ImageTextSets @(,@($headImg))
+Assert-Equal 'ok' $cmpCsv2.Verdict 'string-typed gift row (CSV round-trip) still ok'
+
 exit (Complete-Tests)

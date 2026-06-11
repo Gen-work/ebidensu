@@ -15,8 +15,11 @@ The phase does the following:
 1. Scans every file under `<WorkDir>\DATA\GIFT` (or `<WorkDir>\data\GIFT` when that lowercase folder exists).
 2. Writes exact file metadata to `<WorkDir>\data\gift_metadata.csv`.
 3. Ensures the mapping CSV has a `SendVsGift` column.
-4. For each pending mapping row (`SendVsGift` empty or `0`), prints the matching GIFT file metadata in the console and opens the evidence workbook.
-5. Operator checks the workbook and console data. Pressing Enter sets `SendVsGift=1`, sets workbook cursors to `A3` (or the selected `-CursorCell`), saves, and closes.
+4. For each pending mapping row (`SendVsGift` not `1` -- pending covers empty, `0` and the NG value `2`), prints the matching GIFT file metadata in the console.
+5. Pending rows are **grouped per evidence workbook**: the workbook is opened once, and for each of its correl rows the cursor jumps to the `Correl_ID_S` label cell in **column A of the send-data sheet** (the evidence pictures sit right below the label). After every console answer Excel is brought back to the foreground (direct `SetForegroundWindow` on the Excel hwnd; `Alt+Tab` SendKeys fallback) so the operator lands on the next correl without switching windows by hand.
+6. Operator checks the workbook and console data. `Enter` sets `SendVsGift=1`; `n` sets `SendVsGift=2` (NG -- stays pending and is listed at the end of the run); `s` skips; `q` quits. The workbook is saved (cursors reset to `-CursorCell`) and closed only after its **last** correl row is answered -- no close/reopen between correls of the same workbook.
+
+When run standalone (`.\SendVsGift.ps1`), `-WorkDir`/`-Owner` fall back to `verify_session.json`, then to the single `mapping_*.csv` in the work folder, then to a prompt -- the old `mapping_.csv` failure is gone.
 
 Metadata columns written to `gift_metadata.csv`:
 
@@ -42,10 +45,11 @@ The phase stores both forms:
 
 The first/last non-space token alone is not enough for final comparison because it can miss changes in fixed-position fields. It is useful as a console summary, but the full first/last records remain the source of truth.
 
-## Stage 2 (OCR skeleton, implemented)
+## Stage 2 (OCR auto-compare, implemented)
 
-Enabled with `-Ocr` on `SendVsGift.ps1`, or persistently via `SendVsGift.Ocr = $true`
-in `VerifyConfig.psd1` / the `verify_config.json` work-folder overlay.
+Enabled with `-Ocr` on `SendVsGift.ps1` / `VerifyTool.ps1`, with the `o` option at
+the VerifyTool phase prompt, or persistently via `SendVsGift.Ocr = $true` in
+`VerifyConfig.psd1` / the `verify_config.json` work-folder overlay.
 
 ### Engine choice
 
@@ -58,42 +62,65 @@ confidence score, so confidence is heuristic (see below).
 
 ### Pipeline
 
-1. `EvidenceImageExport.ps1` exports every picture on the send-data sheet
-   (the ProjectLabels send-data sheet; override with `-SendSheetName`) to
-   `<WorkDir>\data\send_images\<Correl_ID_S>\<Correl_ID_S>_NN.png`, top-to-bottom.
-   Multi-picture groups are concatenated in that order, covering stacked
-   screenshots of one SEND file. (Export goes through a temp ChartObject and
-   clobbers the clipboard; the workbook is left unsaved unless Enter is pressed.)
-2. `OcrWindows.ps1` OCRs each PNG and returns plain line/word objects with
+1. The correl's **section** on the send-data sheet is located from its column-A
+   label cell: the section spans from the label down to the next non-empty cell
+   in column A (the next correl's label), or to the end of the sheet.
+2. `EvidenceImageExport.ps1` exports only the pictures inside that section to
+   `<WorkDir>\data\send_images\<Correl_ID_S>\<Correl_ID_S>_NN.png`, top-to-bottom
+   then left-to-right. **Ctrl+G groups are flattened**: each child picture is
+   exported on its own (a grouped strip exported as one composite PNG could
+   exceed the Windows OCR engine's max image dimension; per-child export also
+   keeps the left-to-right capture order). (Export goes through a temp
+   ChartObject and clobbers the clipboard.)
+3. `OcrWindows.ps1` OCRs each PNG and returns plain line/word objects with
    bounding boxes. The Japanese recognizer drops spaces between tokens;
    `SendMetadata.ps1` rebuilds them from the word X/Width boxes so first/last
    tokens and approximate fixed positions survive.
-3. `SendMetadata.ps1` (pure, unit-tested by `Tests\Test-SendMetadata.ps1`) parses
-   the lines into a record parallel to `gift_metadata.csv`, written to
-   `<WorkDir>\data\send_metadata.csv`:
-   `CorrelIdS, ExcelName, ImageCount, OcrLineCount, ZeroByte, RowNumberGuess,
-   FirstRecord, LastRecord, FirstRecordToken, LastRecordToken, Confidence,
-   MetadataVersion`.
-4. `Compare-SendGiftMetadata` prints a per-field verdict (`ZeroByte`, `RowNumber`,
-   `FirstRecordToken`, `LastRecordToken`): each check is match / mismatch /
-   unknown -- absence of OCR evidence is always `unknown`, never `mismatch`.
-   Verdict: any mismatch -> `mismatch`; zero-byte agreement or >= 2 field matches
-   -> `match`; otherwise `unknown`.
+4. `Compare-SendGiftEvidence` (pure, unit-tested by `Tests\Test-SendMetadata.ps1`)
+   applies the operator's review rules:
+   - **gift file is 0 bytes** -> some image must show 0-byte evidence:
+     the dataset-info screen with `used CYLINDERS : 0`, **or** the
+     begin-of-data and end-of-data markers on the *same* image with no
+     `000001` record line (a non-empty file never shows both markers on one
+     screenshot). A `000001` record anywhere is a positive `ng`.
+   - **gift file has data** -> the zero-padded max row number from
+     `gift_metadata.csv` (e.g. `000003`, `004644`) must appear in the OCR
+     text, and the first record (after `000001`) and last record (after the
+     max label) must match the gift records: exact first space-free token
+     wins; otherwise a >= 80% Levenshtein similarity of the first 20 chars
+     passes as `fuzzy` (OCR noise tolerance). A present-but-failing record
+     is `mismatch`.
+   - Verdict: any mismatch -> `ng`; max row found + both records pass ->
+     `ok`; anything thinner -> `unknown`. Absence of OCR evidence is never
+     a mismatch.
+5. The parsed lines are also stored as a `send_metadata.csv` record per correl
+   (same columns as before) for audit.
 
-### Confidence and manual fallback
+### Auto-marking
 
-Confidence is heuristic (0 / 0.4 / 0.7 / 1.0 by parsed-field coverage) because the
-Windows OCR API has no native score. The verdict is advisory only: the manual
-Enter-to-mark flow is unchanged and remains the source of truth, OCR failures are
-caught and reported as warnings, and the `SendVsGift` mapping column semantics are
-untouched.
+With the default `SendVsGift.AutoMark = $true`:
+
+- verdict `ok` -> `SendVsGift=1` automatically, no prompt;
+- verdict `ng` -> `SendVsGift=2` automatically, the row is reported in red and
+  listed in the end-of-run NG summary; `2` is *not* `1`, so the row stays
+  pending and is re-checked on the next run;
+- verdict `unknown` -> the normal manual prompt decides.
+
+Set `AutoMark = $false` (or `-NoAutoMark`) to keep the verdict advisory-only.
+OCR failures are caught and fall back to the manual flow.
+
+### Standalone OCR tool
+
+`OcrTool.ps1` exposes the same OCR stack as a reusable command line tool
+(images, folders, wildcards, or `-Workbook <xlsx>` to export embedded pictures
+first; `-Json` for structured output; `-ListLanguages` to probe the engine).
+Future features should dot-source `OcrWindows.ps1` + `SendMetadata.ps1`
+directly, or shell out to `OcrTool.ps1`.
 
 ### Remaining TODOs (need representative screenshots)
 
-- **0-byte pattern**: the default detection regex (`0 byte/bytes`) is a guess;
-  tune `SendVsGift.ZeroBytePattern` once a real 0-byte SEND screenshot exists.
-- **Row-number / record parsing**: `RowNumberGuess` assumes a leading row number
-  on host list lines; verify against real screen layouts and add fixed-position
-  field extraction from the word bounding boxes where needed.
+- The CYLINDERS / begin-end marker fragments are first-guess OCR forms taken
+  from the reference screenshots; if the recognizer mangles them on the real
+  host, tune `SendVsGift.ZeroBytePattern` (it overrides both built-in rules).
 - **Record length**: OCR is not trustworthy for character-exact record lengths
   (digit drops, O/0 confusion); lengths are intentionally not compared yet.

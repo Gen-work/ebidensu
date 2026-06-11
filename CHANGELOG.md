@@ -4,6 +4,60 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-11 - SendVsGift OCR auto-compare + standalone OcrTool (v2.8)
+
+### Added
+- **`OcrTool.ps1`** (new, standalone): command-line OCR tool over the existing
+  dot-source libs so OCR is reusable outside SendVsGift. Accepts image files /
+  folders / wildcards, or `-Workbook <xlsx>` (+ optional `-Sheet`) to export
+  the embedded pictures first; `-Json` / `-OutFile` / `-OutDir` outputs;
+  `-ListLanguages` probes the engine. Has `param()` -> call via `&`, never
+  dot-source.
+- **SendVsGift review-flow rework** (operator items 2-4):
+  - pending rows are grouped per evidence workbook; each workbook opens ONCE
+    and the cursor just moves between correls (no close/reopen inside a group);
+  - per correl the cursor jumps to the `Correl_ID_S` label cell in column A of
+    the send-data sheet (`Application.Goto`, scrolled into view);
+  - after every console answer Excel is brought back to the foreground
+    (SetForegroundWindow on the Excel hwnd; SendKeys Alt+Tab fallback);
+  - new `n` answer marks `SendVsGift=2` (NG) from the manual prompt.
+- **OCR verdict rules** (pure, unit-tested in `SendMetadata.ps1`):
+  - 0-byte gift file: `used CYLINDERS : 0` dataset-info screen, or
+    begin-of-data + end-of-data markers on the SAME image with no `000001`
+    line (custom `ZeroBytePattern` still overrides);
+  - data gift file: the zero-padded max row number (000003 / 004644 style)
+    must appear, and first/last records (after their row labels) must match
+    by exact first token or >= 80% prefix similarity (Levenshtein, first 20
+    chars) to absorb OCR noise;
+  - `Compare-SendGiftEvidence` -> verdict ok / ng / unknown.
+- **OCR auto-mark** (`SendVsGift.AutoMark`, default on): ok -> `SendVsGift=1`,
+  ng -> `SendVsGift=2` + red end-of-run NG summary, unknown -> manual prompt.
+  `2` stays pending. `-NoAutoMark` keeps the verdict advisory.
+- **Per-correl picture sections**: only the pictures between a correl's
+  column-A label and the next label are exported/OCR'd, so multi-correl send
+  sheets no longer cross-contaminate.
+- **Ctrl+G group support** in `EvidenceImageExport.ps1`: grouped pictures were
+  previously skipped entirely (type filter); groups are now flattened and each
+  child picture is exported on its own (also dodges the OCR engine max image
+  dimension on wide grouped strips).
+
+### Fixed
+- `VerifyTool.ps1` SendVsGift phase now has an OCR option: `o`/`ocr` toggle at
+  the option prompt (the `-ocr` "unknown option" dead end), plus a `-Ocr`
+  CLI switch; config `SendVsGift.Ocr` is the persistent default.
+- `SendVsGift.ps1` standalone launch no longer dies on `mapping_.csv`:
+  WorkDir/Owner fall back to `verify_session.json`, then to the single
+  `mapping_*.csv` in the work folder, then to a prompt.
+
+### Notes
+- Authored in a Linux cloud env: parse/unit tests are cloud-runnable, but the
+  Excel COM section export, Find/Goto cursor jumps, foreground switching and
+  the WinRT OCR call need a Windows + Excel 2019 smoke test.
+- Copying a child picture out of a Ctrl+G group uses `Shape.Copy` on the
+  group item; if a given Excel build refuses that, ungroup once or report it
+  (a whole-group export fallback can be added).
+
+
 ## 2026-06-11 - SendVsGift Stage 2 OCR skeleton
 
 ### Added

@@ -13,19 +13,32 @@
 
 # Picture shapes on a sheet, top-to-bottom then left-to-right, skipping
 # the verifyMark_* red rectangles. msoPicture=13, msoLinkedPicture=11.
+# Ctrl+G groups (msoGroup=6) are flattened: each child picture is returned
+# on its own. GroupItems report sheet-absolute Top/Left, so ordering and
+# region filtering keep working, and per-child export avoids one giant
+# composite PNG that would exceed the Windows OCR max image dimension.
 function Get-EvidencePictureShapes {
     param($Worksheet)
     $found = @()
-    foreach ($sp in $Worksheet.Shapes) {
+    $queue = New-Object System.Collections.Generic.Queue[object]
+    foreach ($sp in $Worksheet.Shapes) { $queue.Enqueue($sp) }
+    while ($queue.Count -gt 0) {
+        $sp = $queue.Dequeue()
         $t = 0
         try { $t = [int]$sp.Type } catch {}
+        if ($t -eq 6) {
+            try { foreach ($child in $sp.GroupItems) { $queue.Enqueue($child) } } catch {}
+            continue
+        }
         if ($t -ne 13 -and $t -ne 11) { continue }
         $nm = ''
         try { $nm = [string]$sp.Name } catch {}
         if ($nm -like 'verifyMark_*') { continue }
         $found += $sp
     }
-    return ,@($found | Sort-Object @{Expression = { [double]$_.Top }}, @{Expression = { [double]$_.Left }})
+    # Round Top so the pictures of one horizontal strip (near-equal tops)
+    # sort left-to-right in capture order.
+    return ,@($found | Sort-Object @{Expression = { [Math]::Round([double]$_.Top, 0) }}, @{Expression = { [double]$_.Left }})
 }
 
 # Exports one shape to a PNG file. Returns $true when the file exists.
@@ -60,9 +73,12 @@ function Export-ShapeToPng {
 
 # Exports every picture on the named sheet as <BaseName>_NN.png under
 # OutDir. Returns the array of created file paths (empty when the sheet
-# is missing or carries no pictures).
+# is missing or carries no pictures). Optional TopMin/TopMax (sheet
+# points, -1 = unbounded) limit the export to one vertical section, e.g.
+# the pictures between two correl-id labels in column A.
 function Export-SheetPicturesToPng {
-    param($Workbook, [string]$SheetName, [string]$OutDir, [string]$BaseName)
+    param($Workbook, [string]$SheetName, [string]$OutDir, [string]$BaseName,
+          [double]$TopMin = -1.0, [double]$TopMax = -1.0)
     $ws = $null
     foreach ($s in $Workbook.Worksheets) {
         if ([string]$s.Name -eq $SheetName) { $ws = $s; break }
@@ -75,6 +91,13 @@ function Export-SheetPicturesToPng {
     try { $ws.Activate() | Out-Null } catch {}
 
     $shapes = @(Get-EvidencePictureShapes $ws)
+    if ($TopMin -ge 0 -or $TopMax -ge 0) {
+        $shapes = @($shapes | Where-Object {
+            $st = 0.0
+            try { $st = [double]$_.Top } catch {}
+            (($TopMin -lt 0) -or ($st -ge $TopMin)) -and (($TopMax -lt 0) -or ($st -lt $TopMax))
+        })
+    }
     if ($shapes.Count -eq 0) { return ,@() }
     if (-not (Test-Path -LiteralPath $OutDir)) {
         New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
