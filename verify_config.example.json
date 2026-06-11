@@ -3,8 +3,9 @@
     "EXAMPLE per-work-folder config overlay. Copy this to  <WorkDir>/verify_config.json  and edit.",
     "It is deep-merged over VerifyConfig.psd1 at startup. Precedence: CLI args > this JSON > .psd1 > session fallback.",
     "Only include the keys you want to override - every other setting falls back to VerifyConfig.psd1.",
-    "Tip: run  VerifyTool.ps1 -Phase InitConfig  inside your WorkDir to generate a FULL file",
-    "pre-filled from the live config (including the Japanese Mail / CheckSheet templates).",
+    "Tip: run  VerifyTool.ps1 -Phase InitConfig  inside your WorkDir to generate/update a FULL file",
+    "pre-filled from the live config (including existing overlay values and new defaults).",
+    "Run  VerifyTool.ps1 -Phase InitConfig -Interactive  for grouped peek/edit/delete/save.",
     "InitConfig also writes verify_config.README.txt with field explanations; JSON itself cannot use // comments.",
     "Save as UTF-8 (no BOM). Japanese text is fine as plain UTF-8."
   ],

@@ -37,20 +37,27 @@ so a single case can customize almost everything without editing the shared
 
 Precedence: **CLI args > work-folder `verify_config.json` > `VerifyConfig.psd1` > session fallback** (for the few values that still support session fallback).
 
-Generate a starter file (pre-filled from the current effective config):
+Generate or refresh a work-folder file (pre-filled from the current effective
+config, including existing overlay values plus any new defaults):
 
 ```powershell
 .\VerifyTool.ps1 -Phase InitConfig
-.\VerifyTool.ps1 -Phase InitConfig -Force   # regenerate, keeps a .bak
+.\VerifyTool.ps1 -Phase InitConfig -Interactive  # grouped peek/edit/delete/save UI
+.\VerifyTool.ps1 -Phase InitConfig -Force        # accepted for old habit; updates still keep a .bak
 ```
 
 `InitConfig` also writes `verify_config.README.txt` next to the JSON with field
 explanations, so the JSON can stay clean (standard JSON does not support
-`//` comments). Then edit values such as `DefaultOwner`,
-`Workbook.ExcelPrefix`, `Window`, `Mark.Boxes` (red-rectangle positions),
-`Mail` (subject/body templates), `Reviewer`, `CheckSheet`, `Df` (capture
-region) and `ExpectedTime`. Save as UTF-8; Japanese text is fine. Re-run any
-phase; the banner prints `Config overlay : ...` when it loaded.
+`//` comments). Interactive mode groups settings by `intro`, `phase`, `snap`,
+`excel`, `wbs`, `path`, `mail`, and `all`; it lets you peek without changing,
+edit any JSON path (for example `Window.Width` or `Mail.BodyLines`), delete a
+path, then save only after typing `YES`. The `_README` introduction shown in
+the JSON is included in the `intro` group and can be changed the same way. Then
+edit values such as `DefaultOwner`, `Workbook.ExcelPrefix`, `Window`,
+`Mark.Boxes` (red-rectangle positions), `Mail` (subject/body templates),
+`Reviewer`, `CheckSheet`, `Df` (capture region) and `ExpectedTime`. Save as
+UTF-8; Japanese text is fine. Re-run any phase; the banner prints
+`Config overlay : ...` when it loaded.
 
 See `verify_config.example.json` in the repo for a ready-to-copy starter.
 
@@ -79,6 +86,25 @@ work\
     GFIX_LOD\
   evidence\
     <Excel_NAME>.xlsx
+```
+
+### Full-width filename fallback
+
+Some customer-provided files may use full-width ASCII characters in filenames
+(for example `０` instead of `0`). Workbook lookup first tries the normal exact
+and wildcard paths; if nothing is found, it scans for `.xlsx` names whose
+full-width ASCII normalizes to the requested `Excel_NAME`, warns, and asks before
+using the candidate. Non-interactive scripts/tests can use the resolver policy
+`Prompt`, `Accept`, or `Reject`.
+
+The reusable fallback lives in `WorkbookResolver.ps1`:
+
+```powershell
+# Generic file lookup after your normal not-found branch.
+Resolve-FullWidthFileName -Dir $dir -Name 'report0.txt' -Filter '*.txt' -FullWidthFallback Prompt
+
+# Workbook-specific lookup used by evidence phases.
+Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem -FullWidthFallback Prompt
 ```
 
 Jenkins-downloaded receive files are saved under `DATA\GIFT` or `DATA\GFIX` with their Jenkins filename, so downstream delivery can pick up `Correl_ID_S*` files. For example:

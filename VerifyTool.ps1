@@ -150,7 +150,8 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail -TargetIds SJRVWD64'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles       # copy evidence Excel + DATA to J4'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -MoveData  # move DATA files'
-    Write-Host '  .\VerifyTool.ps1 -Phase InitConfig          # write per-folder verify_config.json (overrides .psd1)'
+    Write-Host '  .\VerifyTool.ps1 -Phase InitConfig          # write/update per-folder verify_config.json'
+    Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive # grouped config editor (peek/edit/delete/save)'
     Write-Host ''
     Write-Host 'Common options:'
     Write-Host '  -WorkDir <path>       Work folder. If omitted, last used path is remembered.'
@@ -533,6 +534,13 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    f=Force        -> re-copy files already marked delivered',
             '    mv=MoveData    -> Move DATA files (delete source). Evidence Excel is always Copied.'
         ) }
+        '^InitConfig$' { @(
+            '  Phase params:',
+            '    i=Interactive  -> grouped editor: peek, edit, delete, save with confirmation',
+            '    f=Force        -> keep for compatibility; InitConfig now updates/refreshes existing JSON by default',
+            '  NOTE: this phase writes all editable config keys into verify_config.json,',
+            '        preserving loaded per-folder values and adding new defaults when the tool changes.'
+        ) }
         default { @() }
     }
     foreach ($l in $lines) { Write-Host $l -ForegroundColor DarkGray }
@@ -559,7 +567,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^DeliverFiles$' { return @('t','f','mv') }
         '^Mapping$' { return @('f','owner','from','range','cm','jobs','ex','temp','add') }
         '^ExcelSnap$' { return @('f') }
-        '^InitConfig$' { return @('f') }
+        '^InitConfig$' { return @('i','f') }
         default { return @() }
     }
 }
@@ -838,6 +846,205 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
             }
             default { Write-Host '  unknown option' -ForegroundColor Yellow }
         }
+    }
+}
+
+
+function Copy-ConfigObject([object]$Value) {
+    if ($null -eq $Value) { return $null }
+    return (ConvertTo-ConfigHashtable ($Value | ConvertTo-Json -Depth 30 | ConvertFrom-Json))
+}
+
+function Get-ConfigPathParts([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return @() }
+    return @($Path -split '\.' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+function Test-IntegerText([string]$Text) { return ($Text -match '^\d+$') }
+
+function Get-ConfigValueByPath([object]$Root, [string]$Path) {
+    $cur = $Root
+    foreach ($part in (Get-ConfigPathParts $Path)) {
+        if ($cur -is [System.Collections.IDictionary]) {
+            if (-not $cur.ContainsKey($part)) { return $null }
+            $cur = $cur[$part]
+        } elseif (($cur -is [System.Collections.IList]) -and (Test-IntegerText $part)) {
+            $idx = [int]$part
+            if ($idx -lt 0 -or $idx -ge $cur.Count) { return $null }
+            $cur = $cur[$idx]
+        } else { return $null }
+    }
+    return $cur
+}
+
+function Set-ConfigValueByPath([hashtable]$Root, [string]$Path, [object]$Value) {
+    $parts = @(Get-ConfigPathParts $Path)
+    if ($parts.Count -eq 0) { throw 'Path is required.' }
+    $cur = $Root
+    for ($i = 0; $i -lt ($parts.Count - 1); $i++) {
+        $part = $parts[$i]
+        $nextPart = $parts[$i + 1]
+        if ($cur -is [System.Collections.IDictionary]) {
+            if (-not $cur.ContainsKey($part) -or $null -eq $cur[$part]) {
+                if (Test-IntegerText $nextPart) { $cur[$part] = @() } else { $cur[$part] = @{} }
+            }
+            $cur = $cur[$part]
+        } elseif (($cur -is [System.Collections.IList]) -and (Test-IntegerText $part)) {
+            $idx = [int]$part
+            if ($idx -lt 0 -or $idx -ge $cur.Count) { throw "Array index out of range: $part" }
+            $cur = $cur[$idx]
+        } else { throw "Cannot traverse path at: $part" }
+    }
+    $leaf = $parts[$parts.Count - 1]
+    if ($cur -is [System.Collections.IDictionary]) { $cur[$leaf] = $Value; return }
+    if (($cur -is [System.Collections.IList]) -and (Test-IntegerText $leaf)) {
+        $idx = [int]$leaf
+        if ($idx -lt 0 -or $idx -ge $cur.Count) { throw "Array index out of range: $leaf" }
+        $cur[$idx] = $Value
+        return
+    }
+    throw "Cannot set path: $Path"
+}
+
+function Remove-ConfigValueByPath([hashtable]$Root, [string]$Path) {
+    $parts = @(Get-ConfigPathParts $Path)
+    if ($parts.Count -eq 0) { throw 'Path is required.' }
+    $cur = $Root
+    $parent = $null
+    $parentKey = $null
+    for ($i = 0; $i -lt ($parts.Count - 1); $i++) {
+        $part = $parts[$i]
+        $parent = $cur
+        $parentKey = $part
+        if ($cur -is [System.Collections.IDictionary]) {
+            if (-not $cur.ContainsKey($part)) { return $false }
+            $cur = $cur[$part]
+        } elseif (($cur -is [System.Collections.IList]) -and (Test-IntegerText $part)) {
+            $idx = [int]$part
+            if ($idx -lt 0 -or $idx -ge $cur.Count) { return $false }
+            $cur = $cur[$idx]
+        } else { return $false }
+    }
+    $leaf = $parts[$parts.Count - 1]
+    if ($cur -is [System.Collections.IDictionary]) {
+        if (-not $cur.ContainsKey($leaf)) { return $false }
+        $cur.Remove($leaf)
+        return $true
+    }
+    if (($cur -is [System.Collections.IList]) -and (Test-IntegerText $leaf)) {
+        $idx = [int]$leaf
+        if ($idx -lt 0 -or $idx -ge $cur.Count) { return $false }
+        $newList = @()
+        for ($i = 0; $i -lt $cur.Count; $i++) {
+            if ($i -ne $idx) { $newList += ,$cur[$i] }
+        }
+        if ($null -eq $parent) { throw 'Cannot delete the root array.' }
+        if ($parent -is [System.Collections.IDictionary]) { $parent[$parentKey] = $newList; return $true }
+        if (($parent -is [System.Collections.IList]) -and (Test-IntegerText $parentKey)) { $parent[[int]$parentKey] = $newList; return $true }
+        return $false
+    }
+    return $false
+}
+
+function ConvertFrom-ConfigEditorValue([string]$Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
+    try {
+        $parsed = $Text | ConvertFrom-Json
+        return (ConvertTo-ConfigHashtable $parsed)
+    } catch {
+        return $Text
+    }
+}
+
+function Show-ConfigEditorGroup([hashtable]$Data, [hashtable]$Group) {
+    Write-Host ''
+    Write-Host ("[{0}] {1}" -f $Group.Key, $Group.Label) -ForegroundColor Cyan
+    foreach ($path in @($Group.Paths)) {
+        if ($path -eq '*') {
+            Write-Host (Get-ConfigOverlayJson $Data)
+            return
+        }
+        $value = Get-ConfigValueByPath $Data $path
+        if ($null -eq $value) { continue }
+        Write-Host ("--- {0} ---" -f $path) -ForegroundColor DarkGray
+        Write-Host (Get-ConfigOverlayJson $value)
+    }
+}
+
+function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath) {
+    $groups = @(Get-ConfigOverlayGroups)
+    Write-Host ''
+    Write-Host '===== InitConfig editor =====' -ForegroundColor Green
+    Write-Host 'View by group, edit any JSON path, delete paths, then save with confirmation.' -ForegroundColor DarkGray
+    Write-Host 'Path examples: Window.Width, Mail.BodyLines, Mark.Boxes.GIFT_HM.0.OffsetX, PhaseOrder.0.Label' -ForegroundColor DarkGray
+    Write-Host 'Value input accepts JSON (true, 123, [..], {..}, "text") or raw text.' -ForegroundColor DarkGray
+    Write-Host ("Target: {0}" -f $DestPath) -ForegroundColor DarkGray
+
+    while ($true) {
+        Write-Host ''
+        Write-Host 'Groups:' -ForegroundColor Cyan
+        $menu = @{}
+        $idx = 1
+        foreach ($g in $groups) {
+            Write-Host ("  {0,2}  {1,-7} {2}" -f $idx, $g.Key, $g.Label)
+            $menu[[string]$idx] = $g
+            $menu[[string]($g.Key)] = $g
+            $idx++
+        }
+        Write-Host '   v  Peek path'
+        Write-Host '   e  Edit path'
+        Write-Host '   d  Delete path'
+        Write-Host '   s  Save'
+        Write-Host '   q  Quit without saving'
+        $ans = (Read-Host 'config').Trim().ToLower()
+        if ([string]::IsNullOrWhiteSpace($ans)) { continue }
+        if ($ans -eq 'q') { return $null }
+        if ($ans -eq 's') {
+            $confirm = (Read-Choice 'Save changes? type YES to write' 'no')
+            if ($confirm -ceq 'YES') { return $Data }
+            Write-Host '  save cancelled; still in editor.' -ForegroundColor Yellow
+            continue
+        }
+        if ($ans -eq 'v') {
+            $path = Read-Choice 'JSON path to peek (empty = all)' ''
+            if ([string]::IsNullOrWhiteSpace($path)) { Write-Host (Get-ConfigOverlayJson $Data) }
+            else {
+                $value = Get-ConfigValueByPath $Data $path
+                if ($null -eq $value) { Write-Host '  (not found)' -ForegroundColor Yellow }
+                else { Write-Host (Get-ConfigOverlayJson $value) }
+            }
+            continue
+        }
+        if ($ans -eq 'e') {
+            $path = Read-Choice 'JSON path to edit' ''
+            if ([string]::IsNullOrWhiteSpace($path)) { Write-Host '  path is required' -ForegroundColor Yellow; continue }
+            $old = Get-ConfigValueByPath $Data $path
+            Write-Host 'Current value:' -ForegroundColor DarkGray
+            if ($null -eq $old) { Write-Host '  (new path)' -ForegroundColor DarkGray } else { Write-Host (Get-ConfigOverlayJson $old) }
+            $raw = Read-Choice 'New value as JSON or raw text. Empty = empty string' ''
+            $newValue = ConvertFrom-ConfigEditorValue $raw
+            try {
+                Set-ConfigValueByPath $Data $path $newValue
+                Write-Host '  updated in memory (choose s to save).' -ForegroundColor Green
+            } catch { Write-Host ("  update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow }
+            continue
+        }
+        if ($ans -eq 'd') {
+            $path = Read-Choice 'JSON path to delete' ''
+            if ([string]::IsNullOrWhiteSpace($path)) { Write-Host '  path is required' -ForegroundColor Yellow; continue }
+            $old = Get-ConfigValueByPath $Data $path
+            if ($null -eq $old) { Write-Host '  (not found)' -ForegroundColor Yellow; continue }
+            Write-Host 'Deleting value:' -ForegroundColor DarkGray
+            Write-Host (Get-ConfigOverlayJson $old)
+            $confirm = Read-Choice 'Delete this path? type DELETE' 'no'
+            if ($confirm -ceq 'DELETE') {
+                if (Remove-ConfigValueByPath $Data $path) { Write-Host '  deleted in memory (choose s to save).' -ForegroundColor Green }
+                else { Write-Host '  delete failed' -ForegroundColor Yellow }
+            }
+            continue
+        }
+        if ($menu.ContainsKey($ans)) { Show-ConfigEditorGroup $Data $menu[$ans]; continue }
+        Write-Host '  unknown editor command' -ForegroundColor Yellow
     }
 }
 
@@ -1353,12 +1560,21 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         Write-Host '[RUN] InitConfig' -ForegroundColor Green
         Write-Host ("  Overlay target : {0}" -f $dest)
         $exists = Test-Path -LiteralPath $dest
-        if ($exists -and -not $State.Force) {
-            Write-Host '  [SKIP] overlay already exists. Edit it directly, or re-run with -Force to regenerate.' -ForegroundColor Yellow
+        $snap = New-ConfigOverlaySnapshot $Config
+        if ($State.Interactive) {
+            $editable = Copy-ConfigObject $snap
+            $edited = Invoke-ConfigOverlayEditor $editable $dest
+            if ($null -eq $edited) {
+                Write-Host '  [CANCEL] no config changes were written.' -ForegroundColor Yellow
+                return
+            }
+            $snap = $edited
+        }
+        if ($State.DryRun) {
+            Write-Host '  [dry-run] would write this overlay snapshot:' -ForegroundColor DarkGray
+            Write-Host (Get-ConfigOverlayJson $snap)
             return
         }
-        if ($State.DryRun) { Write-Host '  [dry-run] would write the overlay snapshot.' -ForegroundColor DarkGray; return }
-        $snap = New-ConfigOverlaySnapshot $Config
         $json = Get-ConfigOverlayJson $snap
         if ($exists) {
             $bak = ('{0}.bak.{1}' -f $dest, (Get-Date -Format 'yyyyMMdd_HHmmss'))
@@ -1369,7 +1585,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $readmePath = Join-Path $State.WorkDir 'verify_config.README.txt'
         $readmeText = Get-ConfigOverlayReadmeText $overlayName
         [System.IO.File]::WriteAllText($readmePath, $readmeText, (New-Object System.Text.UTF8Encoding($false)))
-        Write-Host '  [OK] wrote work-folder config overlay (UTF-8, no BOM).' -ForegroundColor Green
+        Write-Host '  [OK] wrote/updated work-folder config overlay (UTF-8, no BOM).' -ForegroundColor Green
         Write-Host ("  [OK] wrote config field guide: {0}" -f $readmePath) -ForegroundColor Green
         Write-Host '       Edit values, then re-run any phase. JSON overrides VerifyConfig.psd1.' -ForegroundColor DarkGray
         return
