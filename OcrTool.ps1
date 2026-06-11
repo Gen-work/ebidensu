@@ -80,7 +80,9 @@ function Get-OcrImageList([string[]]$Items) {
                 ForEach-Object { $_.FullName })
         }
     }
-    return ,@($files | Select-Object -Unique)
+    # no comma protection: the caller wraps this in @(...) and a
+    # comma-protected return would nest (one element = whole list)
+    return @($files | Select-Object -Unique)
 }
 
 $images = @(Get-OcrImageList $Path)
@@ -166,6 +168,9 @@ if ($jsonFlag) {
     foreach ($r in $results) {
         Write-Host ''
         Write-Host ("===== {0} ({1}) =====" -f $r.Path, $r.Language) -ForegroundColor Cyan
+        if (@($r.Lines).Count -eq 0) {
+            Write-Host '(no text recognized - image resolution too low?)' -ForegroundColor Yellow
+        }
         foreach ($l in $r.Lines) { Write-Host $l }
         [void]$sb.AppendLine(('===== {0} =====' -f $r.Path))
         [void]$sb.AppendLine($r.Text)

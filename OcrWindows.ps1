@@ -70,7 +70,7 @@ function Get-WinOcrLanguageTags {
             $tags += [string]$l.LanguageTag
         }
     } catch {}
-    return ,@($tags)
+    return $tags
 }
 
 # Returns an OcrEngine for the requested language tag (e.g. 'ja'),

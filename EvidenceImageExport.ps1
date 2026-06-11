@@ -95,22 +95,45 @@ function Get-EvidencePictureShapes {
 }
 
 # Exports one shape to a PNG file. Returns $true when the file exists.
+# Scale enlarges the temp chart and stretches the pasted picture to fill
+# it: Excel re-renders from the embedded ORIGINAL image data, recovering
+# the resolution lost by the on-sheet display scaling. Evidence strips
+# are shown ~420pt wide, which leaves terminal text only a few pixels
+# tall -- Windows OCR then recognizes nothing at all.
 function Export-ShapeToPng {
-    param($Worksheet, $Shape, [string]$OutPath)
+    param($Worksheet, $Shape, [string]$OutPath, [double]$Scale = 3.0)
     $dir = Split-Path -Parent $OutPath
     if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
     $chartObj = $null
     try {
-        $w = [double]$Shape.Width
-        $h = [double]$Shape.Height
+        $w0 = [double]$Shape.Width
+        $h0 = [double]$Shape.Height
+        if ($Scale -lt 1.0) { $Scale = 1.0 }
+        # cap the longer side at ~6000pt (8000px at 96dpi) to stay well
+        # below the Windows OCR engine's max image dimension
+        $maxSide = [Math]::Max($w0, $h0) * $Scale
+        if ($maxSide -gt 6000.0) { $Scale = 6000.0 / [Math]::Max($w0, $h0) }
+        $w = $w0 * $Scale
+        $h = $h0 * $Scale
         $Shape.Copy() | Out-Null
         Start-Sleep -Milliseconds 100
         $chartObj = $Worksheet.ChartObjects().Add(0, 0, $w, $h)
         $chartObj.Activate() | Out-Null
         $chartObj.Chart.Paste() | Out-Null
         Start-Sleep -Milliseconds 100
+        try {
+            $pasted = $chartObj.Chart.Shapes
+            if ([int]$pasted.Count -ge 1) {
+                $p = $pasted.Item(1)
+                $p.LockAspectRatio = 0   # msoFalse
+                $p.Left = 0; $p.Top = 0
+                $p.Width = $w; $p.Height = $h
+            }
+        } catch {
+            Write-Host ("  [WARN] could not upscale pasted picture (exporting display size): {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        }
         [void]$chartObj.Chart.Export($OutPath, 'PNG')
         return (Test-Path -LiteralPath $OutPath)
     } catch {
@@ -131,7 +154,7 @@ function Export-ShapeToPng {
 # the pictures between two correl-id labels in column A.
 function Export-SheetPicturesToPng {
     param($Workbook, [string]$SheetName, [string]$OutDir, [string]$BaseName,
-          [double]$TopMin = -1.0, [double]$TopMax = -1.0)
+          [double]$TopMin = -1.0, [double]$TopMax = -1.0, [double]$Scale = 3.0)
     $ws = $null
     foreach ($s in $Workbook.Worksheets) {
         if ([string]$s.Name -eq $SheetName) { $ws = $s; break }
@@ -188,7 +211,7 @@ function Export-SheetPicturesToPng {
     foreach ($e in $entries) {
         $i++
         $png = Join-Path $OutDir ('{0}_{1:D2}.png' -f $BaseName, $i)
-        if (Export-ShapeToPng $ws $e.Shape $png) {
+        if (Export-ShapeToPng $ws $e.Shape $png $Scale) {
             $paths += $png
         } else {
             Write-Host ("  [WARN] picture {0} on sheet '{1}' was not exported." -f $i, $SheetName) -ForegroundColor Yellow
