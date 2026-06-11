@@ -17,7 +17,8 @@
 #   ConvertFrom-ConfigJson      JSON text -> config hashtable
 #   Remove-ConfigMetadataKeys   drop _README/_comment docs before runtime merge
 #   Merge-ConfigHashtable       deep-merge overlay onto base (base wins structure)
-#   New-ConfigOverlaySnapshot   curated, operator-facing subset of a config
+#   New-ConfigOverlaySnapshot   operator-facing editable snapshot of a config
+#   Get-ConfigOverlayGroups      grouped InitConfig editor/readme sections
 #   Remove-ConfigEmptyArray     drop empty arrays (PS 5.1 serializes them as "")
 #   ConvertFrom-JsonUnicodeEscape  turn \uXXXX (>=0x80) back into real chars
 #   Get-ConfigOverlayReadmeText separate field guide for InitConfig
@@ -149,28 +150,47 @@ function Remove-ConfigEmptyArray {
 }
 
 function New-ConfigOverlaySnapshot {
-    # Build the curated, operator-facing subset of an effective config that
-    # InitConfig writes to <WorkDir>\verify_config.json. Structural keys
-    # (Scripts / PhaseOrder / Aliases) are intentionally excluded; any key may
-    # still be added to the JSON by hand.
+    # Build the operator-facing snapshot that InitConfig writes to
+    # <WorkDir>\verify_config.json. Runtime-only bootstrap values are excluded,
+    # but all editable workflow config (including PhaseOrder) is emitted so a
+    # work folder can be refreshed when VerifyConfig.psd1 gains new keys.
     param([hashtable]$Config)
 
     $snap = @{}
     $snap['_README'] = @(
         'Clean JSON only: see verify_config.README.txt for field explanations.',
-        'Precedence: CLI args > this JSON > VerifyConfig.psd1 > session fallback.'
+        'Precedence: CLI args > this JSON > VerifyConfig.psd1 > session fallback.',
+        'Run .\VerifyTool.ps1 -Phase InitConfig -Interactive for grouped view/edit/delete/save.'
     )
 
-    $copyKeys = @(
-        'DefaultOwner', 'Workbook', 'Window', 'Timing', 'Review', 'Replace', 'Mark',
-        'GfixLog', 'Df', 'Align', 'Clone', 'Reviewer', 'Mail', 'CheckSheet',
-        'DeliverFiles', 'ExpectedTime', 'Paths'
-    )
-    foreach ($k in $copyKeys) {
-        if ($Config.ContainsKey($k)) { $snap[$k] = $Config[$k] }
+    $skipKeys = @{
+        DefaultWorkDir = $true  # WorkDir must be known before this overlay can be loaded.
+        Scripts        = $true  # Repository script wiring is shared tool structure.
+        Aliases        = $true  # Command aliases are shared tool structure.
+    }
+
+    foreach ($k in @($Config.Keys | Sort-Object)) {
+        if ($skipKeys.ContainsKey([string]$k)) { continue }
+        $snap[$k] = $Config[$k]
     }
 
     return (Remove-ConfigEmptyArray $snap)
+}
+
+function Get-ConfigOverlayGroups {
+    # Group definitions used by the InitConfig editor/readme. A key can appear
+    # in more than one group when operators commonly think about it in multiple
+    # ways (for example Mail.EvidenceFolder is both mail text and a path).
+    return @(
+        @{ Key = 'intro'; Label = 'Introduction / README'; Paths = @('_README') },
+        @{ Key = 'phase'; Label = 'Phase order / labels / progress fields'; Paths = @('PhaseOrder') },
+        @{ Key = 'snap';  Label = 'Snap size / waits / capture geometry'; Paths = @('Window','Timing','Hm','Mq','Df','Mark') },
+        @{ Key = 'excel'; Label = 'Excel workbook / replace / review / check sheet'; Paths = @('Workbook','ExcelSnap','Review','Replace','CheckSheet','SendVsGift') },
+        @{ Key = 'wbs';   Label = 'WBS / mapping / compare helpers'; Paths = @('DefaultOwner','ExpectedTime','Align') },
+        @{ Key = 'path';  Label = 'Paths / folders / external tools'; Paths = @('Paths','Clone','Align.J4BaseDir','Df.ExePath','Df.GiftDataDir','Df.GfixDataDir','Review.EvidenceDir','Mail.EvidenceFolder','Mail.CheckSheetFolder','CheckSheet.Path','DeliverFiles') },
+        @{ Key = 'mail';  Label = 'Mail / reviewer / delivery'; Paths = @('Reviewer','Mail','DeliverFiles','CheckSheet') },
+        @{ Key = 'all';   Label = 'All editable JSON variables'; Paths = @('*') }
+    )
 }
 
 
@@ -191,6 +211,16 @@ function Get-ConfigOverlayReadmeText {
         '- Do not put WorkDir in this JSON. The tool must know WorkDir before it can load this file.',
         '- Standard JSON has no // or /* */ comments. Use this README for comments.',
         '- Save as UTF-8. Japanese strings are OK.',
+        '- Run .\VerifyTool.ps1 -Phase InitConfig -Interactive to view groups, edit values, delete keys, and confirm save.',
+        '',
+        'Groups in the InitConfig editor',
+        '- intro: _README introduction lines shown at the top of the JSON.',
+        '- phase: PhaseOrder labels, order, fields, and bit values.',
+        '- snap: Window/Timing/Hm/Mq/Df/Mark capture size and geometry settings.',
+        '- excel: Workbook/ExcelSnap/Review/Replace/CheckSheet/SendVsGift Excel-related settings.',
+        '- wbs: DefaultOwner/ExpectedTime/Align settings related to mapping/WBS/precheck.',
+        '- path: Paths, Clone, evidence folders, tool paths, and delivery destinations.',
+        '- mail: Reviewer/Mail/DeliverFiles/CheckSheet hand-off settings.',
         '',
         'Common fields',
         '- DefaultOwner: owner suffix for mapping_<Owner>.csv and operator name used by phases.',

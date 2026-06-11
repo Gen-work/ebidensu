@@ -59,14 +59,22 @@ $cfg = @{
     Workbook = @{ ExcelPrefix = 'ProjectPrefix' }
     Mark   = @{ Boxes = @{ GIFT_HM = @( @{ OffsetX = 1.0; OffsetY = 2.0; Width = 3.0; Height = 4.0 } ); excel = @() } }
     Align  = @{ HostSystemTypes = @(); J4BaseDir = '' }
+    SendVsGift = @{ Ocr = $false }
+    PhaseOrder = @( @{ Key = 'InitConfig'; Label = 'config' } )
+    DefaultWorkDir = 'C:\work'
     Scripts = @{ Foo = 'bar' }
+    Aliases = @{ Config = 'InitConfig' }
 }
 $snap = New-ConfigOverlaySnapshot $cfg
 Assert-True ($snap.ContainsKey('_README'))        'snapshot carries _README guidance'
 Assert-True ($snap.ContainsKey('DefaultOwner'))   'snapshot carries DefaultOwner'
 Assert-True ($snap.ContainsKey('Workbook'))       'snapshot carries Workbook prefix config'
 Assert-True ($snap.ContainsKey('Mark'))           'snapshot carries Mark'
+Assert-True ($snap.ContainsKey('SendVsGift'))     'snapshot carries SendVsGift config'
+Assert-True ($snap.ContainsKey('PhaseOrder'))     'snapshot carries editable phase config'
+Assert-True (-not $snap.ContainsKey('DefaultWorkDir')) 'snapshot excludes bootstrap DefaultWorkDir'
 Assert-True (-not $snap.ContainsKey('Scripts'))   'snapshot excludes structural Scripts'
+Assert-True (-not $snap.ContainsKey('Aliases'))   'snapshot excludes structural Aliases'
 Assert-True ($snap['Mark']['Boxes'].ContainsKey('GIFT_HM'))      'non-empty box folder kept'
 Assert-True (-not $snap['Mark']['Boxes'].ContainsKey('excel'))   'empty box folder dropped'
 Assert-True (-not $snap['Align'].ContainsKey('HostSystemTypes')) 'empty HostSystemTypes dropped'
@@ -85,5 +93,12 @@ $jpOut = Get-ConfigOverlayJson $jpData
 Assert-True ($jpOut.Contains($jp)) 'generated JSON keeps Japanese readable (not escaped)'
 $jpRt = ConvertFrom-ConfigJson $jpOut
 Assert-Equal $jp $jpRt['Mail']['Greeting'] 'Japanese value round-trips'
+
+# --- Get-ConfigOverlayGroups : editor exposes the requested group tags.
+$groups = @(Get-ConfigOverlayGroups)
+$groupKeys = @($groups | ForEach-Object { $_.Key })
+foreach ($needed in @('intro','phase','snap','excel','wbs','path','mail','all')) {
+    Assert-True ($groupKeys -contains $needed) ("group exists: {0}" -f $needed)
+}
 
 exit (Complete-Tests)
