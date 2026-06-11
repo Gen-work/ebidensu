@@ -140,6 +140,17 @@ Align / J4 precheck (read-only by default):
 .\VerifyTool.ps1 -Phase Align
 ```
 
+SEND data vs GIFT data metadata review (new):
+
+```powershell
+# Scans work\DATA\GIFT, writes work\data\gift_metadata.csv,
+# then opens pending evidence Excel files for manual confirmation.
+.\VerifyTool.ps1 -Phase SendVsGift
+.\VerifyTool.ps1 -Phase SendVsGift -TargetIds JIGPC05S
+```
+
+See `docs/SendVsGift.md` for the Stage 1 metadata format and Stage 2 OCR handoff plan.
+
 Replace evidence body (new):
 
 ```powershell
