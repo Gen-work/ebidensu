@@ -37,20 +37,27 @@ so a single case can customize almost everything without editing the shared
 
 Precedence: **CLI args > work-folder `verify_config.json` > `VerifyConfig.psd1` > session fallback** (for the few values that still support session fallback).
 
-Generate a starter file (pre-filled from the current effective config):
+Generate or refresh a work-folder file (pre-filled from the current effective
+config, including existing overlay values plus any new defaults):
 
 ```powershell
 .\VerifyTool.ps1 -Phase InitConfig
-.\VerifyTool.ps1 -Phase InitConfig -Force   # regenerate, keeps a .bak
+.\VerifyTool.ps1 -Phase InitConfig -Interactive  # grouped peek/edit/delete/save UI
+.\VerifyTool.ps1 -Phase InitConfig -Force        # accepted for old habit; updates still keep a .bak
 ```
 
 `InitConfig` also writes `verify_config.README.txt` next to the JSON with field
 explanations, so the JSON can stay clean (standard JSON does not support
-`//` comments). Then edit values such as `DefaultOwner`,
-`Workbook.ExcelPrefix`, `Window`, `Mark.Boxes` (red-rectangle positions),
-`Mail` (subject/body templates), `Reviewer`, `CheckSheet`, `Df` (capture
-region) and `ExpectedTime`. Save as UTF-8; Japanese text is fine. Re-run any
-phase; the banner prints `Config overlay : ...` when it loaded.
+`//` comments). Interactive mode groups settings by `intro`, `phase`, `snap`,
+`excel`, `wbs`, `path`, `mail`, and `all`; it lets you peek without changing,
+edit any JSON path (for example `Window.Width` or `Mail.BodyLines`), delete a
+path, then save only after typing `YES`. The `_README` introduction shown in
+the JSON is included in the `intro` group and can be changed the same way. Then
+edit values such as `DefaultOwner`, `Workbook.ExcelPrefix`, `Window`,
+`Mark.Boxes` (red-rectangle positions), `Mail` (subject/body templates),
+`Reviewer`, `CheckSheet`, `Df` (capture region) and `ExpectedTime`. Save as
+UTF-8; Japanese text is fine. Re-run any phase; the banner prints
+`Config overlay : ...` when it loaded.
 
 See `verify_config.example.json` in the repo for a ready-to-copy starter.
 
