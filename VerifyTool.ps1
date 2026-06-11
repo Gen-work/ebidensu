@@ -48,6 +48,7 @@ param(
     [string]$CheckSheetPath = '',
 
     [switch]$Force,
+    [switch]$Ocr,
     [switch]$Interactive,
     [switch]$NoResize,
     [switch]$RefreshUrls,
@@ -126,6 +127,8 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase Clone -CloneSourceDir <ext_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase Align -J4BaseDir <j4_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase SendVsGift          # gather GIFT metadata + manual SEND/GIFT review'
+    Write-Host '  .\VerifyTool.ps1 -Phase SendVsGift -Ocr     # + OCR auto-compare (ok->1, NG->2)'
+    Write-Host '  .\OcrTool.ps1 -Path <png|dir|wildcard>      # standalone OCR tool (also -Workbook <xlsx>)'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGift'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGfix -TargetIds JIGPL48S'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceDf'
@@ -441,17 +444,19 @@ function Show-PhaseNotes([string]$PhaseKey) {
         ) }
         '^SendVsGift$' { @(
             '  Phase params:',
-            '    a=CursorCell   -> cell to activate before save/close (default: A3)',
+            '    a=CursorCell   -> fallback cursor cell (default: A3)',
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> re-open rows already marked SendVsGift=1',
-            '  Stage 1 MVP: scans DATA\GIFT, writes data\gift_metadata.csv,',
-            '  ensures SendVsGift mapping column, prints matched file metadata,',
-            '  then opens each pending workbook. Enter marks SendVsGift=1.',
-            '  Full first/last records are stored; short first/last tokens are for TL;DR viewing.',
-            '  Stage 2 OCR (skeleton): set SendVsGift.Ocr=$true in config (or run',
-            '  SendVsGift.ps1 -Ocr) to export send-sheet pictures, OCR them with the',
-            '  built-in Windows engine, write data\send_metadata.csv and print a',
-            '  send-vs-gift verdict. Manual Enter-to-mark stays the source of truth.'
+            '    o=Ocr          -> toggle Stage 2 OCR auto-compare for this run',
+            '  Scans DATA\GIFT, writes data\gift_metadata.csv, ensures the SendVsGift',
+            '  mapping column, then opens each pending workbook ONCE (rows grouped per',
+            '  Excel). The cursor jumps to each Correl_ID_S label in column A of the',
+            '  send-data sheet; after every console answer Excel is refocused.',
+            '  Enter=mark 1, n=mark 2 (NG), s=skip, q=quit.',
+            '  With OCR on: each correl section (pictures between its column-A label',
+            '  and the next) is exported + OCR-compared against gift_metadata;',
+            '  verdict ok -> auto-mark 1, ng -> auto-mark 2 (listed at the end),',
+            '  unknown -> manual prompt. NG rows (=2) stay pending.'
         ) }
         '^Review(Gift|Gfix|Df|Evidence)$' { @(
             '  Phase params:',
@@ -548,7 +553,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^Replace(Gift|Gfix|Df)$' { return @('t','f') }
         '^Mark(Gift|Gfix|Df)$' { return @('t','f') }
         '^MarkGfixLog$' { return @('t','f') }
-        '^SendVsGift$' { return @('a','t','f') }
+        '^SendVsGift$' { return @('a','t','f','o') }
         '^Review(Gift|Gfix|Df|Evidence)$' { return @('a','t','f') }
         '^(Gift|Gfix)Jenkins$|^GiftJenkinsNoFile$' { return @('t','i','f','n','w','c','r') }
         '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { return @('t','i','f','n','w','c') }
@@ -599,6 +604,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'w') { Write-Host ("  Window         : {0}x{1}" -f $State.WindowWidth, $State.WindowHeight) }
     if (Test-PhaseOption $allowed 'c') { Write-Host ("  CropPx         : {0}" -f $State.CropPx) }
     if (Test-PhaseOption $allowed 'a') { Write-Host ("  CursorCell     : {0}" -f $State.CursorCell) }
+    if (Test-PhaseOption $allowed 'o') { Write-Host ("  Ocr            : {0}" -f (To-BoolText $State.Ocr)) }
     if (Test-PhaseOption $allowed 't') { Write-Host ("  TargetIds      : {0}" -f $(if ($State.TargetIds.Count -gt 0) { $State.TargetIds -join ', ' } else { '(all)' })) }
     if (Test-PhaseOption $allowed 'd') { Write-Host ("  CloneSourceDir : {0}" -f $State.CloneSourceDir) }
     if (Test-PhaseOption $allowed 'j') { Write-Host ("  J4BaseDir      : {0}" -f $State.J4BaseDir) }
@@ -624,6 +630,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 'c') { $help += 'c=crop px' }
         if (Test-PhaseOption $allowed 't') { $help += 't=target IDs' }
         if (Test-PhaseOption $allowed 'a') { $help += 'a=review cursor cell' }
+        if (Test-PhaseOption $allowed 'o') { $help += 'o=Ocr toggle' }
         if (Test-PhaseOption $allowed 'd') { $help += 'd=Clone SourceDir' }
         if (Test-PhaseOption $allowed 'j') { $help += 'j=J4 BaseDir' }
         if (Test-PhaseOption $allowed 'b') { $help += 'b=BizCodes' }
@@ -750,6 +757,16 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
                 else { $State.CheckSheetPath = Read-Choice 'Review check sheet .xlsx path. Empty = use config' $State.CheckSheetPath }
             }
 
+            '^-?o(cr)?$' {
+                # 'o'/'ocr'/'-ocr' -> OCR toggle where the phase supports it;
+                # plain 'o' falls through to the owner alias below otherwise.
+                if (Test-PhaseOption $allowed 'o') {
+                    $State.Ocr = -not $State.Ocr
+                    Write-Host ("  Ocr            : {0}" -f (To-BoolText $State.Ocr)) -ForegroundColor DarkGray
+                    break
+                }
+                if ($x.Trim().ToLower() -ne 'o') { Write-UnusedOption $PhaseKey 'ocr'; break }
+            }
             '^-?owner$|^o$' {
                 if (-not (Test-PhaseOption $allowed 'owner')) { Write-UnusedOption $PhaseKey 'owner' }
                 else {
@@ -1163,9 +1180,10 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args['ExcelHelpersScript'] = $eh
         if ($Config.Review.SaveWaitMs) { $args['SaveWaitMs'] = [int]$Config.Review.SaveWaitMs }
         if ($Config.Review.Maximize) { $args['Maximize'] = $true }
+        if ($State.Ocr) { $args['Ocr'] = $true }
         if ($Config.ContainsKey('SendVsGift') -and $null -ne $Config.SendVsGift) {
             $svg = $Config.SendVsGift
-            if ($svg.ContainsKey('Ocr') -and $svg.Ocr) { $args['Ocr'] = $true }
+            if ($svg.ContainsKey('AutoMark') -and -not $svg.AutoMark) { $args['NoAutoMark'] = $true }
             if ($svg.ContainsKey('OcrLanguage') -and -not [string]::IsNullOrWhiteSpace([string]$svg.OcrLanguage)) { $args['OcrLanguage'] = [string]$svg.OcrLanguage }
             if ($svg.ContainsKey('SendSheetName') -and -not [string]::IsNullOrWhiteSpace([string]$svg.SendSheetName)) { $args['SendSheetName'] = [string]$svg.SendSheetName }
             if ($svg.ContainsKey('ZeroBytePattern') -and -not [string]::IsNullOrWhiteSpace([string]$svg.ZeroBytePattern)) { $args['ZeroBytePattern'] = [string]$svg.ZeroBytePattern }
@@ -1724,6 +1742,9 @@ $state = @{
     DfExePath       = $DfExePath
     CheckSheetPath  = $CheckSheetPath
     Force           = [bool]$Force.IsPresent
+    # OCR for SendVsGift: CLI -Ocr or SendVsGift.Ocr in config/overlay; the
+    # 'o' menu option toggles it per run.
+    Ocr             = ([bool]$Ocr.IsPresent -or ($Config.ContainsKey('SendVsGift') -and $null -ne $Config.SendVsGift -and $Config.SendVsGift.ContainsKey('Ocr') -and [bool]$Config.SendVsGift.Ocr))
     Interactive     = [bool]$Interactive.IsPresent
     NoResize        = ([bool]$NoResize.IsPresent -or ($Config.Window -and [bool]$Config.Window.NoResize))
     RefreshUrls     = [bool]$RefreshUrls.IsPresent

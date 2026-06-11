@@ -66,11 +66,16 @@
     # SendVsGift phase, Stage 2 OCR compare (off by default; Stage 1 manual
     # flow is unchanged). Overridable per work folder via verify_config.json.
     #   Ocr             -> $true = export send-sheet pictures + Windows OCR + auto compare
+    #                      (also togglable per run: 'o' at the option prompt, or -Ocr)
+    #   AutoMark        -> $true (default) = OCR verdict ok marks SendVsGift=1,
+    #                      ng marks SendVsGift=2 (NG rows stay pending and are
+    #                      listed at the end); $false = verdict is advisory only
     #   OcrLanguage     -> recognizer language tag passed to Windows.Media.Ocr
     #   SendSheetName   -> blank = the ProjectLabels send-data sheet name
     #   ZeroBytePattern -> regex override for the 0-byte screenshot pattern
     SendVsGift = @{
         Ocr             = $false
+        AutoMark        = $true
         OcrLanguage     = 'ja'
         SendSheetName   = ''
         ZeroBytePattern = ''

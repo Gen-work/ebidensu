@@ -1,24 +1,35 @@
 # ============================================================
 # SendVsGift.ps1 - compare-prep review for SEND data vs GIFT data
 #
-# Stage 1 MVP:
+# Stage 1 (manual review):
 #   1. Gather exact metadata for every file under <WorkDir>\DATA\GIFT.
 #   2. Save it to <WorkDir>\data\gift_metadata.csv.
 #   3. Ensure mapping column SendVsGift exists.
-#   4. For each pending workbook, print the matching GIFT metadata in the
-#      console, open the evidence Excel for manual viewing, then Enter marks
-#      SendVsGift=1, sets the cursor to A3, saves, and closes.
+#   4. Pending rows are grouped per evidence workbook: each workbook is
+#      opened ONCE, and for every correl row the cursor is moved to the
+#      Correl_ID_S label cell in column A of the send-data sheet (the
+#      pictures sit right below it). After each console answer Excel is
+#      brought back to the foreground so the next correl can be checked
+#      without manual Alt+Tab into Excel.
+#   5. Enter marks SendVsGift=1; n marks SendVsGift=2 (NG, needs follow-up);
+#      s skips; q quits. The workbook is saved/closed when its last correl
+#      row is done.
 #
-# Stage 2 (-Ocr, skeleton):
-#   See docs/SendVsGift.md. Exports the pictures embedded on the send-data
-#   sheet (EvidenceImageExport.ps1), OCRs them with the built-in Windows
-#   OCR engine (OcrWindows.ps1 - same engine family as the Snipping Tool
-#   text extraction, zero installs), parses them into a record parallel
-#   to gift_metadata.csv (SendMetadata.ps1, unit-tested), writes
-#   <WorkDir>\data\send_metadata.csv and prints a per-field comparison
-#   verdict. Low confidence / OCR failure falls back to the unchanged
-#   manual Enter-to-mark flow; the SendVsGift mapping column semantics
-#   are untouched.
+# Stage 2 (-Ocr):
+#   See docs/SendVsGift.md. For each correl row only the pictures between
+#   its column-A label and the next label are exported
+#   (EvidenceImageExport.ps1 - Ctrl+G groups are flattened to child
+#   pictures), OCR'd with the built-in Windows engine (OcrWindows.ps1),
+#   and judged by the pure rules in SendMetadata.ps1:
+#     gift 0 bytes  -> 'used CYLINDERS : 0' screen, or begin+end-of-data
+#                      markers on one image with no 000001 line
+#     gift has data -> zero-padded max row number must appear, and the
+#                      first/last records must match by first token
+#                      (exact) or >=80% prefix similarity (OCR noise)
+#   Verdict ok -> auto-mark SendVsGift=1; ng -> auto-mark SendVsGift=2 and
+#   report at the end; unknown -> fall back to the manual prompt.
+#   -NoAutoMark keeps the verdict advisory-only (always prompt).
+#   send_metadata.csv keeps the parsed OCR record per correl for audit.
 # ============================================================
 
 param(
@@ -33,6 +44,7 @@ param(
     [switch]$DryRun,
     [switch]$Maximize,
     [switch]$Ocr,
+    [switch]$NoAutoMark,
     [string]$OcrLanguage = 'ja',
     [string]$SendSheetName = '',
     [string]$ZeroBytePattern = '',
@@ -41,8 +53,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# capture switch BEFORE dot-sourcing (see CLAUDE.md dot-source safety rule)
-$ocrFlag = [bool]$Ocr.IsPresent
+# capture switches BEFORE dot-sourcing (see CLAUDE.md dot-source safety rule)
+$ocrFlag      = [bool]$Ocr.IsPresent
+$forceFlag    = [bool]$Force.IsPresent
+$dryRunFlag   = [bool]$DryRun.IsPresent
+$maximizeFlag = [bool]$Maximize.IsPresent
+$autoMark     = -not [bool]$NoAutoMark.IsPresent
 
 try {
     [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -66,6 +82,27 @@ if (-not $helpersPath) { throw 'ExcelHelpers.ps1 not found.' }
 . (Join-Path $PSScriptRoot 'SendMetadata.ps1')
 . (Join-Path $PSScriptRoot 'OcrWindows.ps1')
 . (Join-Path $PSScriptRoot 'EvidenceImageExport.ps1')
+
+# Foreground helper: after the operator answers in the console, hand the
+# focus back to Excel so the next correl is immediately visible. Direct
+# SetForegroundWindow on the Excel hwnd is more reliable than a blind
+# Alt+Tab; SendKeys %{TAB} stays as the fallback.
+try {
+    Add-Type -Namespace VerifySvg -Name Win32 -MemberDefinition @'
+[DllImport("user32.dll")]
+public static extern bool SetForegroundWindow(IntPtr hWnd);
+'@ -ErrorAction Stop
+} catch {}
+
+function Set-ExcelForeground($Excel) {
+    try {
+        if (([type]'VerifySvg.Win32') -and [VerifySvg.Win32]::SetForegroundWindow([intptr]$Excel.Hwnd)) { return }
+    } catch {}
+    try {
+        $sh = New-Object -ComObject WScript.Shell
+        $sh.SendKeys('%{TAB}')
+    } catch {}
+}
 
 function Test-TargetRow($Row, [hashtable]$TargetSet) {
     if ($TargetSet.Count -eq 0) { return $true }
@@ -92,13 +129,6 @@ function Get-FirstToken([string]$Text) {
     $parts = @($Text.Trim() -split '\s+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($parts.Count -eq 0) { return '' }
     return $parts[0]
-}
-
-function Get-LastToken([string]$Text) {
-    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
-    $parts = @($Text.Trim() -split '\s+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    if ($parts.Count -eq 0) { return '' }
-    return $parts[$parts.Count - 1]
 }
 
 function Get-GiftFileMetadata([System.IO.FileInfo]$File) {
@@ -190,14 +220,59 @@ function Set-WorkbookCursorAllSheets($Workbook, [string]$DefaultCell) {
     }
 }
 
-function Show-MetadataBlock($Row, [array]$Matches) {
+# Finds the worksheet carrying the send-data evidence pictures.
+function Find-WorksheetByName($Workbook, [string]$SheetName) {
+    foreach ($s in $Workbook.Worksheets) {
+        if ([string]$s.Name -eq $SheetName) { return $s }
+    }
+    return $null
+}
+
+# Finds the Correl_ID_S label cell in column A of the send sheet
+# (whole-cell match first, then substring for decorated labels).
+function Find-SendCorrelCell($Worksheet, [string]$Sid) {
+    if ([string]::IsNullOrWhiteSpace($Sid)) { return $null }
+    $missing = [System.Reflection.Missing]::Value
+    $rng = $Worksheet.Range('A:A')
+    foreach ($lookAt in @(1, 2)) {   # xlWhole, then xlPart
+        $cell = $null
+        try { $cell = $rng.Find($Sid, $missing, -4163, $lookAt) } catch { $cell = $null }
+        if ($null -ne $cell) { return $cell }
+    }
+    return $null
+}
+
+# Vertical bounds of one correl section on the send sheet: from the label
+# cell down to the next non-empty cell in column A (the next correl's
+# label), or unbounded when the label is the last one.
+function Get-SendSectionBounds($Worksheet, $LabelCell) {
+    $top = 0.0
+    try { $top = [double]$LabelCell.Top } catch {}
+    $bottom = -1.0
+    try {
+        $r = [int]$LabelCell.Row
+        $below = $Worksheet.Cells.Item($r + 1, 1)
+        if (-not [string]::IsNullOrWhiteSpace([string]$below.Text)) {
+            $bottom = [double]$below.Top
+        } else {
+            $next = $below.End(-4121)   # xlDown -> next non-empty cell
+            if ([int]$next.Row -lt [int]$Worksheet.Rows.Count -and
+                -not [string]::IsNullOrWhiteSpace([string]$next.Text)) {
+                $bottom = [double]$next.Top
+            }
+        }
+    } catch {}
+    return @{ Top = $top; Bottom = $bottom }
+}
+
+function Show-MetadataBlock($Row, [array]$GiftRows) {
     Write-Host ''
     Write-Host ("ID: {0}  Excel: {1}  Job: {2}" -f $Row.Correl_ID_S, $Row.Excel_NAME, $Row.JOB_NAME) -ForegroundColor Cyan
-    if ($Matches.Count -eq 0) {
+    if ($GiftRows.Count -eq 0) {
         Write-Host '  [WARN] no matching GIFT data file found.' -ForegroundColor Yellow
         return
     }
-    foreach ($m in $Matches) {
+    foreach ($m in $GiftRows) {
         Write-Host ("  File        : {0}" -f $m.FullName)
         Write-Host ("  Size        : {0}" -f $m.SizeDisplay)
         Write-Host ("  Max row num : {0}" -f $m.MaxRowNumber)
@@ -207,49 +282,95 @@ function Show-MetadataBlock($Row, [array]$Matches) {
     }
 }
 
-# Stage 2: export send-sheet pictures, OCR them, build a send metadata
-# record and print the field-by-field comparison against the gift row.
-# Returns the record (for send_metadata.csv) or $null when nothing usable.
-function Invoke-SendOcrCompare {
-    param($Workbook, $Row, [array]$GiftMatches, [string]$SheetName, [string]$ImagesRoot, [string]$LanguageTag, [string]$ZeroPattern)
+# Stage 2: export only THIS correl's pictures (between its column-A label
+# and the next), OCR them and judge with the pure SendMetadata rules.
+# Returns @{ Meta = <send_metadata record or $null>; Verdict = ok|ng|unknown|none }.
+function Invoke-SendOcrReview {
+    param($Workbook, $Worksheet, $LabelCell, $Row, [array]$GiftRows,
+          [string]$SheetName, [string]$ImagesRoot, [string]$LanguageTag, [string]$ZeroPattern)
     $sid = [string]$Row.Correl_ID_S
-    if ([string]::IsNullOrWhiteSpace($sid)) { return $null }
-
-    $outDir = Join-Path $ImagesRoot $sid
-    $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $outDir $sid)
-    if ($pngs.Count -eq 0) {
-        Write-Host ("  [OCR] no exportable pictures on sheet '{0}'; manual check only." -f $SheetName) -ForegroundColor Yellow
-        return $null
+    if ([string]::IsNullOrWhiteSpace($sid)) { return @{ Meta = $null; Verdict = 'none' } }
+    if ($GiftRows.Count -eq 0) {
+        Write-Host '  [OCR] no matching gift metadata row; manual check only.' -ForegroundColor Yellow
+        return @{ Meta = $null; Verdict = 'none' }
+    }
+    if ($null -eq $Worksheet -or $null -eq $LabelCell) {
+        Write-Host '  [OCR] correl label not located on the send sheet; manual check only.' -ForegroundColor Yellow
+        return @{ Meta = $null; Verdict = 'none' }
     }
 
-    $textLines = @()
+    $bounds = Get-SendSectionBounds $Worksheet $LabelCell
+    $outDir = Join-Path $ImagesRoot $sid
+    $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $outDir $sid $bounds.Top $bounds.Bottom)
+    if ($pngs.Count -eq 0) {
+        Write-Host ("  [OCR] no pictures in the {0} section of sheet '{1}'; manual check only." -f $sid, $SheetName) -ForegroundColor Yellow
+        return @{ Meta = $null; Verdict = 'none' }
+    }
+
+    $imageSets = @()
+    $allLines = @()
     foreach ($p in $pngs) {
         $res = Invoke-WinOcrFile -Path $p -LanguageTag $LanguageTag
-        $textLines += @(ConvertTo-SendTextLines $res.Lines)
+        $lines = @(ConvertTo-SendTextLines $res.Lines)
+        $imageSets += ,@($lines)
+        $allLines += $lines
     }
 
     $meta = Build-SendMetadataRecord -CorrelIdS $sid -ExcelName ([string]$Row.Excel_NAME) `
-        -ImageCount $pngs.Count -TextLines $textLines -ZeroBytePattern $ZeroPattern
-    Write-Host ("  [OCR] images={0} lines={1} rowGuess={2} zeroByte={3} confidence={4}" -f `
-        $meta.ImageCount, $meta.OcrLineCount, $meta.RowNumberGuess, $meta.ZeroByte, $meta.Confidence) -ForegroundColor Cyan
-
-    if ($GiftMatches.Count -eq 0) {
-        Write-Host '  [OCR] no matching gift metadata row to compare against.' -ForegroundColor Yellow
-        return $meta
-    }
-    $cmp = Compare-SendGiftMetadata $meta $GiftMatches[0]
+        -ImageCount $pngs.Count -TextLines $allLines -ZeroBytePattern $ZeroPattern
+    $cmp = Compare-SendGiftEvidence -GiftRow $GiftRows[0] -ImageTextSets $imageSets -ZeroBytePattern $ZeroPattern
+    Write-Host ("  [OCR] images={0} lines={1}" -f $pngs.Count, $allLines.Count) -ForegroundColor Cyan
     foreach ($c in $cmp.Checks) {
-        $color = switch ($c.Status) { 'match' { 'Green' } 'mismatch' { 'Red' } default { 'DarkGray' } }
-        Write-Host ("    {0,-16} send='{1}' gift='{2}' -> {3}" -f $c.Name, $c.Send, $c.Gift, $c.Status) -ForegroundColor $color
+        $color = switch ($c.Status) { 'match' { 'Green' } 'fuzzy' { 'DarkGreen' } 'mismatch' { 'Red' } default { 'DarkGray' } }
+        Write-Host ("    {0,-14} send='{1}' gift='{2}' -> {3}" -f $c.Name, $c.Send, $c.Gift, $c.Status) -ForegroundColor $color
     }
-    $vColor = switch ($cmp.Verdict) { 'match' { 'Green' } 'mismatch' { 'Red' } default { 'Yellow' } }
-    Write-Host ("  [OCR] verdict: {0} (match={1}, mismatch={2}, unknown={3}) - operator decision still required." -f `
-        $cmp.Verdict, $cmp.MatchCount, $cmp.MismatchCount, $cmp.UnknownCount) -ForegroundColor $vColor
-    return $meta
+    $vColor = switch ($cmp.Verdict) { 'ok' { 'Green' } 'ng' { 'Red' } default { 'Yellow' } }
+    Write-Host ("  [OCR] verdict: {0}" -f $cmp.Verdict) -ForegroundColor $vColor
+    return @{ Meta = $meta; Verdict = [string]$cmp.Verdict }
 }
 
-if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host 'WorkDir path' }
+# ---- WorkDir / Owner resolution (standalone launch friendly) ----
+# VerifyTool.ps1 always passes both; when run directly we fall back to
+# verify_session.json, then to the single mapping_*.csv in the work
+# folder, then to a prompt - no more silent 'mapping_.csv' failure.
+$sessionData = @{}
+try {
+    $sessionFile = Join-Path $PSScriptRoot 'verify_session.json'
+    if (Test-Path -LiteralPath $sessionFile) {
+        $obj = Get-Content -LiteralPath $sessionFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($p in $obj.PSObject.Properties) { $sessionData[$p.Name] = $p.Value }
+    }
+} catch {}
+
+if ([string]::IsNullOrWhiteSpace($WorkDir)) {
+    $candidate = ''
+    if ($sessionData.ContainsKey('WorkDir')) { $candidate = [string]$sessionData['WorkDir'] }
+    if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
+        $v = Read-Host ("WorkDir path [{0}]" -f $candidate)
+        $WorkDir = if ([string]::IsNullOrWhiteSpace($v)) { $candidate } else { $v }
+    } else {
+        $WorkDir = Read-Host 'WorkDir path'
+    }
+}
 if (-not (Test-Path -LiteralPath $WorkDir)) { throw "WorkDir not found: $WorkDir" }
+
+if ([string]::IsNullOrWhiteSpace($Owner)) {
+    $sessionOwner = ''
+    if ($sessionData.ContainsKey('Owner')) { $sessionOwner = [string]$sessionData['Owner'] }
+    if (-not [string]::IsNullOrWhiteSpace($sessionOwner) -and
+        (Test-Path -LiteralPath (Join-Path $WorkDir ("mapping_{0}.csv" -f $sessionOwner)))) {
+        $Owner = $sessionOwner
+        Write-Host ("[INFO] Owner from session: {0}" -f $Owner) -ForegroundColor DarkGray
+    } else {
+        $maps = @(Get-ChildItem -LiteralPath $WorkDir -Filter 'mapping_*.csv' -File -ErrorAction SilentlyContinue)
+        if ($maps.Count -eq 1 -and $maps[0].Name -match '^mapping_(.+)\.csv$') {
+            $Owner = $Matches[1]
+            Write-Host ("[INFO] Owner from work folder: {0} ({1})" -f $Owner, $maps[0].Name) -ForegroundColor DarkGray
+        } else {
+            $Owner = Read-Host 'Owner suffix (mapping_<Owner>.csv)'
+        }
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir 'evidence' }
 elseif (-not [System.IO.Path]::IsPathRooted($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir $EvidenceDir }
@@ -275,15 +396,23 @@ if ($allRows.Count -eq 0) { throw "mapping has no rows: $mappingPath" }
 Ensure-Column $allRows 'SendVsGift' '0'
 $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
 
+function Set-SendVsGiftValue([string]$Sid, [string]$Value) {
+    foreach ($row in $script:allRows) {
+        if ([string]$row.Correl_ID_S -eq $Sid) { $row.SendVsGift = $Value }
+    }
+    $script:allRows | Export-Csv -LiteralPath $script:mappingPath -Encoding UTF8 -NoTypeInformation -Force
+}
+
+# pending = anything not yet OK (covers '', '0' and NG rows marked '2')
 $selectedRows = @($allRows | Where-Object { Test-TargetRow $_ $targetSet })
-$pendingRows = @($selectedRows | Where-Object { $Force.IsPresent -or [string]::IsNullOrWhiteSpace([string]$_.SendVsGift) -or [string]$_.SendVsGift -eq '0' })
+$pendingRows = @($selectedRows | Where-Object { $forceFlag -or [string]$_.SendVsGift -ne '1' })
 if ($pendingRows.Count -eq 0) {
     Write-Host '[INFO] no pending SendVsGift rows.' -ForegroundColor Green
     return
 }
 
 Write-Host ("[INFO] pending SendVsGift rows: {0}" -f $pendingRows.Count) -ForegroundColor Cyan
-if ($DryRun.IsPresent) { return }
+if ($dryRunFlag) { return }
 
 # Stage 2 OCR setup (no-op unless -Ocr): availability probe + send-side
 # metadata store. OCR runs on Windows only; elsewhere we warn and the
@@ -292,91 +421,151 @@ $ocrReady = $false
 $sendMetaPath = Join-Path (Join-Path $WorkDir 'data') 'send_metadata.csv'
 $sendImagesRoot = Join-Path (Join-Path $WorkDir 'data') 'send_images'
 $sendMetaRows = @()
+if ([string]::IsNullOrWhiteSpace($SendSheetName)) {
+    $labels = Get-ProjectLabels
+    $SendSheetName = [string]$labels['SheetSoshinData']
+}
 if ($ocrFlag) {
-    if ([string]::IsNullOrWhiteSpace($SendSheetName)) {
-        $labels = Get-ProjectLabels
-        $SendSheetName = [string]$labels['SheetSoshinData']
-    }
     $ocrReady = Test-WinOcrAvailable
     if ($ocrReady) {
         if (Test-Path -LiteralPath $sendMetaPath) {
             $sendMetaRows = @(Import-Csv -LiteralPath $sendMetaPath -Encoding UTF8)
         }
-        Write-Host ("[OCR] engine ready (languages: {0}); send sheet: {1}" -f ((Get-WinOcrLanguageTags) -join ', '), $SendSheetName) -ForegroundColor Green
+        Write-Host ("[OCR] engine ready (languages: {0}); send sheet: {1}; auto-mark: {2}" -f `
+            ((Get-WinOcrLanguageTags) -join ', '), $SendSheetName, $autoMark) -ForegroundColor Green
     } else {
         Write-Host ("[WARN] -Ocr requested but Windows OCR is unavailable: {0}" -f (Get-WinOcrInitError)) -ForegroundColor Yellow
         Write-Host '       continuing with the manual compare flow only.' -ForegroundColor Yellow
     }
 }
 
+# Group pending rows per evidence workbook so each file is opened once
+# and the cursor just moves between correl labels inside it.
+$groupList = @()
+$groupMap = @{}
+foreach ($r in $pendingRows) {
+    $prefix = Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix
+    $fullStem = Get-ExcelFullStem -Prefix $prefix -Name ([string]$r.Excel_NAME)
+    $file = Get-EvidencePath $EvidenceDir $fullStem
+    if (-not $groupMap.ContainsKey($file)) {
+        $g = @{ File = $file; ExcelName = [string]$r.Excel_NAME; Rows = @() }
+        $groupMap[$file] = $g
+        $groupList += $g
+    }
+    $groupMap[$file].Rows += $r
+}
+
+$ngList = @()
+$quitAll = $false
+$rowIdx = 0
 $excel = $null
 try {
     $excel = New-Object -ComObject Excel.Application
     $excel.Visible = $true
     $excel.DisplayAlerts = $false
-    try { if ($Maximize.IsPresent) { $excel.WindowState = -4137 } } catch {}
+    try { if ($maximizeFlag) { $excel.WindowState = -4137 } } catch {}
 
-    for ($idx = 0; $idx -lt $pendingRows.Count; $idx++) {
-        $r = $pendingRows[$idx]
-        $matches = @(Find-GiftMetadataForRow $r $metadataRows)
-        Show-MetadataBlock $r $matches
-
-        $prefix = Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix
-        $fullStem = Get-ExcelFullStem -Prefix $prefix -Name ([string]$r.Excel_NAME)
-        $file = Get-EvidencePath $EvidenceDir $fullStem
-        if (-not (Test-Path -LiteralPath $file)) {
-            Write-Host ("[{0}/{1}] MISSING workbook: {2}" -f ($idx + 1), $pendingRows.Count, $file) -ForegroundColor Yellow
+    foreach ($g in $groupList) {
+        if ($quitAll) { break }
+        if (-not (Test-Path -LiteralPath $g.File)) {
+            $rowIdx += @($g.Rows).Count
+            Write-Host ("[MISSING] workbook for {0} ({1} row(s)): {2}" -f $g.ExcelName, @($g.Rows).Count, $g.File) -ForegroundColor Yellow
             continue
         }
 
         $wb = $null
         try {
-            Write-Host ("[{0}/{1}] OPEN: {2}" -f ($idx + 1), $pendingRows.Count, $file) -ForegroundColor Cyan
-            $wb = $excel.Workbooks.Open($file, 0, $false)
+            Write-Host ''
+            Write-Host ("[OPEN] {0}  ({1} correl row(s))" -f $g.File, @($g.Rows).Count) -ForegroundColor Cyan
+            $wb = $excel.Workbooks.Open($g.File, 0, $false)
+            $sendWs = Find-WorksheetByName $wb $SendSheetName
+            if ($null -eq $sendWs) {
+                Write-Host ("  [WARN] send sheet '{0}' not found; cursor stays at {1}." -f $SendSheetName, $CursorCell) -ForegroundColor Yellow
+            }
+            $markedAny = $false
 
-            if ($ocrFlag -and $ocrReady) {
-                try {
-                    $sendMeta = Invoke-SendOcrCompare $wb $r $matches $SendSheetName $sendImagesRoot $OcrLanguage $ZeroBytePattern
-                    if ($null -ne $sendMeta) {
-                        $sendMetaRows = @($sendMetaRows | Where-Object { [string]$_.CorrelIdS -ne [string]$sendMeta.CorrelIdS }) + @($sendMeta)
-                        $sendMetaRows | Export-Csv -LiteralPath $sendMetaPath -Encoding UTF8 -NoTypeInformation -Force
-                        Write-Host ("  [OCR] send metadata saved: {0}" -f $sendMetaPath) -ForegroundColor DarkGray
+            foreach ($r in $g.Rows) {
+                $rowIdx++
+                $sid = [string]$r.Correl_ID_S
+                $giftRows = @(Find-GiftMetadataForRow $r $metadataRows)
+                Show-MetadataBlock $r $giftRows
+                Write-Host ("[{0}/{1}] {2}" -f $rowIdx, $pendingRows.Count, $sid) -ForegroundColor Cyan
+
+                # cursor to this correl's label cell in column A (review rule:
+                # the evidence pictures sit right below the label)
+                $labelCell = $null
+                if ($null -ne $sendWs) {
+                    try { $sendWs.Activate() | Out-Null } catch {}
+                    $labelCell = Find-SendCorrelCell $sendWs $sid
+                    if ($null -ne $labelCell) {
+                        try { $excel.Goto($labelCell, $true) | Out-Null } catch {
+                            try { $labelCell.Select() | Out-Null } catch {}
+                        }
+                        Write-Host ("  cursor -> {0}!A{1}" -f $SendSheetName, [int]$labelCell.Row) -ForegroundColor DarkGray
+                    } else {
+                        Write-Host ("  [WARN] '{0}' not found in column A of sheet '{1}'." -f $sid, $SendSheetName) -ForegroundColor Yellow
+                        try { $sendWs.Range($CursorCell).Select() | Out-Null } catch {}
                     }
-                } catch {
-                    Write-Host ("  [WARN] OCR compare failed; manual check continues: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
                 }
+                Set-ExcelForeground $excel
+
+                $verdict = 'none'
+                if ($ocrFlag -and $ocrReady) {
+                    try {
+                        $res = Invoke-SendOcrReview $wb $sendWs $labelCell $r $giftRows $SendSheetName $sendImagesRoot $OcrLanguage $ZeroBytePattern
+                        if ($null -ne $res.Meta) {
+                            $sendMetaRows = @($sendMetaRows | Where-Object { [string]$_.CorrelIdS -ne [string]$res.Meta.CorrelIdS }) + @($res.Meta)
+                            $sendMetaRows | Export-Csv -LiteralPath $sendMetaPath -Encoding UTF8 -NoTypeInformation -Force
+                        }
+                        $verdict = [string]$res.Verdict
+                    } catch {
+                        Write-Host ("  [WARN] OCR compare failed; manual check continues: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                    }
+                }
+
+                if ($autoMark -and $verdict -eq 'ok') {
+                    Set-SendVsGiftValue $sid '1'
+                    $markedAny = $true
+                    Write-Host '  [DONE] SendVsGift=1 (OCR auto)' -ForegroundColor Green
+                    continue
+                }
+                if ($autoMark -and $verdict -eq 'ng') {
+                    Set-SendVsGiftValue $sid '2'
+                    $markedAny = $true
+                    $ngList += [pscustomobject]@{ CorrelIdS = $sid; ExcelName = [string]$r.Excel_NAME; File = $g.File }
+                    Write-Host '  [NG] SendVsGift=2 (OCR mismatch) - check this one manually.' -ForegroundColor Red
+                    continue
+                }
+                if ($verdict -eq 'unknown') {
+                    Write-Host '  [OCR] verdict unknown - your call.' -ForegroundColor Yellow
+                }
+
+                $ans = [string](Read-Host 'Check the workbook and console metadata. Enter=mark SendVsGift=1, n=mark 2(NG), s=skip, q=quit')
+                $key = $ans.Trim().ToLower()
+                if ($key -eq 'q') { $quitAll = $true; break }
+                if ($key -eq 's') { Write-Host '  [SKIP]' -ForegroundColor Yellow; continue }
+                if ($key -eq 'n') {
+                    Set-SendVsGiftValue $sid '2'
+                    $markedAny = $true
+                    $ngList += [pscustomobject]@{ CorrelIdS = $sid; ExcelName = [string]$r.Excel_NAME; File = $g.File }
+                    Write-Host '  [NG] SendVsGift=2' -ForegroundColor Red
+                    continue
+                }
+                Set-SendVsGiftValue $sid '1'
+                $markedAny = $true
+                Write-Host '  [DONE] SendVsGift=1' -ForegroundColor Green
             }
 
-            $ans = Read-Host 'Check the workbook and console metadata. Enter=mark SendVsGift=1/save/close, s=skip, q=quit'
-            $ans = [string]$ans
-            if ($ans.Trim().ToLower() -eq 'q') { throw '__SENDVSGIFT_QUIT__' }
-            if ($ans.Trim().ToLower() -eq 's') { throw '__SENDVSGIFT_SKIP__' }
-
-            Set-WorkbookCursorAllSheets $wb $CursorCell
-            $wb.Save()
-            Start-Sleep -Milliseconds $SaveWaitMs
+            if ($markedAny) {
+                Set-WorkbookCursorAllSheets $wb $CursorCell
+                $wb.Save()
+                Start-Sleep -Milliseconds $SaveWaitMs
+            }
             $wb.Close($false)
             $wb = $null
-
-            $key = [string]$r.Correl_ID_S
-            foreach ($row in $allRows) {
-                if ([string]$row.Correl_ID_S -eq $key) { $row.SendVsGift = '1' }
-            }
-            $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
-            Write-Host '  [DONE] SendVsGift=1' -ForegroundColor Green
         } catch {
-            $msg = $_.Exception.Message
-            if ($msg -eq '__SENDVSGIFT_QUIT__') {
-                if ($wb) { try { $wb.Close($false) } catch {} }
-                break
-            }
-            if ($msg -eq '__SENDVSGIFT_SKIP__') {
-                if ($wb) { try { $wb.Close($false) } catch {} }
-                Write-Host '  [SKIP]' -ForegroundColor Yellow
-                continue
-            }
+            Write-Host ("  [ERROR] {0}" -f $_.Exception.Message) -ForegroundColor Red
             if ($wb) { try { $wb.Close($false) } catch {} }
-            Write-Host ("  [ERROR] {0}" -f $msg) -ForegroundColor Red
         }
     }
 } finally {
@@ -387,4 +576,13 @@ try {
     }
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
+}
+
+if ($ngList.Count -gt 0) {
+    Write-Host ''
+    Write-Host ("===== SendVsGift NG rows (marked 2): {0} =====" -f $ngList.Count) -ForegroundColor Red
+    foreach ($n in $ngList) {
+        Write-Host ("  {0,-12} {1,-16} {2}" -f $n.CorrelIdS, $n.ExcelName, $n.File) -ForegroundColor Red
+    }
+    Write-Host '  Re-run SendVsGift (NG rows stay pending) after checking them.' -ForegroundColor Yellow
 }

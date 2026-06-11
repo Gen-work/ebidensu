@@ -150,6 +150,244 @@ function Build-SendMetadataRecord {
     }
 }
 
+# ---- Stage 2 evidence-verdict helpers (pure; unit-tested) ----
+# These implement the operator's review rules for the host screenshots:
+#   0-byte file  : dataset-info screen shows 'used CYLINDERS : 0', OR the
+#                  begin-of-data and end-of-data markers sit on the SAME
+#                  image with no 000001 record line.
+#   non-0-byte   : the zero-padded max row number (from gift_metadata) must
+#                  appear in the OCR text, and the first/last records are
+#                  compared by first space-free token (exact) with a
+#                  prefix-similarity fallback for OCR noise (~80% rule).
+
+# Japanese fragments built from code points (ASCII-only source; see
+# ProjectLabels.ps1 for the policy).
+function Get-SendZeroByteLabels {
+    @{
+        # 'shiyou' (used) U+4F7F U+7528 - the dataset-info 'used CYLINDERS' row
+        Shiyou = [string]([char]0x4F7F) + [char]0x7528
+        # 'no hajime' U+306E U+59CB U+3081 - tail of 'de-ta no hajime' (begin-of-data)
+        Begin  = [string]([char]0x306E) + [char]0x59CB + [char]0x3081
+        # 'no owa..' U+306E U+7D42 - tail of 'de-ta no owari' (end-of-data, both spellings)
+        End    = [string]([char]0x306E) + [char]0x7D42
+    }
+}
+
+# Zero-padded row label as printed on host list screens (000001, 004644, ...).
+function Get-SendRowLabel {
+    param([int]$Number, [int]$MinWidth = 6)
+    $w = [Math]::Max($MinWidth, $Number.ToString().Length)
+    return $Number.ToString('D' + $w)
+}
+
+# True when the row label appears anywhere in the lines as a standalone
+# number (not part of a longer digit run).
+function Test-SendRowNumberPresent {
+    param([string[]]$TextLines, [string]$RowLabel)
+    if ([string]::IsNullOrWhiteSpace($RowLabel)) { return $false }
+    $re = '(^|[^0-9])' + [regex]::Escape($RowLabel) + '([^0-9]|$)'
+    foreach ($t in @($TextLines)) {
+        if ([string]$t -match $re) { return $true }
+    }
+    return $false
+}
+
+# Returns the record text after a leading row label, or $null when no line
+# starts with that label. Tolerates the OCR gluing the label to the data.
+function Find-SendRecordByRowNumber {
+    param([string[]]$TextLines, [string]$RowLabel)
+    if ([string]::IsNullOrWhiteSpace($RowLabel)) { return $null }
+    $re = '^\s*' + [regex]::Escape($RowLabel) + '(?![0-9])\s*(.*)$'
+    foreach ($t in @($TextLines)) {
+        $m = [regex]::Match([string]$t, $re)
+        if ($m.Success) {
+            $rest = ([string]$m.Groups[1].Value).Trim()
+            if ($rest -ne '') { return $rest }
+        }
+    }
+    return $null
+}
+
+# Per-IMAGE 0-byte evidence (operator rule). A custom regex overrides both
+# built-in rules. Rule B needs begin+end on the same image because a
+# non-empty file shows the begin marker on its head image and the end
+# marker on its tail image, never both together.
+function Test-SendZeroByteImage {
+    param([string[]]$TextLines, [string]$Pattern = '')
+    $lines = @(@($TextLines) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    if ($lines.Count -eq 0) { return $false }
+    if (-not [string]::IsNullOrWhiteSpace($Pattern)) {
+        foreach ($t in $lines) { if ([string]$t -match $Pattern) { return $true } }
+        return $false
+    }
+    $L = Get-SendZeroByteLabels
+    # Rule A: dataset-info screen, 'used CYLINDERS . . : 0'
+    $cyl = [regex]::Escape($L.Shiyou) + '\s*CYLINDERS[^0-9]*0([^0-9]|$)'
+    foreach ($t in $lines) { if ([string]$t -match $cyl) { return $true } }
+    # Rule B: begin + end markers on the same image, no 000001 record line.
+    $hasBegin = $false
+    $hasEnd = $false
+    foreach ($t in $lines) {
+        $s = [string]$t
+        if ($s.Contains($L.Begin)) { $hasBegin = $true }
+        if ($s.Contains($L.End)) { $hasEnd = $true }
+    }
+    if ($hasBegin -and $hasEnd) {
+        return (-not (Test-SendRowNumberPresent $lines '000001'))
+    }
+    return $false
+}
+
+# Levenshtein similarity of the first PrefixLength chars (case-sensitive).
+# 1.0 = identical prefixes; the default 20-char window keeps the DP cheap
+# while still covering 'a part of the record' per the review rule.
+function Get-SendPrefixSimilarity {
+    param([string]$A, [string]$B, [int]$PrefixLength = 20)
+    $a = [string]$A
+    $b = [string]$B
+    if ($PrefixLength -gt 0) {
+        if ($a.Length -gt $PrefixLength) { $a = $a.Substring(0, $PrefixLength) }
+        if ($b.Length -gt $PrefixLength) { $b = $b.Substring(0, $PrefixLength) }
+    }
+    if ($a.Length -eq 0 -and $b.Length -eq 0) { return 1.0 }
+    if ($a.Length -eq 0 -or $b.Length -eq 0) { return 0.0 }
+    $n = $a.Length
+    $m = $b.Length
+    $prev = New-Object int[] ($m + 1)
+    for ($j = 0; $j -le $m; $j++) { $prev[$j] = $j }
+    for ($i = 1; $i -le $n; $i++) {
+        $cur = New-Object int[] ($m + 1)
+        $cur[0] = $i
+        for ($j = 1; $j -le $m; $j++) {
+            $cost = if ($a[$i - 1] -ceq $b[$j - 1]) { 0 } else { 1 }
+            $cur[$j] = [Math]::Min([Math]::Min($cur[$j - 1] + 1, $prev[$j] + 1), $prev[$j - 1] + $cost)
+        }
+        $prev = $cur
+    }
+    $den = [Math]::Max($n, $m)
+    return [Math]::Round(1.0 - ($prev[$m] / [double]$den), 4)
+}
+
+# One record check: exact first-token match wins; prefix similarity >=
+# threshold is a 'fuzzy' pass (OCR noise tolerated); both records present
+# but neither passing is a 'mismatch'; missing evidence is 'unknown'.
+function Compare-SendRecordCheck {
+    param([string]$Name, [string]$SendRecord, [string]$GiftRecord,
+          [double]$Threshold = 0.8, [int]$PrefixLength = 20)
+    $sDisp = [string]$SendRecord
+    $gDisp = [string]$GiftRecord
+    if ($sDisp.Length -gt $PrefixLength) { $sDisp = $sDisp.Substring(0, $PrefixLength) + '..' }
+    if ($gDisp.Length -gt $PrefixLength) { $gDisp = $gDisp.Substring(0, $PrefixLength) + '..' }
+    if ([string]::IsNullOrWhiteSpace($SendRecord) -or [string]::IsNullOrWhiteSpace($GiftRecord)) {
+        return [pscustomobject]@{ Name = $Name; Send = $sDisp; Gift = $gDisp; Status = 'unknown' }
+    }
+    $sTok = Get-SendFirstToken $SendRecord
+    $gTok = Get-SendFirstToken $GiftRecord
+    $status = 'mismatch'
+    if ($sTok -ne '' -and $sTok -ceq $gTok) {
+        $status = 'match'
+    } else {
+        $sim = Get-SendPrefixSimilarity $SendRecord $GiftRecord $PrefixLength
+        if ($sim -ge $Threshold) { $status = 'fuzzy' }
+    }
+    return [pscustomobject]@{ Name = $Name; Send = $sDisp; Gift = $gDisp; Status = $status }
+}
+
+# Full per-correl verdict. ImageTextSets = one string[] of OCR lines per
+# exported picture (sheet order). Returns Verdict 'ok' / 'ng' / 'unknown'
+# plus the per-field checks for console display.
+#   ok      -> evidence agrees with gift_metadata (auto-markable as 1)
+#   ng      -> positive disagreement (auto-markable as 2, operator follows up)
+#   unknown -> not enough OCR evidence; manual review decides
+function Compare-SendGiftEvidence {
+    param(
+        $GiftRow,
+        [object[]]$ImageTextSets,
+        [double]$SimilarityThreshold = 0.8,
+        [int]$PrefixLength = 20,
+        [string]$ZeroBytePattern = ''
+    )
+    $sets = @()
+    foreach ($s in @($ImageTextSets)) {
+        if ($null -eq $s) { continue }
+        $sets += ,@(@($s) | ForEach-Object { [string]$_ })
+    }
+    $allLines = @()
+    foreach ($s in $sets) { $allLines += $s }
+
+    $checks = @()
+    $giftSize = 0L
+    try {
+        if ($GiftRow.PSObject.Properties.Name -contains 'SizeBytes') { $giftSize = [long]$GiftRow.SizeBytes }
+    } catch {}
+
+    if ($giftSize -eq 0) {
+        $zeroSeen = $false
+        foreach ($s in $sets) {
+            if (Test-SendZeroByteImage -TextLines $s -Pattern $ZeroBytePattern) { $zeroSeen = $true; break }
+        }
+        $hasRow1 = Test-SendRowNumberPresent $allLines '000001'
+        $st = 'unknown'
+        if ($zeroSeen -and -not $hasRow1) { $st = 'match' }
+        elseif ($hasRow1) { $st = 'mismatch' }
+        $checks += [pscustomobject]@{
+            Name   = 'ZeroByte'
+            Send   = ('zeroEvidence={0} row000001={1}' -f $zeroSeen, $hasRow1)
+            Gift   = '0 bytes'
+            Status = $st
+        }
+        $verdict = switch ($st) { 'match' { 'ok' } 'mismatch' { 'ng' } default { 'unknown' } }
+        return [pscustomobject]@{
+            Verdict = $verdict; Checks = @($checks)
+            RowLabel = ''; FirstRecordSend = ''; LastRecordSend = ''
+        }
+    }
+
+    $maxRows = 0
+    try {
+        if ($GiftRow.PSObject.Properties.Name -contains 'MaxRowNumber') { $maxRows = [int]$GiftRow.MaxRowNumber }
+    } catch {}
+    $maxLabel = ''
+    if ($maxRows -gt 0) { $maxLabel = Get-SendRowLabel $maxRows }
+
+    $maxFound = ($maxLabel -ne '') -and (Test-SendRowNumberPresent $allLines $maxLabel)
+    $checks += [pscustomobject]@{
+        Name   = 'MaxRowNumber'
+        Send   = $(if ($maxFound) { $maxLabel } else { '(not found)' })
+        Gift   = [string]$maxRows
+        Status = $(if ($maxFound) { 'match' } else { 'unknown' })
+    }
+
+    $firstSend = Find-SendRecordByRowNumber $allLines (Get-SendRowLabel 1)
+    $lastSend = $null
+    if ($maxLabel -ne '') { $lastSend = Find-SendRecordByRowNumber $allLines $maxLabel }
+
+    $giftFirst = ''
+    $giftLast = ''
+    try {
+        if ($GiftRow.PSObject.Properties.Name -contains 'FirstRecord') { $giftFirst = [string]$GiftRow.FirstRecord }
+        if ($GiftRow.PSObject.Properties.Name -contains 'LastRecord') { $giftLast = [string]$GiftRow.LastRecord }
+    } catch {}
+
+    $firstCheck = Compare-SendRecordCheck 'FirstRecord' ([string]$firstSend) $giftFirst $SimilarityThreshold $PrefixLength
+    $lastCheck  = Compare-SendRecordCheck 'LastRecord' ([string]$lastSend) $giftLast $SimilarityThreshold $PrefixLength
+    $checks += $firstCheck
+    $checks += $lastCheck
+
+    $anyMismatch = @($checks | Where-Object { $_.Status -eq 'mismatch' }).Count -gt 0
+    $recordsOk = (@('match', 'fuzzy') -contains $firstCheck.Status) -and (@('match', 'fuzzy') -contains $lastCheck.Status)
+    $verdict = 'unknown'
+    if ($anyMismatch) { $verdict = 'ng' }
+    elseif ($maxFound -and $recordsOk) { $verdict = 'ok' }
+
+    return [pscustomobject]@{
+        Verdict = $verdict; Checks = @($checks)
+        RowLabel = $maxLabel
+        FirstRecordSend = [string]$firstSend
+        LastRecordSend = [string]$lastSend
+    }
+}
+
 # Compares a send record (Build-SendMetadataRecord) against one
 # gift_metadata.csv row. Each check is match / mismatch / unknown;
 # absence of OCR evidence is "unknown", never "mismatch".

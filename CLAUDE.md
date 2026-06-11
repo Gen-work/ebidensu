@@ -48,13 +48,17 @@ AlignCompare.ps1        pure sheet-compare + migration-type logic. Unit-tested.
 ConfigOverlay.ps1       pure per-work-folder JSON overlay: deep-merge + JSON<->hashtable
                         + InitConfig snapshot/generator helpers. Unit-tested.
 SendMetadata.ps1        pure SEND-side OCR-line parsing + send-vs-gift compare for
-                        SendVsGift Stage 2 (word-box spacing rebuild, 0-byte detect,
-                        row guess, send_metadata records, verdicts). Unit-tested.
+                        SendVsGift Stage 2 (word-box spacing rebuild, 0-byte rules:
+                        used-CYLINDERS-0 / begin+end-on-one-image, row-label record
+                        extraction, 80% prefix-similarity record compare,
+                        Compare-SendGiftEvidence ok/ng/unknown verdict). Unit-tested.
 OcrWindows.ps1          Windows built-in OCR (Windows.Media.Ocr WinRT) from PS 5.1;
                         same engine family as Snipping Tool text extraction. Safe to
                         dot-source anywhere (lazy init; Test-WinOcrAvailable).
 EvidenceImageExport.ps1 Excel COM: export embedded sheet pictures to PNG via temp
-                        ChartObject (skips verifyMark_* shapes; clipboard clobbered).
+                        ChartObject (skips verifyMark_* shapes; flattens Ctrl+G groups
+                        to child pictures; optional Top range filter for one correl
+                        section; clipboard clobbered).
 WorkbookResolver.ps1    dot-source helper: evidence/J4 workbook filename resolution
                         (prefix + Excel_NAME stem) plus reusable full-width
                         ASCII filename fallback (`FullWidthFilenameResolver`).
@@ -65,9 +69,16 @@ Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseli
 ReplaceEvidence.ps1     Phase ReplaceGift / ReplaceGfix / ReplaceDf (plan-driven)
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf
 ReviewEvidence.ps1      Phase ReviewGift / ReviewGfix / ReviewDf / ReviewEvidence
-SendVsGift.ps1          Phase SendVsGift: GIFT file metadata vs SEND evidence review;
-                        Stage 2 -Ocr exports send-sheet pictures, OCRs them and
-                        prints an advisory verdict (docs/SendVsGift.md).
+SendVsGift.ps1          Phase SendVsGift: GIFT file metadata vs SEND evidence review.
+                        Rows grouped per workbook (opened once); cursor jumps to each
+                        Correl_ID_S label in column A of the send sheet; Excel is
+                        refocused after every console answer. Enter=1, n=2(NG), s, q.
+                        Stage 2 -Ocr exports each correl's section pictures, OCRs and
+                        auto-marks ok->1 / ng->2 / unknown->prompt (docs/SendVsGift.md).
+OcrTool.ps1             standalone Windows-OCR CLI over OcrWindows/SendMetadata/
+                        EvidenceImageExport: images, dirs, wildcards or -Workbook
+                        picture export; -Json output; -ListLanguages. Reusable by
+                        future features (has param(): call via &, never dot-source).
 FillCheckSheet.ps1      Phase CheckSheet: append a row per Excel to the shared
                         review check sheet (Check Sheet_J4) via a temp-copy
                         preview, then commit only if the original is unchanged.
@@ -187,6 +198,11 @@ A free-text `ReviewComment` column (per Excel_NAME group) holds review notes
 captured via the `-m "comment"` option at the Review prompt; list them with the
 `Comments` phase.
 
+`SendVsGift` is a plain value column (NOT a bitmask): `0`/empty = pending,
+`1` = OK, `2` = NG (OCR auto-compare or the operator's `n` answer flagged a
+disagreement). `2` still counts as pending: it is re-offered on the next
+SendVsGift run and listed in the end-of-run NG summary.
+
 `isDelivered` is a plain `0/1` flag (NOT a bitmask): set to `1` per Excel_NAME
 when the operator confirms the DeliverMail draft was sent. `DeliverComment` is
 its free-text note column (captured with `-m "comment"` at the DeliverMail
@@ -224,7 +240,16 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-09 v2.7)
+## Current state (last bump: 2026-06-11 v2.8)
+
+v2.8: SendVsGift review rework (per-workbook grouping, column-A correl cursor,
+Excel refocus after every answer, `n`=NG answer) + OCR auto-compare with the
+operator's verdict rules (0-byte CYLINDERS/begin-end rules, max-row + first/last
+record compare with 80% prefix similarity; ok->1, ng->2, unknown->prompt;
+`SendVsGift.AutoMark`). Ctrl+G grouped pictures are now flattened on export.
+New standalone `OcrTool.ps1` makes the OCR stack reusable. `o`/`-Ocr` toggle in
+VerifyTool; standalone SendVsGift launch resolves WorkDir/Owner from session.
+
 
 v2.7: per-work-folder JSON config overlay (`verify_config.json`, deep-merged over
 VerifyConfig.psd1; generate with `-Phase InitConfig`) makes every case highly

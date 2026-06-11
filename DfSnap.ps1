@@ -24,7 +24,7 @@
 
 param(
     [string]$WorkDir,
-    [string]$Owner = ''
+    [string]$Owner = '',
     [string[]]$TargetIds = @(),
     [switch]$Force,
 
