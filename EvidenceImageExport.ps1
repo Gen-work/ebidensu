@@ -46,7 +46,11 @@ function Get-EvidencePictureEntries {
     }
     # Round tops so the pictures of one horizontal strip (near-equal tops)
     # sort left-to-right in capture order.
-    return ,@($entries | Sort-Object `
+    # NOTE: no comma protection on the returns in this file -- every caller
+    # wraps the call in @(...), and @( ,@($arr) ) yields a NESTED array in
+    # PS 5.1: member enumeration then returns Object[] and [double] casts
+    # explode ('cannot convert System.Object[] to System.Double').
+    return @($entries | Sort-Object `
         @{Expression = { [Math]::Round([double]$_.TopLevelTop, 0) }}, `
         @{Expression = { [double]$_.TopLevelLeft }}, `
         @{Expression = { [Math]::Round([double]$_.SubTop, 0) }}, `
@@ -81,13 +85,13 @@ function Get-GroupPictureShapes {
         if ($nm -like 'verifyMark_*') { continue }
         $found += $sp
     }
-    return ,@($found)
+    return $found
 }
 
 # Back-compat wrapper: bare picture shapes in display order.
 function Get-EvidencePictureShapes {
     param($Worksheet)
-    return ,@(@(Get-EvidencePictureEntries $Worksheet) | ForEach-Object { $_.Shape })
+    return @(Get-EvidencePictureEntries $Worksheet) | ForEach-Object { $_.Shape }
 }
 
 # Exports one shape to a PNG file. Returns $true when the file exists.
@@ -134,7 +138,7 @@ function Export-SheetPicturesToPng {
     }
     if ($null -eq $ws) {
         Write-Host ("  [WARN] sheet not found for picture export: {0}" -f $SheetName) -ForegroundColor Yellow
-        return ,@()
+        return @()
     }
     try { $ws.Visible = -1 } catch {}
     try { $ws.Activate() | Out-Null } catch {}
@@ -173,7 +177,7 @@ function Export-SheetPicturesToPng {
             if ([string]::IsNullOrWhiteSpace($desc)) { $desc = 'no shapes at all' }
             Write-Host ("  [DIAG] no picture shapes (msoPicture=13 / msoLinkedPicture=11) on sheet '{0}'; found: {1}" -f $SheetName, $desc) -ForegroundColor Yellow
         }
-        return ,@()
+        return @()
     }
     if (-not (Test-Path -LiteralPath $OutDir)) {
         New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
@@ -190,5 +194,5 @@ function Export-SheetPicturesToPng {
             Write-Host ("  [WARN] picture {0} on sheet '{1}' was not exported." -f $i, $SheetName) -ForegroundColor Yellow
         }
     }
-    return ,@($paths)
+    return $paths
 }
