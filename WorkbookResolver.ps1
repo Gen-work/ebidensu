@@ -120,6 +120,7 @@ class FullWidthFilenameResolver {
     static [System.IO.FileInfo[]] FindCandidates([string]$Dir, [string]$Name, [string]$Filter, [bool]$Recurse, [bool]$AllowSuffixMatch) {
         if ([string]::IsNullOrWhiteSpace($Dir) -or [string]::IsNullOrWhiteSpace($Name)) { return [System.IO.FileInfo[]]@() }
         if ([string]::IsNullOrWhiteSpace($Filter)) { $Filter = '*' }
+        try { $Dir = Resolve-WorkbookProviderPath $Dir } catch { return [System.IO.FileInfo[]]@() }
 
         $dirInfo = [System.IO.DirectoryInfo]::new($Dir)
         if (-not $dirInfo.Exists) { return [System.IO.FileInfo[]]@() }
@@ -227,6 +228,7 @@ function Find-WorkbookByExcelName {
         [ValidateSet('Prompt','Accept','Reject')][string]$FullWidthFallback = 'Prompt'
     )
     if ([string]::IsNullOrWhiteSpace($Dir) -or [string]::IsNullOrWhiteSpace($ExcelName) -or -not (Test-Path -LiteralPath $Dir)) { return $null }
+    try { $Dir = Resolve-WorkbookProviderPath $Dir } catch { return $null }
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($ExcelName)
     $leaf = if ($ExcelName -match '\.xlsx$') { $ExcelName } else { ("{0}.xlsx" -f $stem) }
     $exact = Join-Path $Dir $leaf

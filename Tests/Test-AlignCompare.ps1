@@ -31,7 +31,7 @@ Assert-Equal 'OpenToHost' (Get-MigrationType -FromSys 'IDS' -ToSys 'HOST' -HostT
 # Get-AlignSheetsForMigration (send has 5, recv has 3)
 $send = @('S1','S2','S3','S4','S5')
 $recv = @('R1','R2','R3')
-Assert-Equal 'R1|R2|R3' ((Get-AlignSheetsForMigration -MigrationType 'HostToOpen' -SendSheets $send -RecvSheets $recv) -join '|') 'HostToOpen = 3 recv'
+Assert-Equal 'S1|S3|S4' ((Get-AlignSheetsForMigration -MigrationType 'HostToOpen' -SendSheets $send -RecvSheets $recv) -join '|') 'HostToOpen = send data + GIFT/GFIX send results'
 Assert-Equal 'S3|S4|R1|R2|R3' ((Get-AlignSheetsForMigration -MigrationType 'OpenToOpen' -SendSheets $send -RecvSheets $recv) -join '|') 'OpenToOpen = S3,S4 + recv'
 Assert-Equal 'R1|R2|R3' ((Get-AlignSheetsForMigration -MigrationType 'Unknown' -SendSheets $send -RecvSheets $recv) -join '|') 'Unknown -> recv only (safe)'
 

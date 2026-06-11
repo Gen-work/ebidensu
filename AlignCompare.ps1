@@ -50,19 +50,19 @@ function Get-MigrationType {
 # Which sheets Align should compare for a migration type.
 # Returns a list of sheet names from this workbook that should be checked
 # against the J4 baseline. Recv sheets (operator evidence) are included for
-# comparison (read) but Align.ps1 must never overwrite them (-Apply is send-only).
+# comparison/read scope; Align.ps1 replaces only the sheets returned here.
 #
-# HostToOpen  : host team owns the J4 send side; operator compares recv sheets.
+# HostToOpen  : host team owns send data + GIFT/GFIX send result sheets.
 # OpenToOpen  : compare send-result sheets (S[2]/S[3]) + all recv sheets.
 # OpenToHost  : operator owns send side; compare send-result sheets + recv sheets.
 # HostToHost  : host team owns all send sheets.
-# Unknown     : recv sheets only (safest non-destructive fallback).
+# Unknown     : recv sheets only (legacy safest fallback until HostTypes are set).
 function Get-AlignSheetsForMigration {
     param([string]$MigrationType, [string[]]$SendSheets, [string[]]$RecvSheets)
     $send = @($SendSheets)
     $recv = @($RecvSheets)
     switch ($MigrationType) {
-        'HostToOpen' { return $recv }
+        'HostToOpen' { return @($send[0], $send[2], $send[3]) }
         'OpenToOpen' { return @($send[2], $send[3]) + $recv }
         'OpenToHost' { return @($send[2], $send[3]) + $recv }
         'HostToHost' { return $send }
