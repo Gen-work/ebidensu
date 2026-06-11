@@ -42,21 +42,58 @@ The phase stores both forms:
 
 The first/last non-space token alone is not enough for final comparison because it can miss changes in fixed-position fields. It is useful as a console summary, but the full first/last records remain the source of truth.
 
-## Stage 2 (planned OCR/image recognition)
+## Stage 2 (OCR skeleton, implemented)
 
-Future work should atomize metadata from the SEND-side evidence images when direct SEND files are not available.
+Enabled with `-Ocr` on `SendVsGift.ps1`, or persistently via `SendVsGift.Ocr = $true`
+in `VerifyConfig.psd1` / the `verify_config.json` work-folder overlay.
 
-Planned cases:
+### Engine choice
 
-- **0-byte pattern**: identify the standard 0-byte image/screenshot pattern in Excel and mark it as a known comparison case.
-- **Non-0-byte pattern**: detect grouped long screenshots, OCR the first 10+ lines and last 10+ lines, and parse row number, record length, and fixed-position content from stable screen positions.
-- **Multi-picture groups**: support evidence where one SEND file spans several stacked screenshots.
-- **Confidence and manual fallback**: write OCR confidence and parsed fields to a future metadata file, then keep the current manual Enter-to-mark flow when confidence is low.
+The OCR engine is the Windows built-in `Windows.Media.Ocr` WinRT API -- the same
+engine family behind the Snipping Tool text extraction / PowerToys Text Extractor.
+It is called directly from PowerShell 5.1 (`OcrWindows.ps1`), so there is nothing
+to install and no GUI tool to automate. Japanese works when the `ja` language pack
+is present (default on JP-locale hosts). Note: the API exposes no per-word
+confidence score, so confidence is heuristic (see below).
 
-Suggested future extension points:
+### Pipeline
 
-- Add OCR parsing functions to `SendVsGift.ps1` without changing the `SendVsGift` mapping column semantics.
-- Add a second output file such as `<WorkDir>\data\send_metadata.csv` with fields parallel to `gift_metadata.csv`.
-- Compare `send_metadata.csv` and `gift_metadata.csv` in a later automated stage, but keep manual review as the safe fallback.
+1. `EvidenceImageExport.ps1` exports every picture on the send-data sheet
+   (the ProjectLabels send-data sheet; override with `-SendSheetName`) to
+   `<WorkDir>\data\send_images\<Correl_ID_S>\<Correl_ID_S>_NN.png`, top-to-bottom.
+   Multi-picture groups are concatenated in that order, covering stacked
+   screenshots of one SEND file. (Export goes through a temp ChartObject and
+   clobbers the clipboard; the workbook is left unsaved unless Enter is pressed.)
+2. `OcrWindows.ps1` OCRs each PNG and returns plain line/word objects with
+   bounding boxes. The Japanese recognizer drops spaces between tokens;
+   `SendMetadata.ps1` rebuilds them from the word X/Width boxes so first/last
+   tokens and approximate fixed positions survive.
+3. `SendMetadata.ps1` (pure, unit-tested by `Tests\Test-SendMetadata.ps1`) parses
+   the lines into a record parallel to `gift_metadata.csv`, written to
+   `<WorkDir>\data\send_metadata.csv`:
+   `CorrelIdS, ExcelName, ImageCount, OcrLineCount, ZeroByte, RowNumberGuess,
+   FirstRecord, LastRecord, FirstRecordToken, LastRecordToken, Confidence,
+   MetadataVersion`.
+4. `Compare-SendGiftMetadata` prints a per-field verdict (`ZeroByte`, `RowNumber`,
+   `FirstRecordToken`, `LastRecordToken`): each check is match / mismatch /
+   unknown -- absence of OCR evidence is always `unknown`, never `mismatch`.
+   Verdict: any mismatch -> `mismatch`; zero-byte agreement or >= 2 field matches
+   -> `match`; otherwise `unknown`.
 
-TODO: implement OCR/image recognition once representative SEND-side screenshots are available.
+### Confidence and manual fallback
+
+Confidence is heuristic (0 / 0.4 / 0.7 / 1.0 by parsed-field coverage) because the
+Windows OCR API has no native score. The verdict is advisory only: the manual
+Enter-to-mark flow is unchanged and remains the source of truth, OCR failures are
+caught and reported as warnings, and the `SendVsGift` mapping column semantics are
+untouched.
+
+### Remaining TODOs (need representative screenshots)
+
+- **0-byte pattern**: the default detection regex (`0 byte/bytes`) is a guess;
+  tune `SendVsGift.ZeroBytePattern` once a real 0-byte SEND screenshot exists.
+- **Row-number / record parsing**: `RowNumberGuess` assumes a leading row number
+  on host list lines; verify against real screen layouts and add fixed-position
+  field extraction from the word bounding boxes where needed.
+- **Record length**: OCR is not trustworthy for character-exact record lengths
+  (digit drops, O/0 confusion); lengths are intentionally not compared yet.

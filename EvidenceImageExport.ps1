@@ -1,0 +1,95 @@
+# ============================================================
+#  EvidenceImageExport.ps1
+#
+#  Excel COM helpers to export the screenshot pictures embedded in an
+#  evidence workbook sheet to PNG files, so OcrWindows.ps1 can read
+#  them. Dot-source only (no param() block).
+#
+#  Export trick (Excel has no direct Shape->file API): copy the shape
+#  to the clipboard, paste it into a temporary ChartObject sized to the
+#  shape, Chart.Export PNG, delete the chart. The chart frame may add a
+#  ~1px border; harmless for OCR. NOTE: this clobbers the clipboard.
+# ============================================================
+
+# Picture shapes on a sheet, top-to-bottom then left-to-right, skipping
+# the verifyMark_* red rectangles. msoPicture=13, msoLinkedPicture=11.
+function Get-EvidencePictureShapes {
+    param($Worksheet)
+    $found = @()
+    foreach ($sp in $Worksheet.Shapes) {
+        $t = 0
+        try { $t = [int]$sp.Type } catch {}
+        if ($t -ne 13 -and $t -ne 11) { continue }
+        $nm = ''
+        try { $nm = [string]$sp.Name } catch {}
+        if ($nm -like 'verifyMark_*') { continue }
+        $found += $sp
+    }
+    return ,@($found | Sort-Object @{Expression = { [double]$_.Top }}, @{Expression = { [double]$_.Left }})
+}
+
+# Exports one shape to a PNG file. Returns $true when the file exists.
+function Export-ShapeToPng {
+    param($Worksheet, $Shape, [string]$OutPath)
+    $dir = Split-Path -Parent $OutPath
+    if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    $chartObj = $null
+    try {
+        $w = [double]$Shape.Width
+        $h = [double]$Shape.Height
+        $Shape.Copy() | Out-Null
+        Start-Sleep -Milliseconds 100
+        $chartObj = $Worksheet.ChartObjects().Add(0, 0, $w, $h)
+        $chartObj.Activate() | Out-Null
+        $chartObj.Chart.Paste() | Out-Null
+        Start-Sleep -Milliseconds 100
+        [void]$chartObj.Chart.Export($OutPath, 'PNG')
+        return (Test-Path -LiteralPath $OutPath)
+    } catch {
+        Write-Host ("  [WARN] shape export failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        return $false
+    } finally {
+        if ($null -ne $chartObj) {
+            try { $chartObj.Delete() } catch {}
+            try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch {}
+        }
+    }
+}
+
+# Exports every picture on the named sheet as <BaseName>_NN.png under
+# OutDir. Returns the array of created file paths (empty when the sheet
+# is missing or carries no pictures).
+function Export-SheetPicturesToPng {
+    param($Workbook, [string]$SheetName, [string]$OutDir, [string]$BaseName)
+    $ws = $null
+    foreach ($s in $Workbook.Worksheets) {
+        if ([string]$s.Name -eq $SheetName) { $ws = $s; break }
+    }
+    if ($null -eq $ws) {
+        Write-Host ("  [WARN] sheet not found for picture export: {0}" -f $SheetName) -ForegroundColor Yellow
+        return ,@()
+    }
+    try { $ws.Visible = -1 } catch {}
+    try { $ws.Activate() | Out-Null } catch {}
+
+    $shapes = @(Get-EvidencePictureShapes $ws)
+    if ($shapes.Count -eq 0) { return ,@() }
+    if (-not (Test-Path -LiteralPath $OutDir)) {
+        New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+    }
+
+    $paths = @()
+    $i = 0
+    foreach ($sp in $shapes) {
+        $i++
+        $png = Join-Path $OutDir ('{0}_{1:D2}.png' -f $BaseName, $i)
+        if (Export-ShapeToPng $ws $sp $png) {
+            $paths += $png
+        } else {
+            Write-Host ("  [WARN] picture {0} on sheet '{1}' was not exported." -f $i, $SheetName) -ForegroundColor Yellow
+        }
+    }
+    return ,@($paths)
+}

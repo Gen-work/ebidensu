@@ -446,7 +446,11 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  Stage 1 MVP: scans DATA\GIFT, writes data\gift_metadata.csv,',
             '  ensures SendVsGift mapping column, prints matched file metadata,',
             '  then opens each pending workbook. Enter marks SendVsGift=1.',
-            '  Full first/last records are stored; short first/last tokens are for TL;DR viewing.'
+            '  Full first/last records are stored; short first/last tokens are for TL;DR viewing.',
+            '  Stage 2 OCR (skeleton): set SendVsGift.Ocr=$true in config (or run',
+            '  SendVsGift.ps1 -Ocr) to export send-sheet pictures, OCR them with the',
+            '  built-in Windows engine, write data\send_metadata.csv and print a',
+            '  send-vs-gift verdict. Manual Enter-to-mark stays the source of truth.'
         ) }
         '^Review(Gift|Gfix|Df|Evidence)$' { @(
             '  Phase params:',
@@ -952,6 +956,13 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args['ExcelHelpersScript'] = $eh
         if ($Config.Review.SaveWaitMs) { $args['SaveWaitMs'] = [int]$Config.Review.SaveWaitMs }
         if ($Config.Review.Maximize) { $args['Maximize'] = $true }
+        if ($Config.ContainsKey('SendVsGift') -and $null -ne $Config.SendVsGift) {
+            $svg = $Config.SendVsGift
+            if ($svg.ContainsKey('Ocr') -and $svg.Ocr) { $args['Ocr'] = $true }
+            if ($svg.ContainsKey('OcrLanguage') -and -not [string]::IsNullOrWhiteSpace([string]$svg.OcrLanguage)) { $args['OcrLanguage'] = [string]$svg.OcrLanguage }
+            if ($svg.ContainsKey('SendSheetName') -and -not [string]::IsNullOrWhiteSpace([string]$svg.SendSheetName)) { $args['SendSheetName'] = [string]$svg.SendSheetName }
+            if ($svg.ContainsKey('ZeroBytePattern') -and -not [string]::IsNullOrWhiteSpace([string]$svg.ZeroBytePattern)) { $args['ZeroBytePattern'] = [string]$svg.ZeroBytePattern }
+        }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
         if ($State.DryRun) { $args['DryRun'] = $true }

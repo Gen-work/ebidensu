@@ -9,10 +9,16 @@
 #      console, open the evidence Excel for manual viewing, then Enter marks
 #      SendVsGift=1, sets the cursor to A3, saves, and closes.
 #
-# Stage 2 handoff:
-#   See docs/SendVsGift.md. OCR/image recognition is intentionally left as a
-#   future enhancement because the MVP only needs exact file metadata and
-#   operator confirmation.
+# Stage 2 (-Ocr, skeleton):
+#   See docs/SendVsGift.md. Exports the pictures embedded on the send-data
+#   sheet (EvidenceImageExport.ps1), OCRs them with the built-in Windows
+#   OCR engine (OcrWindows.ps1 - same engine family as the Snipping Tool
+#   text extraction, zero installs), parses them into a record parallel
+#   to gift_metadata.csv (SendMetadata.ps1, unit-tested), writes
+#   <WorkDir>\data\send_metadata.csv and prints a per-field comparison
+#   verdict. Low confidence / OCR failure falls back to the unchanged
+#   manual Enter-to-mark flow; the SendVsGift mapping column semantics
+#   are untouched.
 # ============================================================
 
 param(
@@ -26,10 +32,17 @@ param(
     [switch]$Force,
     [switch]$DryRun,
     [switch]$Maximize,
+    [switch]$Ocr,
+    [string]$OcrLanguage = 'ja',
+    [string]$SendSheetName = '',
+    [string]$ZeroBytePattern = '',
     [string]$ExcelHelpersScript = ''
 )
 
 $ErrorActionPreference = 'Stop'
+
+# capture switch BEFORE dot-sourcing (see CLAUDE.md dot-source safety rule)
+$ocrFlag = [bool]$Ocr.IsPresent
 
 try {
     [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -49,6 +62,10 @@ foreach ($c in $candidates) {
 if (-not $helpersPath) { throw 'ExcelHelpers.ps1 not found.' }
 . $helpersPath
 . (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+. (Join-Path $PSScriptRoot 'ProjectLabels.ps1')
+. (Join-Path $PSScriptRoot 'SendMetadata.ps1')
+. (Join-Path $PSScriptRoot 'OcrWindows.ps1')
+. (Join-Path $PSScriptRoot 'EvidenceImageExport.ps1')
 
 function Test-TargetRow($Row, [hashtable]$TargetSet) {
     if ($TargetSet.Count -eq 0) { return $true }
@@ -190,6 +207,47 @@ function Show-MetadataBlock($Row, [array]$Matches) {
     }
 }
 
+# Stage 2: export send-sheet pictures, OCR them, build a send metadata
+# record and print the field-by-field comparison against the gift row.
+# Returns the record (for send_metadata.csv) or $null when nothing usable.
+function Invoke-SendOcrCompare {
+    param($Workbook, $Row, [array]$GiftMatches, [string]$SheetName, [string]$ImagesRoot, [string]$LanguageTag, [string]$ZeroPattern)
+    $sid = [string]$Row.Correl_ID_S
+    if ([string]::IsNullOrWhiteSpace($sid)) { return $null }
+
+    $outDir = Join-Path $ImagesRoot $sid
+    $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $outDir $sid)
+    if ($pngs.Count -eq 0) {
+        Write-Host ("  [OCR] no exportable pictures on sheet '{0}'; manual check only." -f $SheetName) -ForegroundColor Yellow
+        return $null
+    }
+
+    $textLines = @()
+    foreach ($p in $pngs) {
+        $res = Invoke-WinOcrFile -Path $p -LanguageTag $LanguageTag
+        $textLines += @(ConvertTo-SendTextLines $res.Lines)
+    }
+
+    $meta = Build-SendMetadataRecord -CorrelIdS $sid -ExcelName ([string]$Row.Excel_NAME) `
+        -ImageCount $pngs.Count -TextLines $textLines -ZeroBytePattern $ZeroPattern
+    Write-Host ("  [OCR] images={0} lines={1} rowGuess={2} zeroByte={3} confidence={4}" -f `
+        $meta.ImageCount, $meta.OcrLineCount, $meta.RowNumberGuess, $meta.ZeroByte, $meta.Confidence) -ForegroundColor Cyan
+
+    if ($GiftMatches.Count -eq 0) {
+        Write-Host '  [OCR] no matching gift metadata row to compare against.' -ForegroundColor Yellow
+        return $meta
+    }
+    $cmp = Compare-SendGiftMetadata $meta $GiftMatches[0]
+    foreach ($c in $cmp.Checks) {
+        $color = switch ($c.Status) { 'match' { 'Green' } 'mismatch' { 'Red' } default { 'DarkGray' } }
+        Write-Host ("    {0,-16} send='{1}' gift='{2}' -> {3}" -f $c.Name, $c.Send, $c.Gift, $c.Status) -ForegroundColor $color
+    }
+    $vColor = switch ($cmp.Verdict) { 'match' { 'Green' } 'mismatch' { 'Red' } default { 'Yellow' } }
+    Write-Host ("  [OCR] verdict: {0} (match={1}, mismatch={2}, unknown={3}) - operator decision still required." -f `
+        $cmp.Verdict, $cmp.MatchCount, $cmp.MismatchCount, $cmp.UnknownCount) -ForegroundColor $vColor
+    return $meta
+}
+
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host 'WorkDir path' }
 if (-not (Test-Path -LiteralPath $WorkDir)) { throw "WorkDir not found: $WorkDir" }
 
@@ -227,6 +285,30 @@ if ($pendingRows.Count -eq 0) {
 Write-Host ("[INFO] pending SendVsGift rows: {0}" -f $pendingRows.Count) -ForegroundColor Cyan
 if ($DryRun.IsPresent) { return }
 
+# Stage 2 OCR setup (no-op unless -Ocr): availability probe + send-side
+# metadata store. OCR runs on Windows only; elsewhere we warn and the
+# manual flow continues untouched.
+$ocrReady = $false
+$sendMetaPath = Join-Path (Join-Path $WorkDir 'data') 'send_metadata.csv'
+$sendImagesRoot = Join-Path (Join-Path $WorkDir 'data') 'send_images'
+$sendMetaRows = @()
+if ($ocrFlag) {
+    if ([string]::IsNullOrWhiteSpace($SendSheetName)) {
+        $labels = Get-ProjectLabels
+        $SendSheetName = [string]$labels['SheetSoshinData']
+    }
+    $ocrReady = Test-WinOcrAvailable
+    if ($ocrReady) {
+        if (Test-Path -LiteralPath $sendMetaPath) {
+            $sendMetaRows = @(Import-Csv -LiteralPath $sendMetaPath -Encoding UTF8)
+        }
+        Write-Host ("[OCR] engine ready (languages: {0}); send sheet: {1}" -f ((Get-WinOcrLanguageTags) -join ', '), $SendSheetName) -ForegroundColor Green
+    } else {
+        Write-Host ("[WARN] -Ocr requested but Windows OCR is unavailable: {0}" -f (Get-WinOcrInitError)) -ForegroundColor Yellow
+        Write-Host '       continuing with the manual compare flow only.' -ForegroundColor Yellow
+    }
+}
+
 $excel = $null
 try {
     $excel = New-Object -ComObject Excel.Application
@@ -251,6 +333,20 @@ try {
         try {
             Write-Host ("[{0}/{1}] OPEN: {2}" -f ($idx + 1), $pendingRows.Count, $file) -ForegroundColor Cyan
             $wb = $excel.Workbooks.Open($file, 0, $false)
+
+            if ($ocrFlag -and $ocrReady) {
+                try {
+                    $sendMeta = Invoke-SendOcrCompare $wb $r $matches $SendSheetName $sendImagesRoot $OcrLanguage $ZeroBytePattern
+                    if ($null -ne $sendMeta) {
+                        $sendMetaRows = @($sendMetaRows | Where-Object { [string]$_.CorrelIdS -ne [string]$sendMeta.CorrelIdS }) + @($sendMeta)
+                        $sendMetaRows | Export-Csv -LiteralPath $sendMetaPath -Encoding UTF8 -NoTypeInformation -Force
+                        Write-Host ("  [OCR] send metadata saved: {0}" -f $sendMetaPath) -ForegroundColor DarkGray
+                    }
+                } catch {
+                    Write-Host ("  [WARN] OCR compare failed; manual check continues: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                }
+            }
+
             $ans = Read-Host 'Check the workbook and console metadata. Enter=mark SendVsGift=1/save/close, s=skip, q=quit'
             $ans = [string]$ans
             if ($ans.Trim().ToLower() -eq 'q') { throw '__SENDVSGIFT_QUIT__' }
