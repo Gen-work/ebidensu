@@ -24,7 +24,7 @@
 #
 #  Usage:
 #    .\Probe-Shapes.ps1 -File path\to\evidence.xlsx
-#    .\Probe-Shapes.ps1 -File path\to\evidence.xlsx -Sheet 'GIFT受信結果'
+#    .\Probe-Shapes.ps1 -File path\to\evidence.xlsx -Sheet '<sheet name>'
 # ============================================================
 
 param(
