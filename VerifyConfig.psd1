@@ -63,6 +63,19 @@
         SaveWaitMs  = 5000
     }
 
+    # SendVsGift phase, Stage 2 OCR compare (off by default; Stage 1 manual
+    # flow is unchanged). Overridable per work folder via verify_config.json.
+    #   Ocr             -> $true = export send-sheet pictures + Windows OCR + auto compare
+    #   OcrLanguage     -> recognizer language tag passed to Windows.Media.Ocr
+    #   SendSheetName   -> blank = the ProjectLabels send-data sheet name
+    #   ZeroBytePattern -> regex override for the 0-byte screenshot pattern
+    SendVsGift = @{
+        Ocr             = $false
+        OcrLanguage     = 'ja'
+        SendSheetName   = ''
+        ZeroBytePattern = ''
+    }
+
     # Clone phase: external source folder of existing evidence files (per bizcode).
     # Blank -> falls back to the -CloneSourceDir CLI arg / last session value.
     Clone = @{

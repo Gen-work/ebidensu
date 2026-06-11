@@ -47,12 +47,25 @@ ScreenRegion.ps1        pure screen-region clamp math. Unit-tested.
 AlignCompare.ps1        pure sheet-compare + migration-type logic. Unit-tested.
 ConfigOverlay.ps1       pure per-work-folder JSON overlay: deep-merge + JSON<->hashtable
                         + InitConfig snapshot/generator helpers. Unit-tested.
+SendMetadata.ps1        pure SEND-side OCR-line parsing + send-vs-gift compare for
+                        SendVsGift Stage 2 (word-box spacing rebuild, 0-byte detect,
+                        row guess, send_metadata records, verdicts). Unit-tested.
+OcrWindows.ps1          Windows built-in OCR (Windows.Media.Ocr WinRT) from PS 5.1;
+                        same engine family as Snipping Tool text extraction. Safe to
+                        dot-source anywhere (lazy init; Test-WinOcrAvailable).
+EvidenceImageExport.ps1 Excel COM: export embedded sheet pictures to PNG via temp
+                        ChartObject (skips verifyMark_* shapes; clipboard clobbered).
+WorkbookResolver.ps1    dot-source helper: evidence/J4 workbook filename resolution
+                        (prefix + Excel_NAME stem). Unit-tested.
 
 Clone.ps1               Phase Clone
 Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
 ReplaceEvidence.ps1     Phase ReplaceGift / ReplaceGfix / ReplaceDf (plan-driven)
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf
 ReviewEvidence.ps1      Phase ReviewGift / ReviewGfix / ReviewDf / ReviewEvidence
+SendVsGift.ps1          Phase SendVsGift: GIFT file metadata vs SEND evidence review;
+                        Stage 2 -Ocr exports send-sheet pictures, OCRs them and
+                        prints an advisory verdict (docs/SendVsGift.md).
 FillCheckSheet.ps1      Phase CheckSheet: append a row per Excel to the shared
                         review check sheet (Check Sheet_J4) via a temp-copy
                         preview, then commit only if the original is unchanged.
@@ -104,7 +117,9 @@ CHANGELOG.md            iteration log
 Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
 `MappingStore.ps1`, `GfixLog.ps1`, `EvidencePlan.ps1`, `EvidenceExecutor.ps1`,
 `ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`, `AlignCompare.ps1`,
-`ConfigOverlay.ps1`, `Common.ps1`. All phase scripts have `param()` and are called via `& $path @args`.
+`ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`, `SendMetadata.ps1`,
+`OcrWindows.ps1`, `EvidenceImageExport.ps1`. All phase scripts have `param()`
+and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
 ```powershell

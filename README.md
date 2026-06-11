@@ -147,9 +147,19 @@ SEND data vs GIFT data metadata review (new):
 # then opens pending evidence Excel files for manual confirmation.
 .\VerifyTool.ps1 -Phase SendVsGift
 .\VerifyTool.ps1 -Phase SendVsGift -TargetIds JIGPC05S
+
+# Stage 2 OCR (skeleton): exports the pictures on the send-data sheet,
+# OCRs them with the built-in Windows engine (same family as the Snipping
+# Tool text extraction, zero installs), writes work\data\send_metadata.csv
+# and prints a field-by-field send-vs-gift verdict before the manual prompt.
+# Enable per run with -Ocr, or persistently with SendVsGift.Ocr = $true in
+# VerifyConfig.psd1 / verify_config.json.
+.\SendVsGift.ps1 -WorkDir D:\work -Owner misaki -Ocr
 ```
 
-See `docs/SendVsGift.md` for the Stage 1 metadata format and Stage 2 OCR handoff plan.
+See `docs/SendVsGift.md` for the Stage 1 metadata format and the Stage 2 OCR design.
+The OCR verdict is advisory: Enter-to-mark remains the source of truth, and OCR
+failure or low confidence simply falls back to the manual flow.
 
 Replace evidence body (new):
 

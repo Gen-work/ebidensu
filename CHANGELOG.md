@@ -4,6 +4,40 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-11 - SendVsGift Stage 2 OCR skeleton
+
+### Added
+- **Windows built-in OCR wrapper** `OcrWindows.ps1` (dot-source lib): calls the
+  `Windows.Media.Ocr` WinRT API from PowerShell 5.1 -- the same engine family
+  as the Snipping Tool text extraction, zero installs. Returns plain
+  line/word objects with pixel bounding boxes; never throws at dot-source
+  time on non-Windows hosts.
+- **Pure send-metadata lib** `SendMetadata.ps1` (unit-tested,
+  `Tests\Test-SendMetadata.ps1`): rebuilds the spacing the Japanese
+  recognizer drops from word boxes, detects the 0-byte pattern, guesses row
+  counts, builds `send_metadata.csv` records parallel to `gift_metadata.csv`,
+  and compares the two sides (match / mismatch / unknown per field; absence
+  of OCR evidence is never a mismatch).
+- **Evidence picture export** `EvidenceImageExport.ps1` (dot-source lib):
+  exports embedded send-sheet screenshots to PNG via a temp ChartObject,
+  top-to-bottom, skipping `verifyMark_*` shapes.
+- **SendVsGift `-Ocr` flow**: with `-Ocr` (CLI) or `SendVsGift.Ocr = $true`
+  (config / work-folder overlay), each pending workbook gets its send-sheet
+  pictures exported to `data\send_images\<Correl_ID_S>\`, OCR'd, recorded in
+  `data\send_metadata.csv`, and a per-field send-vs-gift verdict is printed
+  before the unchanged manual Enter-to-mark prompt. OCR failure or absence
+  falls back to the manual flow; mapping semantics untouched.
+- New `SendVsGift` config block (`Ocr`, `OcrLanguage`, `SendSheetName`,
+  `ZeroBytePattern`) in `VerifyConfig.psd1`, reachable from the JSON overlay.
+
+### Notes
+- Authored in a Linux cloud env: parse/unit tests are cloud-runnable, but the
+  Excel COM export and the WinRT OCR call need a Windows + Excel 2019 smoke
+  test (`Tests\Run-Tests.ps1`, then `SendVsGift.ps1 -Ocr` on a copy).
+- 0-byte pattern and row-number parsing are first-guess heuristics; tune with
+  representative SEND screenshots (see docs/SendVsGift.md TODOs).
+
+
 ## 2026-06-09 - Work-folder config precedence + workbook prefix
 
 ### Changed
