@@ -301,7 +301,11 @@ function Invoke-SendOcrReview {
 
     $bounds = Get-SendSectionBounds $Worksheet $LabelCell
     $outDir = Join-Path $ImagesRoot $sid
-    $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $outDir $sid $bounds.Top $bounds.Bottom)
+    # pipe through Where-Object: flattens the returned array and drops any
+    # empty entry so Invoke-WinOcrFile never sees an empty -Path (which
+    # would die on Test-Path -LiteralPath with a cryptic binding error)
+    $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $outDir $sid $bounds.Top $bounds.Bottom |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
     if ($pngs.Count -eq 0) {
         Write-Host ("  [OCR] no pictures in the {0} section of sheet '{1}'; manual check only." -f $sid, $SheetName) -ForegroundColor Yellow
         return @{ Meta = $null; Verdict = 'none' }
@@ -520,6 +524,11 @@ try {
                         $verdict = [string]$res.Verdict
                     } catch {
                         Write-Host ("  [WARN] OCR compare failed; manual check continues: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                        foreach ($frame in @([string]$_.ScriptStackTrace -split "`r?`n")) {
+                            if (-not [string]::IsNullOrWhiteSpace($frame)) {
+                                Write-Host ("         {0}" -f $frame.Trim()) -ForegroundColor DarkGray
+                            }
+                        }
                     }
                 }
 
