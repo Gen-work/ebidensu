@@ -15,7 +15,7 @@
 #    (See AlignCompare.ps1 Get-AlignSheetsForMigration.)
 #  Host vs Open is decided from FROM_sys/TO_sys via -HostSystemTypes. Until
 #  those literal values are supplied, the type is 'Unknown' and Align safely
-#  falls back to the Host->Open (3 receive) scope with a warning.
+#  falls back to the legacy receive-sheet scope with a warning.
 #
 #  Default is force-replace (Apply always on); -DiffMode switches to report-only.
 #  -Apply is kept for backward compatibility (now a no-op; Apply is always active
@@ -201,7 +201,7 @@ try {
         $migType = $MigrationTypeOverride
         if ([string]::IsNullOrWhiteSpace($migType)) { $migType = Get-MigrationType -FromSys $fromSys -ToSys $toSys -HostTypes $HostSystemTypes }
         if ($migType -eq 'Unknown') {
-            Write-Host '  [WARN] migration type unknown (set -HostSystemTypes); using Host->Open scope (3 receive sheets)' -ForegroundColor Yellow
+            Write-Host '  [WARN] migration type unknown (set -HostSystemTypes); using legacy receive-sheet scope' -ForegroundColor Yellow
         }
         $sheets = Get-AlignSheetsForMigration -MigrationType $migType -SendSheets $sendSheets -RecvSheets $recvSheets
         Write-Host ("  migration: {0}   sheets to check: {1}" -f $migType, $sheets.Count) -ForegroundColor DarkGray

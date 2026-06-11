@@ -404,7 +404,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    diff=DiffMode  -> -DiffMode : report only (do NOT replace sheets). Default is force-replace.',
             '    h=HostTypes    -> which FROM_sys / TO_sys column values count as Host (mainframe).',
             '                      e.g. enter: HOST   (check your mapping FROM_sys/TO_sys column for the actual literal)',
-            '                      HostToOpen  = 3 receive sheets only',
+            '                      HostToOpen  = send data + GIFT/GFIX send result sheets',
             '                      OpenToOpen / OpenToHost = GIFT+GFIX send sheets + 3 receive sheets',
             '    j=J4BaseDir    -> root folder of J4 baseline workbooks (searched recursively)',
             '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME'
