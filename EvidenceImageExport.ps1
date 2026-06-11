@@ -11,23 +11,68 @@
 #  ~1px border; harmless for OCR. NOTE: this clobbers the clipboard.
 # ============================================================
 
-# Picture shapes on a sheet, top-to-bottom then left-to-right, skipping
-# the verifyMark_* red rectangles. msoPicture=13, msoLinkedPicture=11.
-# Ctrl+G groups (msoGroup=6) are flattened: each child picture is returned
-# on its own. GroupItems report sheet-absolute Top/Left, so ordering and
-# region filtering keep working, and per-child export avoids one giant
-# composite PNG that would exceed the Windows OCR max image dimension.
-function Get-EvidencePictureShapes {
+# Picture shapes on a sheet, skipping the verifyMark_* red rectangles.
+# msoPicture=13, msoLinkedPicture=11. Ctrl+G groups (msoGroup=6) are
+# flattened: each child picture is returned on its own (a grouped strip
+# exported as one composite PNG could exceed the Windows OCR max image
+# dimension). IMPORTANT: child shapes inside a group can report
+# group-RELATIVE Top/Left (observed Top=0 in production workbooks), so
+# each entry carries the TOP-LEVEL shape's sheet coordinates for section
+# filtering and coarse ordering; the child's own Top/Left only orders
+# pictures within their group.
+# Returns hashtable entries: @{ Shape; TopLevelTop; TopLevelLeft; SubTop; SubLeft }
+function Get-EvidencePictureEntries {
     param($Worksheet)
+    $entries = @()
+    foreach ($sp in $Worksheet.Shapes) {
+        $t = 0
+        try { $t = [int]$sp.Type } catch {}
+        $nm = ''
+        try { $nm = [string]$sp.Name } catch {}
+        if ($nm -like 'verifyMark_*') { continue }
+        $top = 0.0; $left = 0.0
+        try { $top = [double]$sp.Top } catch {}
+        try { $left = [double]$sp.Left } catch {}
+        if ($t -eq 6) {
+            foreach ($child in @(Get-GroupPictureShapes $sp)) {
+                $st = 0.0; $sl = 0.0
+                try { $st = [double]$child.Top } catch {}
+                try { $sl = [double]$child.Left } catch {}
+                $entries += @{ Shape = $child; TopLevelTop = $top; TopLevelLeft = $left; SubTop = $st; SubLeft = $sl }
+            }
+        } elseif ($t -eq 13 -or $t -eq 11) {
+            $entries += @{ Shape = $sp; TopLevelTop = $top; TopLevelLeft = $left; SubTop = 0.0; SubLeft = 0.0 }
+        }
+    }
+    # Round tops so the pictures of one horizontal strip (near-equal tops)
+    # sort left-to-right in capture order.
+    return ,@($entries | Sort-Object `
+        @{Expression = { [Math]::Round([double]$_.TopLevelTop, 0) }}, `
+        @{Expression = { [double]$_.TopLevelLeft }}, `
+        @{Expression = { [Math]::Round([double]$_.SubTop, 0) }}, `
+        @{Expression = { [double]$_.SubLeft }})
+}
+
+# Recursively collects the picture shapes inside one group. A GroupItems
+# read failure is reported (not swallowed): losing a whole strip of
+# evidence silently is exactly the bug this diagnostic exists for.
+function Get-GroupPictureShapes {
+    param($GroupShape)
     $found = @()
     $queue = New-Object System.Collections.Generic.Queue[object]
-    foreach ($sp in $Worksheet.Shapes) { $queue.Enqueue($sp) }
+    $queue.Enqueue($GroupShape)
     while ($queue.Count -gt 0) {
         $sp = $queue.Dequeue()
         $t = 0
         try { $t = [int]$sp.Type } catch {}
         if ($t -eq 6) {
-            try { foreach ($child in $sp.GroupItems) { $queue.Enqueue($child) } } catch {}
+            try {
+                foreach ($child in $sp.GroupItems) { $queue.Enqueue($child) }
+            } catch {
+                $gnm = ''
+                try { $gnm = [string]$sp.Name } catch {}
+                Write-Host ("  [WARN] cannot enumerate group '{0}' children: {1}" -f $gnm, $_.Exception.Message) -ForegroundColor Yellow
+            }
             continue
         }
         if ($t -ne 13 -and $t -ne 11) { continue }
@@ -36,9 +81,13 @@ function Get-EvidencePictureShapes {
         if ($nm -like 'verifyMark_*') { continue }
         $found += $sp
     }
-    # Round Top so the pictures of one horizontal strip (near-equal tops)
-    # sort left-to-right in capture order.
-    return ,@($found | Sort-Object @{Expression = { [Math]::Round([double]$_.Top, 0) }}, @{Expression = { [double]$_.Left }})
+    return ,@($found)
+}
+
+# Back-compat wrapper: bare picture shapes in display order.
+function Get-EvidencePictureShapes {
+    param($Worksheet)
+    return ,@(@(Get-EvidencePictureEntries $Worksheet) | ForEach-Object { $_.Shape })
 }
 
 # Exports one shape to a PNG file. Returns $true when the file exists.
@@ -90,24 +139,27 @@ function Export-SheetPicturesToPng {
     try { $ws.Visible = -1 } catch {}
     try { $ws.Activate() | Out-Null } catch {}
 
-    $allShapes = @(Get-EvidencePictureShapes $ws)
-    $shapes = $allShapes
+    $allEntries = @(Get-EvidencePictureEntries $ws)
+    $entries = $allEntries
     if ($TopMin -ge 0 -or $TopMax -ge 0) {
-        $shapes = @($shapes | Where-Object {
-            $st = 0.0
-            try { $st = [double]$_.Top } catch {}
+        # Section membership uses the TOP-LEVEL shape's Top: pictures inside
+        # a Ctrl+G group can report group-relative Top (e.g. 0), so the
+        # group's own sheet position decides which correl section they
+        # belong to.
+        $entries = @($entries | Where-Object {
+            $st = [double]$_.TopLevelTop
             (($TopMin -lt 0) -or ($st -ge $TopMin)) -and (($TopMax -lt 0) -or ($st -lt $TopMax))
         })
     }
-    if ($shapes.Count -eq 0) {
+    if ($entries.Count -eq 0) {
         # Diagnostics: say WHY nothing was exported so the operator can tell
         # a shape-type problem from a section-bounds problem at a glance.
-        if ($allShapes.Count -gt 0) {
-            $tops = @($allShapes | ForEach-Object {
-                $st = 0.0; try { $st = [double]$_.Top } catch {}; [Math]::Round($st, 0)
+        if ($allEntries.Count -gt 0) {
+            $tops = @($allEntries | ForEach-Object {
+                [Math]::Round([double]$_.TopLevelTop, 0)
             }) -join ', '
-            Write-Host ("  [DIAG] sheet '{0}' has {1} picture(s) but none inside section Top range [{2}, {3}); picture Tops: {4}" -f `
-                $SheetName, $allShapes.Count, [Math]::Round($TopMin, 0), [Math]::Round($TopMax, 0), $tops) -ForegroundColor Yellow
+            Write-Host ("  [DIAG] sheet '{0}' has {1} picture(s) but none inside section Top range [{2}, {3}); top-level picture Tops: {4}" -f `
+                $SheetName, $allEntries.Count, [Math]::Round($TopMin, 0), [Math]::Round($TopMax, 0), $tops) -ForegroundColor Yellow
         } else {
             $typeCounts = @{}
             try {
@@ -129,10 +181,10 @@ function Export-SheetPicturesToPng {
 
     $paths = @()
     $i = 0
-    foreach ($sp in $shapes) {
+    foreach ($e in $entries) {
         $i++
         $png = Join-Path $OutDir ('{0}_{1:D2}.png' -f $BaseName, $i)
-        if (Export-ShapeToPng $ws $sp $png) {
+        if (Export-ShapeToPng $ws $e.Shape $png) {
             $paths += $png
         } else {
             Write-Host ("  [WARN] picture {0} on sheet '{1}' was not exported." -f $i, $SheetName) -ForegroundColor Yellow

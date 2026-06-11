@@ -1,11 +1,11 @@
 # Read-ClipboardJson.ps1
 # ============================================================
-# bookmarklet が clipboard に書き込んだ JSON を読み取り、
-# PSCustomObject に変換して返す。
-# bookmarklet 側のフォーマット例:
+# Reads the JSON a bookmarklet wrote to the clipboard and returns it
+# as a PSCustomObject.
+# Bookmarklet-side format example:
 #   {"source":"GIFT","numRecords":2,"records":[...]}
 #
-# 使用例:
+# Usage:
 #   $data = & .\Read-ClipboardJson.ps1 -ExpectedSource "GIFT" -TimeoutSec 10
 #   if ($data) { Write-Host ("N = {0}" -f $data.numRecords) }
 # ============================================================
@@ -31,7 +31,7 @@ while ((Get-Date) -lt $deadline) {
     if ($text -eq $prevText) { continue }
     $prevText = $text
 
-    # JSON っぽいか軽くチェック
+    # quick check that it looks like JSON
     $trimmed = $text.Trim()
     if (-not $trimmed.StartsWith('{')) { continue }
 
@@ -39,7 +39,7 @@ while ((Get-Date) -lt $deadline) {
         $obj = $trimmed | ConvertFrom-Json -ErrorAction Stop
     } catch { continue }
 
-    # source タグ照合（指定があれば）
+    # match the source tag (when one was requested)
     if ($ExpectedSource -and $obj.source -ne $ExpectedSource) {
         Write-Host ("  [INFO] source mismatch: got '{0}', expected '{1}'. waiting..." `
             -f $obj.source, $ExpectedSource) -ForegroundColor DarkGray

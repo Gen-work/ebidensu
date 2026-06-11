@@ -63,6 +63,10 @@ if (-not $helpersPath) { Write-Host '[ERROR] ExcelHelpers.ps1 not found.' -Foreg
 # msoShapeType decoder (the ones we care about)
 $typeNames = @{
     1  = 'AutoShape'
+    5  = 'Freeform'
+    6  = 'Group'
+    7  = 'EmbeddedOLE'
+    11 = 'LinkedPic'
     13 = 'Picture'
     17 = 'TextBox'
     19 = 'Comment'
@@ -109,9 +113,13 @@ try {
         foreach ($s in $ws.Shapes) { $shapes += $s }
         $shapes = $shapes | Sort-Object -Property @{ Expression = { [double]$_.Top } }, @{ Expression = { [double]$_.Left } }
 
-        foreach ($s in $shapes) {
-            $name = ''; $type = ''; $tStr = ''; $alt = ''
+        # Prints one shape row; recurses into Ctrl+G groups with indentation
+        # so the children (and their possibly group-RELATIVE Top/Left) are
+        # visible -- key when diagnosing OCR section-export misses.
+        function Write-ShapeRow($s, [int]$Depth) {
+            $name = ''; $type = ''; $alt = ''
             $L = 0.0; $T = 0.0; $W = 0.0; $H = 0.0
+            $tInt = -1
             try { $name = [string]$s.Name } catch {}
             try {
                 $tInt = [int]$s.Type
@@ -124,9 +132,21 @@ try {
             try { $H = [Math]::Round([double]$s.Height, 1) } catch {}
             try { $alt = [string]$s.AlternativeText } catch {}
 
+            $indent = ('  ' * $Depth)
+            if ($Depth -gt 0) { $name = ('{0}> {1}' -f $indent, $name) }
             $color = if ($alt -like 'v1|*') { 'Green' } elseif ($type -eq 'AutoShape') { 'Yellow' } else { 'White' }
             Write-Host ($hdr -f $name, $type, $L, $T, $W, $H, $alt) -ForegroundColor $color
+
+            if ($tInt -eq 6) {
+                try {
+                    foreach ($child in $s.GroupItems) { Write-ShapeRow $child ($Depth + 1) }
+                } catch {
+                    Write-Host ("  {0}> [WARN] cannot enumerate group children: {1}" -f $indent, $_.Exception.Message) -ForegroundColor Yellow
+                }
+            }
         }
+
+        foreach ($s in $shapes) { Write-ShapeRow $s 0 }
     }
 
     Close-Workbook $wb $false
