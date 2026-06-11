@@ -81,6 +81,25 @@ work\
     <Excel_NAME>.xlsx
 ```
 
+### Full-width filename fallback
+
+Some customer-provided files may use full-width ASCII characters in filenames
+(for example `０` instead of `0`). Workbook lookup first tries the normal exact
+and wildcard paths; if nothing is found, it scans for `.xlsx` names whose
+full-width ASCII normalizes to the requested `Excel_NAME`, warns, and asks before
+using the candidate. Non-interactive scripts/tests can use the resolver policy
+`Prompt`, `Accept`, or `Reject`.
+
+The reusable fallback lives in `WorkbookResolver.ps1`:
+
+```powershell
+# Generic file lookup after your normal not-found branch.
+Resolve-FullWidthFileName -Dir $dir -Name 'report0.txt' -Filter '*.txt' -FullWidthFallback Prompt
+
+# Workbook-specific lookup used by evidence phases.
+Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem -FullWidthFallback Prompt
+```
+
 Jenkins-downloaded receive files are saved under `DATA\GIFT` or `DATA\GFIX` with their Jenkins filename, so downstream delivery can pick up `Correl_ID_S*` files. For example:
 
 ```text

@@ -4,6 +4,27 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-11 - Full-width filename fallback
+
+### Added
+- **Reusable full-width filename resolver** in `WorkbookResolver.ps1`:
+  `FullWidthFilenameResolver` normalizes full-width ASCII to half-width,
+  detects candidate filenames, and enumerates matching files by filter.
+- **Generic fallback helpers** (`Resolve-FullWidthFileName`,
+  `Find-FullWidthFilenameCandidates`) so any not-found filename path can warn
+  and optionally prompt before using a full-width candidate.
+- **Workbook integration**: `Find-WorkbookByExcelName` still prefers exact and
+  wildcard evidence/J4 matches, then uses the full-width fallback with
+  `Prompt` / `Accept` / `Reject` policy.
+- **Unit coverage** in `Tests/Test-WorkbookResolverFullWidth.ps1` for workbook
+  and generic filename fallback behavior.
+
+### Notes
+- Interactive phases should keep `Prompt` so the operator approves the
+  full-width filename. Non-interactive tests/batch flows should pass `Accept` or
+  `Reject` explicitly.
+
+
 ## 2026-06-11 - SendVsGift Stage 2 OCR skeleton
 
 ### Added

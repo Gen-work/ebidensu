@@ -56,7 +56,9 @@ OcrWindows.ps1          Windows built-in OCR (Windows.Media.Ocr WinRT) from PS 5
 EvidenceImageExport.ps1 Excel COM: export embedded sheet pictures to PNG via temp
                         ChartObject (skips verifyMark_* shapes; clipboard clobbered).
 WorkbookResolver.ps1    dot-source helper: evidence/J4 workbook filename resolution
-                        (prefix + Excel_NAME stem). Unit-tested.
+                        (prefix + Excel_NAME stem) plus reusable full-width
+                        ASCII filename fallback (`FullWidthFilenameResolver`).
+                        Unit-tested.
 
 Clone.ps1               Phase Clone
 Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
@@ -129,6 +131,24 @@ $forceFlag = [bool]$Force.IsPresent   # capture switch BEFORE dot-sourcing
 
 Never dot-source a script that has a `param()` block — it will overwrite the caller's
 switch parameters with `$false`.
+
+### Full-width filename fallback
+
+`WorkbookResolver.ps1` exposes a reusable `FullWidthFilenameResolver` class and
+wrapper functions for filename misses caused by full-width ASCII characters
+(e.g. `０` instead of `0`). Use `Resolve-FullWidthFileName` after a normal exact
+lookup fails when any file type needs the same tolerance:
+
+```powershell
+$path = Resolve-FullWidthFileName -Dir $dir -Name 'report0.txt' -Filter '*.txt' `
+    -ItemKind 'file' -FullWidthFallback Prompt
+```
+
+Workbook callers should continue to use `Find-WorkbookByExcelName`; it preserves
+exact and wildcard matching first, then delegates to the generic resolver for
+full-width fallback with `Prompt` / `Accept` / `Reject` policy. Interactive tools
+should keep the default `Prompt`; tests and non-interactive batch flows should
+pass `Accept` or `Reject` explicitly.
 
 ### Encoding table
 
