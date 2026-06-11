@@ -100,6 +100,7 @@ function Invoke-WinOcrFile {
     if (-not (Initialize-WinOcr)) {
         throw ("Windows OCR not available: {0}" -f $script:WinOcrInitError)
     }
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'image path is empty' }
     if (-not (Test-Path -LiteralPath $Path)) { throw "image not found: $Path" }
     $engine = Get-WinOcrEngine $LanguageTag
     if ($null -eq $engine) {
