@@ -32,6 +32,7 @@ param(
     [string]$Owner = '',
     [string[]]$TargetIds = @(),
     [string]$J4BaseDir = '',
+    [string]$CloneSourceDir = '',
     [string]$ExcelPrefix = '',
     [string[]]$HostSystemTypes = @(),
     [string]$MigrationTypeOverride = '',
@@ -89,12 +90,35 @@ Write-Host ''
 Write-Host '===== Align / Precheck =====' -ForegroundColor Green
 Write-Host ("  Mode      : {0}" -f $(if ($diffFlag) { 'DiffMode (report only)' } else { 'Apply (force replace: work <- J4)' }))
 Write-Host ("  J4BaseDir : {0}" -f $J4BaseDir)
+if (-not [string]::IsNullOrWhiteSpace($CloneSourceDir)) { Write-Host ("  CloneSrc  : {0}" -f $CloneSourceDir) }
 Write-Host ("  HostTypes : {0}" -f $(if (@($HostSystemTypes).Count) { ($HostSystemTypes -join ',') } else { '(none configured)' }))
 Write-Host ("  Groups    : {0}" -f $groups.Count)
 Write-Host ''
 Write-ProgressEvent -WorkDir $WorkDir -Phase 'Align' -Action 'start' -Status 'info' -Message ("apply={0} groups={1}" -f $applyFlag, $groups.Count)
 
 . (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+
+function Read-AlignYesNo([string]$Prompt, [bool]$DefaultYes = $true) {
+    $suffix = if ($DefaultYes) { 'Y/n' } else { 'y/N' }
+    $ans = Read-Host ("{0} [{1}]" -f $Prompt, $suffix)
+    if ([string]::IsNullOrWhiteSpace($ans)) { return $DefaultYes }
+    return ($ans.Trim().ToLowerInvariant() -in @('y', 'yes'))
+}
+
+function Invoke-CloneForAlignMissingWorkbook([string]$ExcelName) {
+    $cloneScript = Join-Path $PSScriptRoot 'Clone.ps1'
+    if (-not (Test-Path -LiteralPath $cloneScript)) {
+        Write-Host ("  [WARN] Clone.ps1 not found: {0}" -f $cloneScript) -ForegroundColor Yellow
+        return
+    }
+
+    $args = @{ WorkDir = $WorkDir; Owner = $Owner; TargetIds = @($ExcelName) }
+    if (-not [string]::IsNullOrWhiteSpace($ExcelPrefix)) { $args['ExcelPrefix'] = $ExcelPrefix }
+    if (-not [string]::IsNullOrWhiteSpace($CloneSourceDir)) { $args['SourceDir'] = $CloneSourceDir }
+
+    Write-Host ("  [RUN] Clone missing work workbook: {0}" -f $ExcelName) -ForegroundColor Green
+    & $cloneScript @args
+}
 
 function Find-J4Workbook([string]$name) {
     return (Find-WorkbookByExcelName -Dir $J4BaseDir -ExcelName $name -Recurse)
@@ -150,7 +174,25 @@ try {
         Write-Host ("----- {0} -----" -f $excelName) -ForegroundColor Cyan
 
         $workPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem
-        if ($null -eq $workPath) { Write-Host ("  [SKIP] work workbook missing ({0}.xlsx)" -f $fullStem) -ForegroundColor Yellow; $cntSkip++; continue }
+        if ($null -eq $workPath) {
+            Write-Host ("  [SKIP] work workbook missing ({0}.xlsx)" -f $fullStem) -ForegroundColor Yellow
+            Write-Host ("         evidence dir: {0}" -f $evDir) -ForegroundColor DarkGray
+            Write-Host ("         This usually means the Clone phase has not created this workbook yet.") -ForegroundColor DarkGray
+            if (Read-AlignYesNo ("  Clone this workbook now?") $true) {
+                Invoke-CloneForAlignMissingWorkbook $excelName
+                $workPath = Find-WorkbookByExcelName -Dir $evDir -ExcelName $fullStem
+                if ($null -eq $workPath) {
+                    Write-Host ("  [SKIP] work workbook still missing after Clone ({0}.xlsx)" -f $fullStem) -ForegroundColor Yellow
+                    $cntSkip++
+                    continue
+                }
+                Write-Host ("  [OK] cloned work workbook: {0}" -f (Split-Path $workPath -Leaf)) -ForegroundColor Green
+            } else {
+                Write-Host '  [SKIP] operator chose not to clone now' -ForegroundColor Yellow
+                $cntSkip++
+                continue
+            }
+        }
         $j4Path = Find-J4Workbook $fullStem
         if ($null -eq $j4Path) { Write-Host ("  [SKIP] J4 baseline not found (*{0}.xlsx)" -f $excelName) -ForegroundColor Yellow; $cntSkip++; continue }
         Write-Host ("  work: {0}" -f (Split-Path $workPath -Leaf)) -ForegroundColor DarkGray
