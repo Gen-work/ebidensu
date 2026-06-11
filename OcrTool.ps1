@@ -80,7 +80,9 @@ function Get-OcrImageList([string[]]$Items) {
                 ForEach-Object { $_.FullName })
         }
     }
-    return ,@($files | Select-Object -Unique)
+    # no comma protection: the caller wraps this in @(...) and a
+    # comma-protected return would nest (one element = whole list)
+    return @($files | Select-Object -Unique)
 }
 
 $images = @(Get-OcrImageList $Path)

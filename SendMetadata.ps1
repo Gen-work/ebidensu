@@ -81,7 +81,9 @@ function ConvertTo-SendTextLines {
         $text = ([string]$text).TrimEnd()
         if (-not [string]::IsNullOrWhiteSpace($text)) { $out += $text }
     }
-    return ,@($out)
+    # no comma protection: callers wrap in @(...) and @( ,@($arr) ) nests
+    # in PS 5.1 (every image then counts as ONE "line")
+    return $out
 }
 
 # Detects the standard 0-byte screenshot pattern.
