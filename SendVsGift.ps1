@@ -322,6 +322,7 @@ function Invoke-SendOcrReview {
 
     if ($allLines.Count -eq 0) {
         Write-Host ("  [OCR] no text recognized on any of the {0} exported image(s) - check {1}" -f $pngs.Count, $outDir) -ForegroundColor Yellow
+        Write-Host ("        diagnose with: .\OcrTool.ps1 -Diag -Path {0}" -f $outDir) -ForegroundColor Yellow
     }
     $meta = Build-SendMetadataRecord -CorrelIdS $sid -ExcelName ([string]$Row.Excel_NAME) `
         -ImageCount $pngs.Count -TextLines $allLines -ZeroBytePattern $ZeroPattern

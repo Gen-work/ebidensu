@@ -30,7 +30,8 @@ param(
     [string]$OutFile = '',
     [switch]$Json,
     [switch]$NoSpacing,
-    [switch]$ListLanguages
+    [switch]$ListLanguages,
+    [switch]$Diag
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +40,7 @@ $ErrorActionPreference = 'Stop'
 $jsonFlag      = [bool]$Json.IsPresent
 $noSpacingFlag = [bool]$NoSpacing.IsPresent
 $listFlag      = [bool]$ListLanguages.IsPresent
+$diagFlag      = [bool]$Diag.IsPresent
 
 try {
     [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -133,6 +135,38 @@ if ($images.Count -eq 0) {
 if (-not (Test-WinOcrAvailable)) {
     Write-Host ("[ERROR] Windows OCR unavailable: {0}" -f (Get-WinOcrInitError)) -ForegroundColor Red
     exit 1
+}
+
+# -Diag: per-image engine sweep (every installed language + user-profile
+# engine) with pixel size vs the engine's MaxImageDimension. Use this
+# when OCR returns nothing to tell an image problem from an engine one.
+if ($diagFlag) {
+    foreach ($img in $images) {
+        Write-Host ''
+        Write-Host ("===== DIAG {0} =====" -f $img) -ForegroundColor Cyan
+        try {
+            $d = Invoke-WinOcrDiag -Path $img
+            $dimNote = ''
+            if ($d.MaxImageDimension -gt 0 -and -not [string]::IsNullOrWhiteSpace($d.PixelSize)) {
+                $parts = $d.PixelSize -split 'x'
+                $over = ([int]$parts[0] -gt $d.MaxImageDimension) -or ([int]$parts[1] -gt $d.MaxImageDimension)
+                if ($over) { $dimNote = '  ** EXCEEDS MaxImageDimension **' }
+            }
+            Write-Host ("  pixel size : {0}  (engine MaxImageDimension: {1}){2}" -f $d.PixelSize, $d.MaxImageDimension, $dimNote)
+            foreach ($a in $d.Attempts) {
+                if ([string]::IsNullOrWhiteSpace($a.Error)) {
+                    $color = if ($a.Lines -gt 0) { 'Green' } else { 'Yellow' }
+                    Write-Host ("  {0,-14} engine={1,-6} lines={2,-4} words={3,-5} sample: {4}" -f `
+                        $a.Language, $a.Engine, $a.Lines, $a.Words, $a.Sample) -ForegroundColor $color
+                } else {
+                    Write-Host ("  {0,-14} ERROR: {1}" -f $a.Language, $a.Error) -ForegroundColor Red
+                }
+            }
+        } catch {
+            Write-Host ("  [ERROR] {0}" -f $_.Exception.Message) -ForegroundColor Red
+        }
+    }
+    exit 0
 }
 
 $results = @()

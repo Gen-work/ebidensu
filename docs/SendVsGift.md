@@ -117,6 +117,47 @@ first; `-Json` for structured output; `-ListLanguages` to probe the engine).
 Future features should dot-source `OcrWindows.ps1` + `SendMetadata.ps1`
 directly, or shell out to `OcrTool.ps1`.
 
+### Troubleshooting: OCR reads nothing (open TODO, 2026-06-11)
+
+Field status from the first JIDSC49S end-to-end run:
+
+- Picture export now works end to end: per-correl section located by the
+  top-level (Ctrl+G group) shape Top, children flattened, PNGs land in
+  `<WorkDir>\data\send_images\<Correl_ID_S>\` and the 3x upscale is
+  confirmed effective (`[DIAG] first export ...` prints the pixel size).
+- **But the Windows OCR engine still returns ZERO lines** on the upscaled
+  evidence PNGs (`[OCR] images=8 lines=0`), so every verdict is `unknown`
+  and the flow falls back to the manual prompt. The engine itself
+  initializes fine (en-US + ja listed).
+
+Diagnosis aids now built in:
+
+- `.\OcrTool.ps1 -Diag -Path <png|folder>` sweeps every installed
+  recognizer language (plus the user-profile engine) per image and prints
+  line/word counts, a sample line, the image pixel size and the engine's
+  `MaxImageDimension` (flags oversized images).
+- SendVsGift prints the exact `-Diag` command in its
+  `no text recognized` warning.
+
+TODO (next office session):
+
+- [ ] Run `OcrTool.ps1 -Diag` on one exported PNG: does ANY language see
+      text? Does the image exceed `MaxImageDimension`?
+- [ ] Engine sanity check: OCR a normal screenshot (e.g. Notepad text).
+      If that also returns nothing, the OCR component itself is broken
+      (language pack / WinRT issue), not our pipeline.
+- [ ] If the engine is fine but evidence PNGs fail: the host screenshots
+      are light-text-on-black terminal captures -- add an image
+      preprocessing step before OCR (grayscale + inversion when the
+      background is dark, optional binarize/contrast). GDI+ in
+      `EvidenceImageExport.ps1` already has the plumbing
+      (`Resize-PngToMinWidth`) to extend.
+- [ ] Consider trying `-OcrLanguage en-US` for the alphanumeric record
+      lines (ja recognizer may behave differently on monospace ASCII).
+- [ ] If a higher true resolution is needed, raise the export `Scale`
+      (7th parameter of `Export-SheetPicturesToPng`, default 3.0,
+      longer side capped ~6000pt).
+
 ### Remaining TODOs (need representative screenshots)
 
 - The CYLINDERS / begin-end marker fragments are first-guess OCR forms taken

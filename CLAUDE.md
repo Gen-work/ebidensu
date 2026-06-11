@@ -240,7 +240,20 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-11 v2.8)
+## Current state (last bump: 2026-06-11 v2.8.1)
+
+v2.8.1 (field fixes): PS 5.1 array-nesting bugs fixed across the OCR stack.
+**Convention: shared lib functions return plain arrays -- never
+`return ,@(...)` -- because callers wrap calls in `@(...)` and that
+combination NESTS in PS 5.1** (one element = whole inner array; member
+enumeration then yields Object[] and casts explode). Ctrl+G section
+filtering now uses the top-level shape's Top (children can report
+group-relative coordinates); export upscales 3x via the temp chart
+(Chart.Shapes/Chart.Pictures stretch + GDI+ min-width fallback) and
+prints a `[DIAG]` pixel size; `OcrTool.ps1 -Diag` sweeps every installed
+recognizer language per image. OPEN TODO: Windows OCR still returns zero
+lines on the correctly-sized evidence PNGs -- see docs/SendVsGift.md
+"Troubleshooting: OCR reads nothing" for the next-session checklist.
 
 v2.8: SendVsGift review rework (per-workbook grouping, column-A correl cursor,
 Excel refocus after every answer, `n`=NG answer) + OCR auto-compare with the

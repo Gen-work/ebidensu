@@ -91,7 +91,60 @@ function Get-WinOcrEngine {
     return $engine
 }
 
-# OCRs one image file. Returns:
+# Diagnostic sweep for ONE image: tries every installed recognizer
+# language (plus the user-profile engine) and reports what each saw,
+# alongside the engine's max image dimension and the image's pixel size.
+# Pure data out (pscustomobject); callers do the formatting.
+function Invoke-WinOcrDiag {
+    param([string]$Path)
+    if (-not (Initialize-WinOcr)) {
+        throw ("Windows OCR not available: {0}" -f $script:WinOcrInitError)
+    }
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'image path is empty' }
+    if (-not (Test-Path -LiteralPath $Path)) { throw "image not found: $Path" }
+
+    $maxDim = 0
+    try { $maxDim = [int][Windows.Media.Ocr.OcrEngine]::MaxImageDimension } catch {}
+    $px = ''
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $img = [System.Drawing.Image]::FromFile((Resolve-Path -LiteralPath $Path).Path)
+        try { $px = ('{0}x{1}' -f [int]$img.Width, [int]$img.Height) } finally { $img.Dispose() }
+    } catch {}
+
+    $attempts = @()
+    $tagList = @(Get-WinOcrLanguageTags) + @('')   # '' = user-profile engine
+    foreach ($tag in $tagList) {
+        $label = if ([string]::IsNullOrWhiteSpace($tag)) { '(user profile)' } else { $tag }
+        try {
+            $res = Invoke-WinOcrFile -Path $Path -LanguageTag $tag
+            $lineCount = @($res.Lines).Count
+            $wordCount = 0
+            foreach ($ln in @($res.Lines)) { $wordCount += @($ln.Words).Count }
+            $sample = ''
+            if ($lineCount -gt 0) { $sample = [string]$res.Lines[0].Text }
+            $attempts += [pscustomobject]@{
+                Language = $label
+                Engine   = [string]$res.LanguageTag
+                Lines    = [int]$lineCount
+                Words    = [int]$wordCount
+                Sample   = $sample
+                Error    = ''
+            }
+        } catch {
+            $attempts += [pscustomobject]@{
+                Language = $label; Engine = ''; Lines = 0; Words = 0; Sample = ''
+                Error    = [string]$_.Exception.Message
+            }
+        }
+    }
+    return [pscustomobject]@{
+        Path              = $Path
+        PixelSize         = $px
+        MaxImageDimension = $maxDim
+        Attempts          = @($attempts)
+    }
+}
 #   @{ Path; LanguageTag; Text; Lines = @(@{ Text; Words = @(@{ Text; X; Y; Width; Height }) }) }
 # Word boxes are in image pixels; SendMetadata.ps1 uses them to rebuild
 # the spacing the Japanese recognizer drops.
