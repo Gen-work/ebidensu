@@ -117,7 +117,7 @@ function Get-GiftFileMetadata([System.IO.FileInfo]$File) {
         FirstRecordLength = [int]$firstRecord.Length
         LastRecordLength  = [int]$lastRecord.Length
         FirstRecordToken  = Get-FirstToken $firstRecord
-        LastRecordToken   = Get-LastToken $lastRecord
+        LastRecordToken   = Get-FirstToken $lastRecord
         FirstRecord       = $firstRecord
         LastRecord        = $lastRecord
         LastWriteTime     = $File.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
@@ -185,11 +185,8 @@ function Show-MetadataBlock($Row, [array]$Matches) {
         Write-Host ("  Size        : {0}" -f $m.SizeDisplay)
         Write-Host ("  Max row num : {0}" -f $m.MaxRowNumber)
         Write-Host ("  Length      : max={0}, min={1}, first={2}, last={3}" -f $m.MaxRecordLength, $m.MinRecordLength, $m.FirstRecordLength, $m.LastRecordLength)
-        Write-Host ("  Short rec   : first='{0}', last='{1}'" -f $m.FirstRecordToken, $m.LastRecordToken)
-        Write-Host '  First rec:' -ForegroundColor DarkGray
-        Write-Host ("    {0}" -f $m.FirstRecord)
-        Write-Host '  Last rec:' -ForegroundColor DarkGray
-        Write-Host ("    {0}" -f $m.LastRecord)
+        Write-Host ("  First row   : {0}" -f $m.FirstRecordToken)
+        Write-Host ("  Last row    : {0}" -f $m.LastRecordToken)
     }
 }
 
