@@ -125,6 +125,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog          # standalone re-highlight utility (folded into MarkGfix)'
     Write-Host '  .\VerifyTool.ps1 -Phase Clone -CloneSourceDir <ext_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase Align -J4BaseDir <j4_path>'
+    Write-Host '  .\VerifyTool.ps1 -Phase SendVsGift          # gather GIFT metadata + manual SEND/GIFT review'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGift'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGfix -TargetIds JIGPL48S'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceDf'
@@ -437,6 +438,16 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> re-highlight already-done rows'
         ) }
+        '^SendVsGift$' { @(
+            '  Phase params:',
+            '    a=CursorCell   -> cell to activate before save/close (default: A3)',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-open rows already marked SendVsGift=1',
+            '  Stage 1 MVP: scans DATA\GIFT, writes data\gift_metadata.csv,',
+            '  ensures SendVsGift mapping column, prints matched file metadata,',
+            '  then opens each pending workbook. Enter marks SendVsGift=1.',
+            '  Full first/last records are stored; short first/last tokens are for TL;DR viewing.'
+        ) }
         '^Review(Gift|Gfix|Df|Evidence)$' { @(
             '  Phase params:',
             '    a=CursorCell   -> cell to activate when workbook opens (default: A3)',
@@ -525,6 +536,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^Replace(Gift|Gfix|Df)$' { return @('t','f') }
         '^Mark(Gift|Gfix|Df)$' { return @('t','f') }
         '^MarkGfixLog$' { return @('t','f') }
+        '^SendVsGift$' { return @('a','t','f') }
         '^Review(Gift|Gfix|Df|Evidence)$' { return @('a','t','f') }
         '^(Gift|Gfix)Jenkins$|^GiftJenkinsNoFile$' { return @('t','i','f','n','w','c','r') }
         '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { return @('t','i','f','n','w','c') }
@@ -925,6 +937,25 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args = @{ Dir = $dir; CropPx = $State.CropPx; Recurse = $true }
         if ($State.Force) { $args['Force'] = $true }
         Write-Host ("[RUN] Crop-Snap {0}" -f $dir) -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'SendVsGift') {
+        $p  = Resolve-ToolPath $Config 'SendVsGift'
+        $eh = Resolve-ToolPath $Config 'ExcelHelpers'
+        $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
+        $args['EvidenceDir'] = $State.EvidenceDir
+        $args['CursorCell'] = $State.CursorCell
+        $args['ExcelHelpersScript'] = $eh
+        if ($Config.Review.SaveWaitMs) { $args['SaveWaitMs'] = [int]$Config.Review.SaveWaitMs }
+        if ($Config.Review.Maximize) { $args['Maximize'] = $true }
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        if ($State.Force) { $args['Force'] = $true }
+        if ($State.DryRun) { $args['DryRun'] = $true }
+        Write-Host '[RUN] SendVsGift' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
         return

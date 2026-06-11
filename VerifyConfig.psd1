@@ -127,6 +127,7 @@
         DeliverMail     = 'DeliverMail.ps1'
         DeliverFiles    = 'DeliverFiles.ps1'
         FillCheckSheet  = 'FillCheckSheet.ps1'
+        SendVsGift      = 'SendVsGift.ps1'
     }
 
     # Reviewer (To / 確認者). The single "viewer" param: used as the mail
@@ -279,6 +280,7 @@
         @{ Key='DfSnap';             Field='DF_snap';              Label='DF 証跡 (df.exe 截图)';             Status='implemented' }
         @{ Key='Clone';              Field='';                     Label='証跡 Excel 複製 (mkexcel)';         Status='implemented' }
         @{ Key='Align';              Field='';                     Label='J4 基準 sheet 比較/同期 (precheck)'; Status='implemented' }
+        @{ Key='SendVsGift';         Field='SendVsGift';            Label='SEND data vs GIFT data metadata review'; Status='implemented' }
         @{ Key='ReplaceGift';        Field='isReplaced'; BitValue=1; Label='GIFT 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceGfix';        Field='isReplaced'; BitValue=2; Label='GFIX 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceDf';          Field='isReplaced'; BitValue=4; Label='DF 証跡置換';                     Status='implemented' }
@@ -359,6 +361,10 @@
         FilesDeliver      = 'DeliverFiles'
         CopyJ4            = 'DeliverFiles'
         MoveJ4            = 'DeliverFiles'
+
+        SendVsGift        = 'SendVsGift'
+        Svgift            = 'SendVsGift'
+        GiftMeta          = 'SendVsGift'
 
         Replace           = 'ReplaceGift'    # bare "Replace" -> GIFT
         ReplaceEvidence   = 'ReplaceGift'    # legacy planned name -> GIFT
