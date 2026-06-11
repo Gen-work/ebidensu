@@ -90,7 +90,8 @@ function Export-SheetPicturesToPng {
     try { $ws.Visible = -1 } catch {}
     try { $ws.Activate() | Out-Null } catch {}
 
-    $shapes = @(Get-EvidencePictureShapes $ws)
+    $allShapes = @(Get-EvidencePictureShapes $ws)
+    $shapes = $allShapes
     if ($TopMin -ge 0 -or $TopMax -ge 0) {
         $shapes = @($shapes | Where-Object {
             $st = 0.0
@@ -98,7 +99,30 @@ function Export-SheetPicturesToPng {
             (($TopMin -lt 0) -or ($st -ge $TopMin)) -and (($TopMax -lt 0) -or ($st -lt $TopMax))
         })
     }
-    if ($shapes.Count -eq 0) { return ,@() }
+    if ($shapes.Count -eq 0) {
+        # Diagnostics: say WHY nothing was exported so the operator can tell
+        # a shape-type problem from a section-bounds problem at a glance.
+        if ($allShapes.Count -gt 0) {
+            $tops = @($allShapes | ForEach-Object {
+                $st = 0.0; try { $st = [double]$_.Top } catch {}; [Math]::Round($st, 0)
+            }) -join ', '
+            Write-Host ("  [DIAG] sheet '{0}' has {1} picture(s) but none inside section Top range [{2}, {3}); picture Tops: {4}" -f `
+                $SheetName, $allShapes.Count, [Math]::Round($TopMin, 0), [Math]::Round($TopMax, 0), $tops) -ForegroundColor Yellow
+        } else {
+            $typeCounts = @{}
+            try {
+                foreach ($sp in $ws.Shapes) {
+                    $t = -1
+                    try { $t = [int]$sp.Type } catch {}
+                    $typeCounts[$t] = 1 + [int]$typeCounts[$t]
+                }
+            } catch {}
+            $desc = @($typeCounts.GetEnumerator() | Sort-Object Name | ForEach-Object { ('msoType{0} x{1}' -f $_.Key, $_.Value) }) -join ', '
+            if ([string]::IsNullOrWhiteSpace($desc)) { $desc = 'no shapes at all' }
+            Write-Host ("  [DIAG] no picture shapes (msoPicture=13 / msoLinkedPicture=11) on sheet '{0}'; found: {1}" -f $SheetName, $desc) -ForegroundColor Yellow
+        }
+        return ,@()
+    }
     if (-not (Test-Path -LiteralPath $OutDir)) {
         New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
     }
