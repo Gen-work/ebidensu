@@ -3,6 +3,8 @@
 #
 #  Dot-source helper for resolving evidence/J4 workbook filenames.
 #  ASCII source -- no raw Japanese literals.
+#  NOTE: return filesystem ProviderPath values (not provider-qualified .Path) so
+#  Excel COM can open UNC paths directly.
 #
 #  Usage pattern in callers:
 #    $prefix   = Resolve-ExcelPrefix -Row $first -DefaultPrefix $ExcelPrefix
@@ -74,12 +76,19 @@ function Get-PrefixFromFilename {
 #   2. Wildcard:    <Dir>\*_<FullStem>.xlsx  (handles any extra prefix on disk)
 #   3. Wildcard:    <Dir>\*<FullStem>.xlsx
 # Returns newest LastWriteTime when multiple wildcard hits.
+function Resolve-WorkbookProviderPath([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $Path }
+    $resolved = Resolve-Path -LiteralPath $Path -ErrorAction Stop
+    if ($resolved.ProviderPath) { return $resolved.ProviderPath }
+    return $resolved.Path
+}
+
 function Find-WorkbookByExcelName([string]$Dir, [string]$ExcelName, [switch]$Recurse) {
     if ([string]::IsNullOrWhiteSpace($Dir) -or [string]::IsNullOrWhiteSpace($ExcelName) -or -not (Test-Path -LiteralPath $Dir)) { return $null }
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($ExcelName)
     $leaf = if ($ExcelName -match '\.xlsx$') { $ExcelName } else { ("{0}.xlsx" -f $stem) }
     $exact = Join-Path $Dir $leaf
-    if (Test-Path -LiteralPath $exact) { return (Resolve-Path -LiteralPath $exact).Path }
+    if (Test-Path -LiteralPath $exact) { return (Resolve-WorkbookProviderPath $exact) }
 
     $hits = @()
     foreach ($pattern in @(("*_{0}.xlsx" -f $stem), ("*{0}.xlsx" -f $stem))) {
