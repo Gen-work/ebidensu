@@ -94,6 +94,49 @@ function Get-EvidencePictureShapes {
     return @(Get-EvidencePictureEntries $Worksheet) | ForEach-Object { $_.Shape }
 }
 
+# Upscales a PNG in place (GDI+ bicubic) when its width is below MinWidth.
+# Bitmap interpolation cannot add detail, but it lifts glyphs above the
+# OCR engine's minimum text height, which is often enough.
+function Resize-PngToMinWidth {
+    param([string]$Path, [int]$MinWidth)
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $img = [System.Drawing.Image]::FromFile($Path)
+        try {
+            $cw = [int]$img.Width
+            $ch = [int]$img.Height
+            if ($cw -le 0 -or $cw -ge $MinWidth) { return }
+            $k = [double]$MinWidth / $cw
+            $nw = [int][Math]::Round($cw * $k)
+            $nh = [int][Math]::Round($ch * $k)
+            $bmp = New-Object System.Drawing.Bitmap($nw, $nh)
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $g.DrawImage($img, 0, 0, $nw, $nh)
+            $g.Dispose()
+            $img.Dispose()   # FromFile locks the file; release before overwriting
+            $img = $null
+            $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Dispose()
+        } finally {
+            if ($null -ne $img) { $img.Dispose() }
+        }
+    } catch {
+        Write-Host ("  [WARN] PNG upscale failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+}
+
+# Returns 'WxH' pixel size of an image file ('' when unreadable).
+function Get-PngPixelSize {
+    param([string]$Path)
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $img = [System.Drawing.Image]::FromFile($Path)
+        try { return ('{0}x{1}' -f [int]$img.Width, [int]$img.Height) }
+        finally { $img.Dispose() }
+    } catch { return '' }
+}
+
 # Exports one shape to a PNG file. Returns $true when the file exists.
 # Scale enlarges the temp chart and stretches the pasted picture to fill
 # it: Excel re-renders from the embedded ORIGINAL image data, recovering
@@ -123,6 +166,10 @@ function Export-ShapeToPng {
         $chartObj.Activate() | Out-Null
         $chartObj.Chart.Paste() | Out-Null
         Start-Sleep -Milliseconds 100
+        # The pasted object can land in Chart.Shapes OR the legacy
+        # Chart.Pictures collection depending on Excel version/content;
+        # try both before declaring the stretch failed.
+        $stretched = $false
         try {
             $pasted = $chartObj.Chart.Shapes
             if ([int]$pasted.Count -ge 1) {
@@ -130,12 +177,30 @@ function Export-ShapeToPng {
                 $p.LockAspectRatio = 0   # msoFalse
                 $p.Left = 0; $p.Top = 0
                 $p.Width = $w; $p.Height = $h
+                $stretched = $true
             }
-        } catch {
-            Write-Host ("  [WARN] could not upscale pasted picture (exporting display size): {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        } catch {}
+        if (-not $stretched) {
+            try {
+                $pics = $chartObj.Chart.Pictures()
+                if ([int]$pics.Count -ge 1) {
+                    $p = $pics.Item(1)
+                    $p.Left = 0; $p.Top = 0
+                    $p.Width = $w; $p.Height = $h
+                    $stretched = $true
+                }
+            } catch {}
+        }
+        if (-not $stretched) {
+            Write-Host '  [WARN] pasted picture not found in chart; exporting at display size.' -ForegroundColor Yellow
         }
         [void]$chartObj.Chart.Export($OutPath, 'PNG')
-        return (Test-Path -LiteralPath $OutPath)
+        if (-not (Test-Path -LiteralPath $OutPath)) { return $false }
+        # Belt and braces: if the exported PNG is still smaller than the
+        # requested size (chart export quirks), upscale the bitmap with
+        # GDI+ bicubic so OCR gets glyphs above its minimum text height.
+        Resize-PngToMinWidth -Path $OutPath -MinWidth ([int]($w * 4.0 / 3.0))
+        return $true
     } catch {
         Write-Host ("  [WARN] shape export failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
         return $false
@@ -213,6 +278,13 @@ function Export-SheetPicturesToPng {
         $png = Join-Path $OutDir ('{0}_{1:D2}.png' -f $BaseName, $i)
         if (Export-ShapeToPng $ws $e.Shape $png $Scale) {
             $paths += $png
+            if ($paths.Count -eq 1) {
+                $sz = Get-PngPixelSize $png
+                if (-not [string]::IsNullOrWhiteSpace($sz)) {
+                    Write-Host ("  [DIAG] first export {0}: {1} px (shape {2}x{3} pt, scale {4})" -f `
+                        (Split-Path -Leaf $png), $sz, [Math]::Round([double]$e.Shape.Width, 0), [Math]::Round([double]$e.Shape.Height, 0), $Scale) -ForegroundColor DarkGray
+                }
+            }
         } else {
             Write-Host ("  [WARN] picture {0} on sheet '{1}' was not exported." -f $i, $SheetName) -ForegroundColor Yellow
         }
