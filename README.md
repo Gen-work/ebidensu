@@ -258,12 +258,13 @@ Bits are only set when every image for that mode actually existed and was insert
 For each pending row:
 
 1. Find evidence Excel by `Excel_NAME`, fallback to `JOB_NAME`, `Correl_ID_S`, `Correl_ID_M`.
-2. Open workbook through Excel COM.
-3. You check it manually.
-4. Press Enter in the shell.
-5. The script selects `A3` by default on every sheet from last to first, saves, closes, and updates `isReviewed = 1`.
+2. Open workbook through Excel COM and jump to the current ID on the send-data sheet (`送信データ` column A exact match, falling back to `-CursorCell`).
+3. You check that ID manually.
+4. Press Enter in the shell. The script marks only that ID as reviewed.
+5. If the same workbook still has pending IDs, Excel stays open and the cursor jumps to the next ID; it does not reset all sheet cursors, save, or close yet.
+6. After all IDs in the workbook are reviewed, the script selects `A3` by default on every sheet from last to first, sends Ctrl+S and Esc, waits briefly, closes, and updates the mapping.
 
-Use `-CursorCell A1` if the review rule changes.
+Use `-CursorCell A1` if the fallback cursor rule changes.
 
 ## CheckSheet behavior
 
