@@ -1,10 +1,10 @@
 # ============================================================
 # Resolve-ExpectedTime.ps1
-#   mapping CSV の Expected_Time 列を読み、無ければ作る。
-#   ユーザーに確認 (keep / recent / 手入力) し datetime を返す。
-#   既存値の編集 / recent (now - 1h) のショートカットあり。
+#   Reads the Expected_Time column of the mapping CSV, creating it when
+#   missing. Asks the user (keep / recent / manual input) and returns a
+#   datetime. Shortcuts: edit the existing value / recent (now - 1h).
 #
-# 使用例:
+# Usage:
 #   $dt = & .\Resolve-ExpectedTime.ps1 -CorrelId "JIGPLB1S" `
 #           -MappingPath "work\mapping_owner.csv"
 # ============================================================
@@ -23,7 +23,7 @@ if (-not (Test-Path -LiteralPath $MappingPath)) { throw "Mapping not found: $Map
 $mapping = @(Import-Csv -LiteralPath $MappingPath)
 if ($mapping.Count -eq 0) { throw "Mapping is empty: $MappingPath" }
 
-# 列が無ければ全行に追加
+# add the column to every row when missing
 $cols = $mapping[0].PSObject.Properties.Name
 if ($cols -notcontains $TimeColumn) {
     Write-Host ("[INFO] Adding column '{0}' to mapping." -f $TimeColumn) -ForegroundColor DarkGray
@@ -56,7 +56,7 @@ if ([string]::IsNullOrWhiteSpace($existing)) {
     elseif ($resp -eq 'r')                       { $resp = $recent }
 }
 
-# 解析
+# parse
 $dt = $null
 try {
     $dt = [datetime]::ParseExact($resp, $TimeFormat, [System.Globalization.CultureInfo]::InvariantCulture)
@@ -64,7 +64,7 @@ try {
     throw "Invalid time format: '$resp' (expected $TimeFormat)"
 }
 
-# 書き戻し（値が変わった場合のみ）
+# write back (only when the value changed)
 if ($row.$TimeColumn -ne $resp) {
     $row.$TimeColumn = $resp
     $mapping | Export-Csv -LiteralPath $MappingPath -NoTypeInformation -Encoding UTF8
