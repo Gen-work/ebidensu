@@ -4,6 +4,48 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-11 - SendVsGift OCR pipeline field fixes (v2.8.1)
+
+First end-to-end field run of Stage-2 OCR surfaced a chain of bugs; all
+fixed (PRs #42-#45 + follow-up branch `claude/affectionate-wozniak-vq4j71`):
+
+### Fixed
+- **PS 5.1 array-nesting bug** across the OCR stack: library functions
+  returned `,@($arr)` while callers wrapped the call in `@(...)`, which
+  NESTS. Symptoms fixed: empty-string `LiteralPath` binding error, section
+  filter dying on `Object[]`->`Double`, every image counting as ONE OCR
+  "line" (`images=8 lines=8`), multi-image OcrTool joining all paths into
+  one. Convention now: these lib functions return plain arrays; callers
+  keep `@(...)`.
+- **Section export with Ctrl+G groups**: section membership now uses the
+  top-level shape's Top (children can report group-relative Top);
+  GroupItems failures warn instead of dropping a strip.
+- **Export resolution**: temp chart is created at `Scale` x shape size
+  (default 3.0) and the pasted picture stretched (Chart.Shapes with
+  Chart.Pictures fallback) so Excel re-renders from the original media;
+  GDI+ bicubic min-width upscale as belt and braces; `[DIAG]` prints the
+  first export's pixel size.
+- **Legacy parse errors**: raw-Japanese comments (UTF-8 no BOM -> CP932
+  mojibake) replaced with ASCII in `Read-ClipboardJson.ps1`,
+  `Resolve-ExpectedTime.ps1`, `Probe-Shapes.ps1`.
+- **Mirror CI**: feature-branch pushes no longer ask GitLab to delete all
+  other branches (push `refs/remotes/origin/*` instead of local heads).
+
+### Added
+- `OcrTool.ps1 -Diag`: per-image sweep over every installed recognizer
+  language (+ user-profile engine) with line/word counts, sample line,
+  pixel size and `MaxImageDimension` check.
+- `Probe-Shapes.ps1` recurses into groups (indented children).
+- SendVsGift warns (with the `-Diag` command) when OCR reads nothing;
+  OCR failures print the script stack trace.
+
+### Open TODO
+- **OCR still returns zero lines on the upscaled evidence PNGs** even
+  though export/resolution are confirmed good; see
+  `docs/SendVsGift.md` -> "Troubleshooting: OCR reads nothing" for the
+  next-session checklist (engine sanity test, `-Diag` sweep, dark-
+  background preprocessing, en-US engine).
+
 ## 2026-06-11 - SendVsGift OCR auto-compare + standalone OcrTool (v2.8)
 
 ### Added
