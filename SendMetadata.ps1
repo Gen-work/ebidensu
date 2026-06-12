@@ -260,7 +260,11 @@ function Test-SendRowNumberPresent {
         if ([string]$t -match $re) { return $true }
     }
     foreach ($t in @($TextLines)) {
-        if ((ConvertTo-SendCompactLine $t).StartsWith($RowLabel)) { return $true }
+        $c = ConvertTo-SendCompactLine $t
+        # exact label, or label + a real record behind it (>= 6 chars keeps
+        # a longer digit run like '0000031' from counting as '000003')
+        if (($c -ceq $RowLabel) -or
+            ($c.Length -ge ($RowLabel.Length + 6) -and $c.StartsWith($RowLabel))) { return $true }
     }
     return $false
 }
@@ -282,7 +286,9 @@ function Find-SendRecordByRowNumber {
     }
     foreach ($t in @($TextLines)) {
         $c = ConvertTo-SendCompactLine $t
-        if ($c.Length -gt $RowLabel.Length -and $c.StartsWith($RowLabel)) {
+        # >= 6 chars of record keeps a longer digit run ('0000031') from
+        # being misread as label '000003' + record '1'
+        if ($c.Length -ge ($RowLabel.Length + 6) -and $c.StartsWith($RowLabel)) {
             return $c.Substring($RowLabel.Length)
         }
     }

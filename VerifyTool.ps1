@@ -1187,6 +1187,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($svg.ContainsKey('OcrLanguage') -and -not [string]::IsNullOrWhiteSpace([string]$svg.OcrLanguage)) { $args['OcrLanguage'] = [string]$svg.OcrLanguage }
             if ($svg.ContainsKey('SendSheetName') -and -not [string]::IsNullOrWhiteSpace([string]$svg.SendSheetName)) { $args['SendSheetName'] = [string]$svg.SendSheetName }
             if ($svg.ContainsKey('ZeroBytePattern') -and -not [string]::IsNullOrWhiteSpace([string]$svg.ZeroBytePattern)) { $args['ZeroBytePattern'] = [string]$svg.ZeroBytePattern }
+            if ($svg.ContainsKey('ZeroTemplate') -and -not [string]::IsNullOrWhiteSpace([string]$svg.ZeroTemplate)) { $args['ZeroTemplate'] = [string]$svg.ZeroTemplate }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
