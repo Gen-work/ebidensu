@@ -59,6 +59,12 @@ EvidenceImageExport.ps1 Excel COM: export embedded sheet pictures to PNG via tem
                         ChartObject (skips verifyMark_* shapes; flattens Ctrl+G groups
                         to child pictures; optional Top range filter for one correl
                         section; clipboard clobbered).
+SnapVerify.ps1          pure snap-phase NG detection library (no COM, no SendKeys).
+                        ConvertFrom-HmPageText / Test-HmAbend (F1),
+                        ConvertFrom-MqPageText / Test-MqRecord (F2),
+                        ConvertFrom-JenkinsListText / Test-JenkinsFile (F3/F4),
+                        Get-SnapPageKind (A3 sentinel), Resolve-SnapRunTime (2.2).
+                        Unit-tested via Tests\Test-SnapVerify.ps1.
 WorkbookResolver.ps1    dot-source helper: evidence/J4 workbook filename resolution
                         (prefix + Excel_NAME stem) plus reusable full-width
                         ASCII filename fallback (`FullWidthFilenameResolver`).
@@ -131,7 +137,7 @@ Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
 `MappingStore.ps1`, `GfixLog.ps1`, `EvidencePlan.ps1`, `EvidenceExecutor.ps1`,
 `ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`, `AlignCompare.ps1`,
 `ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`, `SendMetadata.ps1`,
-`OcrWindows.ps1`, `EvidenceImageExport.ps1`. All phase scripts have `param()`
+`OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`. All phase scripts have `param()`
 and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
@@ -316,12 +322,11 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
-- **SnapVerify (planned, not implemented)** — clipboard-text based instant NG
-  detection in the HM/MQ/Jenkins snap phases (abend detect, missing-data detect,
-  NoGfix old-record annotation, pixel localization for Mark, text sidecar,
-  poll-instead-of-sleep). Design, confirmed business decisions and the open
-  question checklist live in `docs/SnapVerify-Plan.md` — read it before
-  implementing any part.
+- **SnapVerify M1 done** — `SnapVerify.ps1` pure library + `Tests/Test-SnapVerify.ps1`
+  unit tests + `SnapVerify` config section in `VerifyConfig.psd1` are implemented.
+  M2 (MQ wiring + MqSnap MappingStore migration), M3 (Jenkins NG=2), M4 (HM wiring +
+  HmSnap migration), M5 (pixel localisation), M6 (NoGfix annotation) remain.
+  Design and open questions live in `docs/SnapVerify-Plan.md`.
 
 - **Generate-HostOpenMapping `-Add` cannot filter by owner at the same time** —
   the daily flow adds new JOB_NAMEs incrementally with `-Add`, but owner

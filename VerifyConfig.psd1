@@ -146,6 +146,7 @@
         DeliverFiles    = 'DeliverFiles.ps1'
         FillCheckSheet  = 'FillCheckSheet.ps1'
         SendVsGift      = 'SendVsGift.ps1'
+        SnapVerify      = 'SnapVerify.ps1'
     }
 
     # Reviewer (To / 確認者). The single "viewer" param: used as the mail
@@ -269,6 +270,17 @@
         # Column range to highlight (B=2, AY=51).
         HighlightColStart = 2
         HighlightColEnd   = 51
+    }
+
+    # SnapVerify: instant NG detection for HM / MQ / Jenkins snap phases.
+    # All keys overridable per work folder via verify_config.json overlay.
+    SnapVerify = @{
+        Enabled           = $true   # master switch; $false = pure screenshot (no detection)
+        ToleranceMinutes  = 30
+        SaveText          = $true   # save Ctrl+A text as <correl>.txt alongside PNG
+        PollTimeoutSec    = 10
+        PollIntervalMs    = 500
+        NoGfixNoteColumn  = 'AZ'    # F4: column for past-data annotation
     }
 
     # Expected_Time helper (Resolve-ExpectedTime.ps1). The time VALUES live per
