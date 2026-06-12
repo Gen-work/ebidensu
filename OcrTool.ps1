@@ -158,8 +158,11 @@ if ($diagFlag) {
                     $color = if ($a.Chars -gt 0) { 'Green' } elseif ($a.Lines -gt 0) { 'Yellow' } else { 'DarkYellow' }
                     Write-Host ("  {0,-14} engine={1,-6} lines={2,-4} words={3,-5} chars={4,-6} rawChars={5,-6} sample: {6}" -f `
                         $a.Language, $a.Engine, $a.Lines, $a.Words, $a.Chars, $a.RawChars, $a.Sample) -ForegroundColor $color
+                    Write-Host ("                 text strategy: {0}  first word box: {1}" -f `
+                        $(if ([string]::IsNullOrWhiteSpace($a.Strategy)) { '(none worked)' } else { $a.Strategy }), `
+                        $(if ([string]::IsNullOrWhiteSpace($a.WordBox)) { '(none)' } else { $a.WordBox })) -ForegroundColor DarkGray
                     if ($a.Lines -gt 0 -and $a.Chars -eq 0) {
-                        Write-Host ("                 ** Lines/Words enumerate but every .Text is EMPTY (WinRT projection issue); line type: {0} **" -f $a.LineType) -ForegroundColor Yellow
+                        Write-Host ("                 ** Lines/Words enumerate but every .Text is EMPTY (WinRT string reads broken); line type: {0} **" -f $a.LineType) -ForegroundColor Yellow
                     }
                 } else {
                     Write-Host ("  {0,-14} ERROR: {1}" -f $a.Language, $a.Error) -ForegroundColor Red

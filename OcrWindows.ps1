@@ -19,6 +19,90 @@
 $script:WinOcrReady = $false
 $script:WinOcrInitError = ''
 $script:WinOcrAsTaskGeneric = $null
+$script:WinOcrTextStrategy = ''      # first strategy that produced text
+$script:WinOcrNativeReader = $null   # $true/$false after first Add-Type try
+
+# Compiled C# string reader: bypasses the PS WinRT adapter entirely.
+# References the in-box metadata under C:\Windows\System32\WinMetadata
+# (present on every Windows 10/11; no SDK install needed). Lazy: only
+# compiled the first time the cheaper strategies fail.
+function Initialize-WinOcrNativeTextReader {
+    if ($null -ne $script:WinOcrNativeReader) { return [bool]$script:WinOcrNativeReader }
+    $script:WinOcrNativeReader = $false
+    try {
+        if (([System.Management.Automation.PSTypeName]'VerifyOcr.NativeText').Type) {
+            $script:WinOcrNativeReader = $true
+            return $true
+        }
+    } catch {}
+    try {
+        $winmdDir = Join-Path $env:windir 'System32\WinMetadata'
+        $mediaWinmd = Join-Path $winmdDir 'Windows.Media.winmd'
+        $foundationWinmd = Join-Path $winmdDir 'Windows.Foundation.winmd'
+        if (-not (Test-Path -LiteralPath $mediaWinmd) -or -not (Test-Path -LiteralPath $foundationWinmd)) {
+            return $false
+        }
+        Add-Type -ReferencedAssemblies @($mediaWinmd, $foundationWinmd, 'System.Runtime.WindowsRuntime') -TypeDefinition @'
+namespace VerifyOcr {
+    public static class NativeText {
+        public static string LineText(object line)  { return ((Windows.Media.Ocr.OcrLine)line).Text; }
+        public static string WordText(object word)  { return ((Windows.Media.Ocr.OcrWord)word).Text; }
+        public static string ResultText(object res) { return ((Windows.Media.Ocr.OcrResult)res).Text; }
+    }
+}
+'@ -ErrorAction Stop
+        $script:WinOcrNativeReader = $true
+    } catch {
+        $script:WinOcrNativeReader = $false
+    }
+    return [bool]$script:WinOcrNativeReader
+}
+
+# Reads a WinRT Text property through layered strategies, because on some
+# hosts the PS 5.1 adapter silently returns empty for every HSTRING
+# property while collections still enumerate (field-observed: lines=92
+# words=489 chars=0 rawChars=0). Kind: 'Line' / 'Word' / 'Result'.
+# Records the first strategy that worked in $script:WinOcrTextStrategy.
+function Read-WinRtText {
+    param($Object, [string]$Kind)
+    if ($null -eq $Object) { return '' }
+    $v = ''
+    try { $v = [string]$Object.Text } catch {}
+    if ($v.Length -gt 0) {
+        if ([string]::IsNullOrEmpty($script:WinOcrTextStrategy)) { $script:WinOcrTextStrategy = 'adapter' }
+        return $v
+    }
+    try { $v = [string]$Object.psbase.Text } catch {}
+    if ($v.Length -gt 0) {
+        if ([string]::IsNullOrEmpty($script:WinOcrTextStrategy)) { $script:WinOcrTextStrategy = 'psbase' }
+        return $v
+    }
+    try {
+        $pi = $Object.GetType().GetProperty('Text')
+        if ($null -ne $pi) { $v = [string]$pi.GetValue($Object, $null) }
+    } catch {}
+    if ($v.Length -gt 0) {
+        if ([string]::IsNullOrEmpty($script:WinOcrTextStrategy)) { $script:WinOcrTextStrategy = 'reflection' }
+        return $v
+    }
+    if (Initialize-WinOcrNativeTextReader) {
+        try {
+            switch ($Kind) {
+                'Line'   { $v = [string][VerifyOcr.NativeText]::LineText($Object) }
+                'Word'   { $v = [string][VerifyOcr.NativeText]::WordText($Object) }
+                'Result' { $v = [string][VerifyOcr.NativeText]::ResultText($Object) }
+            }
+        } catch {}
+        if ($v.Length -gt 0 -and [string]::IsNullOrEmpty($script:WinOcrTextStrategy)) {
+            $script:WinOcrTextStrategy = 'compiled'
+        }
+    }
+    return $v
+}
+
+function Get-WinOcrTextStrategy {
+    return $script:WinOcrTextStrategy
+}
 
 function Initialize-WinOcr {
     if ($script:WinOcrReady) { return $true }
@@ -130,6 +214,16 @@ function Invoke-WinOcrDiag {
             }
             $rawLen = 0
             try { $rawLen = ([string]$res.RawText).Length } catch {}
+            # word-box probe: nonzero X/Width proves struct marshaling works
+            # even when string reads fail
+            $wordBox = ''
+            foreach ($ln in @($res.Lines)) {
+                $ws = @($ln.Words)
+                if ($ws.Count -gt 0) {
+                    $wordBox = ('X={0} Y={1} W={2} H={3}' -f [int]$ws[0].X, [int]$ws[0].Y, [int]$ws[0].Width, [int]$ws[0].Height)
+                    break
+                }
+            }
             $attempts += [pscustomobject]@{
                 Language = $label
                 Engine   = [string]$res.LanguageTag
@@ -138,12 +232,15 @@ function Invoke-WinOcrDiag {
                 Chars    = [int]$charCount
                 RawChars = [int]$rawLen
                 LineType = [string]$res.LineTypeName
+                Strategy = [string]$res.TextStrategy
+                WordBox  = $wordBox
                 Sample   = $sample
                 Error    = ''
             }
         } catch {
             $attempts += [pscustomobject]@{
-                Language = $label; Engine = ''; Lines = 0; Words = 0; Chars = 0; RawChars = 0; LineType = ''; Sample = ''
+                Language = $label; Engine = ''; Lines = 0; Words = 0; Chars = 0; RawChars = 0
+                LineType = ''; Strategy = ''; WordBox = ''; Sample = ''
                 Error    = [string]$_.Exception.Message
             }
         }
@@ -182,8 +279,7 @@ function Invoke-WinOcrFile {
             # fallback: in some PS 5.1 WinRT projections enumerating
             # Lines/Words works but their .Text properties silently return
             # null (field-observed: lines=92 words=489 yet every Text empty).
-            $rawText = ''
-            try { $rawText = [string]$ocr.Text } catch {}
+            $rawText = Read-WinRtText $ocr 'Result'
             $lineTypeName = ''
             $charCount = 0
             $lines = @()
@@ -195,14 +291,14 @@ function Invoke-WinOcrFile {
                 foreach ($w in $ln.Words) {
                     $r = $w.BoundingRect
                     $words += [pscustomobject]@{
-                        Text   = [string]$w.Text
+                        Text   = Read-WinRtText $w 'Word'
                         X      = [double]$r.X
                         Y      = [double]$r.Y
                         Width  = [double]$r.Width
                         Height = [double]$r.Height
                     }
                 }
-                $text = [string]$ln.Text
+                $text = Read-WinRtText $ln 'Line'
                 $charCount += $text.Length
                 $lines += [pscustomobject]@{ Text = $text; Words = @($words) }
             }
@@ -222,6 +318,7 @@ function Invoke-WinOcrFile {
                 Text         = (@($lines | ForEach-Object { $_.Text }) -join "`r`n")
                 RawText      = $rawText
                 LineTypeName = $lineTypeName
+                TextStrategy = [string]$script:WinOcrTextStrategy
             }
         } finally {
             try { $bitmap.Dispose() } catch {}
