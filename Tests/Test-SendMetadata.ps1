@@ -189,8 +189,15 @@ $cmpZeroOk = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(,@($c
 Assert-Equal 'ok' $cmpZeroOk.Verdict 'gift 0 bytes + CYLINDERS-0 image -> ok'
 $cmpZeroNg = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(,@(@('000001 DATA HERE')))
 Assert-Equal 'ng' $cmpZeroNg.Verdict 'gift 0 bytes but send shows 000001 -> ng'
-$cmpZeroUnk = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(,@(@('NOISE ONLY')))
-Assert-Equal 'unknown' $cmpZeroUnk.Verdict 'gift 0 bytes, no evidence either way -> unknown'
+# operator rule: a 0-byte file's evidence is a SINGLE screenshot, while a
+# non-empty file always needs head+tail captures -> one readable image with
+# no 000001 line is 0-byte evidence even when the ': 0' digit was missed
+$cmpZeroOne = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(,@(@('NOISE ONLY')))
+Assert-Equal 'ok' $cmpZeroOne.Verdict 'gift 0 bytes + single image without 000001 -> ok'
+$cmpZeroUnk = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(@('NOISE A'), @('NOISE B'))
+Assert-Equal 'unknown' $cmpZeroUnk.Verdict 'gift 0 bytes, two images, no evidence -> unknown'
+$cmpZeroEmpty = Compare-SendGiftEvidence -GiftRow $giftZero2 -ImageTextSets @(,@(@()))
+Assert-Equal 'unknown' $cmpZeroEmpty.Verdict 'gift 0 bytes, single UNREADABLE image -> unknown'
 
 # -- Compare-SendGiftEvidence: data gift --
 $gift3 = New-GiftMetaRow 300 3 '0000001001B40500015A TAIL' '0001548003X2 END'

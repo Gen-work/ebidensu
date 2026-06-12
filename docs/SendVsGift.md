@@ -223,18 +223,35 @@ two gaps:
   on those; the max-row check works on any column view once the digits
   read correctly.
 
+**2026-06-12 update 6 -- FIRST GREEN RUN.** JIDSC49S verified end to end:
+`MaxRowNumber match`, first/last records `fuzzy`, verdict `ok`,
+auto-marked `SendVsGift=1`. Remaining polish shipped:
+
+- **OCR mode is hands-off now**: Excel is never forced to the OS
+  foreground during an `-Ocr` run, and workbooks close WITHOUT saving
+  (the phase does not modify content; the manual flow keeps the old
+  cursor-save behavior).
+- **0-byte single-image rule** (operator rule, replaces the template in
+  the common case): a 0-byte file's evidence is a single dataset-info
+  screenshot, while any non-empty file needs head+tail captures. One
+  READABLE image with no `000001` record line therefore counts as
+  0-byte evidence even when the `: 0` digit is missed. Single
+  unreadable image / multiple images stay `unknown`.
+  `ZeroTemplate` remains as an optional extra; note a template must be
+  cropped from the PNG FILE at 100% zoom (a screen capture of the
+  image viewer rescales pixels and will never match).
+- How records are found (for reference): no picture-position guessing.
+  All images' reconstructed rows are pooled; FirstRecord is the text
+  after a leading `000001` label on ANY image, LastRecord after the
+  zero-padded max-row label (e.g. `002640`). Only images showing
+  column 1 can carry them; the max-row check works on any column view.
+
 TODO (next office session):
 
-- [ ] `Tests\Run-Tests.ps1` (the 2 longer-digit-run asserts pass again:
-      compact fallback now requires >= 6 record chars after the label).
-- [ ] `SendVsGift -Ocr -TargetIds JIDSC49S -Force`: with the en-US merge
-      the max-row label should be found; check FirstRecord/LastRecord
-      against the column-1 images in the `_ocr.txt` dump.
-- [ ] 0-byte case: crop a `0`-evidence template from
-      `data\send_images\JIDSC05S\JIDSC05S_01.png`, save e.g. as
-      `<WorkDir>\zero_tpl.png`, set `SendVsGift.ZeroTemplate` in
-      `verify_config.json` (or run with `-ZeroTemplate zero_tpl.png`),
-      re-run and expect `ZeroByteTpl ... -> match`.
+- [ ] Re-run JIDSC05S (0-byte): expect `images=1` + no `000001` ->
+      verdict ok via the single-image rule.
+- [ ] Batch run over all 34 rows; collect any ng/unknown into the NG
+      summary and inspect their `_ocr.txt` dumps.
 
 ### Remaining TODOs (need representative screenshots)
 

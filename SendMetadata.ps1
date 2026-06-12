@@ -426,9 +426,16 @@ function Compare-SendGiftEvidence {
         $st = 'unknown'
         if ($zeroSeen -and -not $hasRow1) { $st = 'match' }
         elseif ($hasRow1) { $st = 'mismatch' }
+        elseif ($sets.Count -eq 1 -and $allLines.Count -gt 0) {
+            # operator rule: a 0-byte file's evidence is a SINGLE screenshot
+            # (dataset-info screen); any non-empty file needs head+tail record
+            # captures. One readable image with no 000001 record line is
+            # therefore 0-byte evidence even when the ': 0' digit was missed.
+            $st = 'match'
+        }
         $checks += [pscustomobject]@{
             Name   = 'ZeroByte'
-            Send   = ('zeroEvidence={0} row000001={1}' -f $zeroSeen, $hasRow1)
+            Send   = ('zeroEvidence={0} row000001={1} images={2}' -f $zeroSeen, $hasRow1, $sets.Count)
             Gift   = '0 bytes'
             Status = $st
         }
