@@ -126,8 +126,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase MarkGfixLog          # standalone re-highlight utility (folded into MarkGfix)'
     Write-Host '  .\VerifyTool.ps1 -Phase Clone -CloneSourceDir <ext_path>'
     Write-Host '  .\VerifyTool.ps1 -Phase Align -J4BaseDir <j4_path>'
-    Write-Host '  .\VerifyTool.ps1 -Phase SendVsGift          # gather GIFT metadata + manual SEND/GIFT review'
-    Write-Host '  .\VerifyTool.ps1 -Phase SendVsGift -Ocr     # + OCR auto-compare (ok->1, NG->2)'
+    Write-Host '  .\VerifyTool.ps1 -Phase SendVsGift          # gather GIFT metadata + SEND/GIFT review (OCR on by default)'
     Write-Host '  .\OcrTool.ps1 -Path <png|dir|wildcard>      # standalone OCR tool (also -Workbook <xlsx>)'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGift'
     Write-Host '  .\VerifyTool.ps1 -Phase ReplaceGfix -TargetIds JIGPL48S'
@@ -447,7 +446,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    a=CursorCell   -> fallback cursor cell (default: A3)',
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> re-open rows already marked SendVsGift=1',
-            '    o=Ocr          -> toggle Stage 2 OCR auto-compare for this run',
+            '    o=Ocr          -> toggle OCR on/off (default: on; ok->auto 1, ng->manual prompt)',
             '  Scans DATA\GIFT, writes data\gift_metadata.csv, ensures the SendVsGift',
             '  mapping column, then opens each pending workbook ONCE (rows grouped per',
             '  Excel). The cursor jumps to each Correl_ID_S label in column A of the',
@@ -1743,9 +1742,8 @@ $state = @{
     DfExePath       = $DfExePath
     CheckSheetPath  = $CheckSheetPath
     Force           = [bool]$Force.IsPresent
-    # OCR for SendVsGift: CLI -Ocr or SendVsGift.Ocr in config/overlay; the
-    # 'o' menu option toggles it per run.
-    Ocr             = ([bool]$Ocr.IsPresent -or ($Config.ContainsKey('SendVsGift') -and $null -ne $Config.SendVsGift -and $Config.SendVsGift.ContainsKey('Ocr') -and [bool]$Config.SendVsGift.Ocr))
+    # OCR for SendVsGift: on by default; 'o' menu option toggles off/on per run.
+    Ocr             = $true
     Interactive     = [bool]$Interactive.IsPresent
     NoResize        = ([bool]$NoResize.IsPresent -or ($Config.Window -and [bool]$Config.Window.NoResize))
     RefreshUrls     = [bool]$RefreshUrls.IsPresent
