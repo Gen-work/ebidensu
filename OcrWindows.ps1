@@ -120,20 +120,30 @@ function Invoke-WinOcrDiag {
             $res = Invoke-WinOcrFile -Path $Path -LanguageTag $tag
             $lineCount = @($res.Lines).Count
             $wordCount = 0
-            foreach ($ln in @($res.Lines)) { $wordCount += @($ln.Words).Count }
+            $charCount = 0
             $sample = ''
-            if ($lineCount -gt 0) { $sample = [string]$res.Lines[0].Text }
+            foreach ($ln in @($res.Lines)) {
+                $wordCount += @($ln.Words).Count
+                $t = [string]$ln.Text
+                $charCount += $t.Length
+                if ([string]::IsNullOrWhiteSpace($sample) -and -not [string]::IsNullOrWhiteSpace($t)) { $sample = $t }
+            }
+            $rawLen = 0
+            try { $rawLen = ([string]$res.RawText).Length } catch {}
             $attempts += [pscustomobject]@{
                 Language = $label
                 Engine   = [string]$res.LanguageTag
                 Lines    = [int]$lineCount
                 Words    = [int]$wordCount
+                Chars    = [int]$charCount
+                RawChars = [int]$rawLen
+                LineType = [string]$res.LineTypeName
                 Sample   = $sample
                 Error    = ''
             }
         } catch {
             $attempts += [pscustomobject]@{
-                Language = $label; Engine = ''; Lines = 0; Words = 0; Sample = ''
+                Language = $label; Engine = ''; Lines = 0; Words = 0; Chars = 0; RawChars = 0; LineType = ''; Sample = ''
                 Error    = [string]$_.Exception.Message
             }
         }
@@ -168,8 +178,19 @@ function Invoke-WinOcrFile {
         $bitmap = Wait-WinOcrOperation ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
         try {
             $ocr = Wait-WinOcrOperation ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
+            # OcrResult.Text reads the whole text in one call -- keep it as a
+            # fallback: in some PS 5.1 WinRT projections enumerating
+            # Lines/Words works but their .Text properties silently return
+            # null (field-observed: lines=92 words=489 yet every Text empty).
+            $rawText = ''
+            try { $rawText = [string]$ocr.Text } catch {}
+            $lineTypeName = ''
+            $charCount = 0
             $lines = @()
             foreach ($ln in $ocr.Lines) {
+                if ([string]::IsNullOrEmpty($lineTypeName)) {
+                    try { $lineTypeName = $ln.GetType().FullName } catch {}
+                }
                 $words = @()
                 foreach ($w in $ln.Words) {
                     $r = $w.BoundingRect
@@ -181,13 +202,26 @@ function Invoke-WinOcrFile {
                         Height = [double]$r.Height
                     }
                 }
-                $lines += [pscustomobject]@{ Text = [string]$ln.Text; Words = @($words) }
+                $text = [string]$ln.Text
+                $charCount += $text.Length
+                $lines += [pscustomobject]@{ Text = $text; Words = @($words) }
+            }
+            if ($charCount -eq 0 -and -not [string]::IsNullOrWhiteSpace($rawText)) {
+                # line/word .Text reads came back empty but the aggregate
+                # OcrResult.Text works: rebuild plain lines from it (no word
+                # boxes, so spacing rebuild is skipped downstream).
+                $lines = @()
+                foreach ($t in ($rawText -split "`r?`n")) {
+                    $lines += [pscustomobject]@{ Text = [string]$t; Words = @() }
+                }
             }
             return [pscustomobject]@{
-                Path        = $full
-                LanguageTag = [string]$engine.RecognizerLanguage.LanguageTag
-                Lines       = @($lines)
-                Text        = (@($lines | ForEach-Object { $_.Text }) -join "`r`n")
+                Path         = $full
+                LanguageTag  = [string]$engine.RecognizerLanguage.LanguageTag
+                Lines        = @($lines)
+                Text         = (@($lines | ForEach-Object { $_.Text }) -join "`r`n")
+                RawText      = $rawText
+                LineTypeName = $lineTypeName
             }
         } finally {
             try { $bitmap.Dispose() } catch {}
