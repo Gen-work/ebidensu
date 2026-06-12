@@ -503,6 +503,9 @@ if ($ocrFlag) {
         Write-Host '       continuing with the manual compare flow only.' -ForegroundColor Yellow
     }
 }
+# OCR mode runs hands-off: never steal the OS foreground for Excel and
+# never save the workbooks on close (content is untouched by this phase)
+$quietOcr = ($ocrFlag -and $ocrReady)
 
 # Group pending rows per evidence workbook so each file is opened once
 # and the cursor just moves between correl labels inside it.
@@ -572,7 +575,9 @@ try {
                         try { $sendWs.Range($CursorCell).Select() | Out-Null } catch {}
                     }
                 }
-                Set-ExcelForeground $excel
+                # OCR runs hands-off: do not steal the foreground from the
+                # console; the operator alt-tabs to Excel only when needed
+                if (-not $quietOcr) { Set-ExcelForeground $excel }
 
                 $verdict = 'none'
                 if ($ocrFlag -and $ocrReady) {
@@ -626,7 +631,10 @@ try {
                 Write-Host '  [DONE] SendVsGift=1' -ForegroundColor Green
             }
 
-            if ($markedAny) {
+            if ($markedAny -and -not $quietOcr) {
+                # manual flow: persist the reviewed cursor positions.
+                # OCR mode never saves - the workbook content is untouched
+                # and a dirty save prompt / file timestamp change is noise.
                 Set-WorkbookCursorAllSheets $wb $CursorCell
                 $wb.Save()
                 Start-Sleep -Milliseconds $SaveWaitMs
