@@ -48,6 +48,7 @@ param(
     [string]$OcrLanguage = 'ja',
     [string]$SendSheetName = '',
     [string]$ZeroBytePattern = '',
+    [string]$ZeroTemplate = '',
     [string]$ExcelHelpersScript = ''
 )
 
@@ -287,7 +288,8 @@ function Show-MetadataBlock($Row, [array]$GiftRows) {
 # Returns @{ Meta = <send_metadata record or $null>; Verdict = ok|ng|unknown|none }.
 function Invoke-SendOcrReview {
     param($Workbook, $Worksheet, $LabelCell, $Row, [array]$GiftRows,
-          [string]$SheetName, [string]$ImagesRoot, [string]$LanguageTag, [string]$ZeroPattern)
+          [string]$SheetName, [string]$ImagesRoot, [string]$LanguageTag, [string]$ZeroPattern,
+          [string]$ZeroTemplatePath = '')
     $sid = [string]$Row.Correl_ID_S
     if ([string]::IsNullOrWhiteSpace($sid)) { return @{ Meta = $null; Verdict = 'none' } }
     if ($GiftRows.Count -eq 0) {
@@ -311,13 +313,25 @@ function Invoke-SendOcrReview {
         return @{ Meta = $null; Verdict = 'none' }
     }
 
+    # dual-engine pass: the ja recognizer garbles digit runs on the host
+    # terminal font ('00' -> a kanji box, '7' -> '?'); en-US reads the same
+    # digits cleanly, so each image is OCR'd with both and the row lines
+    # are merged (matchers scan all of them; extra lines are harmless).
+    $ocrLangs = @($LanguageTag)
+    try {
+        if (((Get-WinOcrLanguageTags) -contains 'en-US') -and ($LanguageTag -ne 'en-US')) { $ocrLangs += 'en-US' }
+    } catch {}
+
     $imageSets = @()
     $allLines = @()
     foreach ($p in $pngs) {
-        $res = Invoke-WinOcrFile -Path $p -LanguageTag $LanguageTag
-        # row reconstruction from word boxes: the engine fragments one
-        # terminal row into several OCR lines, separating label and record
-        $lines = @(ConvertTo-SendRowLines $res.Lines)
+        $lines = @()
+        foreach ($lg in $ocrLangs) {
+            $res = Invoke-WinOcrFile -Path $p -LanguageTag $lg
+            # row reconstruction from word boxes: the engine fragments one
+            # terminal row into several OCR lines, separating label and record
+            $lines += @(ConvertTo-SendRowLines $res.Lines)
+        }
         $imageSets += ,@($lines)
         $allLines += $lines
     }
@@ -339,14 +353,40 @@ function Invoke-SendOcrReview {
     $meta = Build-SendMetadataRecord -CorrelIdS $sid -ExcelName ([string]$Row.Excel_NAME) `
         -ImageCount $pngs.Count -TextLines $allLines -ZeroBytePattern $ZeroPattern
     $cmp = Compare-SendGiftEvidence -GiftRow $GiftRows[0] -ImageTextSets $imageSets -ZeroBytePattern $ZeroPattern
-    Write-Host ("  [OCR] images={0} lines={1}" -f $pngs.Count, $allLines.Count) -ForegroundColor Cyan
+    Write-Host ("  [OCR] images={0} lines={1} (engines: {2})" -f $pngs.Count, $allLines.Count, ($ocrLangs -join '+')) -ForegroundColor Cyan
     foreach ($c in $cmp.Checks) {
         $color = switch ($c.Status) { 'match' { 'Green' } 'fuzzy' { 'DarkGreen' } 'mismatch' { 'Red' } default { 'DarkGray' } }
         Write-Host ("    {0,-14} send='{1}' gift='{2}' -> {3}" -f $c.Name, $c.Send, $c.Gift, $c.Status) -ForegroundColor $color
     }
-    $vColor = switch ($cmp.Verdict) { 'ok' { 'Green' } 'ng' { 'Red' } default { 'Yellow' } }
-    Write-Host ("  [OCR] verdict: {0}" -f $cmp.Verdict) -ForegroundColor $vColor
-    return @{ Meta = $meta; Verdict = [string]$cmp.Verdict }
+    $verdict = [string]$cmp.Verdict
+
+    # Zero-byte template fallback: OCR keeps missing the small ': 0' value
+    # on the dataset-info screen, so an operator-cropped template (cut from
+    # one of THESE exported PNGs - same pipeline, same pixels) can prove
+    # the 0-byte evidence via Locate-ByImage pixel matching instead.
+    $giftZero = $false
+    try { $giftZero = ([long]$GiftRows[0].SizeBytes -eq 0) } catch {}
+    if ($giftZero -and $verdict -eq 'unknown' -and
+        -not [string]::IsNullOrWhiteSpace($ZeroTemplatePath) -and (Test-Path -LiteralPath $ZeroTemplatePath)) {
+        $locator = Join-Path $PSScriptRoot 'Locate-ByImage.ps1'
+        $tplSeen = $false
+        foreach ($p in $pngs) {
+            try {
+                $box = & $locator -SourcePath $p -TemplatePath $ZeroTemplatePath -Quiet
+                if ($null -ne $box) { $tplSeen = $true; break }
+            } catch {}
+        }
+        if ($tplSeen) {
+            Write-Host ("    {0,-14} send='template {1} FOUND' gift='0 bytes' -> match" -f 'ZeroByteTpl', (Split-Path -Leaf $ZeroTemplatePath)) -ForegroundColor Green
+            $verdict = 'ok'
+        } else {
+            Write-Host ("    {0,-14} send='template {1} not found' gift='0 bytes' -> unknown" -f 'ZeroByteTpl', (Split-Path -Leaf $ZeroTemplatePath)) -ForegroundColor DarkGray
+        }
+    }
+
+    $vColor = switch ($verdict) { 'ok' { 'Green' } 'ng' { 'Red' } default { 'Yellow' } }
+    Write-Host ("  [OCR] verdict: {0}" -f $verdict) -ForegroundColor $vColor
+    return @{ Meta = $meta; Verdict = $verdict }
 }
 
 # ---- WorkDir / Owner resolution (standalone launch friendly) ----
@@ -394,6 +434,11 @@ if ([string]::IsNullOrWhiteSpace($Owner)) {
 
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir 'evidence' }
 elseif (-not [System.IO.Path]::IsPathRooted($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir $EvidenceDir }
+
+# zero-byte template: relative paths resolve against the work folder
+if (-not [string]::IsNullOrWhiteSpace($ZeroTemplate) -and -not [System.IO.Path]::IsPathRooted($ZeroTemplate)) {
+    $ZeroTemplate = Join-Path $WorkDir $ZeroTemplate
+}
 
 $mappingPath = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 if (-not (Test-Path -LiteralPath $mappingPath)) { throw "mapping not found: $mappingPath" }
@@ -532,7 +577,7 @@ try {
                 $verdict = 'none'
                 if ($ocrFlag -and $ocrReady) {
                     try {
-                        $res = Invoke-SendOcrReview $wb $sendWs $labelCell $r $giftRows $SendSheetName $sendImagesRoot $OcrLanguage $ZeroBytePattern
+                        $res = Invoke-SendOcrReview $wb $sendWs $labelCell $r $giftRows $SendSheetName $sendImagesRoot $OcrLanguage $ZeroBytePattern $ZeroTemplate
                         if ($null -ne $res.Meta) {
                             $sendMetaRows = @($sendMetaRows | Where-Object { [string]$_.CorrelIdS -ne [string]$res.Meta.CorrelIdS }) + @($res.Meta)
                             $sendMetaRows | Export-Csv -LiteralPath $sendMetaPath -Encoding UTF8 -NoTypeInformation -Force

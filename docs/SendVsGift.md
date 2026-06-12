@@ -194,17 +194,47 @@ and OcrTool now match on these reconstructed rows. SendVsGift also
 dumps what the matcher saw to
 `data\send_images\<Correl_ID_S>\<Correl_ID_S>_ocr.txt` per run.
 
+**2026-06-12 update 5** -- row reconstruction works (one terminal row
+per line in the `_ocr.txt` dump) and the ground truth exposed the last
+two gaps:
+
+- the **ja recognizer garbles digit runs** on the host terminal font:
+  `002640` -> a kanji-box + `2640`, `7` -> `?`. SendVsGift therefore now
+  OCRs every image with **both** the configured language and `en-US`
+  (when installed) and merges the row lines; en-US reads the same digit
+  runs cleanly.
+- the **`使用 CYLINDERS : 0` value digit is often missed entirely** by
+  the engine. New optional pixel fallback: set `SendVsGift.ZeroTemplate`
+  (config/overlay) or `-ZeroTemplate <png>` to an operator-cropped
+  template image of the `0` evidence; when a 0-byte verdict stays
+  `unknown`, every exported section PNG is scanned with
+  `Locate-ByImage.ps1` and a hit upgrades the verdict to ok.
+  **Crop the template from one of the exported PNGs under
+  `data\send_images\...`** (same pipeline = same pixels; do NOT crop
+  from a raw screenshot -- the 3x re-render would not match).
+- Note: the Snipping Tool's text extraction uses the newer OneOcr
+  engine (`oneocr.dll`, Store-app private, no public API) -- noticeably
+  better on this screen, but calling it would mean P/Invoking an
+  undocumented DLL inside the Snipping Tool package; parked as a
+  future option.
+- Caveat seen in the C49S dump: the VIEW screenshots can show columns
+  215-286 (`欄 215 286`), so first/last record PREFIXES are only
+  matchable on the images that show column 1 -- the record checks rely
+  on those; the max-row check works on any column view once the digits
+  read correctly.
+
 TODO (next office session):
 
-- [ ] `Tests\Run-Tests.ps1` (MappingStore null-case assert fixed to the
-      @()-wrapped convention), then `SendVsGift -Ocr -TargetIds JIDSC49S
-      -Force` (data case) and JIDSC05S (0-byte case): expect real ok/ng
-      verdicts.
-- [ ] If a check still misses, open the new
-      `send_images\<sid>\<sid>_ocr.txt` dump (or run `OcrTool.ps1 -Path
-      <folder>`) and compare what the matcher saw against the screen;
-      tune `SendVsGift.ZeroBytePattern` / similarity threshold from
-      that ground truth.
+- [ ] `Tests\Run-Tests.ps1` (the 2 longer-digit-run asserts pass again:
+      compact fallback now requires >= 6 record chars after the label).
+- [ ] `SendVsGift -Ocr -TargetIds JIDSC49S -Force`: with the en-US merge
+      the max-row label should be found; check FirstRecord/LastRecord
+      against the column-1 images in the `_ocr.txt` dump.
+- [ ] 0-byte case: crop a `0`-evidence template from
+      `data\send_images\JIDSC05S\JIDSC05S_01.png`, save e.g. as
+      `<WorkDir>\zero_tpl.png`, set `SendVsGift.ZeroTemplate` in
+      `verify_config.json` (or run with `-ZeroTemplate zero_tpl.png`),
+      re-run and expect `ZeroByteTpl ... -> match`.
 
 ### Remaining TODOs (need representative screenshots)
 
