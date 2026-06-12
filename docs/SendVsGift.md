@@ -171,19 +171,25 @@ compiled code, bypassing the PS adapter. `-Diag` reports which strategy
 produced text (`text strategy:`) and probes the first word's bounding
 box (nonzero X/W proves struct marshaling works even if strings fail).
 
+**2026-06-12 update 3** -- strings flow again (strategy `adapter`,
+ja chars=1458 per image; the layered reader stays as insurance). The
+next blocker was visible in the sample text: the ja recognizer returns
+one word per CHARACTER and the word-box spacing rebuild over-inserts
+(`002640` -> `0 0 2 6 4 0`), so the row-label / record / CYLINDERS
+matchers all missed. Every matcher now also runs against a COMPACT
+(space-stripped) form of each line: row labels match at compact line
+start, records are extracted from the compact line (and compared with
+compact prefix similarity), and the 0-byte rules scan compact lines
+too. Unit-tested in `Tests\Test-SendMetadata.ps1`.
+
 TODO (next office session):
 
-- [ ] Re-run `OcrTool.ps1 -Diag -Path <png>`: check `chars=`,
-      `text strategy:` and `first word box:`.
-      - strategy shows psbase/reflection/compiled -> strings flow again;
-        run `SendVsGift -Ocr -TargetIds JIDSC49S -Force` for a verdict.
-      - `(none worked)` + word box all zeros -> the whole WinRT value
-        marshaling is broken host-side; fall back plan: run the OCR in a
-        separate `pwsh` (PowerShell 7 / CsWinRT) if available, or a tiny
-        compiled exe, and exchange JSON.
-- [ ] Once text flows: verify the 0-byte rules and the 80% prefix
-      similarity against real OCR noise; tune
-      `SendVsGift.ZeroBytePattern` if the CYLINDERS form differs.
+- [ ] `Tests\Run-Tests.ps1`, then `SendVsGift -Ocr -TargetIds JIDSC49S
+      -Force` (data case) and the 0-byte case (JIDSC05S): expect real
+      ok/ng verdicts now.
+- [ ] Verify the 0-byte rules and the 80% prefix similarity against
+      real OCR noise; tune `SendVsGift.ZeroBytePattern` if the
+      CYLINDERS form differs.
 
 ### Remaining TODOs (need representative screenshots)
 

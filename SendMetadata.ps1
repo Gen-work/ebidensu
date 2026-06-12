@@ -181,6 +181,16 @@ function Get-SendZeroByteLabels {
     }
 }
 
+# Removes every space (ASCII + full-width U+3000). The ja recognizer
+# returns one word per CHARACTER and the word-box spacing rebuild can
+# over-insert ('002640' -> '0 0 2 6 4 0'), so every matcher below also
+# runs against this compact form of each line.
+function ConvertTo-SendCompactLine {
+    param([string]$Text)
+    # .NET \s covers the ideographic space U+3000 too
+    return ([string]$Text -replace '\s+', '')
+}
+
 # Zero-padded row label as printed on host list screens (000001, 004644, ...).
 function Get-SendRowLabel {
     param([int]$Number, [int]$MinWidth = 6)
@@ -189,7 +199,9 @@ function Get-SendRowLabel {
 }
 
 # True when the row label appears anywhere in the lines as a standalone
-# number (not part of a longer digit run).
+# number (not part of a longer digit run). Falls back to the compact form:
+# host list screens print the row number at line start, so a compact line
+# beginning with the label counts even when the label glues to the record.
 function Test-SendRowNumberPresent {
     param([string[]]$TextLines, [string]$RowLabel)
     if ([string]::IsNullOrWhiteSpace($RowLabel)) { return $false }
@@ -197,11 +209,16 @@ function Test-SendRowNumberPresent {
     foreach ($t in @($TextLines)) {
         if ([string]$t -match $re) { return $true }
     }
+    foreach ($t in @($TextLines)) {
+        if ((ConvertTo-SendCompactLine $t).StartsWith($RowLabel)) { return $true }
+    }
     return $false
 }
 
 # Returns the record text after a leading row label, or $null when no line
 # starts with that label. Tolerates the OCR gluing the label to the data.
+# Falls back to the compact line form (returns a compact record then;
+# Compare-SendRecordCheck compacts both sides so that stays comparable).
 function Find-SendRecordByRowNumber {
     param([string[]]$TextLines, [string]$RowLabel)
     if ([string]::IsNullOrWhiteSpace($RowLabel)) { return $null }
@@ -211,6 +228,12 @@ function Find-SendRecordByRowNumber {
         if ($m.Success) {
             $rest = ([string]$m.Groups[1].Value).Trim()
             if ($rest -ne '') { return $rest }
+        }
+    }
+    foreach ($t in @($TextLines)) {
+        $c = ConvertTo-SendCompactLine $t
+        if ($c.Length -gt $RowLabel.Length -and $c.StartsWith($RowLabel)) {
+            return $c.Substring($RowLabel.Length)
         }
     }
     return $null
@@ -224,18 +247,22 @@ function Test-SendZeroByteImage {
     param([string[]]$TextLines, [string]$Pattern = '')
     $lines = @(@($TextLines) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
     if ($lines.Count -eq 0) { return $false }
+    # every rule also runs against the compact (space-stripped) form: the
+    # ja recognizer's per-character words can spread 'CYLINDERS' or the
+    # begin/end markers as 'C Y L I N D E R S'
+    $compact = @($lines | ForEach-Object { ConvertTo-SendCompactLine $_ })
     if (-not [string]::IsNullOrWhiteSpace($Pattern)) {
-        foreach ($t in $lines) { if ([string]$t -match $Pattern) { return $true } }
+        foreach ($t in @($lines) + @($compact)) { if ([string]$t -match $Pattern) { return $true } }
         return $false
     }
     $L = Get-SendZeroByteLabels
     # Rule A: dataset-info screen, 'used CYLINDERS . . : 0'
     $cyl = [regex]::Escape($L.Shiyou) + '\s*CYLINDERS[^0-9]*0([^0-9]|$)'
-    foreach ($t in $lines) { if ([string]$t -match $cyl) { return $true } }
+    foreach ($t in @($lines) + @($compact)) { if ([string]$t -match $cyl) { return $true } }
     # Rule B: begin + end markers on the same image, no 000001 record line.
     $hasBegin = $false
     $hasEnd = $false
-    foreach ($t in $lines) {
+    foreach ($t in @($lines) + @($compact)) {
         $s = [string]$t
         if ($s.Contains($L.Begin)) { $hasBegin = $true }
         if ($s.Contains($L.End)) { $hasEnd = $true }
@@ -296,6 +323,11 @@ function Compare-SendRecordCheck {
         $status = 'match'
     } else {
         $sim = Get-SendPrefixSimilarity $SendRecord $GiftRecord $PrefixLength
+        if ($sim -lt $Threshold) {
+            # compact compare: OCR spacing is unreliable in both directions
+            # (over-inserted per-character spaces or dropped real ones)
+            $sim = Get-SendPrefixSimilarity (ConvertTo-SendCompactLine $SendRecord) (ConvertTo-SendCompactLine $GiftRecord) $PrefixLength
+        }
         if ($sim -ge $Threshold) { $status = 'fuzzy' }
     }
     return [pscustomobject]@{ Name = $Name; Send = $sDisp; Gift = $gDisp; Status = $status }
