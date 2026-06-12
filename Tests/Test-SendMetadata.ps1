@@ -252,4 +252,35 @@ $Lz = Get-SendZeroByteLabels
 $cylSpaced = ([string]$Lz.Shiyou[0] + ' ' + [string]$Lz.Shiyou[1] + '   C Y L I N D E R S . . : 0')
 Assert-True (Test-SendZeroByteImage @($cylSpaced)) 'spaced CYLINDERS 0 detected via compact form'
 
+# -- ConvertTo-SendRowLines: terminal-row reconstruction from word boxes --
+function New-WordXY([string]$Text, [double]$X, [double]$Y, [double]$Width = 10.0, [double]$Height = 10.0) {
+    [pscustomobject]@{ Text = $Text; X = $X; Y = $Y; Width = $Width; Height = $Height }
+}
+# one terminal row fragmented into two OCR 'lines' (same Y), plus a second
+# real row below: reconstruction must yield exactly two rows in X order
+$fragLines = @(
+    [pscustomobject]@{ Text = ''; Words = @((New-WordXY '000003' 0 100 60), (New-WordXY 'TAIL' 200 101 40)) },
+    [pscustomobject]@{ Text = ''; Words = @((New-WordXY '5112XYZ' 70 100 70)) },
+    [pscustomobject]@{ Text = ''; Words = @((New-WordXY 'NEXTROW' 0 130 70)) }
+)
+$rowLines = @(ConvertTo-SendRowLines $fragLines)
+Assert-Equal 2 $rowLines.Count 'fragments cluster into 2 terminal rows'
+Assert-True ($rowLines[0] -match '^000003\s*5112XYZ\s*TAIL') 'row 0 rebuilt left-to-right across fragments'
+Assert-Equal 'NEXTROW' $rowLines[1] 'second row stays separate'
+
+# fragmented row still verifies end-to-end (label and record in different
+# OCR lines used to make the verdict unknown)
+$giftFrag = New-GiftMetaRow 300 3 '5112ABC' '5112XYZ'
+$fragHead = @(
+    [pscustomobject]@{ Text = ''; Words = @((New-WordXY '000001' 0 10 60)) },
+    [pscustomobject]@{ Text = ''; Words = @((New-WordXY '5112ABC' 70 10 70)) }
+)
+$headRows = @(ConvertTo-SendRowLines $fragHead)
+$tailRows = @(ConvertTo-SendRowLines $fragLines)
+$cmpFrag = Compare-SendGiftEvidence -GiftRow $giftFrag -ImageTextSets @(@($headRows), @($tailRows))
+Assert-Equal 'ok' $cmpFrag.Verdict 'fragmented label/record rows verify to ok'
+
+# no word boxes -> plain text fallback
+Assert-Equal 'PLAIN' (@(ConvertTo-SendRowLines @('PLAIN')))[0] 'string input falls back to text lines'
+
 exit (Complete-Tests)

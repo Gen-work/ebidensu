@@ -182,7 +182,8 @@ foreach ($img in $images) {
         $lines = if ($noSpacingFlag) {
             @(@($res.Lines) | ForEach-Object { [string]$_.Text })
         } else {
-            @(ConvertTo-SendTextLines $res.Lines)
+            # word-box row reconstruction (same view SendVsGift matches on)
+            @(ConvertTo-SendRowLines $res.Lines)
         }
         $results += [pscustomobject]@{
             Path     = [string]$res.Path

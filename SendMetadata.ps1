@@ -92,6 +92,56 @@ function ConvertTo-SendTextLines {
     return $out
 }
 
+# Rebuilds TERMINAL rows from the word boxes of ALL OCR lines of one
+# image. The engine fragments one terminal row into several OCR "lines"
+# (field: ~187 OCR lines for a ~40-row screen), so a row label and its
+# record can land in different fragments and no per-line matcher can see
+# them together. All words are re-clustered by vertical center
+# (tolerance = 0.6 x the median word height) and each cluster becomes one
+# line, left-to-right, via the spacing rebuild. Falls back to
+# ConvertTo-SendTextLines when no word boxes are available.
+function ConvertTo-SendRowLines {
+    param($OcrLines, [double]$GapRatio = 0.5)
+    $allWords = @()
+    foreach ($ln in @($OcrLines)) {
+        if ($null -eq $ln) { continue }
+        if ($ln -isnot [string] -and $ln.PSObject.Properties.Name -contains 'Words') {
+            foreach ($w in @($ln.Words)) { if ($null -ne $w) { $allWords += $w } }
+        }
+    }
+    if ($allWords.Count -eq 0) { return ConvertTo-SendTextLines $OcrLines $GapRatio }
+
+    $hs = @($allWords | ForEach-Object { [double]$_.Height } | Sort-Object)
+    $medH = [double]$hs[[int][Math]::Floor($hs.Count / 2)]
+    if ($medH -le 0) { $medH = 10.0 }
+    $tol = $medH * 0.6
+
+    $sorted = @($allWords | Sort-Object { [double]$_.Y + ([double]$_.Height / 2.0) })
+    $rows = @()
+    $cur = @()
+    $curCenter = 0.0
+    foreach ($w in $sorted) {
+        $c = [double]$w.Y + ([double]$w.Height / 2.0)
+        if ($cur.Count -eq 0) {
+            $cur = @($w); $curCenter = $c
+        } elseif (($c - $curCenter) -le $tol) {
+            $cur += $w
+            $curCenter += (($c - $curCenter) / $cur.Count)   # running mean
+        } else {
+            $rows += ,@($cur)
+            $cur = @($w); $curCenter = $c
+        }
+    }
+    if ($cur.Count -gt 0) { $rows += ,@($cur) }
+
+    $out = @()
+    foreach ($r in $rows) {
+        $t = ([string](Get-SendLineTextFromWords $r $GapRatio)).TrimEnd()
+        if (-not [string]::IsNullOrWhiteSpace($t)) { $out += $t }
+    }
+    return $out
+}
+
 # Detects the standard 0-byte screenshot pattern.
 # TODO(Stage 2): tighten the default once representative 0-byte SEND
 # screenshots are available; override via SendVsGift.ZeroBytePattern.
