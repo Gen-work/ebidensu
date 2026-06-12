@@ -646,7 +646,13 @@ try {
     $excel = New-Object -ComObject Excel.Application
     $excel.Visible = $true
     $excel.DisplayAlerts = $false
-    try { if ($maximizeFlag) { $excel.WindowState = -4137 } } catch {}
+    if ($quietOcr) {
+        # OCR runs unattended: keep Excel out of the operator's view.
+        # Restore position + foreground only when a manual prompt is needed.
+        try { $excel.WindowState = -4143; $excel.Left = -8000; $excel.Top = 0 } catch {}
+    } else {
+        try { if ($maximizeFlag) { $excel.WindowState = -4137 } } catch {}
+    }
 
     foreach ($g in $groupList) {
         if ($quitAll) { break }
@@ -725,7 +731,12 @@ try {
                     Write-Host '  [OCR] verdict unknown - your call.' -ForegroundColor Yellow
                 }
 
+                if ($quietOcr) {
+                    try { $excel.Left = 100; $excel.Top = 100 } catch {}
+                    Set-ExcelForeground $excel
+                }
                 $ans = [string](Read-Host 'Check the workbook and console metadata. Enter=mark SendVsGift=1, n=mark 2(NG), s=skip, q=quit')
+                if ($quietOcr) { try { $excel.Left = -8000 } catch {} }
                 $key = $ans.Trim().ToLower()
                 if ($key -eq 'q') { $quitAll = $true; break }
                 if ($key -eq 's') { Write-Host '  [SKIP]' -ForegroundColor Yellow; continue }

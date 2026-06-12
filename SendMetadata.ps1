@@ -480,8 +480,13 @@ function Compare-SendGiftEvidence {
     $anyMismatch = @($checks | Where-Object { $_.Status -eq 'mismatch' }).Count -gt 0
     $recordsOk = (@('match', 'fuzzy') -contains $firstCheck.Status) -and (@('match', 'fuzzy') -contains $lastCheck.Status)
     $verdict = 'unknown'
-    if ($anyMismatch) { $verdict = 'ng' }
-    elseif ($maxFound -and $recordsOk) { $verdict = 'ok' }
+    if ($maxFound) {
+        # Row count match is the primary confirmation: same file even if OCR
+        # garbles the first/last record text (JP recognizer noise on digits).
+        $verdict = 'ok'
+    } elseif ($anyMismatch) {
+        $verdict = 'ng'
+    }
 
     return [pscustomobject]@{
         Verdict = $verdict; Checks = @($checks)
