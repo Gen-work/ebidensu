@@ -4,6 +4,32 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-12 - SnapVerify M1: pure detection library (v2.9.0)
+
+### Added
+- **`SnapVerify.ps1`** — pure dot-source library (no COM, no SendKeys) providing
+  all shared base logic for snap-phase instant NG detection (M1 per plan):
+  - `ConvertFrom-HmPageText` / `Test-HmAbend` — HM page parse + abend verdict
+    (window-based, newest-wins retry logic, ok/ng/warn/ask, per spec F1 / 2.3)
+  - `ConvertFrom-MqPageText` / `Test-MqRecord` — MQ parse (absorbs Parse-GiftMq.ps1
+    regex) + 3-condition verdict: no-row / time window / non-zero Rtncd (spec F2 / 2.4)
+  - `ConvertFrom-JenkinsListText` / `Test-JenkinsFile` — Jenkins file-list parse
+    (absorbs Parse-JenkinsList.ps1) + file exists/absent verdict + NoGfix mode (F3/F4)
+  - `Get-SnapPageKind` — page-type sentinel: HmResult / MqResult / MqNoData /
+    JenkinsResult / OuterFrame / Empty / Unknown (spec A3 / 3.6)
+  - `Resolve-SnapRunTime` — pure logic for batch time inquiry (spec 2.2):
+    '' = Now, n = no-time, explicit datetime, tolerance override
+- **`Tests/Test-SnapVerify.ps1`** — unit tests covering all functions above using
+  real-world fixtures from Appendix A (HM) and Appendix B (MQ / outer-frame).
+- **`SnapVerify`** config section in `VerifyConfig.psd1` (Enabled, ToleranceMinutes,
+  SaveText, PollTimeoutSec, PollIntervalMs, NoGfixNoteColumn) + `SnapVerify` entry
+  in Scripts table.
+- `SnapVerify.ps1` added to dot-source whitelist in CLAUDE.md.
+
+### Not yet wired
+M2 (MqSnap) / M3 (JenkinsSnap) / M4 (HmSnap) integration pending.
+`SnapVerify.Enabled=$false` to revert to pure screenshot mode.
+
 ## 2026-06-11 - SendVsGift OCR pipeline field fixes (v2.8.1)
 
 First end-to-end field run of Stage-2 OCR surfaced a chain of bugs; all
