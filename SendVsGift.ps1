@@ -420,10 +420,22 @@ function Invoke-SendOcrReview {
     $allLines = @()
     foreach ($p in $pngs) {
         $res = Invoke-WinOcrFile -Path $p -LanguageTag $LanguageTag
-        $lines = @(ConvertTo-SendTextLines $res.Lines)
+        # row reconstruction from word boxes: the engine fragments one
+        # terminal row into several OCR lines, separating label and record
+        $lines = @(ConvertTo-SendRowLines $res.Lines)
         $imageSets += ,@($lines)
         $allLines += $lines
     }
+    # audit/debug dump of what the matcher actually saw
+    try {
+        $dumpSb = New-Object System.Text.StringBuilder
+        for ($di = 0; $di -lt $imageSets.Count; $di++) {
+            [void]$dumpSb.AppendLine(('===== image {0:D2} =====' -f ($di + 1)))
+            foreach ($dl in @($imageSets[$di])) { [void]$dumpSb.AppendLine([string]$dl) }
+        }
+        $dumpPath = Join-Path $outDir ($sid + '_ocr.txt')
+        [System.IO.File]::WriteAllText($dumpPath, $dumpSb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
+    } catch {}
 
     if ($allLines.Count -eq 0) {
         Write-Host ("  [OCR] no text recognized on any of the {0} exported image(s) - check {1}" -f $pngs.Count, $outDir) -ForegroundColor Yellow

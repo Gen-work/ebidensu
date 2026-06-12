@@ -182,14 +182,29 @@ start, records are extracted from the compact line (and compared with
 compact prefix similarity), and the 0-byte rules scan compact lines
 too. Unit-tested in `Tests\Test-SendMetadata.ps1`.
 
+**2026-06-12 update 4** -- compact matching alone did not flip the
+verdicts. The line counts told the real story: ~187 OCR "lines" per
+~40-row screen, i.e. **the engine fragments one terminal row into
+several OCR lines**, so a row label and its record live in different
+fragments and no per-line matcher can see them together. New
+`ConvertTo-SendRowLines` (SendMetadata.ps1, unit-tested) re-clusters
+ALL word boxes of an image by vertical center (tolerance 0.6 x median
+word height) and rebuilds true terminal rows left-to-right; SendVsGift
+and OcrTool now match on these reconstructed rows. SendVsGift also
+dumps what the matcher saw to
+`data\send_images\<Correl_ID_S>\<Correl_ID_S>_ocr.txt` per run.
+
 TODO (next office session):
 
-- [ ] `Tests\Run-Tests.ps1`, then `SendVsGift -Ocr -TargetIds JIDSC49S
-      -Force` (data case) and the 0-byte case (JIDSC05S): expect real
-      ok/ng verdicts now.
-- [ ] Verify the 0-byte rules and the 80% prefix similarity against
-      real OCR noise; tune `SendVsGift.ZeroBytePattern` if the
-      CYLINDERS form differs.
+- [ ] `Tests\Run-Tests.ps1` (MappingStore null-case assert fixed to the
+      @()-wrapped convention), then `SendVsGift -Ocr -TargetIds JIDSC49S
+      -Force` (data case) and JIDSC05S (0-byte case): expect real ok/ng
+      verdicts.
+- [ ] If a check still misses, open the new
+      `send_images\<sid>\<sid>_ocr.txt` dump (or run `OcrTool.ps1 -Path
+      <folder>`) and compare what the matcher saw against the screen;
+      tune `SendVsGift.ZeroBytePattern` / similarity threshold from
+      that ground truth.
 
 ### Remaining TODOs (need representative screenshots)
 

@@ -13,7 +13,7 @@ Assert-Equal 'a|b|c' ((ConvertTo-TargetIdList @('a','b','c')) -join '|') 'array 
 Assert-Equal 'a|b|c' ((ConvertTo-TargetIdList 'a,b,c') -join '|')        'comma string'
 Assert-Equal 'a|b'   ((ConvertTo-TargetIdList ' a , , b ') -join '|')    'trim + drop empty'
 Assert-Equal 'x|y|z' ((ConvertTo-TargetIdList @('x','y,z')) -join '|')   'mixed array + comma'
-Assert-Equal 0       (ConvertTo-TargetIdList $null).Count               'null -> empty'
+Assert-Equal 0       (@(ConvertTo-TargetIdList $null)).Count            'null -> empty (callers wrap in @())'
 
 # -- Ensure-MappingColumns --
 $rows = @([pscustomobject]@{ Correl_ID_S = 'JIDSF48S'; GIFT_HM_snap = '1' })
