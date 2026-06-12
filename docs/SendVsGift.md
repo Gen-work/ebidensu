@@ -139,24 +139,38 @@ Diagnosis aids now built in:
 - SendVsGift prints the exact `-Diag` command in its
   `no text recognized` warning.
 
+**2026-06-12 update** -- `-Diag` run on JIDSC49S_01.png (1687x1276, max
+10000) showed the engine DOES see the text: en-US lines=93 words=117,
+ja lines=92 words=489 -- **but every `.Text` property read back empty**
+(sample blank, pipeline `lines=0` after blank-dropping). So the engine
+and image are fine; the failure is reading WinRT string properties from
+PS 5.1: enumerating `OcrResult.Lines` / `OcrLine.Words` works while
+`OcrLine.Text` / `OcrWord.Text` silently return null on this host.
+
+Fallbacks now in place (untested on the office host yet):
+
+- `Invoke-WinOcrFile` reads the aggregate `OcrResult.Text`; when all
+  line/word texts come back empty but the aggregate works, plain lines
+  are rebuilt from it (no word boxes -> spacing rebuild is skipped).
+- `ConvertTo-SendTextLines` falls back to the line `.Text` when the
+  words-rebuilt text is empty.
+- `-Diag` now prints `chars=` / `rawChars=` per language plus the WinRT
+  line type name, and flags the "enumerates but .Text empty" case
+  explicitly.
+
 TODO (next office session):
 
-- [ ] Run `OcrTool.ps1 -Diag` on one exported PNG: does ANY language see
-      text? Does the image exceed `MaxImageDimension`?
-- [ ] Engine sanity check: OCR a normal screenshot (e.g. Notepad text).
-      If that also returns nothing, the OCR component itself is broken
-      (language pack / WinRT issue), not our pipeline.
-- [ ] If the engine is fine but evidence PNGs fail: the host screenshots
-      are light-text-on-black terminal captures -- add an image
-      preprocessing step before OCR (grayscale + inversion when the
-      background is dark, optional binarize/contrast). GDI+ in
-      `EvidenceImageExport.ps1` already has the plumbing
-      (`Resize-PngToMinWidth`) to extend.
-- [ ] Consider trying `-OcrLanguage en-US` for the alphanumeric record
-      lines (ja recognizer may behave differently on monospace ASCII).
-- [ ] If a higher true resolution is needed, raise the export `Scale`
-      (7th parameter of `Export-SheetPicturesToPng`, default 3.0,
-      longer side capped ~6000pt).
+- [ ] Re-run `OcrTool.ps1 -Diag -Path <png>`: if `rawChars > 0` the
+      aggregate fallback works and SendVsGift -Ocr should produce real
+      verdicts (without word-box spacing; positions are approximate).
+- [ ] If `rawChars = 0` too: all WinRT string reads are broken -- next
+      step is reading strings via an inline C# helper (Add-Type) that
+      touches the WinRT projection from compiled code instead of the
+      PS adapter, or checking the host's .NET/WinRT projection state
+      (`System.Runtime.WindowsRuntime` version).
+- [ ] Once text flows: verify the 0-byte rules and the 80% prefix
+      similarity against real OCR noise; tune
+      `SendVsGift.ZeroBytePattern` if the CYLINDERS form differs.
 
 ### Remaining TODOs (need representative screenshots)
 

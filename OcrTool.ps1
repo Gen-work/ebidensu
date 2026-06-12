@@ -155,9 +155,12 @@ if ($diagFlag) {
             Write-Host ("  pixel size : {0}  (engine MaxImageDimension: {1}){2}" -f $d.PixelSize, $d.MaxImageDimension, $dimNote)
             foreach ($a in $d.Attempts) {
                 if ([string]::IsNullOrWhiteSpace($a.Error)) {
-                    $color = if ($a.Lines -gt 0) { 'Green' } else { 'Yellow' }
-                    Write-Host ("  {0,-14} engine={1,-6} lines={2,-4} words={3,-5} sample: {4}" -f `
-                        $a.Language, $a.Engine, $a.Lines, $a.Words, $a.Sample) -ForegroundColor $color
+                    $color = if ($a.Chars -gt 0) { 'Green' } elseif ($a.Lines -gt 0) { 'Yellow' } else { 'DarkYellow' }
+                    Write-Host ("  {0,-14} engine={1,-6} lines={2,-4} words={3,-5} chars={4,-6} rawChars={5,-6} sample: {6}" -f `
+                        $a.Language, $a.Engine, $a.Lines, $a.Words, $a.Chars, $a.RawChars, $a.Sample) -ForegroundColor $color
+                    if ($a.Lines -gt 0 -and $a.Chars -eq 0) {
+                        Write-Host ("                 ** Lines/Words enumerate but every .Text is EMPTY (WinRT projection issue); line type: {0} **" -f $a.LineType) -ForegroundColor Yellow
+                    }
                 } else {
                     Write-Host ("  {0,-14} ERROR: {1}" -f $a.Language, $a.Error) -ForegroundColor Red
                 }

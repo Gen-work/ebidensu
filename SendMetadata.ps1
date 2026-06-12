@@ -74,6 +74,12 @@ function ConvertTo-SendTextLines {
             if ($ln.PSObject.Properties.Name -contains 'Words') { $words = @($ln.Words) }
             if ($null -ne $words -and $words.Count -gt 0) {
                 $text = Get-SendLineTextFromWords $words $GapRatio
+                # word .Text reads can come back empty on some WinRT
+                # projections while the line .Text still works -- fall back
+                if ([string]::IsNullOrWhiteSpace($text) -and
+                    $ln.PSObject.Properties.Name -contains 'Text') {
+                    $text = [string]$ln.Text
+                }
             } elseif ($ln.PSObject.Properties.Name -contains 'Text') {
                 $text = [string]$ln.Text
             }
