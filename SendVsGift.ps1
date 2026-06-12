@@ -3,7 +3,10 @@
 #
 # Stage 1 (manual review):
 #   1. Gather exact metadata for every file under <WorkDir>\DATA\GIFT.
-#   2. Save it to <WorkDir>\data\gift_metadata.csv.
+#   2. Save it to <WorkDir>\data\gift_metadata.csv. For mapping rows
+#      whose isZIP/isZip flag is 1, extract the matching GIFT zip archive under
+#      <WorkDir>\data\unzip\Correl_ID_S and use that extracted file's
+#      metadata for the SEND/GIFT comparison.
 #   3. Ensure mapping column SendVsGift exists.
 #   4. Pending rows are grouped per evidence workbook: each workbook is
 #      opened ONCE, and for every correl row the cursor is moved to the
@@ -131,7 +134,7 @@ function Get-FirstToken([string]$Text) {
     return $parts[0]
 }
 
-function Get-GiftFileMetadata([System.IO.FileInfo]$File) {
+function Get-GiftFileMetadata([System.IO.FileInfo]$File, [string]$FileNameOverride = '', [string]$SourceZip = '') {
     $lineCount = 0
     $minLen = $null
     $maxLen = 0
@@ -153,9 +156,12 @@ function Get-GiftFileMetadata([System.IO.FileInfo]$File) {
     }
 
     if ($null -eq $minLen) { $minLen = 0 }
+    $displayName = $File.Name
+    if (-not [string]::IsNullOrWhiteSpace($FileNameOverride)) { $displayName = $FileNameOverride }
     [pscustomobject]@{
-        FileName          = $File.Name
+        FileName          = $displayName
         FullName          = $File.FullName
+        SourceZip         = $SourceZip
         SizeBytes         = [long]$File.Length
         SizeDisplay       = ConvertTo-DisplaySize ([long]$File.Length)
         MaxRowNumber      = [int]$lineCount
@@ -172,7 +178,99 @@ function Get-GiftFileMetadata([System.IO.FileInfo]$File) {
     }
 }
 
-function Write-GiftMetadata([string]$WorkRoot) {
+function Get-RowIsZip($Row) {
+    foreach ($name in @('isZIP', 'isZip')) {
+        if ($null -ne $Row -and $Row.PSObject.Properties.Name -contains $name) {
+            $v = [string]$Row.PSObject.Properties[$name].Value
+            return ($v.Trim() -eq '1')
+        }
+    }
+    return $false
+}
+
+function Test-GiftZipFile([System.IO.FileInfo]$File) {
+    if ($null -eq $File) { return $false }
+    $archive = $null
+    try {
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($File.FullName)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        if ($null -ne $archive) { $archive.Dispose() }
+    }
+}
+
+function Find-GiftFileForZipRow([string]$GiftDir, [string]$CorrelId) {
+    if ([string]::IsNullOrWhiteSpace($CorrelId)) { return $null }
+    $files = @(Get-ChildItem -LiteralPath $GiftDir -File -ErrorAction Stop | Sort-Object Name)
+    $candidates = @()
+    $candidates += @($files | Where-Object { [string]$_.Name -eq ($CorrelId + '.zip') })
+    $candidates += @($files | Where-Object { [string]$_.Name -eq $CorrelId })
+    $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($CorrelId) -and [string]$_.Extension -ieq '.zip' })
+    $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($CorrelId) })
+
+    $seen = @{}
+    foreach ($f in $candidates) {
+        $key = [string]$f.FullName
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        if (Test-GiftZipFile $f) { return $f }
+    }
+    return $null
+}
+
+function Expand-GiftZipForRow([string]$WorkRoot, [string]$GiftDir, $Row) {
+    $sid = [string]$Row.Correl_ID_S
+    if ([string]::IsNullOrWhiteSpace($sid)) { return $null }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+    $zipFile = Find-GiftFileForZipRow $GiftDir $sid
+    if ($null -eq $zipFile) {
+        Write-Host ("[WARN] isZIP=1 but no matching readable GIFT zip file found for {0}." -f $sid) -ForegroundColor Yellow
+        return $null
+    }
+    $unzipDir = Join-Path (Join-Path $WorkRoot 'data') 'unzip'
+    if (-not (Test-Path -LiteralPath $unzipDir)) { New-Item -ItemType Directory -Path $unzipDir -Force | Out-Null }
+    $outFile = Join-Path $unzipDir $sid
+
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($zipFile.FullName)
+    try {
+        $entries = @($archive.Entries | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.Name) })
+        if ($entries.Count -eq 0) {
+            Write-Host ("[WARN] zip has no file entries for {0}: {1}" -f $sid, $zipFile.FullName) -ForegroundColor Yellow
+            return $null
+        }
+        $entry = $null
+        $sameName = @($entries | Where-Object { [string]$_.Name -eq $sid })
+        if ($sameName.Count -gt 0) { $entry = $sameName[0] }
+        if ($null -eq $entry) {
+            $sameBase = @($entries | Where-Object { [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) -eq $sid })
+            if ($sameBase.Count -gt 0) { $entry = $sameBase[0] }
+        }
+        if ($null -eq $entry -and $entries.Count -eq 1) { $entry = $entries[0] }
+        if ($null -eq $entry) {
+            Write-Host ("[WARN] zip has multiple entries and none matches {0}: {1}" -f $sid, $zipFile.FullName) -ForegroundColor Yellow
+            return $null
+        }
+
+        $inStream = $entry.Open()
+        try {
+            $outStream = [System.IO.File]::Open($outFile, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            try { $inStream.CopyTo($outStream) } finally { $outStream.Close() }
+        } finally {
+            $inStream.Close()
+        }
+    } finally {
+        $archive.Dispose()
+    }
+
+    $fi = Get-Item -LiteralPath $outFile -ErrorAction Stop
+    Write-Host ("[ZIP] {0} -> {1}" -f $zipFile.FullName, $fi.FullName) -ForegroundColor DarkGray
+    return Get-GiftFileMetadata $fi $sid $zipFile.FullName
+}
+
+function Write-GiftMetadata([string]$WorkRoot, [object[]]$MappingRows = @()) {
     $giftDir = Get-GiftDataDir $WorkRoot
     $outDir = Join-Path $WorkRoot 'data'
     $outFile = Join-Path $outDir 'gift_metadata.csv'
@@ -183,6 +281,13 @@ function Write-GiftMetadata([string]$WorkRoot) {
     $files = @(Get-ChildItem -LiteralPath $giftDir -File -ErrorAction Stop | Sort-Object Name)
     $rows = @()
     foreach ($f in $files) { $rows += Get-GiftFileMetadata $f }
+
+    foreach ($r in @($MappingRows)) {
+        if (-not (Get-RowIsZip $r)) { continue }
+        $zipMeta = Expand-GiftZipForRow $WorkRoot $giftDir $r
+        if ($null -ne $zipMeta) { $rows += $zipMeta }
+    }
+
     $rows | Export-Csv -LiteralPath $outFile -Encoding UTF8 -NoTypeInformation -Force
 
     return @{ Path = $outFile; Rows = @($rows) }
@@ -395,14 +500,14 @@ foreach ($rawId in @($TargetIds)) {
     }
 }
 
-$metadataResult = Write-GiftMetadata $WorkDir
-$metadataRows = @($metadataResult.Rows)
-Write-Host ("[META] wrote {0} file metadata row(s): {1}" -f $metadataRows.Count, $metadataResult.Path) -ForegroundColor Green
-
 $allRows = @(Import-Csv -LiteralPath $mappingPath -Encoding UTF8)
 if ($allRows.Count -eq 0) { throw "mapping has no rows: $mappingPath" }
 Ensure-Column $allRows 'SendVsGift' '0'
 $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
+
+$metadataResult = Write-GiftMetadata $WorkDir $allRows
+$metadataRows = @($metadataResult.Rows)
+Write-Host ("[META] wrote {0} file metadata row(s): {1}" -f $metadataRows.Count, $metadataResult.Path) -ForegroundColor Green
 
 function Set-SendVsGiftValue([string]$Sid, [string]$Value) {
     foreach ($row in $script:allRows) {

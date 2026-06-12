@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workingSetManager>
+<workingSet editPageId="com.ibm.etools.aries.bundleWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986227_0" label="OSGi バンドル・プロジェクト" name="OSGi バンドル・プロジェクト"/>
+<workingSet editPageId="com.ibm.etools.aries.fragmentBundleWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986243_1" label="OSGi フラグメント・バンドル・プロジェクト" name="OSGi フラグメント・バンドル・プロジェクト"/>
+<workingSet editPageId="com.ibm.etools.aries.applicationWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986249_2" label="OSGi アプリケーション・プロジェクト" name="OSGi アプリケーション・プロジェクト"/>
+<workingSet editPageId="com.ibm.etools.aries.compositeBundleWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986249_3" label="OSGi コンポジット・バンドル・プロジェクト" name="OSGi コンポジット・バンドル・プロジェクト"/>
+<workingSet editPageId="com.ibm.etools.aries.subsystemWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986249_4" label="Liberty フィーチャー・プロジェクト" name="Liberty フィーチャー・プロジェクト"/>
+<workingSet editPageId="com.ibm.etools.j2ee.ui.EARWorkingSetPage" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986262_5" label="EAR プロジェクト" name="EARWorkingSetPage.name"/>
+<workingSet editPageId="com.ibm.etools.j2ee.ui.AppClientWorkingSetPage" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986262_6" label="アプリケーション・クライアント・プロジェクト" name="AppClientWorkingSetPage.name"/>
+<workingSet editPageId="com.ibm.etools.j2ee.ui.EjbWorkingSetPage" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986262_7" label="EJB プロジェクト" name="EjbWorkingSetPage.name"/>
+<workingSet editPageId="com.ibm.etools.j2ee.ui.ConnectorWorkingSetPage" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986274_8" label="コネクター・プロジェクト" name="ConnectorWorkingSetPage.name"/>
+<workingSet editPageId="com.ibm.etools.j2ee.ui.WebWorkingSetPage" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986280_9" label="Web プロジェクト" name="NewWebWorkingSetPage.name"/>
+<workingSet editPageId="com.ibm.etools.j2ee.ui.JPAWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986290_10" label="JPA プロジェクト" name="JPAWorkingSet.name"/>
+<workingSet editPageId="com.ibm.etools.j2ee.ui.UtilWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986290_11" label="ユーティリティー・プロジェクト" name="WS_UTIL"/>
+<workingSet editPageId="com.ibm.etools.j2ee.ui.WebFragmentWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986306_12" label="Web フラグメント・プロジェクト" name="WebFragmentWorkingSetPage.name"/>
+<workingSet editPageId="com.ibm.etools.project.OthersWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986311_13" label="カテゴリー化されていないプロジェクト" name="OthersWorkingSet.name"/>
+<workingSet editPageId="com.ibm.etools.wcg.BatchWorkingSet" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986325_14" label="最新バッチ・プロジェクト" name="WCG_WORKINGSET"/>
+<workingSet aggregate="true" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1780381986512_15" label="複数のワーキング・セット" name="Aggregate:OSGi バンドル・プロジェクト:OSGi フラグメント・バンドル・プロジェクト:OSGi アプリケーション・プロジェクト:OSGi コンポジット・バンドル・プロジェクト:Liberty フィーチャー・プロジェクト:EARWorkingSetPage.name:AppClientWorkingSetPage.name:EjbWorkingSetPage.name:ConnectorWorkingSetPage.name:NewWebWorkingSetPage.name:JPAWorkingSet.name:WS_UTIL:WebFragmentWorkingSetPage.name:OthersWorkingSet.name:WCG_WORKINGSET:">
+<workingSet IMemento.internal.id="OSGi バンドル・プロジェクト"/>
+<workingSet IMemento.internal.id="OSGi フラグメント・バンドル・プロジェクト"/>
+<workingSet IMemento.internal.id="OSGi アプリケーション・プロジェクト"/>
+<workingSet IMemento.internal.id="OSGi コンポジット・バンドル・プロジェクト"/>
+<workingSet IMemento.internal.id="Liberty フィーチャー・プロジェクト"/>
+<workingSet IMemento.internal.id="EARWorkingSetPage.name"/>
+<workingSet IMemento.internal.id="AppClientWorkingSetPage.name"/>
+<workingSet IMemento.internal.id="EjbWorkingSetPage.name"/>
+<workingSet IMemento.internal.id="ConnectorWorkingSetPage.name"/>
+<workingSet IMemento.internal.id="NewWebWorkingSetPage.name"/>
+<workingSet IMemento.internal.id="JPAWorkingSet.name"/>
+<workingSet IMemento.internal.id="WS_UTIL"/>
+<workingSet IMemento.internal.id="WebFragmentWorkingSetPage.name"/>
+<workingSet IMemento.internal.id="OthersWorkingSet.name"/>
+<workingSet IMemento.internal.id="WCG_WORKINGSET"/>
+</workingSet>
+</workingSetManager>

@@ -13,7 +13,7 @@ Command:
 The phase does the following:
 
 1. Scans every file under `<WorkDir>\DATA\GIFT` (or `<WorkDir>\data\GIFT` when that lowercase folder exists).
-2. Writes exact file metadata to `<WorkDir>\data\gift_metadata.csv`.
+2. Writes exact file metadata to `<WorkDir>\data\gift_metadata.csv`. When a mapping row has `isZIP`/`isZip` set to `1`, the matching GIFT zip archive is extracted to `<WorkDir>\data\unzip\<Correl_ID_S>` and that extracted same-name file is also written to metadata for comparison.
 3. Ensures the mapping CSV has a `SendVsGift` column.
 4. For each pending mapping row (`SendVsGift` not `1` -- pending covers empty, `0` and the NG value `2`), prints the matching GIFT file metadata in the console.
 5. Pending rows are **grouped per evidence workbook**: the workbook is opened once, and for each of its correl rows the cursor jumps to the `Correl_ID_S` label cell in **column A of the send-data sheet** (the evidence pictures sit right below the label). After every console answer Excel is brought back to the foreground (direct `SetForegroundWindow` on the Excel hwnd; `Alt+Tab` SendKeys fallback) so the operator lands on the next correl without switching windows by hand.
@@ -23,7 +23,7 @@ When run standalone (`.\SendVsGift.ps1`), `-WorkDir`/`-Owner` fall back to `veri
 
 Metadata columns written to `gift_metadata.csv`:
 
-- `FileName`, `FullName`
+- `FileName`, `FullName`, `SourceZip`
 - `SizeBytes`, `SizeDisplay`
 - `MaxRowNumber`
 - `MinRecordLength`, `MaxRecordLength`
