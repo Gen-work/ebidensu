@@ -58,7 +58,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # capture switches BEFORE dot-sourcing (see CLAUDE.md dot-source safety rule)
-$ocrFlag      = [bool]$Ocr.IsPresent
+$ocrFlag      = $true   # OCR on by default; -Ocr kept for backward compat
 $forceFlag    = [bool]$Force.IsPresent
 $dryRunFlag   = [bool]$DryRun.IsPresent
 $maximizeFlag = [bool]$Maximize.IsPresent
@@ -283,10 +283,20 @@ function Write-GiftMetadata([string]$WorkRoot, [object[]]$MappingRows = @()) {
     $rows = @()
     foreach ($f in $files) { $rows += Get-GiftFileMetadata $f }
 
+    $zipMetas = @()
     foreach ($r in @($MappingRows)) {
         if (-not (Get-RowIsZip $r)) { continue }
         $zipMeta = Expand-GiftZipForRow $WorkRoot $giftDir $r
-        if ($null -ne $zipMeta) { $rows += $zipMeta }
+        if ($null -ne $zipMeta) { $zipMetas += $zipMeta }
+    }
+
+    if ($zipMetas.Count -gt 0) {
+        # Unzipped data replaces the raw ZIP file entry (same FileName, different content).
+        # Without this dedup the comparison uses the ZIP binary's row count, not the real data.
+        $unzippedNames = @{}
+        foreach ($zm in $zipMetas) { $unzippedNames[[string]$zm.FileName] = $true }
+        $rows = @($rows | Where-Object { -not $unzippedNames.ContainsKey([string]$_.FileName) })
+        $rows += $zipMetas
     }
 
     $rows | Export-Csv -LiteralPath $outFile -Encoding UTF8 -NoTypeInformation -Force
@@ -709,14 +719,9 @@ try {
                     Write-Host '  [DONE] SendVsGift=1 (OCR auto)' -ForegroundColor Green
                     continue
                 }
-                if ($autoMark -and $verdict -eq 'ng') {
-                    Set-SendVsGiftValue $sid '2'
-                    $markedAny = $true
-                    $ngList += [pscustomobject]@{ CorrelIdS = $sid; ExcelName = [string]$r.Excel_NAME; File = $g.File }
-                    Write-Host '  [NG] SendVsGift=2 (OCR mismatch) - check this one manually.' -ForegroundColor Red
-                    continue
-                }
-                if ($verdict -eq 'unknown') {
+                if ($verdict -eq 'ng') {
+                    Write-Host '  [OCR] verdict ng - verify manually (Enter=ok, n=NG).' -ForegroundColor Red
+                } elseif ($verdict -eq 'unknown') {
                     Write-Host '  [OCR] verdict unknown - your call.' -ForegroundColor Yellow
                 }
 
