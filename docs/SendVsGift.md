@@ -158,16 +158,29 @@ Fallbacks now in place (untested on the office host yet):
   line type name, and flags the "enumerates but .Text empty" case
   explicitly.
 
+**2026-06-12 update 2** -- `rawChars=0` as well: even the aggregate
+`OcrResult.Text` reads back empty through the PS adapter, while the line
+type projects correctly (`Windows.Media.Ocr.OcrLine`). So ALL HSTRING
+property reads fail silently on this host. Countermeasure now in place:
+`Read-WinRtText` (OcrWindows.ps1) tries, in order: adapter -> `.psbase`
+-> .NET reflection (`GetProperty('Text').GetValue(...)`) -> a lazily
+compiled inline C# reader (`Add-Type` referencing the in-box
+`C:\Windows\System32\WinMetadata\Windows.Media.winmd` -- no SDK needed)
+that casts to `OcrLine`/`OcrWord`/`OcrResult` and reads `.Text` from
+compiled code, bypassing the PS adapter. `-Diag` reports which strategy
+produced text (`text strategy:`) and probes the first word's bounding
+box (nonzero X/W proves struct marshaling works even if strings fail).
+
 TODO (next office session):
 
-- [ ] Re-run `OcrTool.ps1 -Diag -Path <png>`: if `rawChars > 0` the
-      aggregate fallback works and SendVsGift -Ocr should produce real
-      verdicts (without word-box spacing; positions are approximate).
-- [ ] If `rawChars = 0` too: all WinRT string reads are broken -- next
-      step is reading strings via an inline C# helper (Add-Type) that
-      touches the WinRT projection from compiled code instead of the
-      PS adapter, or checking the host's .NET/WinRT projection state
-      (`System.Runtime.WindowsRuntime` version).
+- [ ] Re-run `OcrTool.ps1 -Diag -Path <png>`: check `chars=`,
+      `text strategy:` and `first word box:`.
+      - strategy shows psbase/reflection/compiled -> strings flow again;
+        run `SendVsGift -Ocr -TargetIds JIDSC49S -Force` for a verdict.
+      - `(none worked)` + word box all zeros -> the whole WinRT value
+        marshaling is broken host-side; fall back plan: run the OCR in a
+        separate `pwsh` (PowerShell 7 / CsWinRT) if available, or a tiny
+        compiled exe, and exchange JSON.
 - [ ] Once text flows: verify the 0-byte rules and the 80% prefix
       similarity against real OCR noise; tune
       `SendVsGift.ZeroBytePattern` if the CYLINDERS form differs.
