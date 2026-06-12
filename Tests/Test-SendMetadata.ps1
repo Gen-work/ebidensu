@@ -227,4 +227,29 @@ $giftCsv.MaxRowNumber = '3'
 $cmpCsv2 = Compare-SendGiftEvidence -GiftRow $giftCsv -ImageTextSets @(,@($headImg))
 Assert-Equal 'ok' $cmpCsv2.Verdict 'string-typed gift row (CSV round-trip) still ok'
 
+# -- compact-form fallbacks: ja OCR returns one word per CHARACTER, so the
+# spacing rebuild can yield '0 0 2 6 4 0 5 1 1 2 ...' lines --
+Assert-Equal '002640X' (ConvertTo-SendCompactLine ' 0 0 2 6 4 0 X ') 'compact strips all spaces'
+
+$spaced = @('0 0 2 6 4 0 5 1 1 2 7 2 0 0 1 9')
+Assert-True (Test-SendRowNumberPresent $spaced '002640') 'per-char spaced row label found via compact form'
+Assert-Equal '5112720019' (Find-SendRecordByRowNumber $spaced '002640') 'compact record extracted after glued label'
+
+$sendRec = '5112720019999999990604'
+$giftRec = '5 1 1 2 7 2 0 0 1 9 9 9 9 9 9 9 9 9 9 0 6 0 4'
+$chkCompact = Compare-SendRecordCheck 'FirstRecord' $sendRec $giftRec 0.8 20
+Assert-Equal 'fuzzy' $chkCompact.Status 'compact prefix similarity rescues spaced record'
+
+# end-to-end: per-char spaced head+tail images against a 3-row gift file
+$giftSp = New-GiftMetaRow 300 3 '5112ABC' '5112XYZ'
+$headSp = @('0 0 0 0 0 1 5 1 1 2 A B C', 'H E A D E R')
+$tailSp = @('0 0 0 0 0 3 5 1 1 2 X Y Z')
+$cmpSp = Compare-SendGiftEvidence -GiftRow $giftSp -ImageTextSets @(@($headSp), @($tailSp))
+Assert-Equal 'ok' $cmpSp.Verdict 'per-char spaced OCR lines still verify to ok'
+
+# zero-byte rule A with per-char spacing ('used CYLINDERS : 0')
+$Lz = Get-SendZeroByteLabels
+$cylSpaced = ([string]$Lz.Shiyou[0] + ' ' + [string]$Lz.Shiyou[1] + '   C Y L I N D E R S . . : 0')
+Assert-True (Test-SendZeroByteImage @($cylSpaced)) 'spaced CYLINDERS 0 detected via compact form'
+
 exit (Complete-Tests)
