@@ -316,6 +316,17 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
+- **SnapVerify (planned, not implemented)** — clipboard-text based instant NG
+  detection in the HM/MQ/Jenkins snap phases (abend detect, missing-data detect,
+  NoGfix old-record annotation, pixel localization for Mark, text sidecar,
+  poll-instead-of-sleep). Design, confirmed business decisions and the open
+  question checklist live in `docs/SnapVerify-Plan.md` — read it before
+  implementing any part.
+
+- **Generate-HostOpenMapping `-Add` cannot filter by owner at the same time** —
+  the daily flow adds new JOB_NAMEs incrementally with `-Add`, but owner
+  filtering is not applied in that mode; fix so `-Add` + owner filter compose.
+
 - **GfixLogDownload: auto-set GoAnywhere max rows to 100**
   Currently requires manual setup (default GoAnywhere list shows 20 rows — not enough for
   busy BIZ codes). Future: use SendKeys / UI automation to set the rows-per-page dropdown
