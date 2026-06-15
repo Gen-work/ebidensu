@@ -38,7 +38,7 @@ Write-Host ""
 Write-Host "===== ExcelSnap (Phase 2) =====" -ForegroundColor Green
 Write-Host ("  WorkDir : {0}" -f $WorkDir)
 Write-Host ("  Owner   : {0}" -f $Owner)
-Write-Host ("  Mode    : {0}" -f $(if ($Visible.IsPresent) { "Visible + xlScreen" } else { "Hidden + xlPrinter" }))
+Write-Host ("  Mode    : {0}" -f $(if ($Visible.IsPresent) { "Visible + xlScreen" } else { "Hidden + xlScreen + xlBitmap" }))
 Write-Host ("  Force   : {0}" -f $Force.IsPresent)
 Write-Host ""
 
@@ -102,12 +102,14 @@ function Get-ColLetter([int]$c) {
 # Format: -4147=xlPicture(EMF) -4144=xlBitmap.
 function Invoke-RangeCopyPicture {
     param($Excel, $Worksheet, $Range)
-    # (Appearance, Format) attempts, best fidelity first.
+    # (Appearance, Format) attempts. xlBitmap leads because xlPicture/EMF
+    # was found to fail in the default off-screen window mode; xlPrinter
+    # appearance needs no monitor, so it is the off-screen safety net.
     $combos = @(
-        @(1, -4147),   # xlScreen  + xlPicture (vector, truest to screen)
-        @(1, -4144),   # xlScreen  + xlBitmap
-        @(2, -4147),   # xlPrinter + xlPicture (no monitor needed)
-        @(2, -4144)    # xlPrinter + xlBitmap  (last resort)
+        @(1, -4144),   # xlScreen  + xlBitmap  (proven reliable on-screen)
+        @(2, -4144),   # xlPrinter + xlBitmap  (no monitor needed; off-screen safe)
+        @(1, -4147),   # xlScreen  + xlPicture (vector; higher fidelity fallback)
+        @(2, -4147)    # xlPrinter + xlPicture (last resort)
     )
     $lastErr = $null
     foreach ($combo in $combos) {
@@ -332,6 +334,8 @@ try {
         # xlScreen can fail outright when the window is parked off-screen;
         # Invoke-RangeCopyPicture re-activates + retries + falls back to
         # xlPrinter so the capture works even when nothing is on a monitor.
+        # Leads with xlBitmap (xlPicture/EMF was found to fail in off-screen
+        # mode); xlPicture is kept only as a lower-priority fallback.
         [void](Invoke-RangeCopyPicture -Excel $excel -Worksheet $wsGfix -Range $snapRange)
 
         # ── Insert chart sized to actual visible content, paste, export ──
