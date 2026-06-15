@@ -38,7 +38,7 @@ Write-Host ""
 Write-Host "===== ExcelSnap (Phase 2) =====" -ForegroundColor Green
 Write-Host ("  WorkDir : {0}" -f $WorkDir)
 Write-Host ("  Owner   : {0}" -f $Owner)
-Write-Host ("  Mode    : {0}" -f $(if ($Visible.IsPresent) { "Visible + xlScreen" } else { "Hidden + xlPrinter" }))
+Write-Host ("  Mode    : {0}" -f $(if ($Visible.IsPresent) { "Visible + xlScreen" } else { "Hidden + xlScreen + xlBitmap" }))
 Write-Host ("  Force   : {0}" -f $Force.IsPresent)
 Write-Host ""
 
@@ -288,10 +288,10 @@ try {
         # Width: cols aren't hidden, use range.Width directly
         $rangeWidth = $snapRange.Width
 
-        # ── Copy as vector picture (xlPicture = better quality than xlBitmap) ──
+        # ── Copy as bitmap picture (xlBitmap; xlPicture/EMF fails in off-screen mode) ──
         try { $snapRange.Select() | Out-Null } catch {}
         Start-Sleep -Milliseconds 100
-        $snapRange.CopyPicture(1, -4147) | Out-Null   # 1=xlScreen, -4147=xlPicture (EMF vector)
+        $snapRange.CopyPicture(1, -4144) | Out-Null   # 1=xlScreen, -4144=xlBitmap
         Start-Sleep -Milliseconds 120
 
         # ── Insert chart sized to actual visible content, paste, export ──
