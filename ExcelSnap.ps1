@@ -91,6 +91,46 @@ function Get-ColLetter([int]$c) {
     return "$a$b"
 }
 
+# Robust Range.CopyPicture: the bare call fails with
+#   "Range クラスの CopyPicture プロパティを取得できません" (0x800A03EC)
+# when the Excel window is parked off-screen / not foreground, because
+# xlScreen ("as shown on screen") has nothing rendered on a physical
+# monitor to copy, and the clipboard can be transiently busy. We re-
+# activate the app window + sheet + selection before each try, retry a
+# few times, then fall back to xlPrinter appearance (rendered via the
+# print path, no monitor needed). Appearance: 1=xlScreen 2=xlPrinter.
+# Format: -4147=xlPicture(EMF) -4144=xlBitmap.
+function Invoke-RangeCopyPicture {
+    param($Excel, $Worksheet, $Range)
+    # (Appearance, Format) attempts. xlBitmap leads because xlPicture/EMF
+    # was found to fail in the default off-screen window mode; xlPrinter
+    # appearance needs no monitor, so it is the off-screen safety net.
+    $combos = @(
+        @(1, -4144),   # xlScreen  + xlBitmap  (proven reliable on-screen)
+        @(2, -4144),   # xlPrinter + xlBitmap  (no monitor needed; off-screen safe)
+        @(1, -4147),   # xlScreen  + xlPicture (vector; higher fidelity fallback)
+        @(2, -4147)    # xlPrinter + xlPicture (last resort)
+    )
+    $lastErr = $null
+    foreach ($combo in $combos) {
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+                $Excel.Visible = $true
+                try { $Worksheet.Activate() | Out-Null } catch {}
+                try { $Range.Select()       | Out-Null } catch {}
+                Start-Sleep -Milliseconds (80 * $attempt)
+                $Range.CopyPicture($combo[0], $combo[1]) | Out-Null
+                Start-Sleep -Milliseconds 120
+                return @($combo[0], $combo[1])   # success -> return the combo used
+            } catch {
+                $lastErr = $_
+                Start-Sleep -Milliseconds (150 * $attempt)
+            }
+        }
+    }
+    throw ("CopyPicture failed after all appearance/format fallbacks. Last error: {0}" -f $lastErr)
+}
+
 # ============================================================
 # Load mapping & figure out pending JOB_NAMEs
 # ============================================================
@@ -240,9 +280,11 @@ try {
     # ── Bottom-line clear of any pre-existing filter ──
     if ($wsGfix.AutoFilterMode) { $wsGfix.AutoFilterMode = $false }
 
-    # CopyPicture: always xlScreen + xlBitmap.
-    # xlPrinter is unreliable here (depends on default printer driver state).
-    # -Visible switch now only controls where the window sits (on-screen vs off-screen).
+    # CopyPicture: Invoke-RangeCopyPicture tries xlScreen first (truest to
+    # the on-screen render), then falls back to xlPrinter when the off-screen
+    # window has nothing on a monitor to capture. -Visible only controls where
+    # the window sits (on-screen vs off-screen); the fallback makes the
+    # off-screen (hidden) mode reliable regardless.
 
     # ============================================================
     # Loop: each JOB_NAME -> filter -> copy picture -> chart export
@@ -288,11 +330,13 @@ try {
         # Width: cols aren't hidden, use range.Width directly
         $rangeWidth = $snapRange.Width
 
-        # ── Copy as bitmap picture (xlBitmap; xlPicture/EMF fails in off-screen mode) ──
-        try { $snapRange.Select() | Out-Null } catch {}
-        Start-Sleep -Milliseconds 100
-        $snapRange.CopyPicture(1, -4144) | Out-Null   # 1=xlScreen, -4144=xlBitmap
-        Start-Sleep -Milliseconds 120
+        # ── Copy as picture (retry + appearance/format fallbacks) ──
+        # xlScreen can fail outright when the window is parked off-screen;
+        # Invoke-RangeCopyPicture re-activates + retries + falls back to
+        # xlPrinter so the capture works even when nothing is on a monitor.
+        # Leads with xlBitmap (xlPicture/EMF was found to fail in off-screen
+        # mode); xlPicture is kept only as a lower-priority fallback.
+        [void](Invoke-RangeCopyPicture -Excel $excel -Worksheet $wsGfix -Range $snapRange)
 
         # ── Insert chart sized to actual visible content, paste, export ──
         $chartObj = $wsGfix.ChartObjects().Add(0, 0, $rangeWidth + 2, $visibleHeight + 2)
