@@ -4,6 +4,30 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-16 - Replace: fix NoGfix image overlap past row 2000 (v2.9.1)
+
+### Fixed
+- **`ExcelHelpers.ps1` anchor-row math no longer caps at row 2000.**
+  `Get-RowAtOrBelow` / `Get-NextAnchorRow` / `Get-PictureBottomRow` carried a
+  hard-coded `maxScanRows = 2000` ceiling. On a GIFT evidence sheet the NoGfix
+  block is the trailing (4th) section — excel.png, then HM/MQ per correl, then
+  Jenkins per correl, then NoGfix per correl — so once a workbook held ~10+
+  correl ids the running anchor crossed row 2000. Past that the
+  `startScan = floor(shape.Top / 15)` approximation also exceeded the cap, so
+  `Get-RowAtOrBelow`'s `while ($r -le $maxScanRows)` never ran and returned the
+  2000 cap for every lookup. Result: all further NoGfix pictures stacked on the
+  same rows (overlapping images) and every correl-id `text` op overwrote the
+  same capped cell (ids "not entered" — only the last one survived).
+  - New `Get-MaxSheetRow` returns the worksheet's real row limit (1,048,576 on
+    .xlsx/.xlsm; 65,536 on legacy .xls). The three helpers now default
+    `maxScanRows = 0`, meaning "use that limit". The `shape.Top / 15` start-row
+    approximation keeps the scan only a handful of rows long, so dropping the
+    fixed cap costs nothing in speed.
+  - Added a `startScan > ceiling` guard so an over-approximated start row
+    returns the ceiling instead of silently skipping the scan.
+
+---
+
 ## 2026-06-12 - SnapVerify M1: pure detection library (v2.9.0)
 
 ### Added
