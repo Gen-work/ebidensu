@@ -23,7 +23,7 @@
 #     @{ Kind='text'|'textbold'|'header'|'picture'|'log'|'blank'
 #        Col=2; Text=...; LabelKey=...; Folder=...; Name=...; Path=...
 #        Required=$true; Count=1; CorrelIdS=...; JobName=...; ToCode=...
-#        Section=... }
+#        SsCode=...; Section=... }
 # ============================================================
 
 function Get-SnapPath {
@@ -59,8 +59,8 @@ function New-PicOp {
        CorrelIdS=$CorrelIdS; JobName=$JobName; Section=$Section }
 }
 function New-LogOp {
-    param($CorrelIdS,$ToCode,[bool]$Required=$true)
-    @{ Kind='log'; Col=2; CorrelIdS=$CorrelIdS; ToCode=$ToCode; Required=$Required; Section='hm_log' }
+    param($CorrelIdS,$ToCode,$SsCode='',[bool]$Required=$true)
+    @{ Kind='log'; Col=2; CorrelIdS=$CorrelIdS; ToCode=$ToCode; SsCode=$SsCode; Required=$Required; Section='hm_log' }
 }
 
 function Resolve-GfixToCodeForCorrel {
@@ -70,6 +70,18 @@ function Resolve-GfixToCodeForCorrel {
         if (-not [string]::IsNullOrWhiteSpace($mapped)) { return $mapped }
     }
     return $DefaultToCode
+}
+
+# Per-correl SS_CODE override. Returns the mapped SS code when the mapping
+# carried a real SS_CODE column for this correl; otherwise '' so GfixLog
+# infers it from Correl_ID_S (5th char, or 'J' for J<biz>LxxS jobs).
+function Resolve-GfixSsForCorrel {
+    param([string]$CorrelIdS, [hashtable]$CorrelToSs = $null)
+    if ($null -ne $CorrelToSs -and $CorrelToSs.ContainsKey($CorrelIdS)) {
+        $mapped = [string]$CorrelToSs[$CorrelIdS]
+        if (-not [string]::IsNullOrWhiteSpace($mapped)) { return $mapped.Trim() }
+    }
+    return ''
 }
 
 # ---- default blank-row spacing (config can override) ----
@@ -157,7 +169,8 @@ function Build-GfixEvidencePlan {
         [string[]]$CorrelOrder,
         [string]$ToCode,
         [hashtable]$Spacing = $null,
-        [hashtable]$CorrelToCode = $null
+        [hashtable]$CorrelToCode = $null,
+        [hashtable]$CorrelToSs = $null
     )
     if ($null -eq $Spacing) { $Spacing = Get-EvidencePlanSpacing }
     $plan = [System.Collections.Generic.List[object]]::new()
@@ -171,7 +184,8 @@ function Build-GfixEvidencePlan {
         $plan.Add((New-BlankOp -Count $Spacing.AfterHm))
         $plan.Add((New-HeaderOp -LabelKey 'GfixLogLabel' -Section 'hm_log'))   # bold, resolved by executor
         $cidToCode = Resolve-GfixToCodeForCorrel -CorrelIdS $cid -DefaultToCode $ToCode -CorrelToCode $CorrelToCode
-        $plan.Add((New-LogOp -CorrelIdS $cid -ToCode $cidToCode -Required $true))
+        $cidSs     = Resolve-GfixSsForCorrel -CorrelIdS $cid -CorrelToSs $CorrelToSs
+        $plan.Add((New-LogOp -CorrelIdS $cid -ToCode $cidToCode -SsCode $cidSs -Required $true))
         $plan.Add((New-BlankOp -Count $Spacing.AfterLog))
     }
     $plan.Add((New-BlankOp -Count $Spacing.SectionGap))

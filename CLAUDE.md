@@ -345,9 +345,13 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   `Df.CropLeft/Top/Right/Bottom` (the window shadow is asymmetric). A pixel-color
   auto-detect of the window edge is a future option (no vision in a PS script).
 
-- **GfixLogDownload max-rows / SS_CODE** — still relies on manual "rows=100" setup.
-  Also `SS_CODE` is inferred as `Correl_ID_S.Substring(4,1)`; if a real SS column is
-  ever captured in the mapping, prefer it over the inference.
+- **GfixLogDownload max-rows** — still relies on manual "rows=100" setup.
+  - **SS_CODE override DONE**: ReplaceGfix now reads an optional `SS_CODE` mapping
+    column and threads it through the plan (`Build-GfixEvidencePlan -CorrelToSs`
+    -> log op `SsCode` -> `Find-GfixLogForCorrel`). When the column is present and
+    non-empty it wins; otherwise `GfixLog.ps1` infers SS from `Correl_ID_S`
+    (5th char, or `J` for `J<biz>LxxS` jobs) exactly as before. Add an `SS_CODE`
+    column to the mapping to take effect.
 
 ## Cross-environment workflow
 

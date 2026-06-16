@@ -4,6 +4,24 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-16 - ReplaceGfix: thread an optional SS_CODE mapping column (v2.9.3)
+
+### Added
+- **SS_CODE override is now wired end to end** (closes the GfixLog SS_CODE TODO).
+  `GfixLog.ps1` always supported an SS override, but the plan never carried it, so
+  every GFIX log match fell back to inferring SS from `Correl_ID_S`. Now:
+  - `New-LogOp` carries an `SsCode` key; `Build-GfixEvidencePlan` gains a
+    `-CorrelToSs` map and a `Resolve-GfixSsForCorrel` helper that fills each log
+    op's `SsCode` (empty when the correl is not in the map).
+  - `ReplaceEvidence.ps1` builds `$correlToSs` from an optional `SS_CODE` mapping
+    column and passes it in; `EvidenceExecutor` already forwards `op.SsCode` to
+    `Find-GfixLogForCorrel`.
+  - Behavior is unchanged unless the mapping actually has an `SS_CODE` column with
+    a value, so this is a safe, forward-compatible addition. New unit assertions
+    in `Tests/Test-EvidencePlan.ps1` cover the override and the empty-default case.
+
+---
+
 ## 2026-06-16 - ReviewGift/Gfix/Df: open the mode sheet, review per workbook (v2.9.2)
 
 ### Fixed

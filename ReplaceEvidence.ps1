@@ -193,6 +193,19 @@ try {
             }
         }
 
+        # Per-correl SS_CODE override. Only populated when the mapping carries a
+        # real SS_CODE column with a value; otherwise the map stays empty and
+        # GfixLog infers SS from Correl_ID_S (unchanged behavior). Forward-
+        # compatible: add an SS_CODE column to the mapping to take effect.
+        $correlToSs = @{}
+        foreach ($row in @($g.Group)) {
+            $cid   = [string]$row.Correl_ID_S
+            $rowSs = Get-RowProp $row 'SS_CODE'
+            if (-not [string]::IsNullOrWhiteSpace($cid) -and -not [string]::IsNullOrWhiteSpace($rowSs)) {
+                $correlToSs[$cid] = $rowSs.Trim()
+            }
+        }
+
         $wb = $null
         $ok = $false
         $exec = $null
@@ -208,7 +221,7 @@ try {
                 $plan = $null
                 switch ($Mode) {
                     'Gift' { $plan = Build-GiftEvidencePlan -SnapRoot $snapRoot -JobName $jobName -CorrelOrder $correlIds }
-                    'Gfix' { $plan = Build-GfixEvidencePlan -SnapRoot $snapRoot -JobName $jobName -CorrelOrder $correlIds -ToCode $toCode -CorrelToCode $correlToCode }
+                    'Gfix' { $plan = Build-GfixEvidencePlan -SnapRoot $snapRoot -JobName $jobName -CorrelOrder $correlIds -ToCode $toCode -CorrelToCode $correlToCode -CorrelToSs $correlToSs }
                     'Df'   {
                         $dfOrder = Read-SoshinDataOrder $wb
                         if ($null -eq $dfOrder -or @($dfOrder).Count -eq 0) {
