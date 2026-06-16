@@ -4,6 +4,71 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-16 - ReplaceGfix: thread an optional SS_CODE mapping column (v2.9.3)
+
+### Added
+- **SS_CODE override is now wired end to end** (closes the GfixLog SS_CODE TODO).
+  `GfixLog.ps1` always supported an SS override, but the plan never carried it, so
+  every GFIX log match fell back to inferring SS from `Correl_ID_S`. Now:
+  - `New-LogOp` carries an `SsCode` key; `Build-GfixEvidencePlan` gains a
+    `-CorrelToSs` map and a `Resolve-GfixSsForCorrel` helper that fills each log
+    op's `SsCode` (empty when the correl is not in the map).
+  - `ReplaceEvidence.ps1` builds `$correlToSs` from an optional `SS_CODE` mapping
+    column and passes it in; `EvidenceExecutor` already forwards `op.SsCode` to
+    `Find-GfixLogForCorrel`.
+  - Behavior is unchanged unless the mapping actually has an `SS_CODE` column with
+    a value, so this is a safe, forward-compatible addition. New unit assertions
+    in `Tests/Test-EvidencePlan.ps1` cover the override and the empty-default case.
+
+---
+
+## 2026-06-16 - ReviewGift/Gfix/Df: open the mode sheet, review per workbook (v2.9.2)
+
+### Fixed
+- **`ReviewEvidence.ps1` now matches its documented behavior** (VerifyTool help:
+  "ReviewGift/Gfix/Df open the matching sheet up front ... per-workbook prompt").
+  The implementation had drifted: it always activated the *send-data* sheet
+  (`送信データ`) and searched column A for each correl id, then prompted **per
+  id**. For ReviewGift the ids live on `GIFT 受信結果`, not `送信データ`, so every
+  id logged `[WARN] ID not found in 送信データ column A` and the operator was
+  marched through the workbook one id at a time.
+  - Each workbook now brings the mode's own evidence sheet to the front via the
+    already-present (but previously dead) `Open-SheetForReview` + `$openSheetName`
+    switch: ReviewGift -> `GIFT 受信結果`, ReviewGfix -> `GFIX 受信結果`,
+    ReviewDf -> the DF compare sheet; ReviewEvidence (bit 7) leaves the default.
+  - Review is now **per workbook**: one Enter marks the review bit for every id
+    in the Excel_NAME group, then saves + closes (the whole mode sheet is
+    reviewed in one pass, since all correls are stacked on it). `s` skips the
+    whole workbook (left pending, no save); `q` quits; `-m "comment"` records a
+    per-group note. Removed the per-id `Move-ToSendDataId` navigation and the
+    per-id inner loop.
+
+---
+
+## 2026-06-16 - Replace: fix NoGfix image overlap past row 2000 (v2.9.1)
+
+### Fixed
+- **`ExcelHelpers.ps1` anchor-row math no longer caps at row 2000.**
+  `Get-RowAtOrBelow` / `Get-NextAnchorRow` / `Get-PictureBottomRow` carried a
+  hard-coded `maxScanRows = 2000` ceiling. On a GIFT evidence sheet the NoGfix
+  block is the trailing (4th) section — excel.png, then HM/MQ per correl, then
+  Jenkins per correl, then NoGfix per correl — so once a workbook held ~10+
+  correl ids the running anchor crossed row 2000. Past that the
+  `startScan = floor(shape.Top / 15)` approximation also exceeded the cap, so
+  `Get-RowAtOrBelow`'s `while ($r -le $maxScanRows)` never ran and returned the
+  2000 cap for every lookup. Result: all further NoGfix pictures stacked on the
+  same rows (overlapping images) and every correl-id `text` op overwrote the
+  same capped cell (ids "not entered" — only the last one survived).
+  - New `Get-MaxSheetRow` returns the worksheet's real row limit (1,048,576 on
+    .xlsx/.xlsm; 65,536 on legacy .xls). The three helpers now default
+    `maxScanRows = 0`, meaning "use that limit". The `shape.Top / 15` start-row
+    approximation keeps the scan only a handful of rows long, so dropping the
+    fixed cap costs nothing in speed.
+  - Added a `startScan > ceiling` guard so an over-approximated start row
+    returns the ceiling instead of silently skipping the scan.
+
+---
+
 ## 2026-06-12 - SnapVerify M1: pure detection library (v2.9.0)
 
 ### Added

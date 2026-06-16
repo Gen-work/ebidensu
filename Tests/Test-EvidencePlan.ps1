@@ -62,6 +62,13 @@ Assert-True $logOps[0].Required 'GFIX: log required'
 $gfixMixed = Build-GfixEvidencePlan -SnapRoot 'X' -JobName 'J' -CorrelOrder @('JIDSM48S','JIGPM48S','JIGPMO5S') -ToCode 'IDS' -CorrelToCode @{ JIDSM48S='IDS'; JIGPM48S='IGP'; JIGPMO5S='IGP' }
 $mixedLogs = @($gfixMixed | Where-Object { $_.Kind -eq 'log' })
 Assert-Equal 'IDS|IGP|IGP' (@($mixedLogs | ForEach-Object { $_.ToCode }) -join '|') 'GFIX: log op uses per-correl TO_code map'
+# SS_CODE override: explicit per-correl map wins; correls absent from the map
+# carry '' so GfixLog infers SS from Correl_ID_S downstream.
+Assert-Equal '' $logOps[0].SsCode 'GFIX: log op SS_CODE empty by default (infer downstream)'
+$gfixSs = Build-GfixEvidencePlan -SnapRoot 'X' -JobName 'J' -CorrelOrder @('JIDSF48S','JIGPLO5S') -ToCode 'IDS' -CorrelToSs @{ JIDSF48S='F' }
+$ssLogs = @($gfixSs | Where-Object { $_.Kind -eq 'log' })
+Assert-Equal 'F' $ssLogs[0].SsCode 'GFIX: log op carries per-correl SS_CODE override'
+Assert-Equal '' $ssLogs[1].SsCode 'GFIX: log op SS_CODE empty when correl not in map'
 # bold GFIX-log header must come immediately before the log op
 $kindsArr = @($gfix | ForEach-Object { $_.Kind })
 $logIdx = [array]::IndexOf($kindsArr, 'log')

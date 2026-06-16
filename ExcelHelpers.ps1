@@ -139,23 +139,45 @@ function Reset-SheetBelowRow($ws, [int]$startRow, [int]$endCol = 20) {
 
 # ── Anchor row math ─────────────────────────────────────────
 
-function Get-RowAtOrBelow($ws, [double]$targetTop, [int]$startRow = 1, [int]$maxScanRows = 2000) {
+function Get-MaxSheetRow($ws) {
     <#
-    Linear scan: returns the first row r in [$startRow, $maxScanRows]
-    such that ws.Cells(r,1).Top >= $targetTop.
-    Cells(r,1).Top is monotonic with r, so walking is safe.
+    Excel's hard row limit for this worksheet (1,048,576 on .xlsx/.xlsm,
+    65,536 on legacy .xls). Used as the anchor-scan ceiling so the row math
+    never caps prematurely. An evidence sheet with 10+ correl sections pushes
+    the trailing NoGfix block well past a few thousand rows; a fixed 2000-row
+    ceiling made every picture beyond that collapse onto the same anchor
+    (overlapping images + overwritten id labels).
     #>
+    $max = 1048576
+    try {
+        $c = [int]$ws.Rows.Count
+        if ($c -gt 0) { $max = $c }
+    } catch {}
+    return $max
+}
+
+function Get-RowAtOrBelow($ws, [double]$targetTop, [int]$startRow = 1, [int]$maxScanRows = 0) {
+    <#
+    Linear scan: returns the first row r in [$startRow, ceiling] such that
+    ws.Cells(r,1).Top >= $targetTop. Cells(r,1).Top is monotonic with r, so
+    walking is safe. $maxScanRows <= 0 means "use the worksheet row limit"
+    (Get-MaxSheetRow) so tall sheets are never capped; callers approximate
+    $startRow from shape.Top/15, so the walk stays a handful of rows long
+    even when the target is deep in the sheet.
+    #>
+    $ceiling = if ($maxScanRows -gt 0) { $maxScanRows } else { Get-MaxSheetRow $ws }
     $r = [Math]::Max(1, $startRow)
-    while ($r -le $maxScanRows) {
+    if ($r -gt $ceiling) { return $ceiling }
+    while ($r -le $ceiling) {
         $t = 0.0
-        try { $t = [double]$ws.Cells.Item($r, 1).Top } catch { return $maxScanRows }
+        try { $t = [double]$ws.Cells.Item($r, 1).Top } catch { return $ceiling }
         if ($t -ge $targetTop) { return $r }
         $r++
     }
-    return $maxScanRows
+    return $ceiling
 }
 
-function Get-NextAnchorRow($ws, $shape, [int]$blankRows = 1, [int]$maxScanRows = 2000) {
+function Get-NextAnchorRow($ws, $shape, [int]$blankRows = 1, [int]$maxScanRows = 0) {
     <#
     Given an inserted Shape, return the row index for the next anchor
     that sits $blankRows rows below the shape's bottom edge.
@@ -170,7 +192,7 @@ function Get-NextAnchorRow($ws, $shape, [int]$blankRows = 1, [int]$maxScanRows =
     return ($rowAfter + [Math]::Max(0, $blankRows))
 }
 
-function Get-PictureBottomRow($ws, $shape, [int]$maxScanRows = 2000) {
+function Get-PictureBottomRow($ws, $shape, [int]$maxScanRows = 0) {
     <#
     Returns the last row index that the shape's bottom edge falls within.
     Get-RowAtOrBelow returns the first row R where Top(R) >= picture bottom,
