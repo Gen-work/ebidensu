@@ -4,11 +4,16 @@
 # Opens evidence workbooks one by one in editable mode. Misaki reviews/adjusts by hand.
 #
 # Important behavior:
-#   - Opening a workbook jumps to the pending ID on the send-data sheet
-#     (column A exact match) so the operator can review that ID first.
-#   - Pressing Enter marks only the current ID. If the same workbook still has
-#     pending IDs, the workbook stays open and the cursor jumps to the next ID.
-#   - Only after all IDs in the workbook are reviewed, the script:
+#   - Review is per WORKBOOK, not per id. Opening a workbook brings the mode's
+#     evidence sheet to the front (ReviewGift -> GIFT jushin kekka,
+#     ReviewGfix -> GFIX jushin kekka, ReviewDf -> DF compare; ReviewEvidence /
+#     bit 7 leaves the default sheet). Every correl for that mode is stacked on
+#     that one sheet, so the operator reviews the whole sheet in one pass.
+#   - Pressing Enter marks the review bit for EVERY id in the workbook's
+#     Excel_NAME group, then saves and closes. 's' skips the whole workbook
+#     (left pending, no save); 'q' quits. Append  -m "comment"  to record a
+#     per-group note (shown on open; listed by the Comments phase).
+#   - Before closing a completed workbook the script:
 #       1. places cursor on each sheet from last to first
 #          - A1 if sheet name contains the "=>" Excel sheet arrow
 #          - otherwise CursorCell, default A3
@@ -250,48 +255,6 @@ function Get-WorksheetByName($Workbook, [string]$SheetName) {
     return $null
 }
 
-function Move-ToSendDataId($Workbook, [string]$Id, [string]$FallbackCell, [string]$SendSheetName) {
-    $cell = $FallbackCell
-    if ([string]::IsNullOrWhiteSpace($cell)) { $cell = 'A3' }
-
-    $ws = Get-WorksheetByName $Workbook $SendSheetName
-    if ($null -eq $ws) {
-        Write-Host ("  [WARN] send-data sheet not found, using current sheet/cell {0}: {1}" -f $cell, $SendSheetName) -ForegroundColor Yellow
-        try { $Workbook.ActiveSheet.Range($cell).Select() | Out-Null } catch {}
-        return $false
-    }
-
-    try { $ws.Visible = -1 } catch {}
-    try { $ws.Activate() | Out-Null } catch {}
-
-    if ([string]::IsNullOrWhiteSpace($Id)) {
-        try { $ws.Range($cell).Select() | Out-Null } catch {}
-        return $false
-    }
-
-    $lastRow = 1
-    try { $lastRow = [int]$ws.Cells.Item($ws.Rows.Count, 1).End(-4162).Row } catch { $lastRow = 1 } # xlUp
-    if ($lastRow -lt 1) { $lastRow = 1 }
-
-    for ($row = 1; $row -le $lastRow; $row++) {
-        $text = ''
-        try { $text = [string]$ws.Cells.Item($row, 1).Text } catch {}
-        if ([string]::IsNullOrWhiteSpace($text)) {
-            try { $text = [string]$ws.Cells.Item($row, 1).Value2 } catch {}
-        }
-        if ($text.Trim() -eq $Id) {
-            $addr = ('A{0}' -f $row)
-            try { $ws.Range($addr).Select() | Out-Null } catch {}
-            Write-Host ("  [CURSOR] {0}!{1} for ID {2}" -f $SendSheetName, $addr, $Id) -ForegroundColor DarkGray
-            return $true
-        }
-    }
-
-    try { $ws.Range($cell).Select() | Out-Null } catch {}
-    Write-Host ("  [WARN] ID not found in {0} column A: {1}; cursor={2}" -f $SendSheetName, $Id, $cell) -ForegroundColor Yellow
-    return $false
-}
-
 function Open-SheetForReview($Workbook, [string]$SheetName, [string]$Cell) {
     if ([string]::IsNullOrWhiteSpace($SheetName)) { return }
     try {
@@ -388,7 +351,6 @@ Ensure-Column $allRows 'ReviewComment' ''
 # ReviewGfix -> GFIX jushin kekka, ReviewDf -> DF compare). ReviewEvidence
 # (bit 7 = all) leaves the workbook's default sheet alone.
 $labels = Get-ProjectLabels
-$sendDataSheetName = $labels['SheetSoshinData']
 $openSheetName = switch ($ReviewBit) {
     1 { $labels['SheetGiftRecv'] }
     2 { $labels['SheetGfixRecv'] }
@@ -483,72 +445,58 @@ try {
             }
 
             $workbookCompleted = $false
-            $sessionDone = @{}
-            while ($true) {
-                $pendingGroupRows = @(Get-PendingReviewRows $groupRows $ReviewField $ReviewBit $forceFlag | Where-Object { -not $sessionDone.ContainsKey((Get-RowReviewId $_)) })
-                if ($pendingGroupRows.Count -eq 0) {
-                    $workbookCompleted = ($forceFlag -or (Test-BitDone $groupRows $ReviewField $ReviewBit))
-                    break
+
+            # Per-workbook review: bring the mode's evidence sheet to the front
+            # (GIFT/GFIX jushin kekka / DF compare; ReviewEvidence bit 7 leaves
+            # the default sheet) and review the whole sheet in one pass. Every
+            # correl for the mode is stacked on that single sheet, so one Enter
+            # marks the review bit for ALL ids in this Excel_NAME group.
+            Open-SheetForReview $wb $openSheetName $CursorCell
+            [void](Activate-ExcelWindow $shell $excel $wb)
+
+            # Surface any prior comment recorded for this workbook group.
+            $priorComment = ''
+            foreach ($r in $groupRows) {
+                if ($r.PSObject.Properties.Name -contains 'ReviewComment') {
+                    $c = [string]$r.ReviewComment
+                    if (-not [string]::IsNullOrWhiteSpace($c)) { $priorComment = $c; break }
                 }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($priorComment)) {
+                Write-Host ("  [COMMENT] {0}" -f $priorComment) -ForegroundColor Yellow
+            }
 
-                $currentRow = $pendingGroupRows[0]
-                $currentId = Get-RowReviewId $currentRow
-                Write-Host ("  [ID] {0}/{1}: {2}" -f (($groupRows.Count - $pendingGroupRows.Count) + 1), $groupRows.Count, $currentId) -ForegroundColor Cyan
+            $pendingCount = @(Get-PendingReviewRows $groupRows $ReviewField $ReviewBit $forceFlag).Count
+            Write-Host ("  Workbook opened in editable mode ({0} id(s), {1} pending). Review/edit the whole sheet in Excel, then return here." -f $groupRows.Count, $pendingCount) -ForegroundColor DarkGray
+            $choice = Read-ReviewChoice $openedAt
 
-                # Bring the current ID to the front before review starts.
-                [void](Move-ToSendDataId $wb $currentId $CursorCell $sendDataSheetName)
-                [void](Activate-ExcelWindow $shell $excel $wb)
-
-                # Surface any prior comment recorded for this row.
-                $priorComment = ''
-                if ($currentRow.PSObject.Properties.Name -contains 'ReviewComment') { $priorComment = [string]$currentRow.ReviewComment }
-                if (-not [string]::IsNullOrWhiteSpace($priorComment)) {
-                    Write-Host ("  [COMMENT] {0}" -f $priorComment) -ForegroundColor Yellow
-                }
-
-                Write-Host '  Workbook opened in editable mode. Review/edit this ID in Excel, then return here manually.' -ForegroundColor DarkGray
-                $choice = Read-ReviewChoice $openedAt
-                $openedAt = Get-Date
-
-                # Record a -m comment (if given) on the current row only, and
-                # persist immediately for all outcomes (done / skip / quit).
-                if (-not [string]::IsNullOrWhiteSpace($choice.Comment)) {
-                    if (-not ($currentRow.PSObject.Properties.Name -contains 'ReviewComment')) {
-                        $currentRow | Add-Member -NotePropertyName 'ReviewComment' -NotePropertyValue '' -Force
+            # Record a -m comment (if given) on every row of the group, and
+            # persist immediately for all outcomes (done / skip / quit).
+            if (-not [string]::IsNullOrWhiteSpace($choice.Comment)) {
+                foreach ($r in $groupRows) {
+                    if (-not ($r.PSObject.Properties.Name -contains 'ReviewComment')) {
+                        $r | Add-Member -NotePropertyName 'ReviewComment' -NotePropertyValue '' -Force
                     }
-                    $currentRow.ReviewComment = $choice.Comment
-                    $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
-                    Write-Host ("  [COMMENT] recorded: {0}" -f $choice.Comment) -ForegroundColor DarkCyan
+                    $r.ReviewComment = $choice.Comment
                 }
-
-                if ($choice.Action -eq 'q') {
-                    try { $wb.Close($false) } catch {}
-                    $wb = $null
-                    break
-                }
-                if ($choice.Action -eq 's') {
-                    Write-Host ("  [SKIP] ID left pending: {0}" -f $currentId) -ForegroundColor Yellow
-                    $sessionDone[$currentId] = $true
-                    $cntSkip++
-                    if ($pendingGroupRows.Count -le 1) { break }
-                    continue
-                }
-
-                Set-BitValue $currentRow $ReviewField $ReviewBit
-                $sessionDone[$currentId] = $true
                 $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
-                Write-Host ("  [OK] reviewed bit set for ID {0} -> {1}" -f $currentId, $ReviewBit) -ForegroundColor Green
+                Write-Host ("  [COMMENT] recorded: {0}" -f $choice.Comment) -ForegroundColor DarkCyan
+            }
 
-                $actualRemaining = @(Get-PendingReviewRows $groupRows $ReviewField $ReviewBit $false)
-                $remaining = @(Get-PendingReviewRows $groupRows $ReviewField $ReviewBit $forceFlag | Where-Object { -not $sessionDone.ContainsKey((Get-RowReviewId $_)) })
-                if (($forceFlag -and $remaining.Count -gt 0) -or ((-not $forceFlag) -and $actualRemaining.Count -gt 0 -and $remaining.Count -gt 0)) {
-                    $nextId = Get-RowReviewId $remaining[0]
-                    Write-Host ("  [NEXT] workbook still has {0} pending ID(s); jumping to {1} without save/close/reset." -f $remaining.Count, $nextId) -ForegroundColor DarkGray
-                    continue
-                }
-
-                $workbookCompleted = if ($forceFlag) { $remaining.Count -eq 0 } else { $actualRemaining.Count -eq 0 }
-                break
+            if ($choice.Action -eq 'q') {
+                # Quit entirely: the post-loop block sees $wb -eq $null and breaks.
+                try { $wb.Close($false) } catch {}
+                $wb = $null
+            } elseif ($choice.Action -eq 's') {
+                # Skip the whole workbook: leave $workbookCompleted = $false so
+                # the post-loop block closes it without saving and counts a skip.
+                Write-Host ("  [SKIP] workbook left pending: {0}" -f $name) -ForegroundColor Yellow
+            } else {
+                # Enter: mark the review bit for EVERY id in this workbook group.
+                foreach ($r in $groupRows) { Set-BitValue $r $ReviewField $ReviewBit }
+                $allRows | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
+                Write-Host ("  [OK] reviewed bit set for {0} id(s) -> {1}" -f $groupRows.Count, $ReviewBit) -ForegroundColor Green
+                $workbookCompleted = $true
             }
 
             if ($null -eq $wb) { break }

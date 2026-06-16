@@ -4,6 +4,29 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-16 - ReviewGift/Gfix/Df: open the mode sheet, review per workbook (v2.9.2)
+
+### Fixed
+- **`ReviewEvidence.ps1` now matches its documented behavior** (VerifyTool help:
+  "ReviewGift/Gfix/Df open the matching sheet up front ... per-workbook prompt").
+  The implementation had drifted: it always activated the *send-data* sheet
+  (`送信データ`) and searched column A for each correl id, then prompted **per
+  id**. For ReviewGift the ids live on `GIFT 受信結果`, not `送信データ`, so every
+  id logged `[WARN] ID not found in 送信データ column A` and the operator was
+  marched through the workbook one id at a time.
+  - Each workbook now brings the mode's own evidence sheet to the front via the
+    already-present (but previously dead) `Open-SheetForReview` + `$openSheetName`
+    switch: ReviewGift -> `GIFT 受信結果`, ReviewGfix -> `GFIX 受信結果`,
+    ReviewDf -> the DF compare sheet; ReviewEvidence (bit 7) leaves the default.
+  - Review is now **per workbook**: one Enter marks the review bit for every id
+    in the Excel_NAME group, then saves + closes (the whole mode sheet is
+    reviewed in one pass, since all correls are stacked on it). `s` skips the
+    whole workbook (left pending, no save); `q` quits; `-m "comment"` records a
+    per-group note. Removed the per-id `Move-ToSendDataId` navigation and the
+    per-id inner loop.
+
+---
+
 ## 2026-06-16 - Replace: fix NoGfix image overlap past row 2000 (v2.9.1)
 
 ### Fixed
