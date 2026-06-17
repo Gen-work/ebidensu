@@ -1,6 +1,6 @@
 # SnapVerify 规划文档 — 截图阶段即时异常检测
 
-状态: **M1 + M2 实装完成；M3–M6 待实装**。本文档是后续开发会话的设计依据。
+状态: **M1 + M2 + M3 实装完成；M4–M6 待实装**。本文档是后续开发会话的设计依据。
 来源: 2026-06-12 规划讨论（OCR 完成后的下一步功能群）。
 2026-06-12 更新: 操作员提供了 HM / MQ 页面真实样本（附录 A/B），Q1–Q4、Q6
 已解决，解析规则与重测判定规则已确定。剩余未确认项只有 Q5（Rtncd 语义，
@@ -10,6 +10,11 @@
 判定 ok=1/ng=2、批量 `Expected_Time` 询问）已实装。新增两个纯函数
 `ConvertTo-ExpectedDateTime` / `Set-EmptyRunTimeCells`（已单测）。M3/M4 接线时
 照抄 MqSnap 的 `Test-MqSnapDone`（done == '1'）以免 NG='2' 行被当成已完成。
+2026-06-17 更新: **M3**（`JenkinsSnap.ps1` 接 F3: GiftRecv/GfixRecv 模式下
+轮询页面文本、页面哨兵、存档 .txt，`ConvertFrom-JenkinsListText` +
+`Test-JenkinsFile` 判定 ok=1/ng=2、NG 汇总，迁出 `Get-PendingRows` 改用
+`Test-JenkinsSnapDone`）已实装。NoGfix（F4）仍走纯截图，留待 M6。F3 纯函数
+与单测在 M1 已就绪，本次仅接线。
 
 ---
 
@@ -321,7 +326,7 @@ JenkinsSnap GiftRecv/GfixRecv 已取页面文本、跑 Parse-JenkinsList，
 |--------|------|------|------|
 | M1 | SnapVerify.ps1 纯库 + 单测（附录样本做 fixture）、配置节、批量时间询问、页面哨兵 | — | **done** (v2.9.0) |
 | M2 | F2（MQ 判定接线 + MqSnap 迁移 MappingStore/ProgressLog；A1/A2 进 MqSnap） | M1 | **done** (v2.9.4) |
-| M3 | F3（JenkinsSnap NG=2 + 汇总；A1/A2 进 JenkinsSnap） | M1 | todo |
+| M3 | F3（JenkinsSnap NG=2 + 汇总；A1/A2 进 JenkinsSnap） | M1 | **done** (v2.9.5) |
 | M4 | F1（HM 解析 + 判定 + HmSnap 迁移 MappingStore；A1/A2 进 HmSnap） | M1 | todo |
 | M5 | F5 定位（Jenkins 高亮 + HM/MQ 几何，sidecar 产出） | M3/M4 | todo |
 | M6 | F4（NoGfix 检测 + AltText 管道 + Mark 画框/AZ 列写入 + 像素换算） | M5 | todo |

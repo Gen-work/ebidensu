@@ -1,3 +1,36 @@
+# ============================================================
+#  JenkinsSnap.ps1  (Phases: GiftJenkins / GfixJenkins / GiftJenkinsNoFile)
+#  v2 -- MappingStore + ProgressLog + F3 instant NG detection
+#
+#  For each pending Correl_ID_S in mapping_<Owner>.csv (grouped by TO_code so
+#  Edge is navigated to a system's Jenkins folder once per group):
+#    1. Ctrl+F search CORREL_ID_S (leave the find bar open for the highlight)
+#    2. Capture the Edge main window, crop the border, save snap\<folder>\<id>.png
+#    3. (GiftRecv/GfixRecv) download the matching receive file into DATA\GIFT|GFIX
+#    4. (detection on) poll page text, classify page kind, archive .txt
+#    5. (detection on) parse the file list + verdict (F3): ok -> field=1, ng -> 2
+#    6. Persist atomically via MappingStore; append a progress.jsonl event
+#
+#  SnapVerify (F3) -- spec docs/SnapVerify-Plan.md milestone M3:
+#    - <field>_snap value domain: 0/empty = pending, 1 = ok, 2 = NG.
+#      '2' STILL counts as pending and is re-offered next run (plan 2.1).
+#    - NG conditions (Test-JenkinsFile, plan 4.F3): file not in the list, or
+#      found but its DateTime is outside the Expected_Time +- tolerance window.
+#    - Time window: one batch prompt at start (Resolve-SnapRunTime); empty
+#      Expected_Time cells on pending rows are filled and persisted (plan 2.2).
+#    - Page-kind sentinel (plan 3.6): an off-page text (OuterFrame/Empty/
+#      Unknown) stops and asks the operator (r=retry / s=skip / q=quit).
+#    - Detection covers GiftRecv/GfixRecv (F3). NoGfix (F4) detection is M6;
+#      until then NoGfix keeps the pure-screenshot behavior (field=1).
+#    - SnapEnabled=$false reverts all modes to pure screenshot.
+#
+#  Conventions:
+#    - All mapping I/O goes through MappingStore (atomic writes); progress
+#      events go to status\progress.jsonl via ProgressLog.
+#    - Pure parse/verdict logic lives in SnapVerify.ps1 (unit-tested); this
+#      script is only the COM/SendKeys wiring.
+#    - Switch params are copied to plain bools before any dot-source.
+# ============================================================
 #Requires -Version 5.1
 param(
     [ValidateSet('GiftRecv','GfixRecv','NoGfix')]
@@ -15,7 +48,18 @@ param(
     [int]$CropPx            = 6,
     [int]$ActionWaitMs      = 500,
     [int]$ResultWaitMs      = 500,
-    [string]$CommonScript   = ''
+    [string]$CommonScript   = '',
+
+    # ---- SnapVerify (F3) detection wiring (defaults match VerifyConfig.psd1) ----
+    [bool]$SnapEnabled      = $true,
+    [int]$ToleranceMinutes  = 30,
+    [bool]$SaveText         = $true,
+    [int]$PollTimeoutSec    = 10,
+    [int]$PollIntervalMs    = 500,
+    [string]$TimeColumn     = 'Expected_Time',
+    [string]$TimeFormat     = 'yyyy/MM/dd HH:mm:ss',
+    [string]$RunTime        = '',   # '' = prompt; else 'n' / 'yyyy/MM/dd HH:mm:ss'
+    [string]$RunTolerance   = ''    # non-interactive tolerance override
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -28,6 +72,8 @@ $forceFlag    = [bool]$Force.IsPresent
 $dryFlag      = [bool]$DryRun.IsPresent
 $noResizeFlag = [bool]$NoResize.IsPresent
 $refreshFlag  = [bool]$RefreshUrls.IsPresent
+$snapVerifyOn = [bool]$SnapEnabled
+$saveTextOn   = [bool]$SaveText
 
 $scriptDir = Split-Path $MyInvocation.MyCommand.Path
 if ([string]::IsNullOrWhiteSpace($CommonScript)) {
@@ -36,7 +82,15 @@ if ([string]::IsNullOrWhiteSpace($CommonScript)) {
 . $CommonScript
 . (Join-Path $scriptDir 'MappingStore.ps1')
 . (Join-Path $scriptDir 'ProgressLog.ps1')
+. (Join-Path $scriptDir 'SnapVerify.ps1')
 . (Join-Path $scriptDir 'JenkinsDownload.ps1')
+
+$pageTextScript = Join-Path $scriptDir 'Read-PageText.ps1'
+
+if (-not (Get-Command -Name 'Test-JenkinsFile' -ErrorAction SilentlyContinue)) {
+    Write-Host '[ERROR] SnapVerify.ps1 dot-source failed (Test-JenkinsFile not found).' -ForegroundColor Red
+    exit 1
+}
 
 $Global:Timing = @{ ActionWaitMs = $ActionWaitMs; ResultWaitMs = $ResultWaitMs }
 
@@ -77,6 +131,10 @@ $groupCol   = $modeCfg.GroupCol
 $searchCol  = $modeCfg.SearchCol
 $job        = $modeCfg.JOB
 
+# F3 detection applies to the receive modes only; NoGfix (F4) is M6, so for now
+# NoGfix keeps the pure-screenshot path even when SnapVerify is enabled.
+$detectMode = $snapVerifyOn -and ($Mode -in 'GiftRecv','GfixRecv')
+
 # ── mapping ───────────────────────────────────────────────────────────────────
 $mappingFile = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 
@@ -85,13 +143,29 @@ $mappingFile = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 # $pending holds references INTO $allRows, so mutating a pending row and
 # then Export-MappingAtomic $allRows persists exactly that change.
 $allRows = Import-Mapping $mappingFile
-Ensure-MappingColumns -Rows $allRows -Extra @(@{ Name = $snapField; Default = '0' }) | Out-Null
+Ensure-MappingColumns -Rows $allRows -Extra @(
+    @{ Name = $snapField;  Default = '0' },
+    @{ Name = $TimeColumn; Default = ''  }
+) | Out-Null
+
+# A snap field is "done" ONLY when exactly '1'. Empty/'0'/'2'(NG) are all
+# pending: NG='2' is re-offered every run (plan 2.1). We deliberately do NOT
+# use Get-PendingRows here -- its Test-SnapDone treats any non-'0' value
+# (including '2') as done, which would hide NG rows.
+function Test-JenkinsSnapDone([string]$Value) { return ($Value -eq '1') }
 
 $targets = ConvertTo-TargetIdList $TargetIds
-$pending = @(Get-PendingRows -Rows $allRows -Field $snapField -Force $forceFlag -Targets $targets)
+$pending = @()
+$doneCount = 0
+foreach ($r in $allRows) {
+    if (-not (Test-TargetRow $r $targets)) { continue }
+    if ($forceFlag) { $pending += $r; continue }
+    if (Test-JenkinsSnapDone (Get-RowProp $r $snapField)) { $doneCount++ } else { $pending += $r }
+}
+$pending = @($pending)
 
 Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -Action 'start' -Status 'info' `
-    -Message ("pending={0} force={1} targets=[{2}]" -f $pending.Count, $forceFlag, ($targets -join ','))
+    -Message ("pending={0} force={1} targets=[{2}] detect={3}" -f $pending.Count, $forceFlag, ($targets -join ','), $detectMode)
 
 if ($pending.Count -eq 0) {
     Write-Host "[$Mode] No pending rows." -ForegroundColor Green
@@ -100,6 +174,7 @@ if ($pending.Count -eq 0) {
 
 Write-Host "`n===== JenkinsSnap $Mode =====" -ForegroundColor Green
 Write-Host "Pending rows: $($pending.Count)" -ForegroundColor Cyan
+Write-Host ("Detection   : {0} (tol +-{1} min)" -f $detectMode, $ToleranceMinutes) -ForegroundColor Cyan
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 $snapDir = Join-Path (Join-Path $WorkDir 'snap') $snapFolder
@@ -188,6 +263,36 @@ function Get-CurrentEdgeUrl {
     return ''
 }
 
+# Grab the foreground Edge page text once (Ctrl+A/Ctrl+C via Read-PageText).
+# Click-PageBody first so the select-all lands on the page, not the find bar.
+function Get-JenkinsPageTextOnce {
+    Click-PageBody
+    $txt = & $pageTextScript -SelectWaitMs $ActionWaitMs -CopyWaitMs $ResultWaitMs
+    if ($null -eq $txt) { return '' }
+    return [string]$txt
+}
+
+# Poll the page text (A2) until it is a recognised Jenkins file-list page with
+# the search term present, an off-page OuterFrame, or the poll timeout elapses.
+# A timeout on a JenkinsResult page without the term is the F3 NG case (file
+# absent) -- it falls through to the verdict. Returns @{ Text=...; Kind=... }.
+function Wait-JenkinsPageReady {
+    param([string]$SearchTerm)
+
+    $text = ''
+    $kind = 'Empty'
+    $deadline = (Get-Date).AddSeconds([Math]::Max(1, $PollTimeoutSec))
+    do {
+        $text = Get-JenkinsPageTextOnce
+        $kind = Get-SnapPageKind -Phase 'Jenkins' -Text $text
+        if ($kind -eq 'OuterFrame') { break }
+        if ($kind -eq 'JenkinsResult' -and $text.Contains($SearchTerm)) { break }
+        Start-Sleep -Milliseconds ([Math]::Max(100, $PollIntervalMs))
+    } while ((Get-Date) -lt $deadline)
+
+    return @{ Text = $text; Kind = $kind }
+}
+
 # ── Group pending rows by TO_code ─────────────────────────────────────────────
 # Build an ordered list of distinct TO_code values (preserving first-seen order)
 $groupOrder = [System.Collections.Generic.List[string]]::new()
@@ -208,12 +313,53 @@ foreach ($g in $groupOrder) {
     Write-Host ("  {0,-12} : {1} rows" -f $g, $groupMap[$g].Count) -ForegroundColor DarkGray
 }
 
+# ── Batch run-time inquiry (plan 2.2) -- one prompt, applied to pending rows ────
+$timeMode     = 'none'
+$runTolerance = $ToleranceMinutes
+if ($detectMode -and -not $dryFlag) {
+    Bring-ConsoleToFront
+    Write-Host ''
+    Write-Host "[Time window] Jenkins files are checked against a run time +- tolerance." -ForegroundColor Cyan
+    Write-Host "  [Enter]             = use current time" -ForegroundColor Gray
+    Write-Host "  yyyy/MM/dd HH:mm:ss = use that time" -ForegroundColor Gray
+    Write-Host "  n                   = no time check this run" -ForegroundColor Gray
+    $tIn   = if ([string]::IsNullOrWhiteSpace($RunTime)) { Read-Host "  Run time" }                           else { $RunTime }
+    $tolIn = if ([string]::IsNullOrWhiteSpace($RunTime)) { Read-Host "  Tolerance minutes (Enter=default)" }  else { $RunTolerance }
+
+    $rt = Resolve-SnapRunTime -TimeInput $tIn -ToleranceInput $tolIn -DefaultTolerance $ToleranceMinutes
+    if (-not $rt.Ok) {
+        Write-Host ("  [WARN] {0} -- continuing with NO time check." -f $rt.Error) -ForegroundColor Yellow
+        $timeMode = 'none'
+    } else {
+        $timeMode     = $rt.TimeMode
+        $runTolerance = $rt.ToleranceMinutes
+        if ($timeMode -eq 'fixed') {
+            $timeStr = $rt.Time.ToString($TimeFormat)
+            $filled  = Set-EmptyRunTimeCells -Rows $pending -Field $TimeColumn -Value $timeStr
+            if ($filled -gt 0) {
+                Export-MappingAtomic -Rows $allRows -Path $mappingFile | Out-Null
+                Write-Host ("  {0} set on {1} pending row(s) = {2}; existing values kept." -f $TimeColumn, $filled, $timeStr) -ForegroundColor Green
+            } else {
+                Write-Host ("  All pending rows already have {0}; using each row's value (run time {1})." -f $TimeColumn, $timeStr) -ForegroundColor Green
+            }
+        } else {
+            Write-Host "  No time check this run." -ForegroundColor Yellow
+        }
+    }
+    Write-Host ("  Tolerance: +-{0} min" -f $runTolerance) -ForegroundColor Gray
+}
+
 # ── Process each TO_code group ────────────────────────────────────────────────
 $cntDone = 0
 $cntSkip = 0
 $cntFail = 0
+$cntNg   = 0
+$ngList  = [System.Collections.Generic.List[string]]::new()
+$userQuit    = $false
+$maxAttempts = 3
 
 foreach ($toCode in $groupOrder) {
+    if ($userQuit) { break }
     $rows = $groupMap[$toCode]
 
     Write-Host ''
@@ -239,7 +385,7 @@ foreach ($toCode in $groupOrder) {
         Write-Host ("  Navigating Edge to cached Jenkins folder URL for {0}." -f $toCode) -ForegroundColor Yellow
         Write-Host '  Press Enter to confirm, r+Enter to refresh URL, q=quit.' -ForegroundColor Magenta
         $resp = Read-Host
-        if ($resp -eq 'q') { exit 0 }
+        if ($resp -eq 'q') { $userQuit = $true; break }
 
         if ($resp -eq 'r') {
             # force re-navigate
@@ -261,7 +407,7 @@ foreach ($toCode in $groupOrder) {
         Write-Host '    (e.g. for IDS: the IDS Jenkins job list page)' -ForegroundColor Yellow
         Write-Host '    Press Enter when ready. (q=quit)' -ForegroundColor Magenta
         $resp = Read-Host
-        if ($resp -eq 'q') { exit 0 }
+        if ($resp -eq 'q') { $userQuit = $true; break }
 
         $edgeHwnd = Activate-JenkinsEdgeWindow
         if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
@@ -279,8 +425,10 @@ foreach ($toCode in $groupOrder) {
 
     # ── Per-row screenshot loop ───────────────────────────────────────────────
     foreach ($row in $rows) {
+        if ($userQuit) { break }
+
         $correl     = [string]$row.Correl_ID_S
-        $searchJob        = [string]$row.$job
+        $searchJob  = [string]$row.$job
         $searchTerm = [string]$row.$searchCol
 
         Write-Host ''
@@ -288,89 +436,178 @@ foreach ($toCode in $groupOrder) {
 
         $snapPath = Join-Path $snapDir "$correl.png"
 
-        $edgeHwnd = Activate-JenkinsEdgeWindow
-        if ($edgeHwnd -eq [IntPtr]::Zero) {
-            Write-Host "    [FAIL] Edge not found" -ForegroundColor Red
-            $cntFail++; continue
-        }
+        $resolved = $false
+        $attempt  = 0
+        do {
+            $attempt++
 
-        # Ctrl+F search for CORREL_ID_S; leave find bar open so the screenshot
-        # shows the highlighted match (ESC is sent after the screenshot below).
-        Click-PageBody
-        Send-CtrlF
-        Paste-Replace $searchTerm
-        Start-Sleep -Milliseconds $ResultWaitMs
-
-        # Take screenshot from the Edge handle we just activated; never use the
-        # foreground handle here because the console can remain foreground after
-        # Read-Host on some terminals.
-        if ($edgeHwnd -eq [IntPtr]::Zero) {
-            Write-Host "    [FAIL] No Edge window handle" -ForegroundColor Red
-            $cntFail++; continue
-        }
-
-        try {
-            Take-WindowScreenshot $edgeHwnd $snapPath
-            if ($CropPx -gt 0) { Invoke-CropPng $snapPath $CropPx }
-            # Dismiss find bar now that the screenshot is captured.
-            Send-Key '{ESC}' 200
-            Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green
-        } catch {
-            Write-Host ("    [FAIL] screenshot: {0}" -f $_.Exception.Message) -ForegroundColor Red
-            Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                -JobName $searchJob -Action 'screenshot' -Status 'fail' -Message $_.Exception.Message
-            $cntFail++; continue
-        }
-
-        # Download the matching Jenkins receive file into DATA\GIFT or DATA\GFIX.
-        if ($Mode -in 'GiftRecv','GfixRecv') {
-            try {
-                Click-PageBody
-                $pageTextScript = Join-Path $scriptDir 'Read-PageText.ps1'
-                $pageText = & $pageTextScript -SelectWaitMs $ActionWaitMs -CopyWaitMs $ResultWaitMs
-                $folderUrl = Get-CurrentEdgeUrl
-                if ([string]::IsNullOrWhiteSpace($folderUrl)) { $folderUrl = $cachedUrl }
-
-                if ([string]::IsNullOrWhiteSpace($pageText) -or [string]::IsNullOrWhiteSpace($folderUrl)) {
-                    Write-Host '    [WARN] download skipped: page text or Jenkins folder URL is empty' -ForegroundColor Yellow
-                    Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                        -JobName $searchJob -Action 'download' -Status 'warn' -Message 'page text or folder URL is empty'
-                } else {
-                    $dl = Invoke-JenkinsFileDownload -WorkDir $WorkDir -Mode $Mode -FolderUrl $folderUrl `
-                        -PageText $pageText -CorrelId $correl -JobName $searchJob -Force:$forceFlag `
-                        -ParserScript (Join-Path $scriptDir 'Parse-JenkinsList.ps1')
-                    Write-Host ("    Jenkins files: found={0} matched={1} downloaded={2} skipped={3} failed={4} -> DATA\{5}" -f `
-                        $dl.Found, $dl.Matched, $dl.Downloaded, $dl.Skipped, $dl.Failed, $dl.DataKind) -ForegroundColor DarkGray
-                    foreach ($f in @($dl.Files)) {
-                        $color = if ($f.Status -eq 'ok') { 'Gray' } elseif ($f.Status -eq 'skip') { 'DarkGray' } else { 'Yellow' }
-                        Write-Host ("      [{0}] {1}" -f $f.Status, $f.Name) -ForegroundColor $color
-                    }
-                    $dlStatus = if ($dl.Failed -gt 0) { 'fail' } elseif ($dl.Matched -eq 0) { 'warn' } else { 'ok' }
-                    $dlMessage = "DATA\$($dl.DataKind): found=$($dl.Found) matched=$($dl.Matched) downloaded=$($dl.Downloaded) skipped=$($dl.Skipped) failed=$($dl.Failed)"
-                    Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                        -JobName $searchJob -Action 'download' -Status $dlStatus -Message $dlMessage
-                }
-            } catch {
-                Write-Host ("    [WARN] download failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+            $edgeHwnd = Activate-JenkinsEdgeWindow
+            if ($edgeHwnd -eq [IntPtr]::Zero) {
+                Write-Host "    [FAIL] Edge not found" -ForegroundColor Red
                 Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                    -JobName $searchJob -Action 'download' -Status 'fail' -Message $_.Exception.Message
+                    -JobName $searchJob -Action 'snap' -Status 'fail' -Message 'Edge window not found'
+                $cntFail++; $resolved = $true; break
             }
-        }
 
-        # Mark ONLY this correl's snap column done, then persist atomically.
-        # ($row is a reference into $allRows, so this updates the full set.)
-        try {
-            $row.$snapField = '1'
-            Export-MappingAtomic -Rows $allRows -Path $mappingFile | Out-Null
-            Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                -JobName $searchJob -Action 'snap' -Status 'ok' `
-                -Message ("snap\{0}\{1}.png" -f $snapFolder, $correl)
-            $cntDone++
-        } catch {
-            Write-Host ("    [WARN] mapping update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
-            Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
-                -JobName $searchJob -Action 'mapping' -Status 'fail' -Message $_.Exception.Message
-        }
+            # Ctrl+F search for CORREL_ID_S; leave the find bar open so the
+            # screenshot shows the highlighted match (ESC is sent after capture).
+            Click-PageBody
+            Send-CtrlF
+            Paste-Replace $searchTerm
+            Start-Sleep -Milliseconds $ResultWaitMs
+
+            try {
+                Take-WindowScreenshot $edgeHwnd $snapPath
+                if ($CropPx -gt 0) { Invoke-CropPng $snapPath $CropPx }
+                # Dismiss find bar now that the screenshot is captured.
+                Send-Key '{ESC}' 200
+                Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green
+            } catch {
+                Write-Host ("    [FAIL] screenshot: {0}" -f $_.Exception.Message) -ForegroundColor Red
+                Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                    -JobName $searchJob -Action 'screenshot' -Status 'fail' -Message $_.Exception.Message
+                $cntFail++; $resolved = $true; break
+            }
+
+            # Read page text once -- needed for detection (F3) and/or the file
+            # download (GiftRecv/GfixRecv). Reuse the same text for both.
+            $pageText = ''
+            $pageKind = 'Unknown'
+            $needPageText = $detectMode -or ($Mode -in 'GiftRecv','GfixRecv')
+            if ($needPageText) {
+                if ($detectMode) {
+                    $ready    = Wait-JenkinsPageReady -SearchTerm $searchTerm
+                    $pageText = [string]$ready.Text
+                    $pageKind = [string]$ready.Kind
+                    Write-Host ("    pageKind: {0}" -f $pageKind) -ForegroundColor DarkGray
+                } else {
+                    $pageText = Get-JenkinsPageTextOnce
+                }
+            }
+
+            # Archive page text (A1) -- before the sentinel so NG/ambiguous pages
+            # still leave an offline record.
+            if ($detectMode -and $saveTextOn -and -not [string]::IsNullOrWhiteSpace($pageText)) {
+                try {
+                    $txtPath = Join-Path $snapDir ("{0}.txt" -f $correl)
+                    $enc = New-Object System.Text.UTF8Encoding($false)
+                    [System.IO.File]::WriteAllText($txtPath, $pageText, $enc)
+                } catch {
+                    Write-Host ("    [WARN] save text failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                }
+            }
+
+            # Sentinel (A3): off-page kinds -> stop and ask the operator.
+            if ($detectMode -and ($pageKind -eq 'OuterFrame' -or $pageKind -eq 'Empty' -or $pageKind -eq 'Unknown')) {
+                $preview = if ($pageText.Length -gt 200) { $pageText.Substring(0, 200) } else { $pageText }
+                Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                    -JobName $searchJob -Action 'verify' -Status 'warn' -Message ("pageKind={0}: {1}" -f $pageKind, $preview)
+                Bring-ConsoleToFront
+                Write-Host ("  [SENTINEL] Unexpected page ({0}) for {1}." -f $pageKind, $correl) -ForegroundColor Yellow
+                Write-Host "    Fix Edge focus/frame, then r=retry this row / s=skip / q=quit : " -ForegroundColor Magenta -NoNewline
+                $ans = Read-Host
+                if ($ans -eq 'q') { $userQuit = $true; $resolved = $true; break }
+                if ($ans -eq 's') { Write-Host "  -> skipped" -ForegroundColor DarkYellow; $cntSkip++; $resolved = $true; break }
+                if ($attempt -ge $maxAttempts) {
+                    Write-Host ("  -> still unexpected after {0} attempts; skipping." -f $maxAttempts) -ForegroundColor Yellow
+                    $cntSkip++; $resolved = $true; break
+                }
+                continue   # retry this row
+            }
+
+            # Download the matching Jenkins receive file into DATA\GIFT or DATA\GFIX.
+            if ($Mode -in 'GiftRecv','GfixRecv') {
+                try {
+                    $folderUrl = Get-CurrentEdgeUrl
+                    if ([string]::IsNullOrWhiteSpace($folderUrl)) { $folderUrl = $cachedUrl }
+
+                    if ([string]::IsNullOrWhiteSpace($pageText) -or [string]::IsNullOrWhiteSpace($folderUrl)) {
+                        Write-Host '    [WARN] download skipped: page text or Jenkins folder URL is empty' -ForegroundColor Yellow
+                        Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                            -JobName $searchJob -Action 'download' -Status 'warn' -Message 'page text or folder URL is empty'
+                    } else {
+                        $dl = Invoke-JenkinsFileDownload -WorkDir $WorkDir -Mode $Mode -FolderUrl $folderUrl `
+                            -PageText $pageText -CorrelId $correl -JobName $searchJob -Force:$forceFlag `
+                            -ParserScript (Join-Path $scriptDir 'Parse-JenkinsList.ps1')
+                        Write-Host ("    Jenkins files: found={0} matched={1} downloaded={2} skipped={3} failed={4} -> DATA\{5}" -f `
+                            $dl.Found, $dl.Matched, $dl.Downloaded, $dl.Skipped, $dl.Failed, $dl.DataKind) -ForegroundColor DarkGray
+                        foreach ($f in @($dl.Files)) {
+                            $color = if ($f.Status -eq 'ok') { 'Gray' } elseif ($f.Status -eq 'skip') { 'DarkGray' } else { 'Yellow' }
+                            Write-Host ("      [{0}] {1}" -f $f.Status, $f.Name) -ForegroundColor $color
+                        }
+                        $dlStatus = if ($dl.Failed -gt 0) { 'fail' } elseif ($dl.Matched -eq 0) { 'warn' } else { 'ok' }
+                        $dlMessage = "DATA\$($dl.DataKind): found=$($dl.Found) matched=$($dl.Matched) downloaded=$($dl.Downloaded) skipped=$($dl.Skipped) failed=$($dl.Failed)"
+                        Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                            -JobName $searchJob -Action 'download' -Status $dlStatus -Message $dlMessage
+                    }
+                } catch {
+                    Write-Host ("    [WARN] download failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                        -JobName $searchJob -Action 'download' -Status 'fail' -Message $_.Exception.Message
+                }
+            }
+
+            # ── Detection OFF (or NoGfix, pending M6): legacy screenshot -> 1 ──
+            if (-not $detectMode) {
+                try {
+                    $row.$snapField = '1'
+                    Export-MappingAtomic -Rows $allRows -Path $mappingFile | Out-Null
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                        -JobName $searchJob -Action 'snap' -Status 'ok' `
+                        -Message ("snap\{0}\{1}.png" -f $snapFolder, $correl)
+                    $cntDone++
+                } catch {
+                    Write-Host ("    [WARN] mapping update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                        -JobName $searchJob -Action 'mapping' -Status 'fail' -Message $_.Exception.Message
+                }
+                $resolved = $true; break
+            }
+
+            # ── F3 verdict (plan 4.F3): ok -> field=1, ng -> field=2 ──────────
+            $rowExpected = $null
+            if ($timeMode -ne 'none') {
+                $rowExpected = ConvertTo-ExpectedDateTime -Value (Get-RowProp $row $TimeColumn) -Format $TimeFormat
+            }
+
+            $verdict = $null
+            try {
+                $files   = ConvertFrom-JenkinsListText $pageText
+                $verdict = Test-JenkinsFile -Files $files -CorrelId $searchTerm -Expected $rowExpected `
+                            -ToleranceMin $runTolerance -ExpectExists $true
+            } catch {
+                # Detection bugs must never block the screenshot workflow: keep the
+                # shot, mark done, and record a warning for review.
+                Write-Host ("    [WARN] detection failed: {0} (marking snap done)" -f $_.Exception.Message) -ForegroundColor Yellow
+                Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                    -JobName $searchJob -Action 'verify' -Status 'warn' -Message ("detect error: {0}" -f $_.Exception.Message)
+                $verdict = @{ Verdict = 'ok'; Reason = 'detection error -> screenshot kept' }
+            }
+
+            if ($verdict.Verdict -eq 'ok') {
+                $row.$snapField = '1'
+                Write-Host ("    -> OK: {0}" -f $verdict.Reason) -ForegroundColor Green
+                Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                    -JobName $searchJob -Action 'verify' -Status 'ok' -Message $verdict.Reason
+                $cntDone++
+            } else {
+                $row.$snapField = '2'
+                Write-Host ("    -> NG: {0}" -f $verdict.Reason) -ForegroundColor Red
+                Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                    -JobName $searchJob -Action 'verify' -Status 'ng' -Message $verdict.Reason
+                $ngList.Add(("{0} : {1}" -f $correl, $verdict.Reason))
+                $cntNg++
+            }
+
+            try {
+                Export-MappingAtomic -Rows $allRows -Path $mappingFile | Out-Null
+            } catch {
+                Write-Host ("    [WARN] mapping update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
+                    -JobName $searchJob -Action 'mapping' -Status 'fail' -Message $_.Exception.Message
+            }
+            $resolved = $true
+        } until ($resolved)
     }
 }
 
@@ -385,7 +622,17 @@ if ($urlDirty) {
 Write-Host ''
 Write-Host ("===== JenkinsSnap $Mode Done =====") -ForegroundColor Green
 Write-Host ("  Done    : {0}" -f $cntDone)
+if ($cntNg -gt 0) {
+    Write-Host ("  NG      : {0}" -f $cntNg) -ForegroundColor Red
+}
 Write-Host ("  Skipped : {0}" -f $cntSkip)
 Write-Host ("  Failed  : {0}" -f $cntFail) -ForegroundColor $(if ($cntFail -gt 0) { 'Yellow' } else { 'White' })
+
+if ($ngList.Count -gt 0) {
+    Write-Host ''
+    Write-Host ("===== Jenkins $Mode NG summary ({0}) =====" -f $ngList.Count) -ForegroundColor Red
+    foreach ($n in $ngList) { Write-Host ("  [NG] {0}" -f $n) -ForegroundColor Red }
+    Write-Host "  (NG rows stay pending; re-run to retry.)" -ForegroundColor DarkYellow
+}
 
 Bring-ConsoleToFront
