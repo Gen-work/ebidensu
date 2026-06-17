@@ -148,6 +148,17 @@ Snap stages (existing):
 .\VerifyTool.ps1 -Phase GfixJenkins
 ```
 
+`GiftMqSnap` now checks each capture (SnapVerify F2). It asks once for a run time
+(`[Enter]` = now, `yyyy/MM/dd HH:mm:ss`, or `n` for no time check) and a tolerance,
+fills any empty `Expected_Time` cells on the pending rows, then after each search
+reads the page text and flags a problem as `GIFT_MQ_snap = 2` (NG): "No Data!", no
+matching Correl_ID, a receive time outside the window, or a non-zero Rtncd/Rsncd.
+NG rows stay pending (re-offered next run) and are listed in an end-of-run NG
+summary; the page text is saved next to the PNG as `<correl>.txt`. If the captured
+text is not the expected MQ page it stops and asks `r/s/q`. Set
+`SnapVerify.Enabled = $false` (config or `verify_config.json`) to go back to plain
+screenshots.
+
 Clone evidence Excel (new):
 
 ```powershell

@@ -1,10 +1,15 @@
 # SnapVerify 规划文档 — 截图阶段即时异常检测
 
-状态: **规划完成（未实装）**。本文档是后续开发会话的设计依据。
+状态: **M1 + M2 实装完成；M3–M6 待实装**。本文档是后续开发会话的设计依据。
 来源: 2026-06-12 规划讨论（OCR 完成后的下一步功能群）。
 2026-06-12 更新: 操作员提供了 HM / MQ 页面真实样本（附录 A/B），Q1–Q4、Q6
 已解决，解析规则与重测判定规则已确定。剩余未确认项只有 Q5（Rtncd 语义，
 不阻塞实装）。
+2026-06-17 更新: **M1**（`SnapVerify.ps1` 纯库 + 单测 + 配置节）与 **M2**
+（`MqSnap.ps1` 迁移 MappingStore/ProgressLog + F2 接线: 文本轮询、页面哨兵、
+判定 ok=1/ng=2、批量 `Expected_Time` 询问）已实装。新增两个纯函数
+`ConvertTo-ExpectedDateTime` / `Set-EmptyRunTimeCells`（已单测）。M3/M4 接线时
+照抄 MqSnap 的 `Test-MqSnapDone`（done == '1'）以免 NG='2' 行被当成已完成。
 
 ---
 
@@ -312,14 +317,18 @@ JenkinsSnap GiftRecv/GfixRecv 已取页面文本、跑 Parse-JenkinsList，
 
 ## 5. 实施顺序
 
-| 里程碑 | 内容 | 依赖 |
-|--------|------|------|
-| M1 | SnapVerify.ps1 纯库 + 单测（附录样本做 fixture）、配置节、批量时间询问、页面哨兵、A1/A2 进 MqSnap | — |
-| M2 | F2（MQ 判定接线 + MqSnap 迁移 MappingStore/ProgressLog） | M1 |
-| M3 | F3（JenkinsSnap NG=2 + 汇总；A1/A2 进 JenkinsSnap） | M1 |
-| M4 | F1（HM 解析 + 判定 + HmSnap 迁移 MappingStore；A1/A2 进 HmSnap） | M1 |
-| M5 | F5 定位（Jenkins 高亮 + HM/MQ 几何，sidecar 产出） | M3/M4 |
-| M6 | F4（NoGfix 检测 + AltText 管道 + Mark 画框/AZ 列写入 + 像素换算） | M5 |
+| 里程碑 | 内容 | 依赖 | 状态 |
+|--------|------|------|------|
+| M1 | SnapVerify.ps1 纯库 + 单测（附录样本做 fixture）、配置节、批量时间询问、页面哨兵 | — | **done** (v2.9.0) |
+| M2 | F2（MQ 判定接线 + MqSnap 迁移 MappingStore/ProgressLog；A1/A2 进 MqSnap） | M1 | **done** (v2.9.4) |
+| M3 | F3（JenkinsSnap NG=2 + 汇总；A1/A2 进 JenkinsSnap） | M1 | todo |
+| M4 | F1（HM 解析 + 判定 + HmSnap 迁移 MappingStore；A1/A2 进 HmSnap） | M1 | todo |
+| M5 | F5 定位（Jenkins 高亮 + HM/MQ 几何，sidecar 产出） | M3/M4 | todo |
+| M6 | F4（NoGfix 检测 + AltText 管道 + Mark 画框/AZ 列写入 + 像素换算） | M5 | todo |
+
+M2 实装备注: pending 过滤用本地 `Test-MqSnapDone`（done == 恰好 '1'），**不**用
+`Get-PendingRows`（其 `Test-SnapDone` 把任何非 '0' 值都算 done，会把 NG='2'
+藏掉）。M3/M4 照抄此模式。`SnapVerify.Enabled=$false` 可整体回退到纯截图。
 
 每个里程碑独立可交付；NG 判定出问题时 `SnapVerify.Enabled=$false` 整体回退。
 所有纯逻辑必须有 Tests\Test-SnapVerify.ps1 用例。COM/SendKeys 接线部分照

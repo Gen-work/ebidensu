@@ -4,6 +4,55 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-17 - SnapVerify M2: MqSnap instant NG detection + MappingStore migration (v2.9.4)
+
+### Added
+- **`MqSnap.ps1` is wired to SnapVerify F2** (plan `docs/SnapVerify-Plan.md` M2).
+  After the inquiry search it now polls the page text (A2), classifies the page
+  with `Get-SnapPageKind` (sentinel A3), archives the Ctrl+A text as
+  `snap\GIFT_MQ\<correl>.txt` (A1), screenshots as before, then runs
+  `ConvertFrom-MqPageText` + `Test-MqRecord` to decide the verdict:
+  - `GIFT_MQ_snap = 1` when the record is found, in the time window, and
+    Rtncd/Rsncd are zero.
+  - `GIFT_MQ_snap = 2` (NG) on "No Data!", no matching Correl_ID, RecvDate outside
+    the window, or non-zero Rtncd/Rsncd. NG stays **pending** (re-offered next run)
+    and is listed in an end-of-run NG summary.
+- **Batch run-time prompt** (`Resolve-SnapRunTime`): one question at start
+  (`[Enter]`=now / `yyyy/MM/dd HH:mm:ss` / `n`=no time, plus tolerance). Empty
+  `Expected_Time` cells on the pending rows are filled and persisted; existing
+  values are kept (plan 2.2).
+- **Page-kind sentinel**: an off-page text (OuterFrame / Empty / Unknown) stops
+  and asks the operator `r=retry / s=skip / q=quit` (max 3 retries), logging a
+  `warn` event with the page kind + a 200-char preview.
+- **Two pure helpers in `SnapVerify.ps1`**, unit-tested in `Tests/Test-SnapVerify.ps1`:
+  - `ConvertTo-ExpectedDateTime` — per-row `Expected_Time` cell -> `[datetime]`
+    or `$null` (empty/unparseable = no time window; never throws).
+  - `Set-EmptyRunTimeCells` — batch-fill empty time cells, keep existing values,
+    return the count filled.
+
+### Changed
+- **`MqSnap.ps1` migrated off bare `Import-Csv`/`Export-Csv`** to MappingStore
+  (`Import-Mapping` / `Ensure-MappingColumns` / `Export-MappingAtomic`, atomic
+  writes that never clobber non-target rows) and ProgressLog (`status\progress.jsonl`
+  events). Source is now ASCII-only per the encoding policy. `VerifyTool.ps1`
+  threads the `SnapVerify` + `ExpectedTime` config into the GiftMqSnap dispatch.
+- Pending filter uses a local "done == exactly '1'" rule (`Test-MqSnapDone`), not
+  `Get-PendingRows`, so NG='2' rows are not hidden. `SnapVerify.Enabled=$false`
+  reverts MqSnap to pure screenshot (legacy behavior).
+
+### Docs / cleanup
+- Removed the stale `TODO-2026-05-29.md` (its actionable items -- JenkinsSnap
+  phantom-functions, JIGPMB1S log move, DfSnap df.exe path, GoAnywhere 100-rows --
+  are resolved or already captured in CLAUDE.md TODOs) and the leftover
+  `Align.ps1.bak.20260601_153221` backup. Refreshed CLAUDE.md "Current state"
+  (was still on v2.8.1) and the SnapVerify milestone status.
+
+### Not yet wired
+M3 (JenkinsSnap NG=2) / M4 (HmSnap) / M5 (pixel localisation) / M6 (NoGfix) pending.
+M3/M4 should copy MqSnap's `Test-MqSnapDone` (done == '1') so NG='2' stays pending.
+
+---
+
 ## 2026-06-16 - ReplaceGfix: thread an optional SS_CODE mapping column (v2.9.3)
 
 ### Added

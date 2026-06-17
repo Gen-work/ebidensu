@@ -331,4 +331,48 @@ $rt5 = Resolve-SnapRunTime -TimeInput 'bad-date' -DefaultTolerance 30 -Now $refN
 Assert-True (-not $rt5.Ok)                  'RunTime: bad date -> Ok=false'
 Assert-True ($rt5.Error -ne '')             'RunTime: bad date -> Error message set'
 
+# ===========================================================================
+# ConvertTo-ExpectedDateTime
+# ===========================================================================
+
+# Empty / whitespace -> $null (no time window)
+Assert-True ($null -eq (ConvertTo-ExpectedDateTime -Value ''))    'ExpectedDT: empty -> null'
+Assert-True ($null -eq (ConvertTo-ExpectedDateTime -Value '   ')) 'ExpectedDT: whitespace -> null'
+
+# Full datetime
+$edt1 = ConvertTo-ExpectedDateTime -Value '2026/06/12 10:35:40'
+Assert-True ($null -ne $edt1) 'ExpectedDT: full datetime parses'
+Assert-Equal '2026/06/12 10:35:40' ($edt1.ToString('yyyy/MM/dd HH:mm:ss')) 'ExpectedDT: full datetime value'
+
+# Date-only fallback format
+$edt2 = ConvertTo-ExpectedDateTime -Value '2026/06/12'
+Assert-True ($null -ne $edt2) 'ExpectedDT: date-only parses via fallback'
+Assert-Equal '2026/06/12 00:00:00' ($edt2.ToString('yyyy/MM/dd HH:mm:ss')) 'ExpectedDT: date-only value'
+
+# Unparseable -> $null (treated as no-time, never throws)
+Assert-True ($null -eq (ConvertTo-ExpectedDateTime -Value 'not-a-date')) 'ExpectedDT: garbage -> null'
+
+# ===========================================================================
+# Set-EmptyRunTimeCells
+# ===========================================================================
+
+# Mix of empty / existing / missing-column rows
+$rowEmpty   = [PSCustomObject]@{ Correl_ID_S = 'A'; Expected_Time = '' }
+$rowKeep    = [PSCustomObject]@{ Correl_ID_S = 'B'; Expected_Time = '2026/06/01 09:00:00' }
+$rowBlank   = [PSCustomObject]@{ Correl_ID_S = 'C'; Expected_Time = '   ' }
+$rowNoCol   = [PSCustomObject]@{ Correl_ID_S = 'D' }   # column absent entirely
+$setRows    = @($rowEmpty, $rowKeep, $rowBlank, $rowNoCol)
+
+$filled = Set-EmptyRunTimeCells -Rows $setRows -Field 'Expected_Time' -Value '2026/06/17 12:00:00'
+Assert-Equal 3 $filled 'SetEmptyTime: fills empty/blank/missing cells only (3 of 4)'
+Assert-Equal '2026/06/17 12:00:00' $rowEmpty.Expected_Time 'SetEmptyTime: empty cell filled'
+Assert-Equal '2026/06/01 09:00:00' $rowKeep.Expected_Time  'SetEmptyTime: existing value kept'
+Assert-Equal '2026/06/17 12:00:00' $rowBlank.Expected_Time 'SetEmptyTime: whitespace cell filled'
+Assert-Equal '2026/06/17 12:00:00' $rowNoCol.Expected_Time 'SetEmptyTime: missing column added + filled'
+
+# Re-running fills nothing (all rows now have values)
+$filled2 = Set-EmptyRunTimeCells -Rows $setRows -Field 'Expected_Time' -Value '2099/01/01 00:00:00'
+Assert-Equal 0 $filled2 'SetEmptyTime: second pass fills nothing'
+Assert-Equal '2026/06/17 12:00:00' $rowEmpty.Expected_Time 'SetEmptyTime: second pass does not overwrite'
+
 exit (Complete-Tests)
