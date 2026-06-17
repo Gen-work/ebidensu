@@ -501,3 +501,73 @@ function Resolve-SnapRunTime {
 
     return @{ Ok = $true; TimeMode = 'fixed'; Time = $parsed; ToleranceMinutes = $tol; Error = '' }
 }
+
+# ---------------------------------------------------------------------------
+# ConvertTo-ExpectedDateTime
+#   Parses a per-row Expected_Time cell into a [datetime], or $null when the
+#   cell is empty/blank/unparseable. Used by the snap phases to turn the
+#   mapping's Expected_Time column value into the -Expected argument of the
+#   Test-* verdict functions. A $null result means "no time window" for that
+#   row (the verdict functions skip the window check when Expected is $null).
+#
+#   Parameters:
+#     Value   string    the raw cell text (may be '', whitespace, or a date)
+#     Format  string    preferred parse format (others are tried as fallback)
+#
+#   Returns [datetime] or $null.
+# ---------------------------------------------------------------------------
+function ConvertTo-ExpectedDateTime {
+    param(
+        [string]$Value,
+        [string]$Format = 'yyyy/MM/dd HH:mm:ss'
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+
+    $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    $parsed  = [datetime]::MinValue
+    $fmts    = @($Format, 'yyyy/MM/dd HH:mm:ss', 'yyyy/MM/dd HH:mm', 'yyyy/MM/dd')
+    foreach ($f in $fmts) {
+        if ([datetime]::TryParseExact($Value.Trim(), $f, $culture,
+                [System.Globalization.DateTimeStyles]::None, [ref]$parsed)) {
+            return $parsed
+        }
+    }
+    return $null
+}
+
+# ---------------------------------------------------------------------------
+# Set-EmptyRunTimeCells
+#   Batch-applies a run time to every row whose -Field cell is empty/blank,
+#   leaving rows that already carry a value untouched (spec 2.2 step 3:
+#   "Expected_Time empty rows get the chosen time; existing values kept").
+#   Pure in-memory mutation -- the caller persists via Export-MappingAtomic.
+#
+#   Parameters:
+#     Rows    object[]  rows to fill (typically the pending subset)
+#     Field   string    column name (e.g. 'Expected_Time')
+#     Value   string    the time string to write into empty cells
+#
+#   Returns [int] the number of cells filled.
+# ---------------------------------------------------------------------------
+function Set-EmptyRunTimeCells {
+    param(
+        [object[]]$Rows,
+        [string]$Field,
+        [string]$Value
+    )
+    $filled = 0
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $has = ($r.PSObject.Properties.Name -contains $Field)
+        $cur = if ($has) { [string]$r.$Field } else { '' }
+        if ([string]::IsNullOrWhiteSpace($cur)) {
+            if ($has) {
+                $r.$Field = $Value
+            } else {
+                $r | Add-Member -NotePropertyName $Field -NotePropertyValue $Value -Force
+            }
+            $filled++
+        }
+    }
+    return $filled
+}

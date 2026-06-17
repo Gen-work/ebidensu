@@ -1,24 +1,43 @@
 # ============================================================
-#  MqSnap.ps1  (Phase 4, v2  Eself-contained capture/crop)
+#  MqSnap.ps1  (Phase: GiftMqSnap)  v3 -- MappingStore + F2 detection
 #
 #  For each pending Correl_ID_S in mapping_<Owner>.csv:
-#    1. Tab to 照企Ebutton -> Enter (open inquiry form)
-#    2. Tab to 相関ID input -> Paste Correl_ID_S -> Enter (search)
-#    3. Capture Edge main window, crop border, save snap/GIFT_MQ/<Correl_ID_S>.png
-#    4. Update mapping.GIFT_MQ_snap = 1
-#    5. Reset to inquiry entry for next row
+#    1. Tab to the inquiry button -> Enter (open inquiry form)
+#    2. Tab to the Correlid input -> Paste Correl_ID_S -> Enter (search)
+#    3. (detection on) poll page text, classify page kind, archive .txt
+#    4. Capture Edge main window, crop border, save snap\GIFT_MQ\<id>.png
+#    5. (detection on) parse + verdict (F2): ok -> field=1, ng -> field=2
+#    6. Persist atomically via MappingStore; append a progress.jsonl event
 #
-#  Important:
-#    - Crop-Snap.ps1 is NOT dot-sourced here. Invoke-CropPng is inline.
+#  SnapVerify (F2) -- spec docs/SnapVerify-Plan.md milestone M2:
+#    - GIFT_MQ_snap value domain: 0/empty = pending, 1 = ok, 2 = NG.
+#      '2' STILL counts as pending and is re-offered next run (plan 2.1).
+#    - NG conditions (Test-MqRecord, plan 2.4): no matching row / "No Data!" /
+#      RecvDate outside the time window / non-zero Rtncd|Rsncd. Newest-wins by
+#      RecvDate when a correl has several rows.
+#    - Time window: one batch prompt at start (Resolve-SnapRunTime); empty
+#      Expected_Time cells on pending rows are filled and persisted (plan 2.2).
+#    - Page-kind sentinel (plan 3.6): an off-page text (OuterFrame/Empty/
+#      Unknown) stops and asks the operator (r=retry / s=skip / q=quit).
+#    - SnapEnabled=$false reverts to pure screenshot (legacy behavior).
+#
+#  Conventions:
+#    - All mapping I/O goes through MappingStore (atomic writes); progress
+#      events go to status\progress.jsonl via ProgressLog.
+#    - Crop-Snap.ps1 is NOT dot-sourced; Invoke-CropPng is inline.
 #    - Switch params are copied to plain bools before any dot-source.
-#    - Screenshot targets Edge main hwnd, not arbitrary foreground window.
+#    - Screenshot targets the Edge main hwnd, not the foreground window.
+#    - Pure parse/verdict logic lives in SnapVerify.ps1 (unit-tested);
+#      this script is only the COM/SendKeys wiring.
 #
 #  Usage:
-#    .\MqSnap.ps1
-#    .\MqSnap.ps1 -Force
-#    .\MqSnap.ps1 -Interactive
-#    .\MqSnap.ps1 -NoResize
+#    .\MqSnap.ps1 -WorkDir <dir> -Owner <owner>
+#    .\MqSnap.ps1 ... -Force
+#    .\MqSnap.ps1 ... -Interactive
+#    .\MqSnap.ps1 ... -NoResize
+#    .\MqSnap.ps1 ... -SnapEnabled $false      # pure screenshot, no detection
 # ============================================================
+#Requires -Version 5.1
 
 param(
     [string]$WorkDir,
@@ -37,53 +56,56 @@ param(
     [string[]]$TargetIds         = @(),
     [string]$CommonScript        = "",
     [switch]$Interactive,
-    [switch]$Force
+    [switch]$Force,
+
+    # ---- SnapVerify (F2) detection wiring (defaults match VerifyConfig.psd1) ----
+    [bool]$SnapEnabled           = $true,
+    [int]$ToleranceMinutes       = 30,
+    [bool]$SaveText              = $true,
+    [int]$PollTimeoutSec         = 10,
+    [int]$PollIntervalMs         = 500,
+    [string]$TimeColumn          = 'Expected_Time',
+    [string]$TimeFormat          = 'yyyy/MM/dd HH:mm:ss',
+    [string]$RunTime             = '',   # '' = prompt; else 'n' / 'yyyy/MM/dd HH:mm:ss'
+    [string]$RunTolerance        = ''    # non-interactive tolerance override
 )
 
 $ErrorActionPreference = 'Stop'
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    $OutputEncoding = [System.Text.UTF8Encoding]::new()
+} catch {}
 
 # Resolve switch flags BEFORE any dot-source can clobber switch variables.
 $forceFlag       = [bool]$Force.IsPresent
 $interactiveFlag = [bool]$Interactive.IsPresent
 $noResizeFlag    = [bool]$NoResize.IsPresent
+$snapVerifyOn    = [bool]$SnapEnabled
+$saveTextOn      = [bool]$SaveText
 
-# Optional narrow run. Accepts: -TargetIds JIGPL48S or -TargetIds JIGPL48S,JIDSL48S
-$targetSet = @{}
-foreach ($rawId in @($TargetIds)) {
-    if ($null -eq $rawId) { continue }
-    foreach ($part in ($rawId.ToString() -split ',')) {
-        $v = $part.Trim()
-        if (-not [string]::IsNullOrWhiteSpace($v)) { $targetSet[$v] = $true }
-    }
-}
-function Test-TargetRow($row) {
-    if ($targetSet.Count -eq 0) { return $true }
-    return ($targetSet.ContainsKey([string]$row.Correl_ID_S) -or
-            $targetSet.ContainsKey([string]$row.Correl_ID_M) -or
-            $targetSet.ContainsKey([string]$row.JOB_NAME))
-}
+$scriptDir = $PSScriptRoot
 
-
-# ── Unblock all PS1 files in this folder (avoid UNC-path security warning) ──
+# -- Unblock all PS1 files in this folder (avoid UNC-path security warning) --
 try {
-    Get-ChildItem -LiteralPath $PSScriptRoot -Filter "*.ps1" -File -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath $scriptDir -Filter "*.ps1" -File -ErrorAction SilentlyContinue |
         ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
 } catch {}
 
-# ── Interactive fallback ──
+# -- Interactive fallback --
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host "WorkDir path" }
 
 Write-Host ""
-Write-Host "===== MqSnap (Phase 4 v2) =====" -ForegroundColor Green
+Write-Host "===== MqSnap (Phase GiftMqSnap, v3) =====" -ForegroundColor Green
 Write-Host ("  WorkDir     : {0}" -f $WorkDir)
 Write-Host ("  Owner       : {0}" -f $Owner)
 Write-Host ("  Window      : {0}" -f $(if ($noResizeFlag) { "no resize" } else { "${WindowWidth}x${WindowHeight}" }))
 Write-Host ("  CropPx      : {0}" -f $CropPx)
 Write-Host ("  Force       : {0}, Interactive : {1}" -f $forceFlag, $interactiveFlag)
-if ($targetSet.Count -gt 0) { Write-Host ("  TargetIds   : {0}" -f (($targetSet.Keys | Sort-Object) -join ", ")) }
+Write-Host ("  Detection   : {0} (tol +-{1} min)" -f $snapVerifyOn, $ToleranceMinutes)
+if (@($TargetIds).Count -gt 0) { Write-Host ("  TargetIds   : {0}" -f ((@($TargetIds)) -join ", ")) }
 Write-Host ""
 
-# ── Validate WorkDir & mapping ──
+# -- Validate WorkDir & mapping --
 if (-not (Test-Path -LiteralPath $WorkDir)) {
     Write-Host "[ERROR] WorkDir not found." -ForegroundColor Red
     exit 1
@@ -104,39 +126,35 @@ Write-Host ("[INFO] Field  : mapping.{0}" -f $snapField)
 Write-Host ""
 
 # ============================================================
-# Locate & dot-source Common.ps1 (only shared primitive dependency)
+# Dot-source shared libraries (all no-param() -> safe per CLAUDE.md)
 # ============================================================
-$candidates = @()
-if (-not [string]::IsNullOrWhiteSpace($CommonScript)) { $candidates += $CommonScript }
-$candidates += @(
-    (Join-Path $PSScriptRoot "Common.ps1"),
-    (Join-Path $PSScriptRoot "Common(1).ps1"),
-    (Join-Path $PSScriptRoot "..\VerifyTool\Common.ps1"),
-    (Join-Path (Split-Path $PSScriptRoot -Parent) "VerifyTool\Common.ps1")
-)
-
-$commonPath = $null
-foreach ($c in $candidates) {
-    if (Test-Path -LiteralPath $c) { $commonPath = (Resolve-Path -LiteralPath $c).Path; break }
-}
-if (-not $commonPath) {
-    Write-Host "[ERROR] Common.ps1 not found. Tried:" -ForegroundColor Red
-    foreach ($c in $candidates) { Write-Host ("        - {0}" -f $c) -ForegroundColor Red }
+if ([string]::IsNullOrWhiteSpace($CommonScript)) { $CommonScript = Join-Path $scriptDir "Common.ps1" }
+if (-not (Test-Path -LiteralPath $CommonScript)) {
+    Write-Host ("[ERROR] Common.ps1 not found: {0}" -f $CommonScript) -ForegroundColor Red
     Write-Host "        Pass -CommonScript <path> to specify." -ForegroundColor Red
     exit 1
 }
 
-Write-Host ("[INFO] Loading Common.ps1 : {0}" -f $commonPath)
+Write-Host ("[INFO] Loading Common.ps1 : {0}" -f $CommonScript)
 $savedEAP = $ErrorActionPreference
 $ErrorActionPreference = 'SilentlyContinue'
-. $commonPath
+. $CommonScript
 $ErrorActionPreference = $savedEAP
+. (Join-Path $scriptDir "MappingStore.ps1")
+. (Join-Path $scriptDir "ProgressLog.ps1")
+. (Join-Path $scriptDir "SnapVerify.ps1")
+$pageTextScript = Join-Path $scriptDir "Read-PageText.ps1"
+
 if (-not (Get-Command -Name 'Wait-PagePrepared' -ErrorAction SilentlyContinue)) {
-    Write-Host "[ERROR] Common.ps1 dot-source failed (function not found)." -ForegroundColor Red
+    Write-Host "[ERROR] Common.ps1 dot-source failed (Wait-PagePrepared not found)." -ForegroundColor Red
+    exit 1
+}
+if (-not (Get-Command -Name 'Test-MqRecord' -ErrorAction SilentlyContinue)) {
+    Write-Host "[ERROR] SnapVerify.ps1 dot-source failed (Test-MqRecord not found)." -ForegroundColor Red
     exit 1
 }
 
-# ── Globals used by Common helpers ──
+# -- Globals used by Common helpers --
 $Global:Timing = @{
     ActionWaitMs   = $ActionWaitMs
     ResultWaitSec  = $ResultWaitSec
@@ -155,6 +173,7 @@ function Invoke-CropPng {
         [int]$cropPx = 6
     )
 
+    if ($cropPx -le 0) { return }
     if (-not (Test-Path -LiteralPath $path)) { throw "File not found: $path" }
 
     $bytes   = [System.IO.File]::ReadAllBytes($path)
@@ -259,48 +278,125 @@ function Save-EdgeMainScreenshot {
     Take-WindowScreenshot $mainHwnd $outPath
 }
 
+# Grab the foreground Edge page text once (Ctrl+A/Ctrl+C via Read-PageText).
+# Click-PageBody first so the select-all lands on the page, not an input field.
+function Get-MqPageTextOnce {
+    Click-PageBody
+    $txt = & $pageTextScript -SelectWaitMs $ActionWaitMs -CopyWaitMs $ActionWaitMs
+    if ($null -eq $txt) { return '' }
+    return [string]$txt
+}
+
+# Poll the page text (A2) until it is a recognised MQ terminal page (result
+# with the correl id present, or "No Data!"), an off-page OuterFrame, or the
+# poll timeout elapses. Empty/Unknown keep polling (page may still be loading).
+# Returns @{ Text = <string>; Kind = <pageKind> }.
+function Wait-MqPageReady {
+    param([string]$CorrelId)
+
+    $text = ''
+    $kind = 'Empty'
+    $deadline = (Get-Date).AddSeconds([Math]::Max(1, $PollTimeoutSec))
+    do {
+        $text = Get-MqPageTextOnce
+        $kind = Get-SnapPageKind -Phase 'Mq' -Text $text
+        if ($kind -eq 'MqNoData') { break }
+        if ($kind -eq 'MqResult' -and $text.Contains($CorrelId)) { break }
+        if ($kind -eq 'OuterFrame') { break }
+        Start-Sleep -Milliseconds ([Math]::Max(100, $PollIntervalMs))
+    } while ((Get-Date) -lt $deadline)
+
+    return @{ Text = $text; Kind = $kind }
+}
+
 function Show-MqRowHeader($item, [int]$idx, [int]$total) {
     Write-Host ""
     Write-Host ("=" * 72) -ForegroundColor White
     Write-Host ("  [MQ {0}/{1}] JOB:{2} | Correl_ID_S:{3} | TO:{4}" -f `
-        $idx, $total, $item.JOB_NAME, $item.Correl_ID_S, $item.TO_code) -ForegroundColor White
+        $idx, $total, (Get-RowProp $item 'JOB_NAME'), (Get-RowProp $item 'Correl_ID_S'), (Get-RowProp $item 'TO_code')) -ForegroundColor White
     Write-Host ("=" * 72) -ForegroundColor White
 }
 
-function Update-MappingSnapField([string]$correlIdM, [string]$field) {
-    foreach ($r in $mapping) {
-        if ($r.Correl_ID_M -eq $correlIdM) { $r.$field = "1"; break }
-    }
-    $mapping | Export-Csv -LiteralPath $mappingPath -Encoding UTF8 -NoTypeInformation -Force
-}
-
 # ============================================================
-# Load mapping & filter pending
+# Load mapping & filter pending (MappingStore = single source of truth)
 # ============================================================
-Write-Host ""
 Write-Host "[Step 1] Loading mapping..." -ForegroundColor Cyan
-$mapping = @(Import-Csv -LiteralPath $mappingPath -Encoding UTF8)
-Write-Host ("  Total rows : {0}" -f $mapping.Count)
 
+# $allRows is the FULL set (never dropped on write). $pendingItems holds
+# references INTO $allRows, so mutating a pending row then Export-MappingAtomic
+# $allRows persists exactly that change.
+$allRows = Import-Mapping $mappingPath
+Ensure-MappingColumns -Rows $allRows -Extra @(
+    @{ Name = $snapField;  Default = '0' },
+    @{ Name = $TimeColumn; Default = ''  }
+) | Out-Null
+Write-Host ("  Total rows : {0}" -f $allRows.Count)
+
+# A snap field is "done" ONLY when exactly '1'. Empty/'0'/'2'(NG) are all
+# pending: NG='2' is re-offered every run (plan 2.1). We deliberately do NOT
+# use Get-PendingRows here -- its Test-SnapDone treats any non-'0' value
+# (including '2') as done, which would hide NG rows.
+function Test-MqSnapDone([string]$Value) { return ($Value -eq '1') }
+
+$targetList   = ConvertTo-TargetIdList $TargetIds
 $pendingItems = @()
-$doneCount = 0
-foreach ($r in $mapping) {
-    if (-not (Test-TargetRow $r)) { continue }
-    $cur = $r.$snapField
-    if ($cur -eq "1" -and -not $forceFlag) {
-        $doneCount++
-        continue
-    }
-    $pendingItems += $r
+$doneCount    = 0
+foreach ($r in $allRows) {
+    if (-not (Test-TargetRow $r $targetList)) { continue }
+    if ($forceFlag) { $pendingItems += $r; continue }
+    if (Test-MqSnapDone (Get-RowProp $r $snapField)) { $doneCount++ } else { $pendingItems += $r }
 }
+$pendingItems = @($pendingItems)
 Write-Host ("  Pending    : {0}, Already done : {1}" -f $pendingItems.Count, $doneCount)
+
+Write-ProgressEvent -WorkDir $WorkDir -Phase 'GiftMqSnap' -Action 'start' -Status 'info' `
+    -Message ("pending={0} force={1} targets=[{2}] detect={3}" -f $pendingItems.Count, $forceFlag, ($targetList -join ','), $snapVerifyOn)
+
 if ($pendingItems.Count -eq 0) {
     Write-Host "[INFO] Nothing to do. Use -Force to redo." -ForegroundColor Yellow
     return
 }
 
 # ============================================================
-# Main loop (single page, no appl grouping)
+# Batch run-time inquiry (plan 2.2) -- one prompt, applied to pending rows
+# ============================================================
+$timeMode     = 'none'
+$runTolerance = $ToleranceMinutes
+if ($snapVerifyOn) {
+    Bring-ShellToFront
+    Write-Host ""
+    Write-Host "[Time window] MQ records are checked against a run time +- tolerance." -ForegroundColor Cyan
+    Write-Host "  [Enter]             = use current time" -ForegroundColor Gray
+    Write-Host "  yyyy/MM/dd HH:mm:ss = use that time" -ForegroundColor Gray
+    Write-Host "  n                   = no time check this run" -ForegroundColor Gray
+    $tIn   = if ([string]::IsNullOrWhiteSpace($RunTime)) { Read-Host "  Run time" }                       else { $RunTime }
+    $tolIn = if ([string]::IsNullOrWhiteSpace($RunTime)) { Read-Host "  Tolerance minutes (Enter=default)" } else { $RunTolerance }
+
+    $rt = Resolve-SnapRunTime -TimeInput $tIn -ToleranceInput $tolIn -DefaultTolerance $ToleranceMinutes
+    if (-not $rt.Ok) {
+        Write-Host ("  [WARN] {0} -- continuing with NO time check." -f $rt.Error) -ForegroundColor Yellow
+        $timeMode = 'none'
+    } else {
+        $timeMode     = $rt.TimeMode
+        $runTolerance = $rt.ToleranceMinutes
+        if ($timeMode -eq 'fixed') {
+            $timeStr = $rt.Time.ToString($TimeFormat)
+            $filled  = Set-EmptyRunTimeCells -Rows $pendingItems -Field $TimeColumn -Value $timeStr
+            if ($filled -gt 0) {
+                Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+                Write-Host ("  {0} set on {1} pending row(s) = {2}; existing values kept." -f $TimeColumn, $filled, $timeStr) -ForegroundColor Green
+            } else {
+                Write-Host ("  All pending rows already have {0}; using each row's value (run time {1})." -f $TimeColumn, $timeStr) -ForegroundColor Green
+            }
+        } else {
+            Write-Host "  No time check this run." -ForegroundColor Yellow
+        }
+    }
+    Write-Host ("  Tolerance: +-{0} min" -f $runTolerance) -ForegroundColor Gray
+}
+
+# ============================================================
+# Open GIFT MQ in Edge, then main loop (single page, no appl grouping)
 # ============================================================
 $mqUrl = "https://<mq-host>/vergift/index.html"
 
@@ -318,56 +414,168 @@ Switch-ToEdge
 Move-EdgeAwayFromBorder
 Click-PageBody
 
+$ngList       = [System.Collections.Generic.List[string]]::new()
 $totalDone    = 0
+$totalNg      = 0
 $totalSkipped = 0
-$idx = 0
+$userQuit     = $false
+$maxAttempts  = 3
+$idx          = 0
 
 foreach ($item in $pendingItems) {
     $idx++
+    $correl = [string](Get-RowProp $item 'Correl_ID_S')
+    $jobName = [string](Get-RowProp $item 'JOB_NAME')
     Show-MqRowHeader $item $idx $pendingItems.Count
 
     if ($interactiveFlag) {
         Bring-ShellToFront
         Write-Host "  Enter=run / s=skip / q=quit : " -ForegroundColor Magenta -NoNewline
         $resp = Read-Host
-        if ($resp -eq 'q') { Write-Host "[ABORT] User quit." -ForegroundColor Yellow; return }
+        if ($resp -eq 'q') { Write-Host "[ABORT] User quit." -ForegroundColor Yellow; $userQuit = $true; break }
         if ($resp -eq 's') { Write-Host "  -> skipped" -ForegroundColor DarkYellow; $totalSkipped++; continue }
+    }
+
+    $resolved = $false
+    $attempt  = 0
+    do {
+        $attempt++
+
         Switch-ToEdge
         Click-PageBody
-    }
 
-    # Step 1-4: navigate to inquiry form
-    Reset-FocusToBody
-    Send-Tab $TabsToInquiry
-    Send-Enter
-    Start-Sleep -Seconds 1
+        # Navigate to the inquiry form
+        Reset-FocusToBody
+        Send-Tab $TabsToInquiry
+        Send-Enter
+        Start-Sleep -Seconds 1
 
-    # Step 5-7: enter Correl_ID and search
-    Send-Tab $TabsToCorrelid
-    Paste-Replace $item.Correl_ID_S
-    Send-Enter
-    Start-Sleep -Seconds $Global:Timing.ResultWaitSec
+        # Enter Correl_ID and search
+        Send-Tab $TabsToCorrelid
+        Paste-Replace $correl
+        Send-Enter
+        Start-Sleep -Seconds $Global:Timing.ResultWaitSec
 
-    # Step 8-10: screenshot + crop
-    $outPath = Join-Path $snapDir ("{0}.png" -f $item.Correl_ID_S)
-    Save-EdgeMainScreenshot $outPath
+        # Capture page text (A2 poll) when detection is on
+        $pageText = ''
+        $pageKind = 'Unknown'
+        if ($snapVerifyOn) {
+            [void](Activate-EdgeMainWindow)
+            $ready    = Wait-MqPageReady -CorrelId $correl
+            $pageText = [string]$ready.Text
+            $pageKind = [string]$ready.Kind
+            Write-Host ("    pageKind: {0}" -f $pageKind) -ForegroundColor DarkGray
+        }
 
-    try {
-        Invoke-CropPng -path $outPath -cropPx $CropPx
-    } catch {
-        Write-Host ("    [WARN] Crop failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
-    }
+        # Screenshot + crop (always)
+        $outPath = Join-Path $snapDir ("{0}.png" -f $correl)
+        Save-EdgeMainScreenshot $outPath
+        try {
+            Invoke-CropPng -path $outPath -cropPx $CropPx
+        } catch {
+            Write-Host ("    [WARN] Crop failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        }
 
-    # Step 11: mark done
-    Update-MappingSnapField $item.Correl_ID_M $snapField
-    Write-Host ("    -> {0} = 1, saved {1}" -f $snapField, (Split-Path -Leaf $outPath)) -ForegroundColor Green
-    $totalDone++
+        # -- Detection OFF: legacy behavior (screenshot -> field=1) --
+        if (-not $snapVerifyOn) {
+            $item.$snapField = '1'
+            Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+            Write-ProgressEvent -WorkDir $WorkDir -Phase 'GiftMqSnap' -CorrelIdS $correl -JobName $jobName `
+                -Action 'snap' -Status 'ok' -Message ("snap\GIFT_MQ\{0}.png (detection off)" -f $correl)
+            Write-Host ("    -> {0} = 1, saved {1}" -f $snapField, (Split-Path -Leaf $outPath)) -ForegroundColor Green
+            $totalDone++
+            $resolved = $true
+            break
+        }
+
+        # Archive page text (A1)
+        if ($saveTextOn -and -not [string]::IsNullOrWhiteSpace($pageText)) {
+            try {
+                $txtPath = Join-Path $snapDir ("{0}.txt" -f $correl)
+                $enc = New-Object System.Text.UTF8Encoding($false)
+                [System.IO.File]::WriteAllText($txtPath, $pageText, $enc)
+            } catch {
+                Write-Host ("    [WARN] save text failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+            }
+        }
+
+        # Sentinel (A3): off-page kinds -> stop and ask the operator
+        if ($pageKind -eq 'OuterFrame' -or $pageKind -eq 'Empty' -or $pageKind -eq 'Unknown') {
+            $preview = if ($pageText.Length -gt 200) { $pageText.Substring(0, 200) } else { $pageText }
+            Write-ProgressEvent -WorkDir $WorkDir -Phase 'GiftMqSnap' -CorrelIdS $correl -JobName $jobName `
+                -Action 'verify' -Status 'warn' -Message ("pageKind={0}: {1}" -f $pageKind, $preview)
+            Bring-ShellToFront
+            Write-Host ("  [SENTINEL] Unexpected page ({0}) for {1}." -f $pageKind, $correl) -ForegroundColor Yellow
+            Write-Host "    Fix Edge focus/frame, then r=retry this row / s=skip / q=quit : " -ForegroundColor Magenta -NoNewline
+            $ans = Read-Host
+            if ($ans -eq 'q') { Write-Host "[ABORT] User quit." -ForegroundColor Yellow; $userQuit = $true; $resolved = $true; break }
+            if ($ans -eq 's') { Write-Host "  -> skipped" -ForegroundColor DarkYellow; $totalSkipped++; $resolved = $true; break }
+            if ($attempt -ge $maxAttempts) {
+                Write-Host ("  -> still unexpected after {0} attempts; skipping." -f $maxAttempts) -ForegroundColor Yellow
+                $totalSkipped++
+                $resolved = $true
+                break
+            }
+            continue   # retry this row
+        }
+
+        # -- F2 verdict (plan 2.4): ok -> field=1, ng -> field=2 --
+        $rowExpected = $null
+        if ($timeMode -ne 'none') {
+            $rowExpected = ConvertTo-ExpectedDateTime -Value (Get-RowProp $item $TimeColumn) -Format $TimeFormat
+        }
+
+        $verdict = $null
+        try {
+            $parsed  = ConvertFrom-MqPageText $pageText
+            $verdict = Test-MqRecord -Parsed $parsed -CorrelId $correl -Expected $rowExpected `
+                        -ToleranceMin $runTolerance -IsNoData ($pageKind -eq 'MqNoData')
+        } catch {
+            # Detection bugs must never block the screenshot workflow: keep the
+            # shot, mark done, and record a warning for review.
+            Write-Host ("    [WARN] detection failed: {0} (marking snap done)" -f $_.Exception.Message) -ForegroundColor Yellow
+            Write-ProgressEvent -WorkDir $WorkDir -Phase 'GiftMqSnap' -CorrelIdS $correl -JobName $jobName `
+                -Action 'verify' -Status 'warn' -Message ("detect error: {0}" -f $_.Exception.Message)
+            $verdict = @{ Verdict = 'ok'; Reason = 'detection error -> screenshot kept' }
+        }
+
+        if ($verdict.Verdict -eq 'ok') {
+            $item.$snapField = '1'
+            Write-Host ("    -> OK: {0}" -f $verdict.Reason) -ForegroundColor Green
+            Write-ProgressEvent -WorkDir $WorkDir -Phase 'GiftMqSnap' -CorrelIdS $correl -JobName $jobName `
+                -Action 'verify' -Status 'ok' -Message $verdict.Reason
+            $totalDone++
+        } else {
+            $item.$snapField = '2'
+            Write-Host ("    -> NG: {0}" -f $verdict.Reason) -ForegroundColor Red
+            Write-ProgressEvent -WorkDir $WorkDir -Phase 'GiftMqSnap' -CorrelIdS $correl -JobName $jobName `
+                -Action 'verify' -Status 'ng' -Message $verdict.Reason
+            $ngList.Add(("{0} : {1}" -f $correl, $verdict.Reason))
+            $totalNg++
+        }
+
+        Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+        Write-Host ("    saved {0}" -f (Split-Path -Leaf $outPath)) -ForegroundColor DarkGray
+        $resolved = $true
+    } until ($resolved)
+
+    if ($userQuit) { break }
 }
 
 Bring-ShellToFront
 Write-Host ""
 Write-Host "===== MqSnap Done =====" -ForegroundColor Green
-Write-Host ("  Snapped : {0}" -f $totalDone)
+Write-Host ("  Snapped OK : {0}" -f $totalDone)
+if ($totalNg -gt 0) {
+    Write-Host ("  NG         : {0}" -f $totalNg) -ForegroundColor Red
+}
 if ($totalSkipped -gt 0) {
-    Write-Host ("  Skipped : {0}" -f $totalSkipped) -ForegroundColor DarkGray
+    Write-Host ("  Skipped    : {0}" -f $totalSkipped) -ForegroundColor DarkGray
+}
+
+if ($ngList.Count -gt 0) {
+    Write-Host ""
+    Write-Host ("===== MQ NG summary ({0}) =====" -f $ngList.Count) -ForegroundColor Red
+    foreach ($n in $ngList) { Write-Host ("  [NG] {0}" -f $n) -ForegroundColor Red }
+    Write-Host "  (NG rows stay pending; re-run GiftMqSnap to retry.)" -ForegroundColor DarkYellow
 }

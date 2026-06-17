@@ -1122,6 +1122,19 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args['TabsToInquiry'] = $Config.Mq.TabsToInquiry
         $args['TabsToCorrelid'] = $Config.Mq.TabsToCorrelid
         $args['CommonScript'] = $common
+        # SnapVerify F2 (MQ NG detection) + Expected_Time window config.
+        if ($Config.ContainsKey('SnapVerify')) {
+            $sv = $Config.SnapVerify
+            $args['SnapEnabled']     = [bool]$sv.Enabled
+            $args['ToleranceMinutes'] = [int]$sv.ToleranceMinutes
+            $args['SaveText']        = [bool]$sv.SaveText
+            $args['PollTimeoutSec']  = [int]$sv.PollTimeoutSec
+            $args['PollIntervalMs']  = [int]$sv.PollIntervalMs
+        }
+        if ($Config.ContainsKey('ExpectedTime')) {
+            $args['TimeColumn'] = [string]$Config.ExpectedTime.TimeColumn
+            $args['TimeFormat'] = [string]$Config.ExpectedTime.TimeFormat
+        }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
         if ($State.Interactive) { $args['Interactive'] = $true }

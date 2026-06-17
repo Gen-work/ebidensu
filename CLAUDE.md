@@ -99,7 +99,9 @@ Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1
 
 JenkinsSnap.ps1         Phase GiftJenkins / GfixJenkins / GiftJenkinsNoFile
 HmSnap.ps1              Phase GiftHmSnap / GfixHmSnap   (kept as-is)
-MqSnap.ps1              Phase GiftMqSnap                (kept as-is)
+MqSnap.ps1              Phase GiftMqSnap. MappingStore + ProgressLog + SnapVerify
+                        F2 detection (page-text poll, page-kind sentinel, MQ
+                        record verdict ok=1/ng=2, batch Expected_Time prompt).
 ExcelSnap.ps1           Phase ExcelSnap                 (legacy, kept as-is)
 Common.ps1              shared WinAPI/screenshot/SendKeys helpers (dot-sourceable)
 Generate-HostOpenMapping.ps1  generates mapping CSV from wipGFIX一覧.xlsx.
@@ -246,7 +248,24 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-11 v2.8.1)
+## Current state (last bump: 2026-06-17 v2.9.4)
+
+v2.9.4 (SnapVerify M2 -- MQ instant NG detection): `MqSnap.ps1` rewritten from
+the legacy bare-CSV version to the modern stack -- MappingStore (atomic writes),
+ProgressLog events, and the pure `SnapVerify.ps1` detection library. It now runs
+F2 (plan 2.4): after the search it polls the page text (A2), classifies the page
+(`Get-SnapPageKind` sentinel A3), archives the Ctrl+A text as `<correl>.txt` (A1),
+screenshots, then `ConvertFrom-MqPageText` + `Test-MqRecord` decides ok->`GIFT_MQ_snap`=1
+/ ng->2 (No Data! / no matching row / RecvDate outside window / non-zero Rtncd|Rsncd).
+NG=`2` still counts as pending (re-offered next run) and prints an end-of-run NG
+summary. A one-time batch run-time prompt (`Resolve-SnapRunTime`) fills empty
+`Expected_Time` cells on the pending rows (plan 2.2). Off-page kinds
+(OuterFrame/Empty/Unknown) stop and ask `r=retry / s=skip / q=quit`.
+`SnapVerify.Enabled=$false` reverts MqSnap to pure screenshot (legacy behavior).
+Two new pure helpers in `SnapVerify.ps1` (`ConvertTo-ExpectedDateTime`,
+`Set-EmptyRunTimeCells`) are unit-tested in `Tests/Test-SnapVerify.ps1`.
+(v2.9.0-2.9.3 history: M1 detection library; NoGfix image overlap fix; ReviewGift/Gfix/Df
+open the mode sheet; ReplaceGfix SS_CODE column -- see CHANGELOG.)
 
 v2.8.1 (field fixes): PS 5.1 array-nesting bugs fixed across the OCR stack.
 **Convention: shared lib functions return plain arrays -- never
@@ -322,11 +341,17 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
-- **SnapVerify M1 done** — `SnapVerify.ps1` pure library + `Tests/Test-SnapVerify.ps1`
-  unit tests + `SnapVerify` config section in `VerifyConfig.psd1` are implemented.
-  M2 (MQ wiring + MqSnap MappingStore migration), M3 (Jenkins NG=2), M4 (HM wiring +
-  HmSnap migration), M5 (pixel localisation), M6 (NoGfix annotation) remain.
-  Design and open questions live in `docs/SnapVerify-Plan.md`.
+- **SnapVerify M1 + M2 done** — M1: `SnapVerify.ps1` pure library +
+  `Tests/Test-SnapVerify.ps1` unit tests + `SnapVerify` config section in
+  `VerifyConfig.psd1`. M2: `MqSnap.ps1` migrated to MappingStore/ProgressLog and
+  wired to F2 (page-text poll, page-kind sentinel, MQ verdict ok=1/ng=2, batch
+  `Expected_Time` prompt); two new pure helpers (`ConvertTo-ExpectedDateTime`,
+  `Set-EmptyRunTimeCells`) are unit-tested. **M3 (Jenkins NG=2), M4 (HM wiring +
+  HmSnap migration), M5 (pixel localisation), M6 (NoGfix annotation) remain.**
+  When wiring M3/M4, copy MqSnap's `Test-MqSnapDone` pattern (done == exactly '1')
+  so NG='2' rows stay pending -- `Get-PendingRows`/`Test-SnapDone` treat any
+  non-'0' value as done and would hide NG rows. Design + open questions (only Q5,
+  Rtncd/Rsncd semantics, is non-blocking) live in `docs/SnapVerify-Plan.md`.
 
 - **Generate-HostOpenMapping `-Add` cannot filter by owner at the same time** —
   the daily flow adds new JOB_NAMEs incrementally with `-Add`, but owner
