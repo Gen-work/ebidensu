@@ -4,6 +4,37 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-17 - SnapVerify M3: JenkinsSnap instant NG detection (v2.9.5)
+
+### Added
+- **`JenkinsSnap.ps1` is wired to SnapVerify F3** (plan `docs/SnapVerify-Plan.md` M3),
+  for the `GiftRecv` / `GfixRecv` modes. After the Ctrl+F search and screenshot it
+  now polls the page text (A2), classifies the page with `Get-SnapPageKind`
+  (sentinel A3), archives the Ctrl+A text as `snap\<folder>\<correl>.txt` (A1),
+  then runs `ConvertFrom-JenkinsListText` + `Test-JenkinsFile` to decide:
+  - `<field>_snap = 1` when the file is in the list and within the
+    `Expected_Time` +- tolerance window (or no time check).
+  - `<field>_snap = 2` (NG) when the file is missing from the list or its
+    timestamp is outside the window. NG stays **pending** (re-offered next run)
+    and is listed in an end-of-run NG summary.
+  The same polled page text feeds the existing receive-file download, so the
+  page is read once per row.
+- **Batch run-time prompt** (`Resolve-SnapRunTime`) and **page-kind sentinel**
+  (`r=retry / s=skip / q=quit`, max 3 retries) mirror the M2 MqSnap wiring.
+
+### Changed
+- **`JenkinsSnap.ps1` migrated off `Get-PendingRows`** to a local "done == exactly
+  '1'" rule (`Test-JenkinsSnapDone`) so NG='2' rows stay pending and are not
+  hidden. `Ensure-MappingColumns` now also defaults the `Expected_Time` column.
+  `VerifyTool.ps1` threads the `SnapVerify` + `ExpectedTime` config into the
+  GiftJenkins / GfixJenkins / GiftJenkinsNoFile dispatch.
+- **NoGfix mode keeps the pure-screenshot path** (`<field>_snap = 1`) even when
+  SnapVerify is enabled; its F4 detection lands in M6. `SnapVerify.Enabled=$false`
+  reverts all Jenkins modes to pure screenshot.
+- The pure F3 library functions (`ConvertFrom-JenkinsListText`, `Test-JenkinsFile`)
+  and their unit tests already shipped in M1; M3 is wiring only, no library change.
+
+
 ## 2026-06-17 - SnapVerify M2: MqSnap instant NG detection + MappingStore migration (v2.9.4)
 
 ### Added

@@ -248,7 +248,22 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-17 v2.9.4)
+## Current state (last bump: 2026-06-17 v2.9.5)
+
+v2.9.5 (SnapVerify M3 -- Jenkins instant NG detection): `JenkinsSnap.ps1` is wired
+to F3 for the `GiftRecv` / `GfixRecv` modes. After the Ctrl+F search and screenshot
+it polls the page text (A2), classifies the page (`Get-SnapPageKind`, sentinel A3),
+archives the Ctrl+A text as `snap\<folder>\<correl>.txt` (A1), then
+`ConvertFrom-JenkinsListText` + `Test-JenkinsFile` decides ok->`<field>_snap`=1 /
+ng->2 (file missing from the list, or its timestamp outside the Expected_Time
+window). The same polled text feeds the existing receive-file download (page read
+once per row). NG=`2` stays pending (re-offered next run) and prints an end-of-run
+NG summary. Pending uses a local `Test-JenkinsSnapDone` (done == '1'), not
+`Get-PendingRows`, so NG rows aren't hidden; the batch run-time prompt
+(`Resolve-SnapRunTime`) fills empty `Expected_Time` cells (plan 2.2). NoGfix (F4)
+still runs pure screenshot (->1), pending M6. `SnapVerify.Enabled=$false` reverts
+all Jenkins modes to pure screenshot. F3's pure helpers + unit tests shipped in M1
+(this is wiring only).
 
 v2.9.4 (SnapVerify M2 -- MQ instant NG detection): `MqSnap.ps1` rewritten from
 the legacy bare-CSV version to the modern stack -- MappingStore (atomic writes),
@@ -346,7 +361,9 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   `VerifyConfig.psd1`. M2: `MqSnap.ps1` migrated to MappingStore/ProgressLog and
   wired to F2 (page-text poll, page-kind sentinel, MQ verdict ok=1/ng=2, batch
   `Expected_Time` prompt); two new pure helpers (`ConvertTo-ExpectedDateTime`,
-  `Set-EmptyRunTimeCells`) are unit-tested. **M3 (Jenkins NG=2), M4 (HM wiring +
+  `Set-EmptyRunTimeCells`) are unit-tested. **M3 done** -- `JenkinsSnap.ps1` wired
+  to F3 (GiftRecv/GfixRecv NG=2 + summary, batch time prompt, sentinel,
+  `Test-JenkinsSnapDone`); NoGfix stays pure-screenshot until M6. **M4 (HM wiring +
   HmSnap migration), M5 (pixel localisation), M6 (NoGfix annotation) remain.**
   When wiring M3/M4, copy MqSnap's `Test-MqSnapDone` pattern (done == exactly '1')
   so NG='2' rows stay pending -- `Get-PendingRows`/`Test-SnapDone` treat any
