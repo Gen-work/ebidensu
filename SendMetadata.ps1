@@ -277,22 +277,31 @@ function Find-SendRecordByRowNumber {
     param([string[]]$TextLines, [string]$RowLabel)
     if ([string]::IsNullOrWhiteSpace($RowLabel)) { return $null }
     $re = '^\s*' + [regex]::Escape($RowLabel) + '(?![0-9])\s*(.*)$'
+    # Each image is OCR'd with both ja and en-US and the lines are merged, so
+    # the same row can appear twice: a garbled/short ja read and a clean
+    # en-US read. The JP recognizer drops characters, so the FULLEST (longest)
+    # record after the label is the most complete read -> prefer it over
+    # first-match, otherwise a dropped ja line shadows the clean en-US one.
+    $best = $null
     foreach ($t in @($TextLines)) {
         $m = [regex]::Match([string]$t, $re)
         if ($m.Success) {
             $rest = ([string]$m.Groups[1].Value).Trim()
-            if ($rest -ne '') { return $rest }
+            if ($rest -ne '' -and ($null -eq $best -or $rest.Length -gt $best.Length)) { $best = $rest }
         }
     }
+    if ($null -ne $best) { return $best }
+    $bestCompact = $null
     foreach ($t in @($TextLines)) {
         $c = ConvertTo-SendCompactLine $t
         # >= 6 chars of record keeps a longer digit run ('0000031') from
         # being misread as label '000003' + record '1'
         if ($c.Length -ge ($RowLabel.Length + 6) -and $c.StartsWith($RowLabel)) {
-            return $c.Substring($RowLabel.Length)
+            $cand = $c.Substring($RowLabel.Length)
+            if ($null -eq $bestCompact -or $cand.Length -gt $bestCompact.Length) { $bestCompact = $cand }
         }
     }
-    return $null
+    return $bestCompact
 }
 
 # Per-IMAGE 0-byte evidence (operator rule). A custom regex overrides both
@@ -359,12 +368,45 @@ function Get-SendPrefixSimilarity {
     return [Math]::Round(1.0 - ($prev[$m] / [double]$den), 4)
 }
 
+# Length of the longest common subsequence of two strings (case-sensitive).
+# Backs the OCR-dropout tier in Compare-SendRecordCheck: when the send side
+# is a shortened read, LCS / shorter ~ 1 means every surviving char is still
+# in order inside the gift record (characters dropped, not conflicting).
+function Get-SendLcsLength {
+    param([string]$A, [string]$B)
+    $a = [string]$A
+    $b = [string]$B
+    $n = $a.Length
+    $m = $b.Length
+    if ($n -eq 0 -or $m -eq 0) { return 0 }
+    $prev = New-Object int[] ($m + 1)
+    for ($i = 1; $i -le $n; $i++) {
+        $cur = New-Object int[] ($m + 1)
+        for ($j = 1; $j -le $m; $j++) {
+            if ($a[$i - 1] -ceq $b[$j - 1]) {
+                $cur[$j] = $prev[$j - 1] + 1
+            } else {
+                $cur[$j] = [Math]::Max($prev[$j], $cur[$j - 1])
+            }
+        }
+        $prev = $cur
+    }
+    return $prev[$m]
+}
+
 # One record check: exact first-token match wins; prefix similarity >=
-# threshold is a 'fuzzy' pass (OCR noise tolerated); both records present
-# but neither passing is a 'mismatch'; missing evidence is 'unknown'.
+# threshold is a 'fuzzy' pass (OCR noise tolerated). When similarity still
+# fails, an OCR-dropout tier rescues the case where one side is materially
+# shorter and what survives is almost entirely an in-order subsequence of
+# the other (characters dropped, none conflicting) -> 'fuzzy'; a survivor
+# too short to judge -> 'unknown'. Both present and genuinely conflicting
+# (comparable length, low overlap) is a 'mismatch'; missing evidence is
+# 'unknown'.
 function Compare-SendRecordCheck {
     param([string]$Name, [string]$SendRecord, [string]$GiftRecord,
-          [double]$Threshold = 0.8, [int]$PrefixLength = 20)
+          [double]$Threshold = 0.8, [int]$PrefixLength = 20,
+          [double]$DropoutLengthRatio = 0.85, [int]$DropoutMinChars = 6,
+          [double]$DropoutCoverage = 0.9)
     $sDisp = [string]$SendRecord
     $gDisp = [string]$GiftRecord
     if ($sDisp.Length -gt $PrefixLength) { $sDisp = $sDisp.Substring(0, $PrefixLength) + '..' }
@@ -384,7 +426,29 @@ function Compare-SendRecordCheck {
             # (over-inserted per-character spaces or dropped real ones)
             $sim = Get-SendPrefixSimilarity (ConvertTo-SendCompactLine $SendRecord) (ConvertTo-SendCompactLine $GiftRecord) $PrefixLength
         }
-        if ($sim -ge $Threshold) { $status = 'fuzzy' }
+        if ($sim -ge $Threshold) {
+            $status = 'fuzzy'
+        } else {
+            # OCR-dropout tier: the JP recognizer drops runs of characters
+            # from long ASCII record strings (field-observed: ~12 digits lost
+            # off the first record). When the surviving side is materially
+            # shorter AND almost all of it is an in-order subsequence of the
+            # other, the chars were dropped, not changed -> 'fuzzy'. Too
+            # little left to judge is 'unknown' (never a false 'mismatch').
+            $sc = ConvertTo-SendCompactLine $SendRecord
+            $gc = ConvertTo-SendCompactLine $GiftRecord
+            $shorter = [Math]::Min($sc.Length, $gc.Length)
+            $longer  = [Math]::Max($sc.Length, $gc.Length)
+            if ($longer -gt 0 -and ($shorter / [double]$longer) -le $DropoutLengthRatio) {
+                if ($shorter -lt $DropoutMinChars) {
+                    $status = 'unknown'
+                } else {
+                    $lcs = Get-SendLcsLength $sc $gc
+                    $cov = $lcs / [double]$shorter
+                    if ($cov -ge $DropoutCoverage) { $status = 'fuzzy' }
+                }
+            }
+        }
     }
     return [pscustomobject]@{ Name = $Name; Send = $sDisp; Gift = $gDisp; Status = $status }
 }

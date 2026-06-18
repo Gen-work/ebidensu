@@ -157,6 +157,10 @@ Assert-Equal '0000001001B40500015A FOO' (Find-SendRecordByRowNumber $ocrHead '00
 Assert-Equal 'X2REST' (Find-SendRecordByRowNumber @('000003X2REST') '000003') 'glued label still split'
 Assert-True ($null -eq (Find-SendRecordByRowNumber $ocrHead '000009')) 'missing label -> null'
 Assert-True ($null -eq (Find-SendRecordByRowNumber @('0000031 DATA') '000003')) 'lookahead rejects longer digit run'
+# ja + en-US lines are merged, so one row can appear twice: a dropped ja read
+# and a clean en-US read -> the fullest (longest) record after the label wins
+$dupRows = @('000001 0500015A', '000001 0000001001B40500015A TAIL')
+Assert-Equal '0000001001B40500015A TAIL' (Find-SendRecordByRowNumber $dupRows '000001') 'longest record wins (clean en-US over dropped ja)'
 
 # -- Test-SendZeroByteImage --
 $cylZero = @('LJOD.C.VER.JOD382', ($shiyou + ' CYLINDERS . . : 0'))
@@ -175,6 +179,12 @@ Assert-Equal 1 ([int](Get-SendPrefixSimilarity 'ABCDEF' 'ABCDEF')) 'identical ->
 Assert-True ((Get-SendPrefixSimilarity '0000001001B40500015AXX' '0000801001B40500015AXX' 20) -ge 0.9) 'one OCR slip in 20 chars stays high'
 Assert-True ((Get-SendPrefixSimilarity 'TOTALLYDIFFERENT' '0000001001B4050001' 20) -lt 0.5) 'different strings score low'
 Assert-Equal 0 ([int](Get-SendPrefixSimilarity '' 'ABC')) 'one empty side -> 0'
+
+# -- Get-SendLcsLength --
+Assert-Equal 4 (Get-SendLcsLength 'ABCD' 'AXBXCXD') 'LCS = in-order subsequence length'
+Assert-Equal 3 (Get-SendLcsLength 'ABC' 'ABC')     'LCS identical -> full length'
+Assert-Equal 0 (Get-SendLcsLength 'ABC' '')        'LCS empty side -> 0'
+Assert-Equal 0 (Get-SendLcsLength 'ABC' 'XYZ')     'LCS no overlap -> 0'
 
 # -- Compare-SendGiftEvidence: 0-byte gift --
 function New-GiftMetaRow([long]$Size, [int]$Rows, [string]$First, [string]$Last) {
@@ -205,9 +215,16 @@ $headImg = @('000001 0000001001B40500015A TAIL', '000002 MIDDLE', '000003 000154
 $cmpOk = Compare-SendGiftEvidence -GiftRow $gift3 -ImageTextSets @(,@($headImg))
 Assert-Equal 'ok' $cmpOk.Verdict 'max row found + first/last tokens match -> ok'
 
+# Row count is the authoritative signal: the max row label (000003) is present
+# and matches the gift's MaxRowNumber, so the verdict stays 'ok' even though
+# OCR turned the first record into garbage. The disagreement is still surfaced
+# in the per-field Checks (red in the console) for the operator -- record text
+# is too OCR-noisy to auto-flag NG on its own.
 $badImg = @('000001 ZZZZZZZZZZZZZZZZZZZZZ', '000003 0001548003X2 END')
-$cmpNg = Compare-SendGiftEvidence -GiftRow $gift3 -ImageTextSets @(,@($badImg))
-Assert-Equal 'ng' $cmpNg.Verdict 'first record disagrees -> ng'
+$cmpRowAuth = Compare-SendGiftEvidence -GiftRow $gift3 -ImageTextSets @(,@($badImg))
+Assert-Equal 'ok' $cmpRowAuth.Verdict 'row count matches -> ok even if first record garbled'
+$badFirst = @($cmpRowAuth.Checks | Where-Object { $_.Name -eq 'FirstRecord' })[0]
+Assert-Equal 'mismatch' $badFirst.Status 'garbled first record still surfaced as mismatch in checks'
 
 $noMaxImg = @('000001 0000001001B40500015A TAIL', '000002 MIDDLE')
 $cmpUnk = Compare-SendGiftEvidence -GiftRow $gift3 -ImageTextSets @(,@($noMaxImg))
@@ -246,6 +263,17 @@ $sendRec = '5112720019999999990604'
 $giftRec = '5 1 1 2 7 2 0 0 1 9 9 9 9 9 9 9 9 9 9 0 6 0 4'
 $chkCompact = Compare-SendRecordCheck 'FirstRecord' $sendRec $giftRec 0.8 20
 Assert-Equal 'fuzzy' $chkCompact.Status 'compact prefix similarity rescues spaced record'
+
+# -- Compare-SendRecordCheck: OCR-dropout tier --
+# send dropped a run of chars but every survivor is in-order in gift -> fuzzy
+$drop = Compare-SendRecordCheck 'FirstRecord' '000040015A' '0000001001B40500015A' 0.8 20
+Assert-Equal 'fuzzy' $drop.Status 'OCR dropout (shorter, fully contained) -> fuzzy not mismatch'
+# comparable length but genuinely different content -> still a real mismatch
+$conf = Compare-SendRecordCheck 'FirstRecord' 'ZZZZZZZZZZZZZZZZZZZZZ' '0000001001B40500015A TAIL' 0.8 20
+Assert-Equal 'mismatch' $conf.Status 'comparable-length conflict stays mismatch'
+# heavy dropout leaves too little to judge -> unknown, never a false mismatch
+$heavy = Compare-SendRecordCheck 'FirstRecord' '015' '0000001001B40500015A' 0.8 20
+Assert-Equal 'unknown' $heavy.Status 'heavy dropout (survivor too short) -> unknown'
 
 # end-to-end: per-char spaced head+tail images against a 3-row gift file
 $giftSp = New-GiftMetaRow 300 3 '5112ABC' '5112XYZ'

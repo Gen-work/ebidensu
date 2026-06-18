@@ -4,6 +4,48 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-18 - SendVsGift OCR-dropout tolerance + clean-read preference (v2.9.6)
+
+### Changed
+- **`Compare-SendRecordCheck` gains an OCR-dropout tier** (`SendMetadata.ps1`).
+  The JP recognizer drops runs of characters from long ASCII record strings
+  (field-observed: ~12 digits lost off the first record), which symmetric
+  edit-distance scored as a hard `mismatch`. After the existing exact /
+  prefix-similarity / compact checks fail, a new tier asks whether the shorter
+  side is materially shorter (length ratio `<= 0.85`) AND almost entirely an
+  in-order subsequence of the other (`LCS / shorter >= 0.9`): if so the chars
+  were dropped, not changed, so it scores `fuzzy` instead of `mismatch`. A
+  survivor too short to judge (`< 6` chars) scores `unknown`, never a false
+  `mismatch`. Genuine comparable-length conflicts still score `mismatch`.
+  Thresholds are function params (defaults `0.85 / 6 / 0.9`).
+- **`Find-SendRecordByRowNumber` prefers the fullest read** of a row. Each
+  image is OCR'd with both `ja` and `en-US` and the lines are merged, so one
+  row label can carry a garbled/short `ja` record and a clean `en-US` one. It
+  now returns the LONGEST record after the label (the most complete read)
+  instead of the first, so a clean en-US read is no longer shadowed by a
+  dropped ja read.
+- **Verdict rule made explicit: a matching row count is authoritative.** When
+  the max row label matches the gift's `MaxRowNumber` the verdict stays `ok`
+  even if a record disagrees -- record text is too OCR-noisy to auto-flag NG.
+  The disagreement is still surfaced in the per-field `Checks` for the
+  operator. The `Test-SendMetadata.ps1` "first record disagrees" case now
+  expects `ok` (was `ng`) to match this rule and asserts the check still
+  reports `mismatch`.
+
+### Added
+- **`Get-SendLcsLength`** pure helper (longest-common-subsequence length) in
+  `SendMetadata.ps1`, backing the OCR-dropout tier. Unit-tested.
+- New `Tests/Test-SendMetadata.ps1` cases: LCS length; clean-read-wins record
+  selection; dropout -> fuzzy; comparable conflict -> mismatch; heavy dropout
+  -> unknown.
+
+### Note
+- Pure-function changes only; validated by static analysis (no PowerShell /
+  Excel in the cloud build env). Run `Tests\Run-Tests.ps1` on Windows to
+  confirm green. The OCR-dropout thresholds can be lifted into the `SendVsGift`
+  config block in a follow-up if on-site tuning is wanted.
+
+
 ## 2026-06-17 - SnapVerify M3: JenkinsSnap instant NG detection (v2.9.5)
 
 ### Added
