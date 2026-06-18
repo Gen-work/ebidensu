@@ -434,6 +434,10 @@ foreach ($item in $pendingItems) {
         $resp = Read-Host
         if ($resp -eq 'q') { Write-Host "[ABORT] User quit." -ForegroundColor Yellow; $userQuit = $true; break }
         if ($resp -eq 's') { Write-Host "  -> skipped" -ForegroundColor DarkYellow; $totalSkipped++; continue }
+        # Shell is foreground here (Bring-ShellToFront above), so Switch-ToEdge's
+        # Alt+Tab correctly lands on Edge. This is the ONLY safe place for it.
+        Switch-ToEdge
+        Click-PageBody
     }
 
     $resolved = $false
@@ -441,10 +445,12 @@ foreach ($item in $pendingItems) {
     do {
         $attempt++
 
-        Switch-ToEdge
-        Click-PageBody
-
-        # Navigate to the inquiry form
+        # Per-row refocus is Reset-FocusToBody ONLY (Activate-EdgeWindow ->
+        # AppActivate by title + Click-PageBody) -- no blind Alt+Tab. Do NOT add
+        # a Switch-ToEdge here: its Alt+Tab toggles relative to the *current*
+        # foreground, and after the previous row's screenshot Edge is already
+        # foreground, so Alt+Tab would flip to the console/ISE and Click-PageBody
+        # would then click that window instead of the MQ page (v3 regression).
         Reset-FocusToBody
         Send-Tab $TabsToInquiry
         Send-Enter
