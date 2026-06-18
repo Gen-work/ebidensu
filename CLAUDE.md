@@ -248,7 +248,24 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-17 v2.9.5)
+## Current state (last bump: 2026-06-18 v2.9.6)
+
+v2.9.6 (SendVsGift OCR-dropout tolerance + clean-read preference): the JP OCR
+recognizer drops runs of characters from long ASCII record strings (field: ~12
+digits lost off the first record), which symmetric edit-distance scored as a hard
+`mismatch`. `Compare-SendRecordCheck` now has an OCR-dropout tier -- after the
+exact / prefix / compact similarity checks fail, a materially-shorter side that is
+almost entirely an in-order subsequence of the other (length ratio `<= 0.85`,
+`LCS / shorter >= 0.9`) scores `fuzzy` not `mismatch`; too short to judge (`< 6`
+chars) scores `unknown` (never a false mismatch). New pure `Get-SendLcsLength`
+(longest common subsequence) backs it (unit-tested). `Find-SendRecordByRowNumber`
+now returns the LONGEST record after a row label -- each image is OCR'd with both
+`ja` + `en-US` and the lines are merged, so the fullest read wins and a clean
+en-US read is not shadowed by a dropped ja one. The verdict rule is now explicit:
+a matching row count (max row label == gift `MaxRowNumber`) keeps the verdict
+`ok` even if a record disagrees -- record text is too OCR-noisy to auto-NG; the
+disagreement is still surfaced in the per-field `Checks`. Pure-logic only; run
+`Tests\Run-Tests.ps1` on Windows to confirm.
 
 v2.9.5 (SnapVerify M3 -- Jenkins instant NG detection): `JenkinsSnap.ps1` is wired
 to F3 for the `GiftRecv` / `GfixRecv` modes. After the Ctrl+F search and screenshot
