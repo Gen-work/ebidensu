@@ -4,6 +4,27 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-18 - MqSnap focus regression fix (v2.9.7)
+
+### Fixed
+- **`MqSnap.ps1` no longer clicks the console/ISE window instead of the MQ page.**
+  The v3 rewrite (v2.9.4) called `Switch-ToEdge` + `Click-PageBody` at the top of
+  every per-row attempt. `Switch-ToEdge` does an `Alt+Tab`, which toggles relative
+  to the *current* foreground window. After the previous row's screenshot Edge is
+  already foreground, so the `Alt+Tab` flipped to the previously-used window (the
+  PowerShell ISE / console), and `Click-PageBody` (which clicks
+  `GetForegroundWindow()`) then clicked that window's border instead of the MQ
+  page. Restored the known-good pattern used by the legacy MqSnap and the
+  still-current `HmSnap.ps1`:
+  - `Switch-ToEdge` runs **once before the loop** and **only inside the
+    interactive branch** (right after `Bring-ShellToFront`, where the console is
+    foreground so `Alt+Tab` correctly lands on Edge).
+  - Per-row refocus is `Reset-FocusToBody` only (`Activate-EdgeWindow` ->
+    AppActivate **by title** + `Click-PageBody`) -- no blind `Alt+Tab`, so focus
+    never flips away from Edge between rows.
+  Detection / screenshot behavior is unchanged.
+
+
 ## 2026-06-18 - SendVsGift OCR-dropout tolerance + clean-read preference (v2.9.6)
 
 ### Changed
