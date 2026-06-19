@@ -98,7 +98,11 @@ Check-Encoding.ps1      read-only encoding policy checker + label self-test
 Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1
 
 JenkinsSnap.ps1         Phase GiftJenkins / GfixJenkins / GiftJenkinsNoFile
-HmSnap.ps1              Phase GiftHmSnap / GfixHmSnap   (kept as-is)
+HmSnap.ps1              Phase GiftHmSnap / GfixHmSnap. MappingStore + ProgressLog
+                        + SnapVerify F1 detection (page-text poll, page-kind
+                        sentinel, HM abend verdict ok=1/ng=2/ask, newest-wins
+                        within the time window, batch Expected_Time prompt).
+                        Per-TO_code appl grouping (one HM page per appl).
 MqSnap.ps1              Phase GiftMqSnap. MappingStore + ProgressLog + SnapVerify
                         F2 detection (page-text poll, page-kind sentinel, MQ
                         record verdict ok=1/ng=2, batch Expected_Time prompt).
@@ -248,7 +252,44 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-18 v2.9.6)
+## Current state (last bump: 2026-06-19 v2.9.8)
+
+v2.9.8 (SnapVerify M4 -- HM instant NG detection + Test-SnapVerify parse fix):
+`HmSnap.ps1` rewritten from the legacy bare-CSV version to the modern stack --
+MappingStore (atomic writes), ProgressLog events, and the pure `SnapVerify.ps1`
+detection library -- while keeping HM's per-`TO_code` appl grouping (one HM page
+opened per appl). It now runs F1 (plan 2.3): after the search it polls the page
+text (A2), classifies the page (`Get-SnapPageKind -Phase Hm`, sentinel A3),
+archives the Ctrl+A text as `snap\<Stage>_HM\<correl>.txt` (A1), screenshots, then
+`ConvertFrom-HmPageText` + `Test-HmAbend` decide: ok->`<Stage>_HM_snap`=1 (newest
+run in the time window ended normally; earlier in-window abends become
+retried-ok warnings), ng->2 (newest in-window run is an abend), ask->operator
+chooses o=OK(1)/n=NG(2)/s=skip(pending)/q=quit (0 rows, no in-window rows, or
+no-time-mode abend -- plan 4.F1). Out-of-window historic abends only warn (never
+auto-NG). NG=`2` stays pending (re-offered next run) + end-of-run NG summary. A
+one-time batch run-time prompt (`Resolve-SnapRunTime`) fills empty
+`Expected_Time` cells (plan 2.2). Off-page kinds (OuterFrame/Empty/Unknown) stop
+and ask `r=retry / s=skip / q=quit`. Pending uses a local `Test-HmSnapDone`
+(done == '1') so NG rows aren't hidden; VerifyTool's GiftHmSnap/GfixHmSnap
+dispatch passes the SnapVerify + ExpectedTime config (mirrors GiftMqSnap).
+`SnapVerify.Enabled=$false` reverts HmSnap to pure screenshot. The focus-safe
+pattern from v2.9.7 is preserved (per-row `Reset-FocusToBody` only; `Switch-ToEdge`
+only from a console-foreground point). F1's pure helpers + unit tests shipped in
+M1; this is wiring only. **Also fixed**: `Tests\Test-SnapVerify.ps1` failed to
+parse on the JP-locale host -- three `Assert-Equal` messages embedded raw
+Japanese *inside single-quoted strings* (plus raw CJK comments); under PS 5.1's
+ANSI codepage (CP932) a Shift-JIS lead byte swallowed the closing quote, running
+the string away until the parser reported a bogus "missing terminator" far below.
+Replaced all non-ASCII with ASCII per the ASCII-source rule (assertions still
+compare the `[char]`-built values, so test logic is unchanged). M5 (pixel
+localisation) and M6 (NoGfix annotation) remain.
+
+v2.9.7 (MqSnap focus regression fix): `MqSnap.ps1` no longer `Switch-ToEdge`s at
+the top of each per-row attempt (its `Alt+Tab` toggled to the console after the
+previous screenshot, so `Click-PageBody` clicked the wrong window). Restored the
+known-good pattern: `Switch-ToEdge` once before the loop and only inside the
+interactive branch; per-row refocus is `Reset-FocusToBody` (AppActivate by title
++ `Click-PageBody`) only. Detection/screenshot behavior unchanged.
 
 v2.9.6 (SendVsGift OCR-dropout tolerance + clean-read preference): the JP OCR
 recognizer drops runs of characters from long ASCII record strings (field: ~12
@@ -373,19 +414,24 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
-- **SnapVerify M1 + M2 done** — M1: `SnapVerify.ps1` pure library +
+- **SnapVerify M1–M4 done** — M1: `SnapVerify.ps1` pure library +
   `Tests/Test-SnapVerify.ps1` unit tests + `SnapVerify` config section in
   `VerifyConfig.psd1`. M2: `MqSnap.ps1` migrated to MappingStore/ProgressLog and
   wired to F2 (page-text poll, page-kind sentinel, MQ verdict ok=1/ng=2, batch
   `Expected_Time` prompt); two new pure helpers (`ConvertTo-ExpectedDateTime`,
-  `Set-EmptyRunTimeCells`) are unit-tested. **M3 done** -- `JenkinsSnap.ps1` wired
+  `Set-EmptyRunTimeCells`) are unit-tested. M3: `JenkinsSnap.ps1` wired
   to F3 (GiftRecv/GfixRecv NG=2 + summary, batch time prompt, sentinel,
-  `Test-JenkinsSnapDone`); NoGfix stays pure-screenshot until M6. **M4 (HM wiring +
-  HmSnap migration), M5 (pixel localisation), M6 (NoGfix annotation) remain.**
-  When wiring M3/M4, copy MqSnap's `Test-MqSnapDone` pattern (done == exactly '1')
-  so NG='2' rows stay pending -- `Get-PendingRows`/`Test-SnapDone` treat any
-  non-'0' value as done and would hide NG rows. Design + open questions (only Q5,
-  Rtncd/Rsncd semantics, is non-blocking) live in `docs/SnapVerify-Plan.md`.
+  `Test-JenkinsSnapDone`); NoGfix stays pure-screenshot until M6. **M4 done** --
+  `HmSnap.ps1` migrated to MappingStore/ProgressLog and wired to F1
+  (page-text poll, page-kind sentinel, `Test-HmAbend` verdict ok=1/ng=2/ask with
+  newest-wins in the time window, batch `Expected_Time` prompt, local
+  `Test-HmSnapDone`); per-`TO_code` appl grouping preserved; VerifyTool dispatch
+  passes SnapVerify+ExpectedTime config (mirrors MqSnap). **M5 (pixel
+  localisation), M6 (NoGfix annotation) remain.** M3/M4 copied MqSnap's
+  `Test-MqSnapDone` pattern (done == exactly '1') so NG='2' rows stay pending --
+  `Get-PendingRows`/`Test-SnapDone` treat any non-'0' value as done and would hide
+  NG rows. Design + open questions (only Q5, Rtncd/Rsncd semantics, is
+  non-blocking) live in `docs/SnapVerify-Plan.md`.
 
 - **Generate-HostOpenMapping `-Add` cannot filter by owner at the same time** —
   the daily flow adds new JOB_NAMEs incrementally with `-Add`, but owner

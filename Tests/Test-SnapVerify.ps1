@@ -13,25 +13,25 @@ Reset-Tests 'SnapVerify'
 # ---------------------------------------------------------------------------
 $t      = "`t"
 $nl     = "`n"
-$normal = [char]0x6B63 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # 正常終了
-$abend  = [char]0x7570 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # 異常終了
-$diam   = [char]0x25C6  # ◆
+$normal = [char]0x6B63 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # seijo-shuuryo (normal end)
+$abend  = [char]0x7570 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # ijo-shuuryo (abend)
+$diam   = [char]0x25C6  # black diamond U+25C6
 
 # HM page title for page-kind detection
 $hmTitle = [char]0x30D0 + [char]0x30C3 + [char]0x30C1 + [char]0x51E6 `
-         + [char]0x7406 + [char]0x72B6 + [char]0x6CC1 + [char]0x4E00 + [char]0x89A7  # バッチ処理状況一覧
+         + [char]0x7406 + [char]0x72B6 + [char]0x6CC1 + [char]0x4E00 + [char]0x89A7  # batch shori jokyo ichiran (HM page title)
 
 # Appendix A sample (real HM page, 3 data rows):
-#   row1: 2026/06/12 11:05:40  正常終了  JIDSK01S  (latest)
-#   row2: 2026/06/12 10:35:40  異常終了  JIDSK01S  (middle)
-#   row3: 2026/06/12 07:51:20  正常終了  JIDSK01S  (oldest)
+#   row1: 2026/06/12 11:05:40  normal-end  JIDSK01S  (latest)
+#   row2: 2026/06/12 10:35:40  abend       JIDSK01S  (middle)
+#   row3: 2026/06/12 07:51:20  normal-end  JIDSK01S  (oldest)
 $hmRow1 = "2026/06/12 11:05:40${t}2026/06/12 11:06:57${t}00:01:17${t}IDSLA013${t}K${t}${normal}${t}20260424040558${t}36,117${t}${diam}${t}JIDSK01S"
 $hmRow2 = "2026/06/12 10:35:40${t}2026/06/12 10:35:43${t}00:00:03${t}IDSLA013${t}K${t}${abend}${t}20260424040558${t}17${t}${t}${diam}${t}JIDSK01S"
 $hmRow3 = "2026/06/12 07:51:20${t}2026/06/12 07:51:41${t}00:00:21${t}IDSLA013${t}K${t}${normal}${t}20260612075111${t}5,764${t}${diam}${t}JIDSK01S"
 
 # Full HM sample (includes header/menu text that must be ignored by the parser)
-$hmStartHdr = [char]0x958B + [char]0x59CB + [char]0x65E5 + [char]0x6642  # 開始日時
-$hmEndHdr   = [char]0x7D42 + [char]0x4E86 + [char]0x65E5 + [char]0x6642  # 終了日時
+$hmStartHdr = [char]0x958B + [char]0x59CB + [char]0x65E5 + [char]0x6642  # kaishi-nichiji (start datetime)
+$hmEndHdr   = [char]0x7D42 + [char]0x4E86 + [char]0x65E5 + [char]0x6642  # shuuryo-nichiji (end datetime)
 $hmTableHdr = "${hmStartHdr}${t}${hmEndHdr}${t}..." # table header row (non-data, must be skipped)
 
 $hmFullText = @"
@@ -44,7 +44,7 @@ ${hmRow3}
 "@
 
 # Appendix B-1: normal MQ result (3 records, same CorrelId JIDSK05S)
-$mqRef = [char]0x53C2 + [char]0x7167  # 参照 (not used in MQ, just defined)
+$mqRef = [char]0x53C2 + [char]0x7167  # sansho (reference; not used in MQ, just defined)
 $mqFullText = @"
 Transfer status inquiry results
 Number of records 3
@@ -75,7 +75,7 @@ Download
 "@
 
 # Jenkins file list sample
-$ref = [char]0x53C2 + [char]0x7167  # 参照
+$ref = [char]0x53C2 + [char]0x7167  # sansho (reference)
 $jkRow1 = "JIDSK01S 2026/06/12 10:35:21 189.90 KB ${ref}"
 $jkRow2 = "JIDSK05S 2026/06/12 11:01:53 512.00 KB ${ref}"
 $jkFullText = "File list${nl}${jkRow1}${nl}${jkRow2}${nl}"
@@ -89,9 +89,9 @@ $rows = @(ConvertFrom-HmPageText $hmFullText)
 Assert-Equal 3 $rows.Count 'HM: parses 3 data rows from full page text'
 
 # Row ordering is preserved (same as source line order: row1=newest is first)
-Assert-Equal $normal $rows[0].Status 'HM row[0]: status = 正常終了'
-Assert-Equal $abend  $rows[1].Status 'HM row[1]: status = 異常終了'
-Assert-Equal $normal $rows[2].Status 'HM row[2]: status = 正常終了'
+Assert-Equal $normal $rows[0].Status 'HM row[0]: status = normal-end'
+Assert-Equal $abend  $rows[1].Status 'HM row[1]: status = abend'
+Assert-Equal $normal $rows[2].Status 'HM row[2]: status = normal-end'
 
 Assert-Equal 'JIDSK01S' $rows[0].CorrelId 'HM row[0]: CorrelId extracted from last field'
 Assert-Equal 'JIDSK01S' $rows[1].CorrelId 'HM row[1]: CorrelId from abend row (extra empty field)'
