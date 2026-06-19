@@ -67,7 +67,10 @@ param(
     [string]$TimeColumn          = 'Expected_Time',
     [string]$TimeFormat          = 'yyyy/MM/dd HH:mm:ss',
     [string]$RunTime             = '',   # '' = prompt; else 'n' / 'yyyy/MM/dd HH:mm:ss'
-    [string]$RunTolerance        = ''    # non-interactive tolerance override
+    [string]$RunTolerance        = '',   # non-interactive tolerance override
+
+    # ---- M5/F5 pixel localisation (Config.SnapVerify.Localize); off by default ----
+    [hashtable]$Localize         = @{}
 )
 
 $ErrorActionPreference = 'Stop'
@@ -143,6 +146,8 @@ $ErrorActionPreference = $savedEAP
 . (Join-Path $scriptDir "MappingStore.ps1")
 . (Join-Path $scriptDir "ProgressLog.ps1")
 . (Join-Path $scriptDir "SnapVerify.ps1")
+$snapLocalizeScript = Join-Path $scriptDir "SnapLocalize.ps1"
+if (Test-Path -LiteralPath $snapLocalizeScript) { . $snapLocalizeScript }
 $pageTextScript = Join-Path $scriptDir "Read-PageText.ps1"
 
 if (-not (Get-Command -Name 'Wait-PagePrepared' -ErrorAction SilentlyContinue)) {
@@ -532,6 +537,7 @@ foreach ($item in $pendingItems) {
         }
 
         $verdict = $null
+        $parsed  = @{ Rows = @() }
         try {
             $parsed  = ConvertFrom-MqPageText $pageText
             $verdict = Test-MqRecord -Parsed $parsed -CorrelId $correl -Expected $rowExpected `
@@ -543,6 +549,15 @@ foreach ($item in $pendingItems) {
             Write-ProgressEvent -WorkDir $WorkDir -Phase 'GiftMqSnap' -CorrelIdS $correl -JobName $jobName `
                 -Action 'verify' -Status 'warn' -Message ("detect error: {0}" -f $_.Exception.Message)
             $verdict = @{ Verdict = 'ok'; Reason = 'detection error -> screenshot kept' }
+        }
+
+        # M5/F5: best-effort <correl>.loc.json sidecar for the matched MQ row.
+        if ([bool]$Localize['Enabled'] -and (Get-Command -Name 'Write-SnapLocalize' -ErrorAction SilentlyContinue)) {
+            $locPath = Write-SnapLocalize -Page 'Mq' -Localize $Localize -SnapDir $snapDir `
+                -Correl $correl -PngPath $outPath -Rows $parsed.Rows -Expected $rowExpected `
+                -ToleranceMin $runTolerance `
+                -CropLeft ([int]$Localize['CropLeft']) -CropTop ([int]$Localize['CropTop'])
+            if ($locPath) { Write-Host ("    loc: snap\GIFT_MQ\{0}.loc.json" -f $correl) -ForegroundColor DarkGray }
         }
 
         if ($verdict.Verdict -eq 'ok') {

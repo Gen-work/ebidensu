@@ -1109,6 +1109,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             $args['SaveText']         = [bool]$sv.SaveText
             $args['PollTimeoutSec']   = [int]$sv.PollTimeoutSec
             $args['PollIntervalMs']   = [int]$sv.PollIntervalMs
+            if ($sv.ContainsKey('Localize')) { $args['Localize'] = $sv.Localize }   # M5/F5
         }
         if ($Config.ContainsKey('ExpectedTime')) {
             $args['TimeColumn'] = [string]$Config.ExpectedTime.TimeColumn
@@ -1143,6 +1144,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             $args['SaveText']        = [bool]$sv.SaveText
             $args['PollTimeoutSec']  = [int]$sv.PollTimeoutSec
             $args['PollIntervalMs']  = [int]$sv.PollIntervalMs
+            if ($sv.ContainsKey('Localize')) { $args['Localize'] = $sv.Localize }   # M5/F5
         }
         if ($Config.ContainsKey('ExpectedTime')) {
             $args['TimeColumn'] = [string]$Config.ExpectedTime.TimeColumn
@@ -1181,6 +1183,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             $args['SaveText']         = [bool]$sv.SaveText
             $args['PollTimeoutSec']   = [int]$sv.PollTimeoutSec
             $args['PollIntervalMs']   = [int]$sv.PollIntervalMs
+            if ($sv.ContainsKey('Localize')) { $args['Localize'] = $sv.Localize }   # M5/F5
         }
         if ($Config.ContainsKey('ExpectedTime')) {
             $args['TimeColumn'] = [string]$Config.ExpectedTime.TimeColumn

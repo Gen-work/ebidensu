@@ -375,4 +375,113 @@ $filled2 = Set-EmptyRunTimeCells -Rows $setRows -Field 'Expected_Time' -Value '2
 Assert-Equal 0 $filled2 'SetEmptyTime: second pass fills nothing'
 Assert-Equal '2026/06/17 12:00:00' $rowEmpty.Expected_Time 'SetEmptyTime: second pass does not overwrite'
 
+# ===========================================================================
+# Get-MatchedRowIndex (M5 / F5 -- screen row for pixel localisation)
+# ===========================================================================
+
+# HM rows (parse order = screen order): [1]=11:05 normal, [2]=10:35 abend, [3]=07:51 normal
+$mi1 = Get-MatchedRowIndex -Rows $hmRows -CorrelId 'JIDSK01S' -DateProperty 'StartTime' -Expected $exp1 -ToleranceMin 30
+Assert-Equal 1 $mi1 'MatchedRowIndex HM: newest-in-window (11:05) -> screen row 1'
+
+$mi2 = Get-MatchedRowIndex -Rows $hmRows -CorrelId 'JIDSK01S' -DateProperty 'StartTime' -Expected $exp1 -ToleranceMin 10
+Assert-Equal 2 $mi2 'MatchedRowIndex HM: narrow window isolates abend -> screen row 2'
+
+$mi3 = Get-MatchedRowIndex -Rows $hmRows -CorrelId 'JIDSK01S' -DateProperty 'StartTime' -Expected $null
+Assert-Equal 1 $mi3 'MatchedRowIndex HM: no window -> newest overall -> screen row 1'
+
+$mi0 = Get-MatchedRowIndex -Rows $hmRows -CorrelId 'NOPE9999' -DateProperty 'StartTime'
+Assert-Equal 0 $mi0 'MatchedRowIndex HM: no match -> 0'
+
+# MQ rows: [1]=07:54:23, [2]=10:32:42, [3]=11:01:57 (newest)
+$mqIdx = Get-MatchedRowIndex -Rows $mqParsed.Rows -CorrelId 'JIDSK05S' -DateProperty 'RecvDate' -Expected $mqExp -ToleranceMin 30
+Assert-Equal 3 $mqIdx 'MatchedRowIndex MQ: newest RecvDate (11:01:57) -> screen row 3'
+
+# ===========================================================================
+# Get-RowPixelRect (HM / MQ fixed geometry)
+# ===========================================================================
+
+$pr1 = Get-RowPixelRect -RowIndex 1 -Row1Top 100 -RowHeight 20 -ColLeft 300 -ColWidth 80
+Assert-Equal 300 $pr1.x 'RowPixelRect row1: x = ColLeft'
+Assert-Equal 100 $pr1.y 'RowPixelRect row1: y = Row1Top'
+Assert-Equal 80  $pr1.w 'RowPixelRect row1: w = ColWidth'
+Assert-Equal 20  $pr1.h 'RowPixelRect row1: h = RowHeight'
+
+$pr3 = Get-RowPixelRect -RowIndex 3 -Row1Top 100 -RowHeight 20 -ColLeft 300 -ColWidth 80
+Assert-Equal 140 $pr3.y 'RowPixelRect row3: y = Row1Top + (3-1)*RowHeight'
+
+$prc = Get-RowPixelRect -RowIndex 1 -Row1Top 100 -RowHeight 20 -ColLeft 300 -ColWidth 80 -CropLeft 6 -CropTop 6
+Assert-Equal 294 $prc.x 'RowPixelRect: crop shifts x left'
+Assert-Equal 94  $prc.y 'RowPixelRect: crop shifts y up'
+
+$prClamp = Get-RowPixelRect -RowIndex 1 -Row1Top 0 -RowHeight 10 -ColLeft 3 -ColWidth 10 -CropLeft 10 -CropTop 10
+Assert-Equal 0 $prClamp.x 'RowPixelRect: negative x clamped to 0'
+Assert-Equal 0 $prClamp.y 'RowPixelRect: negative y clamped to 0'
+
+$threwIdx = $false
+try { Get-RowPixelRect -RowIndex 0 -Row1Top 0 -RowHeight 10 -ColLeft 0 -ColWidth 10 | Out-Null } catch { $threwIdx = $true }
+Assert-True $threwIdx 'RowPixelRect: RowIndex < 1 throws'
+
+$threwH = $false
+try { Get-RowPixelRect -RowIndex 1 -Row1Top 0 -RowHeight 0 -ColLeft 0 -ColWidth 10 | Out-Null } catch { $threwH = $true }
+Assert-True $threwH 'RowPixelRect: RowHeight <= 0 throws'
+
+$threwW = $false
+try { Get-RowPixelRect -RowIndex 1 -Row1Top 0 -RowHeight 10 -ColLeft 0 -ColWidth 0 | Out-Null } catch { $threwW = $true }
+Assert-True $threwW 'RowPixelRect: ColWidth <= 0 throws'
+
+# ===========================================================================
+# Get-JenkinsHighlightRect (Ctrl+F active-match band -> rect)
+# ===========================================================================
+
+$jr1 = Get-JenkinsHighlightRect -Top 200 -Bottom 219 -ColWidth 400
+Assert-Equal 0   $jr1.x 'JenkinsRect: default x = 0'
+Assert-Equal 200 $jr1.y 'JenkinsRect: y = Top'
+Assert-Equal 400 $jr1.w 'JenkinsRect: w = ColWidth'
+Assert-Equal 20  $jr1.h 'JenkinsRect: h = inclusive band height (Bottom-Top+1)'
+
+$jr2 = Get-JenkinsHighlightRect -Top 200 -Bottom 219 -ColLeft 50 -ImageWidth 1050
+Assert-Equal 50   $jr2.x 'JenkinsRect: x = ColLeft'
+Assert-Equal 1000 $jr2.w 'JenkinsRect: w = ImageWidth - ColLeft'
+
+$jr3 = Get-JenkinsHighlightRect -Top 200 -Bottom 219 -ColWidth 400 -Pad 2
+Assert-Equal 198 $jr3.y 'JenkinsRect: Pad raises top'
+Assert-Equal 24  $jr3.h 'JenkinsRect: Pad grows height both sides'
+
+$threwJ = $false
+try { Get-JenkinsHighlightRect -Top 220 -Bottom 200 -ColWidth 10 | Out-Null } catch { $threwJ = $true }
+Assert-True $threwJ 'JenkinsRect: Bottom < Top throws'
+
+$threwJw = $false
+try { Get-JenkinsHighlightRect -Top 200 -Bottom 219 | Out-Null } catch { $threwJw = $true }
+Assert-True $threwJw 'JenkinsRect: neither ColWidth nor ImageWidth -> throws'
+
+# ===========================================================================
+# New-SnapLocRect + Save-SnapLocSidecar (sidecar payload + JSON round-trip)
+# ===========================================================================
+
+$loc = New-SnapLocRect -CorrelId 'JIDSK01S' -X 300 -Y 140 -W 80 -H 20 `
+       -Source 'hm-geometry' -RowIndex 3 -ImageWidth 1038 -ImageHeight 749 `
+       -CreatedUtc '2026-06-19T00:00:00Z'
+Assert-Equal 'JIDSK01S'    $loc.correl      'SnapLocRect: correl'
+Assert-Equal 'hm-geometry' $loc.source      'SnapLocRect: source'
+Assert-Equal 3    $loc.rowIndex    'SnapLocRect: rowIndex'
+Assert-Equal 300  $loc.x           'SnapLocRect: x'
+Assert-Equal 140  $loc.y           'SnapLocRect: y'
+Assert-Equal 80   $loc.w           'SnapLocRect: w'
+Assert-Equal 20   $loc.h           'SnapLocRect: h'
+Assert-Equal 1038 $loc.imageWidth  'SnapLocRect: imageWidth (for pixel->point scaling)'
+Assert-Equal '2026-06-19T00:00:00Z' $loc.created 'SnapLocRect: created stamp is injectable'
+
+$tmpLoc = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ('snaploc_{0}.json' -f ([guid]::NewGuid().ToString('N'))))
+try {
+    $written = Save-SnapLocSidecar -Loc $loc -Path $tmpLoc
+    Assert-Equal $tmpLoc $written           'SnapLocSidecar: returns the written path'
+    Assert-True (Test-Path $tmpLoc)          'SnapLocSidecar: file is created'
+    $back = Get-Content $tmpLoc -Raw | ConvertFrom-Json
+    Assert-Equal 300        $back.x      'SnapLocSidecar: JSON round-trip x'
+    Assert-Equal 'JIDSK01S' $back.correl 'SnapLocSidecar: JSON round-trip correl'
+} finally {
+    if (Test-Path $tmpLoc) { Remove-Item $tmpLoc -Force }
+}
+
 exit (Complete-Tests)

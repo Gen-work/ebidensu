@@ -59,7 +59,10 @@ param(
     [string]$TimeColumn     = 'Expected_Time',
     [string]$TimeFormat     = 'yyyy/MM/dd HH:mm:ss',
     [string]$RunTime        = '',   # '' = prompt; else 'n' / 'yyyy/MM/dd HH:mm:ss'
-    [string]$RunTolerance   = ''    # non-interactive tolerance override
+    [string]$RunTolerance   = '',   # non-interactive tolerance override
+
+    # ---- M5/F5 pixel localisation (Config.SnapVerify.Localize); off by default ----
+    [hashtable]$Localize    = @{}
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -83,6 +86,10 @@ if ([string]::IsNullOrWhiteSpace($CommonScript)) {
 . (Join-Path $scriptDir 'MappingStore.ps1')
 . (Join-Path $scriptDir 'ProgressLog.ps1')
 . (Join-Path $scriptDir 'SnapVerify.ps1')
+$jkFindHighlight = Join-Path $scriptDir 'Find-ActiveHighlightRow.ps1'
+if (Test-Path -LiteralPath $jkFindHighlight) { . $jkFindHighlight }
+$jkSnapLocalize = Join-Path $scriptDir 'SnapLocalize.ps1'
+if (Test-Path -LiteralPath $jkSnapLocalize) { . $jkSnapLocalize }
 . (Join-Path $scriptDir 'JenkinsDownload.ps1')
 
 $pageTextScript = Join-Path $scriptDir 'Read-PageText.ps1'
@@ -597,6 +604,13 @@ foreach ($toCode in $groupOrder) {
                     -JobName $searchJob -Action 'verify' -Status 'ng' -Message $verdict.Reason
                 $ngList.Add(("{0} : {1}" -f $correl, $verdict.Reason))
                 $cntNg++
+            }
+
+            # M5/F5: best-effort <correl>.loc.json sidecar (orange Ctrl+F highlight row).
+            if ([bool]$Localize['Enabled'] -and (Get-Command -Name 'Write-SnapLocalize' -ErrorAction SilentlyContinue)) {
+                $locPath = Write-SnapLocalize -Page 'Jenkins' -Localize $Localize -SnapDir $snapDir `
+                    -Correl $correl -PngPath $snapPath
+                if ($locPath) { Write-Host ("    loc: snap\{0}\{1}.loc.json" -f $snapFolder, $correl) -ForegroundColor DarkGray }
             }
 
             try {
