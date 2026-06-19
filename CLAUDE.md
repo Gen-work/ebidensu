@@ -59,12 +59,22 @@ EvidenceImageExport.ps1 Excel COM: export embedded sheet pictures to PNG via tem
                         ChartObject (skips verifyMark_* shapes; flattens Ctrl+G groups
                         to child pictures; optional Top range filter for one correl
                         section; clipboard clobbered).
-SnapVerify.ps1          pure snap-phase NG detection library (no COM, no SendKeys).
+SnapVerify.ps1          pure snap-phase NG detection + localisation library
+                        (no COM, no SendKeys). ASCII source (Japanese via [char]).
                         ConvertFrom-HmPageText / Test-HmAbend (F1),
                         ConvertFrom-MqPageText / Test-MqRecord (F2),
                         ConvertFrom-JenkinsListText / Test-JenkinsFile (F3/F4),
-                        Get-SnapPageKind (A3 sentinel), Resolve-SnapRunTime (2.2).
+                        Get-SnapPageKind (A3 sentinel), Resolve-SnapRunTime (2.2),
+                        and M5/F5 pixel localisation: Get-MatchedRowIndex /
+                        Get-RowPixelRect / Get-JenkinsHighlightRect /
+                        New-SnapLocRect / Save-SnapLocSidecar.
                         Unit-tested via Tests\Test-SnapVerify.ps1.
+SnapLocalize.ps1        M5/F5 wiring glue (NOT pure: System.Drawing + the
+                        Find-ActiveHighlightRow scan). Write-SnapLocalize turns a
+                        verdict into a snap\<folder>\<correl>.loc.json sidecar via
+                        the pure SnapVerify geometry; swallows all errors (never
+                        blocks snapping). Dot-sourced by Hm/Mq/JenkinsSnap when
+                        SnapVerify.Localize.Enabled. No param() = safe to dot-source.
 WorkbookResolver.ps1    dot-source helper: evidence/J4 workbook filename resolution
                         (prefix + Excel_NAME stem) plus reusable full-width
                         ASCII filename fallback (`FullWidthFilenameResolver`).
@@ -143,7 +153,8 @@ Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
 `MappingStore.ps1`, `GfixLog.ps1`, `EvidencePlan.ps1`, `EvidenceExecutor.ps1`,
 `ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`, `AlignCompare.ps1`,
 `ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`, `SendMetadata.ps1`,
-`OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`. All phase scripts have `param()`
+`OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`, `SnapLocalize.ps1`,
+`Find-ActiveHighlightRow.ps1`. All phase scripts have `param()`
 and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
@@ -252,7 +263,33 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-19 v2.9.8)
+## Current state (last bump: 2026-06-19 v2.9.9)
+
+v2.9.9 (SnapVerify ASCII fix + M5 pixel localisation):
+**Fixed** -- `SnapVerify.ps1` threw `The variable '$script:SV_Abend' cannot be
+retrieved because it has not been set.` on the JP-locale host: the file still
+held ~18 raw-Japanese comments, and PS 5.1 reading a no-BOM `.ps1` as CP932
+misreads those multibyte bytes, shifting tokenisation (operator's stack showed
+line 75 vs the clean file's 79) and dropping the top-of-file `$script:SV_Normal`
+/ `$script:SV_Abend` assignments; under `Set-StrictMode` (JenkinsSnap sets
+`Latest`) the unset read throws instead of yielding `$null`. Replaced every
+non-ASCII char in `SnapVerify.ps1` + `Find-ActiveHighlightRow.ps1` with ASCII
+(runtime Japanese still comes from `[char]`), so the file tokenises identically
+on every codepage -- same class of fix as v2.9.8's Test-SnapVerify. **Added M5
+(F5 pixel localisation)**: pure unit-tested `Get-MatchedRowIndex` (screen row of
+the verdict's newest-wins row), `Get-RowPixelRect` (HM/MQ `Row1Top+(n-1)*RowHeight`
+geometry, same as Find-Abend), `Get-JenkinsHighlightRect` (orange Ctrl+F band ->
+rect), `New-SnapLocRect` + `Save-SnapLocSidecar` (write `snap\<folder>\<correl>.loc.json`
+with x/y/w/h + imageWidth for Mark's pixel->point scaling). Non-pure glue
+`SnapLocalize.ps1` (`Write-SnapLocalize`, System.Drawing + highlight scan, swallows
+all errors) is dot-sourced by Hm/Mq/JenkinsSnap and writes the sidecar after each
+verdict; VerifyTool threads the new `SnapVerify.Localize` config block (Enabled
+`$false` by default; HM/MQ geometry zeros until `Calibrate-HmGeometry.ps1` runs,
+so the leg is inert until opted in -- Jenkins needs no geometry). M6 (NoGfix
+annotation: consume the sidecar AltText -> Mark + AZ note) remains. Pure logic +
+tests run via `Tests\Run-Tests.ps1`; the COM/GDI+ wiring is static-checked only
+and needs an office-PC run to confirm.
+
 
 v2.9.8 (SnapVerify M4 -- HM instant NG detection + Test-SnapVerify parse fix):
 `HmSnap.ps1` rewritten from the legacy bare-CSV version to the modern stack --
@@ -414,7 +451,7 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
-- **SnapVerify M1–M4 done** — M1: `SnapVerify.ps1` pure library +
+- **SnapVerify M1–M5 done** — M1: `SnapVerify.ps1` pure library +
   `Tests/Test-SnapVerify.ps1` unit tests + `SnapVerify` config section in
   `VerifyConfig.psd1`. M2: `MqSnap.ps1` migrated to MappingStore/ProgressLog and
   wired to F2 (page-text poll, page-kind sentinel, MQ verdict ok=1/ng=2, batch
@@ -426,12 +463,22 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   (page-text poll, page-kind sentinel, `Test-HmAbend` verdict ok=1/ng=2/ask with
   newest-wins in the time window, batch `Expected_Time` prompt, local
   `Test-HmSnapDone`); per-`TO_code` appl grouping preserved; VerifyTool dispatch
-  passes SnapVerify+ExpectedTime config (mirrors MqSnap). **M5 (pixel
-  localisation), M6 (NoGfix annotation) remain.** M3/M4 copied MqSnap's
-  `Test-MqSnapDone` pattern (done == exactly '1') so NG='2' rows stay pending --
-  `Get-PendingRows`/`Test-SnapDone` treat any non-'0' value as done and would hide
-  NG rows. Design + open questions (only Q5, Rtncd/Rsncd semantics, is
-  non-blocking) live in `docs/SnapVerify-Plan.md`.
+  passes SnapVerify+ExpectedTime config (mirrors MqSnap). **M5 done** -- F5 pixel
+  localisation: pure `Get-MatchedRowIndex` / `Get-RowPixelRect` /
+  `Get-JenkinsHighlightRect` / `New-SnapLocRect` / `Save-SnapLocSidecar` in
+  `SnapVerify.ps1` (unit-tested) produce a `snap\<folder>\<correl>.loc.json` rect
+  for the verdict's row; non-pure glue `SnapLocalize.ps1` (`Write-SnapLocalize`,
+  System.Drawing + `Find-ActiveHighlightRow` scan) is dot-sourced by the three
+  snap scripts and writes the sidecar after each verdict when
+  `SnapVerify.Localize.Enabled` (default `$false`; HM/MQ geometry must be
+  calibrated first, Jenkins uses the orange highlight). **M6 (NoGfix annotation:
+  consume the sidecar via AltText -> Mark red-box + AZ `過去分データー` note)
+  remains.** M3/M4 copied MqSnap's `Test-MqSnapDone` pattern (done == exactly '1')
+  so NG='2' rows stay pending -- `Get-PendingRows`/`Test-SnapDone` treat any
+  non-'0' value as done and would hide NG rows. Design + open questions (only Q5,
+  Rtncd/Rsncd semantics, is non-blocking) live in `docs/SnapVerify-Plan.md`. The
+  M5 COM/GDI+ wiring is static-checked only; confirm on an office PC + calibrate
+  `SnapVerify.Localize.*Row1Top/*RowHeight/*ColLeft/*ColWidth` before trusting it.
 
 - **Generate-HostOpenMapping `-Add` cannot filter by owner at the same time** —
   the daily flow adds new JOB_NAMEs incrementally with `-Add`, but owner

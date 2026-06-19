@@ -76,7 +76,10 @@ param(
     [string]$TimeColumn          = 'Expected_Time',
     [string]$TimeFormat          = 'yyyy/MM/dd HH:mm:ss',
     [string]$RunTime             = '',   # '' = prompt; else 'n' / 'yyyy/MM/dd HH:mm:ss'
-    [string]$RunTolerance        = ''    # non-interactive tolerance override
+    [string]$RunTolerance        = '',   # non-interactive tolerance override
+
+    # ---- M5/F5 pixel localisation (Config.SnapVerify.Localize); off by default ----
+    [hashtable]$Localize         = @{}
 )
 
 $ErrorActionPreference = 'Stop'
@@ -155,6 +158,8 @@ $ErrorActionPreference = $savedEAP
 . (Join-Path $scriptDir "MappingStore.ps1")
 . (Join-Path $scriptDir "ProgressLog.ps1")
 . (Join-Path $scriptDir "SnapVerify.ps1")
+$snapLocalizeScript = Join-Path $scriptDir "SnapLocalize.ps1"
+if (Test-Path -LiteralPath $snapLocalizeScript) { . $snapLocalizeScript }
 $pageTextScript = Join-Path $scriptDir "Read-PageText.ps1"
 
 if (-not (Get-Command -Name 'Wait-PagePrepared' -ErrorAction SilentlyContinue)) {
@@ -560,6 +565,7 @@ foreach ($g in $grouped) {
             }
 
             $verdict = $null
+            $hmRows  = @()
             try {
                 $hmRows  = @(ConvertFrom-HmPageText $pageText)
                 $verdict = Test-HmAbend -Rows $hmRows -CorrelId $correl -Expected $rowExpected -ToleranceMin $runTolerance
@@ -570,6 +576,15 @@ foreach ($g in $grouped) {
                 Write-ProgressEvent -WorkDir $WorkDir -Phase $phaseName -CorrelIdS $correl -JobName $jobName `
                     -Action 'verify' -Status 'warn' -Message ("detect error: {0}" -f $_.Exception.Message)
                 $verdict = @{ Verdict = 'ok'; Reason = 'detection error -> screenshot kept'; Warnings = @() }
+            }
+
+            # M5/F5: best-effort <correl>.loc.json sidecar for the matched HM row.
+            if ([bool]$Localize['Enabled'] -and (Get-Command -Name 'Write-SnapLocalize' -ErrorAction SilentlyContinue)) {
+                $locPath = Write-SnapLocalize -Page 'Hm' -Localize $Localize -SnapDir $snapDir `
+                    -Correl $correl -PngPath $outPath -Rows $hmRows -Expected $rowExpected `
+                    -ToleranceMin $runTolerance `
+                    -CropLeft ([int]$Localize['CropLeft']) -CropTop ([int]$Localize['CropTop'])
+                if ($locPath) { Write-Host ("    loc: snap\{0}\{1}.loc.json" -f $snapFolder, $correl) -ForegroundColor DarkGray }
             }
 
             # Surface any warnings (historic / retried abends) without changing the verdict

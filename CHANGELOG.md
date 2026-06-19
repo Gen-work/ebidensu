@@ -4,6 +4,60 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-19 - SnapVerify: ASCII-clean library + M5 pixel localisation (v2.9.9)
+
+### Fixed
+- **`SnapVerify.ps1` failed at runtime on the JP-locale host with
+  `The variable '$script:SV_Abend' cannot be retrieved because it has not been
+  set.`** The file still carried raw Japanese in ~18 comments (e.g. `# 正常終了`,
+  `# 異常終了`, `# バッチ処理状況一覧 ...`). Windows PowerShell 5.1 reads a no-BOM
+  `.ps1` with the system ANSI codepage (CP932), so the Shift-JIS misread of those
+  multibyte comment bytes shifts tokenisation (the operator's stack even reported
+  line 75 where the clean file has line 79 -- ~4 lines collapsed), which drops the
+  top-of-file `$script:SV_Normal` / `$script:SV_Abend` constant assignments. Under
+  `Set-StrictMode` (JenkinsSnap sets `Latest`; an interactive/profile strict mode
+  hits the HM path too) reading the unset variable throws instead of returning
+  `$null`. Replaced every non-ASCII character in `SnapVerify.ps1` (and the
+  now-dot-sourced `Find-ActiveHighlightRow.ps1`) with ASCII per the project's
+  ASCII-source rule -- the runtime Japanese values are still built from `[char]`
+  code points, so behaviour is identical; the file now tokenises the same on every
+  codepage. Same class of bug fixed for `Test-SnapVerify.ps1` in v2.9.8.
+
+### Added
+- **SnapVerify M5 -- object-data pixel localisation (F5).** New pure, unit-tested
+  geometry/builder functions in `SnapVerify.ps1` produce a `<correl>.loc.json`
+  sidecar (screenshot pixel rect) for the exact data row a verdict is about, so a
+  later Mark pass can red-box it:
+  - `Get-MatchedRowIndex` -- the 1-based **screen** row (parse order) of the row a
+    verdict selects (newest-wins inside the time window, else newest overall),
+    mirroring `Test-HmAbend` / `Test-MqRecord` so the box lands on the judged row.
+  - `Get-RowPixelRect` -- HM/MQ fixed geometry `Row1Top + (n-1)*RowHeight` (same
+    model as `Find-Abend.ps1`), in the cropped-PNG coordinate space.
+  - `Get-JenkinsHighlightRect` -- turns a `Find-ActiveHighlightRow` orange-band
+    `@{Top;Bottom}` into a rect.
+  - `New-SnapLocRect` / `Save-SnapLocSidecar` -- build + persist the sidecar
+    (`{ correl, source, rowIndex, x, y, w, h, imageWidth, imageHeight, created }`;
+    `imageWidth` lets Mark scale pixel->point via `Shape.Width / imageWidth`).
+  Tests added to `Tests\Test-SnapVerify.ps1` (HM/MQ row selection, geometry +
+  crop offset + clamping + throws, highlight-band rect, sidecar JSON round-trip).
+- **Localisation wiring (default OFF).** New non-pure glue `SnapLocalize.ps1`
+  (`Write-SnapLocalize`) combines the pure geometry with System.Drawing image
+  sizing + the Jenkins highlight scan; it swallows every error (returns `$null`)
+  so it can never block snapping. `HmSnap.ps1` / `MqSnap.ps1` / `JenkinsSnap.ps1`
+  dot-source it and write the sidecar after each verdict when enabled; VerifyTool
+  threads `Config.SnapVerify.Localize` through as `-Localize`. New
+  `SnapVerify.Localize` config block (`Enabled=$false` by default; HM/MQ geometry
+  fields are 0 until calibrated with `Calibrate-HmGeometry.ps1`, so the leg is
+  inert until an operator opts in -- Jenkins needs no geometry). M6 (NoGfix
+  annotation: consume the sidecar via AltText -> Mark + AZ note) still remains.
+
+### Notes
+- Pure logic + tests run on Windows via `Tests\Run-Tests.ps1`. The COM/SendKeys/
+  GDI+ wiring (`SnapLocalize.ps1` + the three snap scripts) is static-analysis
+  only in the cloud build env and needs an office-PC + Excel run to confirm, and
+  geometry calibration before the HM/MQ leg emits sidecars.
+
+
 ## 2026-06-19 - SnapVerify M4: HM abend detection + HmSnap migration (v2.9.8)
 
 ### Fixed

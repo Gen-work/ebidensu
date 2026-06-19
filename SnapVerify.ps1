@@ -18,16 +18,16 @@
 # ---------------------------------------------------------------------------
 # Japanese string constants built from [char] code points (source stays ASCII)
 # ---------------------------------------------------------------------------
-$script:SV_Normal    = [char]0x6B63 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # 正常終了
-$script:SV_Abend     = [char]0x7570 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # 異常終了
-# バッチ処理状況一覧 (HM page title)
+$script:SV_Normal    = [char]0x6B63 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # seijo-shuuryo (normal end)
+$script:SV_Abend     = [char]0x7570 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # ijo-shuuryo (abend)
+# HM page title: batch shori jokyo ichiran
 $script:SV_HmTitle   = [char]0x30D0 + [char]0x30C3 + [char]0x30C1 + [char]0x51E6 `
                      + [char]0x7406 + [char]0x72B6 + [char]0x6CC1 + [char]0x4E00 + [char]0x89A7
-# 開始日時 (HM table header first column)
+# HM table header col1: kaishi-nichiji (start datetime)
 $script:SV_HmHdrCol1 = [char]0x958B + [char]0x59CB + [char]0x65E5 + [char]0x6642
-# 終了日時 (HM table header second column)
+# HM table header col2: shuuryo-nichiji (end datetime)
 $script:SV_HmHdrCol2 = [char]0x7D42 + [char]0x4E86 + [char]0x65E5 + [char]0x6642
-# 参照 (Jenkins file list row suffix)
+# Jenkins file-list row suffix: sansho (reference)
 $script:SV_Ref       = [char]0x53C2 + [char]0x7167
 # GIFT System outer-frame signature
 $script:SV_GiftSys   = 'GIFT System'
@@ -42,15 +42,15 @@ $script:SV_NoData    = 'No Data!'
 #   Returns an array of PSCustomObjects, one per data row.
 #
 #   Field layout (TAB-separated per spec appendix A):
-#     [0] 開始日時  [1] 終了日時  [2] 処理時間  [3] バッチID  [4] ＳＳ
-#     [5..] variable -- 処理状態 = FIRST field equal to 正常終了/異常終了
-#     LAST field = 相関ID
+#     [0] start-dt  [1] end-dt  [2] proc-time  [3] batch-id  [4] SS
+#     [5..] variable -- status = FIRST field equal to normal-end/abend
+#     LAST field = correl-id
 #
 #   Returns objects with:
 #     StartTime  [datetime|$null]
 #     EndTime    [datetime|$null]
 #     BatchId    [string]
-#     Status     [string]  '正常終了' | '異常終了'
+#     Status     [string]  normal-end | abend
 #     CorrelId   [string]
 #     RawLine    [string]
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ function ConvertFrom-HmPageText {
         try { $startTime = [datetime]::ParseExact($fields[0].Trim(), $dtFmt, $culture) } catch {}
         try { $endTime   = [datetime]::ParseExact($fields[1].Trim(), $dtFmt, $culture) } catch {}
 
-        # 処理状態: first field matching 正常終了 or 異常終了
+        # status: first field matching normal-end or abend
         $status = ''
         foreach ($f in $fields) {
             if ($f -eq $script:SV_Normal -or $f -eq $script:SV_Abend) {
@@ -82,7 +82,7 @@ function ConvertFrom-HmPageText {
         }
         if (-not $status) { continue }  # not a recognised status row
 
-        # 相関ID: last non-empty field (trim trailing empties)
+        # correl-id: last non-empty field (trim trailing empties)
         $correlId = ''
         for ($i = $fields.Count - 1; $i -ge 0; $i--) {
             if ($fields[$i].Trim() -ne '') { $correlId = $fields[$i].Trim(); break }
@@ -121,8 +121,8 @@ function ConvertFrom-HmPageText {
 #     - Expected set:
 #         windowRows = rows with |StartTime - Expected| <= ToleranceMin
 #         0 window rows              -> ask
-#         newest (by StartTime) is 正常終了 -> ok  (warn about earlier window abends)
-#         newest is 異常終了          -> ng
+#         newest (by StartTime) is normal-end -> ok  (warn about earlier window abends)
+#         newest is abend             -> ng
 #       Out-of-window abend rows always generate a warn entry (historic records).
 # ---------------------------------------------------------------------------
 function Test-HmAbend {
@@ -178,7 +178,7 @@ function Test-HmAbend {
         return @{ Verdict = 'ok'; Reason = 'newest run in window is normal termination'; Warnings = $warnings.ToArray() }
     }
 
-    # Newest is 異常終了
+    # Newest is abend
     return @{ Verdict = 'ng'; Reason = ("abend is the most recent run in window: {0}" -f $newest.StartTime); Warnings = $warnings.ToArray() }
 }
 
@@ -309,7 +309,7 @@ function ConvertFrom-JenkinsListText {
     param([string]$Text)
 
     $culture = [System.Globalization.CultureInfo]::InvariantCulture
-    $refWord = $script:SV_Ref  # 参照
+    $refWord = $script:SV_Ref  # sansho (reference)
     $results = [System.Collections.Generic.List[object]]::new()
 
     foreach ($rawLine in ($Text -split "`r?`n")) {
@@ -425,14 +425,14 @@ function Get-SnapPageKind {
     # OuterFrame: contains the GIFT system outer-menu signature
     if ($Text.Contains($script:SV_GiftSys)) { return 'OuterFrame' }
 
-    # HmResult: contains the HM page title or the table header (開始日時<TAB>終了日時)
+    # HmResult: contains the HM page title or the table header (start-dt<TAB>end-dt)
     $hmHeader = $script:SV_HmHdrCol1 + "`t" + $script:SV_HmHdrCol2
     if ($Text.Contains($script:SV_HmTitle) -or $Text.Contains($hmHeader)) { return 'HmResult' }
 
     # MqResult: contains MQ result page markers
     if ($Text.Contains($script:SV_MqResult) -or $Text.Contains($script:SV_MqNumRec)) { return 'MqResult' }
 
-    # JenkinsResult: contains at least one 参照 (file-list row suffix)
+    # JenkinsResult: contains at least one sansho/reference (file-list row suffix)
     if ($Text.Contains($script:SV_Ref)) { return 'JenkinsResult' }
 
     return 'Unknown'
@@ -570,4 +570,229 @@ function Set-EmptyRunTimeCells {
         }
     }
     return $filled
+}
+
+# ===========================================================================
+#  M5 / F5 -- object-data pixel localisation (pure geometry, no image I/O)
+#
+#  Produces a rectangle (screenshot pixel coords) for the data row a snap
+#  verdict is about, so the Mark phase can draw a red box exactly on it.
+#  Two geometry legs (per docs/SnapVerify-Plan.md sec 4.F5):
+#    - HM / MQ form pages : fixed geometry Row1Top + (n-1)*RowHeight, where the
+#      screen row n comes from the clipboard parse order (Get-MatchedRowIndex).
+#      Same model as Find-Abend.ps1 (Calibrate-HmGeometry.ps1 measures it).
+#    - Jenkins list page  : the Ctrl+F active-match band measured from the PNG
+#      by Find-ActiveHighlightRow.ps1; Get-JenkinsHighlightRect turns the
+#      Top/Bottom band into a rect (pure; the image scan stays in the wiring).
+#  The result is written next to the PNG as <correl>.loc.json by the snap
+#  scripts; ReplaceEvidence -> AltText -> Mark consumes it (M6 pipeline).
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Get-MatchedRowIndex
+#   Returns the 1-based SCREEN row index (position in parse order, which equals
+#   the on-screen top-to-bottom order) of the data row a verdict selects, so the
+#   pixel box lands on the physically-displayed row. The SELECTION mirrors
+#   Test-HmAbend / Test-MqRecord (newest-wins inside the time window, else
+#   newest overall); the RETURNED index is the row's original parse position,
+#   NOT its rank after the newest-wins re-sort.
+#
+#   Parameters:
+#     Rows          object[]  parser output (ConvertFrom-HmPageText / -MqPageText)
+#     CorrelId      string    correl to filter on
+#     DateProperty  string    'StartTime' (HM) | 'RecvDate' (MQ)
+#     Expected      datetime|$null  $null = no window (newest overall)
+#     ToleranceMin  int       window half-width in minutes
+#
+#   Returns [int]: the 1-based screen index, or 0 when no row matches CorrelId.
+# ---------------------------------------------------------------------------
+function Get-MatchedRowIndex {
+    param(
+        [object[]]$Rows,
+        [string]$CorrelId,
+        [string]$DateProperty = 'StartTime',
+        [object]$Expected     = $null,
+        [int]$ToleranceMin    = 30
+    )
+
+    if ($null -eq $Rows) { return 0 }
+
+    # Collect matches keeping their original (screen) position.
+    $matched = [System.Collections.Generic.List[object]]::new()
+    for ($i = 0; $i -lt $Rows.Count; $i++) {
+        $r = $Rows[$i]
+        if ($null -eq $r) { continue }
+        if ([string]$r.CorrelId -eq $CorrelId) {
+            $matched.Add([PSCustomObject]@{ Index = $i + 1; Date = $r.$DateProperty })
+        }
+    }
+    if ($matched.Count -eq 0) { return 0 }
+
+    # Candidates that carry a usable timestamp.
+    $dated = @($matched | Where-Object { $null -ne $_.Date })
+    if ($dated.Count -eq 0) {
+        # No timestamps to rank by -- box the first matched row.
+        return [int]$matched[0].Index
+    }
+
+    # Time window: newest inside it wins; if none inside, fall back to newest overall.
+    if ($null -ne $Expected) {
+        $window = @($dated | Where-Object {
+            [Math]::Abs(($_.Date - $Expected).TotalMinutes) -le $ToleranceMin
+        })
+        if ($window.Count -gt 0) {
+            return [int](@($window | Sort-Object { $_.Date } -Descending)[0]).Index
+        }
+    }
+
+    return [int](@($dated | Sort-Object { $_.Date } -Descending)[0]).Index
+}
+
+# ---------------------------------------------------------------------------
+# Get-RowPixelRect
+#   Fixed-geometry rectangle for an HM / MQ form-page data row (same model as
+#   Find-Abend.ps1: roiTop = Row1Top + (RowIndex-1)*RowHeight). Coordinates are
+#   returned in the FINAL (already-cropped) PNG pixel space: pass the per-side
+#   crop pixels removed by Invoke-CropPng so the rect tracks the cropped image.
+#
+#   Parameters:
+#     RowIndex   int  1-based screen row (from Get-MatchedRowIndex)
+#     Row1Top    int  top pixel of row 1 in the pre-crop capture
+#     RowHeight  int  per-row height in pixels (MQ: a 2-line record height)
+#     ColLeft    int  left pixel of the column to box (HM status / MQ recv-date)
+#     ColWidth   int  width of that column in pixels
+#     CropLeft   int  pixels removed from the left by Invoke-CropPng (default 0)
+#     CropTop    int  pixels removed from the top  by Invoke-CropPng (default 0)
+#
+#   Returns @{ x; y; w; h } (ints; x/y clamped to >= 0). Throws on bad geometry.
+# ---------------------------------------------------------------------------
+function Get-RowPixelRect {
+    param(
+        [int]$RowIndex,
+        [int]$Row1Top,
+        [int]$RowHeight,
+        [int]$ColLeft,
+        [int]$ColWidth,
+        [int]$CropLeft = 0,
+        [int]$CropTop  = 0
+    )
+    if ($RowIndex -lt 1) { throw "Get-RowPixelRect: RowIndex must be >= 1 (got $RowIndex)" }
+    if ($RowHeight -le 0) { throw "Get-RowPixelRect: RowHeight must be > 0 (got $RowHeight)" }
+    if ($ColWidth -le 0)  { throw "Get-RowPixelRect: ColWidth must be > 0 (got $ColWidth)" }
+
+    $rowTop = $Row1Top + ($RowIndex - 1) * $RowHeight
+    $x = $ColLeft - $CropLeft
+    $y = $rowTop  - $CropTop
+    if ($x -lt 0) { $x = 0 }
+    if ($y -lt 0) { $y = 0 }
+
+    return @{ x = [int]$x; y = [int]$y; w = [int]$ColWidth; h = [int]$RowHeight }
+}
+
+# ---------------------------------------------------------------------------
+# Get-JenkinsHighlightRect
+#   Turns a Find-ActiveHighlightRow.ps1 band (@{ Top; Bottom }) into a rect.
+#   The orange Ctrl+F active-match spans the whole matched file row; box the
+#   file-time column horizontally (ColLeft/ColWidth) or the full row width.
+#
+#   Parameters:
+#     Top         int  top pixel of the highlight band
+#     Bottom      int  bottom pixel of the highlight band (>= Top)
+#     ColLeft     int  left pixel of the box (default 0)
+#     ColWidth    int  box width; 0 = derive from ImageWidth - ColLeft
+#     ImageWidth  int  PNG width (used when ColWidth = 0)
+#     Pad         int  pixels added above/below the band (default 0)
+#
+#   Returns @{ x; y; w; h } (ints; x/y clamped to >= 0). Throws on bad input.
+# ---------------------------------------------------------------------------
+function Get-JenkinsHighlightRect {
+    param(
+        [int]$Top,
+        [int]$Bottom,
+        [int]$ColLeft    = 0,
+        [int]$ColWidth   = 0,
+        [int]$ImageWidth = 0,
+        [int]$Pad        = 0
+    )
+    if ($Bottom -lt $Top) { throw "Get-JenkinsHighlightRect: Bottom ($Bottom) < Top ($Top)" }
+
+    $w = 0
+    if ($ColWidth -gt 0) {
+        $w = $ColWidth
+    } elseif ($ImageWidth -gt 0) {
+        $w = $ImageWidth - $ColLeft
+    }
+    if ($w -le 0) { throw "Get-JenkinsHighlightRect: provide ColWidth or ImageWidth (> ColLeft)" }
+
+    $x = $ColLeft;        if ($x -lt 0) { $x = 0 }
+    $y = $Top - $Pad;     if ($y -lt 0) { $y = 0 }
+    $h = ($Bottom - $Top + 1) + (2 * $Pad)
+
+    return @{ x = [int]$x; y = [int]$y; w = [int]$w; h = [int]$h }
+}
+
+# ---------------------------------------------------------------------------
+# New-SnapLocRect
+#   Builds the .loc.json sidecar payload for one localised row. The minimum
+#   contract is { x, y, w, h } in screenshot pixel space (plan 4.F5); the extra
+#   fields let the Mark phase convert pixels -> points (it needs imageWidth to
+#   compute Shape.Width / imageWidth) and let reviewers trace the source.
+#
+#   Parameters:
+#     CorrelId / X / Y / W / H
+#     Source        string  'hm-geometry' | 'mq-geometry' | 'jenkins-highlight'
+#     RowIndex      int     screen row the box came from (0 = n/a)
+#     ImageWidth    int     final PNG width  (for pixel->point scaling)
+#     ImageHeight   int     final PNG height
+#     CreatedUtc    string  ISO-8601 stamp; '' = now (injectable for tests)
+#
+#   Returns an [ordered] hashtable ready for ConvertTo-Json.
+# ---------------------------------------------------------------------------
+function New-SnapLocRect {
+    param(
+        [string]$CorrelId,
+        [int]$X,
+        [int]$Y,
+        [int]$W,
+        [int]$H,
+        [string]$Source      = 'geometry',
+        [int]$RowIndex       = 0,
+        [int]$ImageWidth     = 0,
+        [int]$ImageHeight    = 0,
+        [string]$CreatedUtc  = ''
+    )
+    $stamp = if ([string]::IsNullOrWhiteSpace($CreatedUtc)) {
+        (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    } else { $CreatedUtc }
+
+    return [ordered]@{
+        correl      = $CorrelId
+        source      = $Source
+        rowIndex    = [int]$RowIndex
+        x           = [int]$X
+        y           = [int]$Y
+        w           = [int]$W
+        h           = [int]$H
+        imageWidth  = [int]$ImageWidth
+        imageHeight = [int]$ImageHeight
+        created     = $stamp
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Save-SnapLocSidecar
+#   Writes a New-SnapLocRect payload to <Path> as UTF-8 (no BOM) JSON, the same
+#   encoding the snap scripts use for the A1 .txt archive. Thin I/O wrapper so
+#   the wiring stays one line; the geometry itself is the pure part above.
+#   Returns the path written.
+# ---------------------------------------------------------------------------
+function Save-SnapLocSidecar {
+    param(
+        [Parameter(Mandatory)] $Loc,
+        [Parameter(Mandatory)][string]$Path
+    )
+    $json = $Loc | ConvertTo-Json -Depth 5
+    $enc  = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $json, $enc)
+    return $Path
 }

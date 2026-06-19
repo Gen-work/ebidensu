@@ -1,12 +1,12 @@
 function Find-ActiveHighlightRow {
     <#
-    Edge Ctrl+F の active match (橙色) 行を検出。
-    inactive match (淡黄) は無視する。
-    .OUTPUTS @{ Top=int; Bottom=int; Score=int } または $null
+    Detect the Edge Ctrl+F active-match (orange) row.
+    Inactive matches (pale yellow) are ignored.
+    .OUTPUTS @{ Top=int; Bottom=int; Score=int } or $null
     #>
     param(
         [Parameter(Mandatory=$true)][string]$ImagePath,
-        # Step 1 で実測した値で上書き
+        # Override with values measured on the office PC (step 1).
         [int]$ActiveR = 255, [int]$ActiveG = 150, [int]$ActiveB = 50, #FF9632
         [int]$InactiveR = 255, [int]$InactiveG = 255, [int]$InactiveB = 0, #FFFF00
         [int]$Tolerance = 25,
@@ -27,7 +27,7 @@ function Find-ActiveHighlightRow {
             }
             $rowCount[$y] = $cnt
         }
-        # 連続する高密度行のクラスタを抽出
+        # Extract the densest contiguous cluster of high-count rows.
         $best = $null; $start = -1
         for ($y = 0; $y -lt $h; $y++) {
             if ($rowCount[$y] -ge $MinPixelsPerRow) {

@@ -1,6 +1,6 @@
 # SnapVerify 规划文档 — 截图阶段即时异常检测
 
-状态: **M1 + M2 + M3 + M4 实装完成；M5–M6 待实装**。本文档是后续开发会话的设计依据。
+状态: **M1 + M2 + M3 + M4 + M5 实装完成；M6 待实装**。本文档是后续开发会话的设计依据。
 来源: 2026-06-12 规划讨论（OCR 完成后的下一步功能群）。
 2026-06-12 更新: 操作员提供了 HM / MQ 页面真实样本（附录 A/B），Q1–Q4、Q6
 已解决，解析规则与重测判定规则已确定。剩余未确认项只有 Q5（Rtncd 语义，
@@ -26,6 +26,22 @@ F1 纯函数与单测在 M1 已就绪，本次仅接线。顺带修复 `Tests\Te
 在 JP 区域主机的解析失败: 三处 `Assert-Equal` 消息把日文写进了单引号字符串内
 （PS 5.1 以 ANSI 代码页 CP932 读取无 BOM 的 .ps1，Shift-JIS 先导字节吞掉了
 结束引号，导致下游报"missing terminator"假错），已全部改为 ASCII。
+2026-06-19 更新: **修复 + M5**。`SnapVerify.ps1` 仍残留约 18 处日文注释，JP 主机
+（CP932 读无 BOM 的 .ps1）误读多字节注释字节会移动 token 化、吞掉文件顶部
+`$script:SV_Normal` / `$script:SV_Abend` 常量赋值，在 `Set-StrictMode`（JenkinsSnap
+设 `Latest`）下读未设变量即抛 `cannot be retrieved because it has not been set`
+（操作员栈显示第 75 行 vs 干净文件第 79 行 = 约 4 行被折叠）。已把 `SnapVerify.ps1`
+与新接入的 `Find-ActiveHighlightRow.ps1` 全改 ASCII（运行期日文仍由 `[char]` 构造）。
+**M5（F5 定位）实装**: 纯函数 `Get-MatchedRowIndex`（判定选中行的画面行号，
+newest-wins 同 Test-HmAbend/Test-MqRecord）/ `Get-RowPixelRect`（HM/MQ
+`Row1Top+(n-1)*RowHeight` 几何，同 Find-Abend）/ `Get-JenkinsHighlightRect`（橙色
+Ctrl+F 高亮带 -> 矩形）/ `New-SnapLocRect` + `Save-SnapLocSidecar`（写
+`snap\<folder>\<correl>.loc.json`，含 x/y/w/h + imageWidth 供 Mark 像素->point 换算），
+均已单测。非纯接线 `SnapLocalize.ps1`（`Write-SnapLocalize`，System.Drawing + 高亮
+扫描，吞掉所有错误绝不阻塞截图）由 Hm/Mq/JenkinsSnap dot-source，按
+`SnapVerify.Localize.Enabled`（默认 `$false`）在每行判定后写 sidecar；VerifyTool
+透传 `Localize` 配置。HM/MQ 几何字段默认 0，需 `Calibrate-HmGeometry.ps1` 校准后
+该腿才产出，Jenkins 腿无需几何。COM/GDI+ 接线仅静态检查，需办公机实跑确认。M6 待实装。
 
 ---
 
@@ -339,7 +355,7 @@ JenkinsSnap GiftRecv/GfixRecv 已取页面文本、跑 Parse-JenkinsList，
 | M2 | F2（MQ 判定接线 + MqSnap 迁移 MappingStore/ProgressLog；A1/A2 进 MqSnap） | M1 | **done** (v2.9.4) |
 | M3 | F3（JenkinsSnap NG=2 + 汇总；A1/A2 进 JenkinsSnap） | M1 | **done** (v2.9.5) |
 | M4 | F1（HM 解析 + 判定 + HmSnap 迁移 MappingStore；A1/A2 进 HmSnap） | M1 | **done** (v2.9.8) |
-| M5 | F5 定位（Jenkins 高亮 + HM/MQ 几何，sidecar 产出） | M3/M4 | todo |
+| M5 | F5 定位（Jenkins 高亮 + HM/MQ 几何，sidecar 产出） | M3/M4 | **done** (v2.9.9) |
 | M6 | F4（NoGfix 检测 + AltText 管道 + Mark 画框/AZ 列写入 + 像素换算） | M5 | todo |
 
 M2 实装备注: pending 过滤用本地 `Test-MqSnapDone`（done == 恰好 '1'），**不**用

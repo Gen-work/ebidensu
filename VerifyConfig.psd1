@@ -147,6 +147,7 @@
         FillCheckSheet  = 'FillCheckSheet.ps1'
         SendVsGift      = 'SendVsGift.ps1'
         SnapVerify      = 'SnapVerify.ps1'
+        SnapLocalize    = 'SnapLocalize.ps1'
     }
 
     # Reviewer (To / 確認者). The single "viewer" param: used as the mail
@@ -281,6 +282,39 @@
         PollTimeoutSec    = 10
         PollIntervalMs    = 500
         NoGfixNoteColumn  = 'AZ'    # F4: column for past-data annotation
+
+        # M5/F5 pixel localisation: write <correl>.loc.json beside each PNG so
+        # the Mark phase can red-box the exact data row the verdict judged.
+        # OFF by default -- HM/MQ geometry must be measured for the office-PC
+        # window size first (Calibrate-HmGeometry.ps1). Jenkins needs no
+        # geometry (it reuses the orange Ctrl+F highlight). Enable per work
+        # folder once the *Row1Top / *RowHeight / *ColLeft / *ColWidth are set.
+        Localize = @{
+            Enabled         = $false  # master switch for sidecar localisation
+            Jenkins         = $true   # Jenkins leg (orange highlight; no geometry)
+            CropLeft        = 0       # pixels Invoke-CropPng trims (match CropPx)
+            CropTop         = 0
+            # HM status-column geometry (pre-crop px; 0 = not calibrated -> skip)
+            HmRow1Top       = 0
+            HmRowHeight     = 0
+            HmColLeft       = 0
+            HmColWidth      = 0
+            # MQ recv-date column (MQ records span 2 lines; RowHeight covers both)
+            MqRow1Top       = 0
+            MqRowHeight     = 0
+            MqColLeft       = 0
+            MqColWidth      = 0
+            # Jenkins highlight box horizontal extent (0 width -> full PNG width)
+            JenkinsColLeft  = 0
+            JenkinsColWidth = 0
+            JenkinsPad      = 2
+            # Find-ActiveHighlightRow tuning (orange FF9632 active match)
+            JenkinsActiveR        = 255
+            JenkinsActiveG        = 150
+            JenkinsActiveB        = 50
+            JenkinsTolerance      = 25
+            JenkinsMinPixelsPerRow= 30
+        }
     }
 
     # Expected_Time helper (Resolve-ExpectedTime.ps1). The time VALUES live per
