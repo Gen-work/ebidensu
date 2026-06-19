@@ -4,6 +4,61 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-19 - SnapVerify M4: HM abend detection + HmSnap migration (v2.9.8)
+
+### Fixed
+- **`Tests\Test-SnapVerify.ps1` failed to parse on the JP-locale host.** Three
+  `Assert-Equal` messages embedded raw Japanese (`正常終了` / `異常終了`) *inside
+  single-quoted strings*, and several comments carried raw CJK. Windows PowerShell
+  5.1 reads a no-BOM `.ps1` with the system ANSI codepage (CP932), so a Shift-JIS
+  lead byte swallowed the string's closing quote -- the string ran away and the
+  parser only surfaced the failure much later as a bogus "missing terminator" at
+  the `Set-EmptyRunTimeCells` block (hence the misleading line numbers). Replaced
+  every non-ASCII character with ASCII per the project's ASCII-source rule. The
+  assertions still compare against the `[char]`-built `$normal` / `$abend` values,
+  so the test logic is unchanged.
+
+### Added
+- **SnapVerify M4 -- HM instant NG detection (F1).** `HmSnap.ps1` rewritten from
+  the legacy bare `Import-Csv`/`Export-Csv` version to the modern stack:
+  MappingStore (atomic writes), ProgressLog events, and the pure `SnapVerify.ps1`
+  detection library -- while keeping HM's per-`TO_code` appl grouping (one HM page
+  opened per appl). After the search it polls the page text (A2), classifies the
+  page (`Get-SnapPageKind -Phase Hm`, sentinel A3), archives the Ctrl+A text as
+  `snap\<Stage>_HM\<correl>.txt` (A1), screenshots, then `ConvertFrom-HmPageText`
+  + `Test-HmAbend` decide the verdict (plan 2.3):
+  - **ok** -> `<Stage>_HM_snap` = 1. The newest run inside the `Expected_Time` ±
+    tolerance window ended normally; earlier in-window abends (a retried run)
+    become "retried, last run ok" warnings.
+  - **ng** -> = 2. The newest in-window run is an abend. `2` stays pending and is
+    re-offered next run; an end-of-run NG summary lists them.
+  - **ask** -> the operator decides `o`=OK(1) / `n`=NG(2) / `s`=skip(pending) /
+    `q`=quit. Triggered when the correl has 0 rows, no rows inside the window, or
+    an abend in no-time-check mode (plan 4.F1 steps 3-4).
+  Out-of-window historic abends only warn (never auto-NG). A one-time batch
+  run-time prompt (`Resolve-SnapRunTime`) fills empty `Expected_Time` cells on the
+  pending rows (plan 2.2). Off-page kinds (OuterFrame/Empty/Unknown) stop and ask
+  `r=retry / s=skip / q=quit`. Pending uses a local `Test-HmSnapDone` (done ==
+  exactly `'1'`) so NG=`'2'` rows are not hidden. `SnapVerify.Enabled=$false`
+  reverts HmSnap to pure screenshot (legacy behavior).
+- **VerifyTool dispatch** for `GiftHmSnap` / `GfixHmSnap` now passes the
+  `SnapVerify` (Enabled / ToleranceMinutes / SaveText / PollTimeoutSec /
+  PollIntervalMs) and `ExpectedTime` (TimeColumn / TimeFormat) config, mirroring
+  the `GiftMqSnap` block.
+
+### Notes
+- The v2.9.7 focus-safe pattern is preserved: per-row refocus is
+  `Reset-FocusToBody` only; `Switch-ToEdge` runs once per appl (after the
+  page-ready Read-Host) and inside the interactive branch (after
+  `Bring-ShellToFront`) -- never blindly between rows.
+- F1's pure functions (`ConvertFrom-HmPageText`, `Test-HmAbend`,
+  `Get-SnapPageKind`) and their unit tests shipped in M1; this change is the
+  COM/SendKeys wiring only. M5 (pixel localisation) and M6 (NoGfix annotation)
+  remain. Authored in a Linux env without PowerShell/Excel -- run
+  `Tests\Run-Tests.ps1` and smoke-test GiftHmSnap/GfixHmSnap on a copy before
+  production use.
+
+
 ## 2026-06-18 - MqSnap focus regression fix (v2.9.7)
 
 ### Fixed

@@ -1,6 +1,6 @@
 # SnapVerify 规划文档 — 截图阶段即时异常检测
 
-状态: **M1 + M2 + M3 实装完成；M4–M6 待实装**。本文档是后续开发会话的设计依据。
+状态: **M1 + M2 + M3 + M4 实装完成；M5–M6 待实装**。本文档是后续开发会话的设计依据。
 来源: 2026-06-12 规划讨论（OCR 完成后的下一步功能群）。
 2026-06-12 更新: 操作员提供了 HM / MQ 页面真实样本（附录 A/B），Q1–Q4、Q6
 已解决，解析规则与重测判定规则已确定。剩余未确认项只有 Q5（Rtncd 语义，
@@ -15,6 +15,17 @@
 `Test-JenkinsFile` 判定 ok=1/ng=2、NG 汇总，迁出 `Get-PendingRows` 改用
 `Test-JenkinsSnapDone`）已实装。NoGfix（F4）仍走纯截图，留待 M6。F3 纯函数
 与单测在 M1 已就绪，本次仅接线。
+2026-06-19 更新: **M4**（`HmSnap.ps1` 迁移 MappingStore/ProgressLog + 接 F1:
+页面文本轮询、页面哨兵、存档 .txt，`ConvertFrom-HmPageText` + `Test-HmAbend`
+判定 ok=1/ng=2/ask、时间窗口内 newest-wins、批量 `Expected_Time` 询问、本地
+`Test-HmSnapDone`）已实装；保留按 TO_code 分组（每 appl 开一个 HM 页）。
+窗口外的历史異常終了只告警不判 NG；ask（0 行 / 窗口内 0 行 / 无时间模式下
+発見異常終了）当场询问操作员 o=OK / n=NG / s=跳过 / q=中止。VerifyTool 的
+GiftHmSnap/GfixHmSnap 接线照抄 MqSnap 传入 SnapVerify+ExpectedTime 配置。
+F1 纯函数与单测在 M1 已就绪，本次仅接线。顺带修复 `Tests\Test-SnapVerify.ps1`
+在 JP 区域主机的解析失败: 三处 `Assert-Equal` 消息把日文写进了单引号字符串内
+（PS 5.1 以 ANSI 代码页 CP932 读取无 BOM 的 .ps1，Shift-JIS 先导字节吞掉了
+结束引号，导致下游报"missing terminator"假错），已全部改为 ASCII。
 
 ---
 
@@ -327,7 +338,7 @@ JenkinsSnap GiftRecv/GfixRecv 已取页面文本、跑 Parse-JenkinsList，
 | M1 | SnapVerify.ps1 纯库 + 单测（附录样本做 fixture）、配置节、批量时间询问、页面哨兵 | — | **done** (v2.9.0) |
 | M2 | F2（MQ 判定接线 + MqSnap 迁移 MappingStore/ProgressLog；A1/A2 进 MqSnap） | M1 | **done** (v2.9.4) |
 | M3 | F3（JenkinsSnap NG=2 + 汇总；A1/A2 进 JenkinsSnap） | M1 | **done** (v2.9.5) |
-| M4 | F1（HM 解析 + 判定 + HmSnap 迁移 MappingStore；A1/A2 进 HmSnap） | M1 | todo |
+| M4 | F1（HM 解析 + 判定 + HmSnap 迁移 MappingStore；A1/A2 进 HmSnap） | M1 | **done** (v2.9.8) |
 | M5 | F5 定位（Jenkins 高亮 + HM/MQ 几何，sidecar 产出） | M3/M4 | todo |
 | M6 | F4（NoGfix 检测 + AltText 管道 + Mark 画框/AZ 列写入 + 像素换算） | M5 | todo |
 
