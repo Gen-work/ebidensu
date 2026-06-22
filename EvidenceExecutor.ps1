@@ -80,7 +80,22 @@ function Invoke-EvidencePlan {
                 if (Test-Path -LiteralPath $op.Path) {
                     $insertRow = $anchor
                     $pic = Insert-PictureSendToBack $Worksheet $anchor $Col ([string]$op.Path)
-                    Set-ShapeMetadata $pic ([string]$op.Folder) ([string]$op.Name)
+                    $notePath = [System.IO.Path]::ChangeExtension([string]$op.Path, '.note.json')
+                    if (([string]$op.Folder -eq 'GIFT_noGfixfile') -and (Test-Path -LiteralPath $notePath)) {
+                        try {
+                            $note = Get-Content -LiteralPath $notePath -Raw -Encoding UTF8 | ConvertFrom-Json
+                            $r = $note.pixelRect
+                            $payload = "{0}|{1}|{2},{3},{4},{5}|{6}|{7}" -f `
+                                [string]$op.Folder, [string]$op.Name, [int]$r.x, [int]$r.y, [int]$r.w, [int]$r.h, `
+                                [int]$note.imageWidth, [string]$note.fileDateTime
+                            Set-ShapeMetadata $pic 'verifyNote' $payload
+                        } catch {
+                            Set-ShapeMetadata $pic ([string]$op.Folder) ([string]$op.Name)
+                            $warnings.Add(("note sidecar unreadable for {0}: {1}" -f $op.Name, $_.Exception.Message))
+                        }
+                    } else {
+                        Set-ShapeMetadata $pic ([string]$op.Folder) ([string]$op.Name)
+                    }
                     $anchor = Get-NextAnchorRow $Worksheet $pic 0
                     $inserted++
                     Write-Host ("    [OK]  B{0}  {1}\{2}.png" -f $insertRow, $op.Folder, $op.Name) -ForegroundColor DarkGreen

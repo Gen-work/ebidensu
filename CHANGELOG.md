@@ -1,3 +1,12 @@
+## 2026-06-22 - SnapVerify M6: NoGfix past-data annotation
+
+### Added
+- **NoGfix detection is wired into JenkinsSnap.** `GiftJenkinsNoFile` now uses the Jenkins page text with `Test-JenkinsFile -ExpectExists:$false`; unexpected files set `GIFT_noGfixfile_snap = 2` and can emit `<correl>.note.json` when localisation is enabled.
+- **NoGfix note sidecars flow through Replace/Mark.** `ReplaceEvidence` stamps NoGfix pictures with `verifyNote` AltText from the note sidecar, and `MarkGift` converts screenshot pixels to Excel points, draws the red rectangle, and writes the past-data note to the configured column.
+
+### Notes
+- The COM/SendKeys/Excel portions still require office-PC validation; this container does not provide PowerShell/Excel.
+
 # Changelog
 
 Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.

@@ -1,6 +1,6 @@
 # SnapVerify 规划文档 — 截图阶段即时异常检测
 
-状态: **M1 + M2 + M3 + M4 + M5 实装完成；M6 待实装**。本文档是后续开发会话的设计依据。
+状态: **M1 + M2 + M3 + M4 + M5 + M6 实装完成**。本文档是后续开发会话的设计依据。
 来源: 2026-06-12 规划讨论（OCR 完成后的下一步功能群）。
 2026-06-12 更新: 操作员提供了 HM / MQ 页面真实样本（附录 A/B），Q1–Q4、Q6
 已解决，解析规则与重测判定规则已确定。剩余未确认项只有 Q5（Rtncd 语义，
@@ -41,7 +41,7 @@ Ctrl+F 高亮带 -> 矩形）/ `New-SnapLocRect` + `Save-SnapLocSidecar`（写
 扫描，吞掉所有错误绝不阻塞截图）由 Hm/Mq/JenkinsSnap dot-source，按
 `SnapVerify.Localize.Enabled`（默认 `$false`）在每行判定后写 sidecar；VerifyTool
 透传 `Localize` 配置。HM/MQ 几何字段默认 0，需 `Calibrate-HmGeometry.ps1` 校准后
-该腿才产出，Jenkins 腿无需几何。COM/GDI+ 接线仅静态检查，需办公机实跑确认。M6 待实装。
+该腿才产出，Jenkins 腿无需几何。COM/GDI+ 接线仅静态检查，需办公机实跑确认。M6 已实装: NoGfix 检测、note sidecar、AltText 传递、MarkGift 红框与 AZ 注记。
 
 ---
 
@@ -356,7 +356,7 @@ JenkinsSnap GiftRecv/GfixRecv 已取页面文本、跑 Parse-JenkinsList，
 | M3 | F3（JenkinsSnap NG=2 + 汇总；A1/A2 进 JenkinsSnap） | M1 | **done** (v2.9.5) |
 | M4 | F1（HM 解析 + 判定 + HmSnap 迁移 MappingStore；A1/A2 进 HmSnap） | M1 | **done** (v2.9.8) |
 | M5 | F5 定位（Jenkins 高亮 + HM/MQ 几何，sidecar 产出） | M3/M4 | **done** (v2.9.9) |
-| M6 | F4（NoGfix 检测 + AltText 管道 + Mark 画框/AZ 列写入 + 像素换算） | M5 | todo |
+| M6 | F4（NoGfix 检测 + AltText 管道 + Mark 画框/AZ 列写入 + 像素换算） | M5 | **done** |
 
 M2 实装备注: pending 过滤用本地 `Test-MqSnapDone`（done == 恰好 '1'），**不**用
 `Get-PendingRows`（其 `Test-SnapDone` 把任何非 '0' 值都算 done，会把 NG='2'

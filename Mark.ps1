@@ -38,6 +38,7 @@ param(
     [hashtable]$BoxesConfig = @{},
     [string]$NamePrefix = 'verifyMark_',
     [double]$LineWeight = 1.5,
+    [string]$NoGfixNoteColumn = 'AZ',
 
     # GFIX log yellow-highlight settings. Folded in from the old standalone
     # MarkGfixLog phase: in -Mode Gfix the log "Command:" row is highlighted in
@@ -116,7 +117,7 @@ $modeCfg = switch ($Mode) {
     'Gift' { @{
         Sheet = $sheetGiftRecv
         Bit   = 1
-        Folders = @('excel','GIFT_HM','GIFT_MQ','GIFT_Jenkins')
+        Folders = @('excel','GIFT_HM','GIFT_MQ','GIFT_Jenkins','GIFT_noGfixfile')
     } }
     'Gfix' { @{
         Sheet = $sheetGfixRecv
@@ -156,13 +157,14 @@ foreach ($f in $modeCfg.Folders) {
         $configuredFolders += ("{0}({1})" -f $f, @($boxes).Count)
     }
 }
-if ($configuredFolders.Count -eq 0) {
+if ($configuredFolders.Count -eq 0 -and $Mode -ne 'Gift') {
     Write-Host '[WARN] No Boxes configured for any folder in this mode.' -ForegroundColor Yellow
     Write-Host '       Edit VerifyConfig.psd1 -> Mark.Boxes after probing with ProbeShapes.' -ForegroundColor DarkGray
     Write-Host '       Nothing to do; exiting.' -ForegroundColor Yellow
     return
 }
 Write-Host ("  Boxes     : {0}" -f ($configuredFolders -join ', ')) -ForegroundColor DarkGray
+if ($Mode -eq 'Gift') { Write-Host ("  NoGfixNoteColumn: {0}" -f $NoGfixNoteColumn) -ForegroundColor DarkGray }
 Write-Host ''
 
 if (-not (Test-Path -LiteralPath $mappingPath)) {
@@ -238,6 +240,37 @@ try {
                 foreach ($s in $shapesToProcess) {
                     $meta = Get-ShapeMetadata $s
                     if ($null -eq $meta) { continue }
+
+                    if ([string]$meta.Key -eq 'verifyNote') {
+                        $parts = ([string]$meta.Value) -split '\|'
+                        if ($parts.Count -ge 4 -and $parts[0] -eq 'GIFT_noGfixfile') {
+                            try {
+                                $cid = [string]$parts[1]
+                                $xywh = @($parts[2] -split ',' | ForEach-Object { [double]$_ })
+                                $imageWidth = [double]$parts[3]
+                                if ($imageWidth -le 0) { $imageWidth = [double]$s.Width }
+                                $scale = ([double]$s.Width) / $imageWidth
+                                $left = ([double]$s.Left) + ($xywh[0] * $scale)
+                                $top  = ([double]$s.Top)  + ($xywh[1] * $scale)
+                                $bw   = $xywh[2] * $scale
+                                $bh   = $xywh[3] * $scale
+                                $name = ("{0}verifyNote_{1}_0" -f $NamePrefix, $cid)
+                                Add-RedRectangle $ws $left $top $bw $bh $name $LineWeight | Out-Null
+                                $marksDrawn++
+
+                                $noteCol = [int]$ws.Range(("{0}1" -f $NoGfixNoteColumn)).Column
+                                $noteRow = [int]$s.TopLeftCell.Row
+                                $pastData = [char]0x904E + [char]0x53BB + [char]0x5206 + [char]0x30C7 + [char]0x30FC + [char]0x30BF + [char]0x30FC
+                                $ws.Cells.Item($noteRow, $noteCol).Value2 = $pastData
+                                Write-Host ("  [NOTE] GIFT_noGfixfile {0,-12} L={1,6:0.0} T={2,6:0.0} W={3,5:0.0} H={4,5:0.0} {5}{6}" -f $cid, $left, $top, $bw, $bh, $NoGfixNoteColumn, $noteRow) -ForegroundColor Green
+                            } catch {
+                                Write-Host ("  [FAIL] verifyNote: {0}" -f $_.Exception.Message) -ForegroundColor Red
+                                $allOk = $false
+                            }
+                        }
+                        continue
+                    }
+
                     $folder = [string]$meta.Key
                     $cid    = [string]$meta.Value
                     if ($modeCfg.Folders -notcontains $folder) { continue }

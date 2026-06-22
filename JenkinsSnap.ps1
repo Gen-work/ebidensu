@@ -1,6 +1,6 @@
 # ============================================================
 #  JenkinsSnap.ps1  (Phases: GiftJenkins / GfixJenkins / GiftJenkinsNoFile)
-#  v2 -- MappingStore + ProgressLog + F3 instant NG detection
+#  v2 -- MappingStore + ProgressLog + F3/F4 instant detection
 #
 #  For each pending Correl_ID_S in mapping_<Owner>.csv (grouped by TO_code so
 #  Edge is navigated to a system's Jenkins folder once per group):
@@ -8,10 +8,10 @@
 #    2. Capture the Edge main window, crop the border, save snap\<folder>\<id>.png
 #    3. (GiftRecv/GfixRecv) download the matching receive file into DATA\GIFT|GFIX
 #    4. (detection on) poll page text, classify page kind, archive .txt
-#    5. (detection on) parse the file list + verdict (F3): ok -> field=1, ng -> 2
+#    5. (detection on) parse the file list + verdict (F3/F4): ok -> field=1, ng -> 2
 #    6. Persist atomically via MappingStore; append a progress.jsonl event
 #
-#  SnapVerify (F3) -- spec docs/SnapVerify-Plan.md milestone M3:
+#  SnapVerify (F3/F4) -- spec docs/SnapVerify-Plan.md milestones M3/M6:
 #    - <field>_snap value domain: 0/empty = pending, 1 = ok, 2 = NG.
 #      '2' STILL counts as pending and is re-offered next run (plan 2.1).
 #    - NG conditions (Test-JenkinsFile, plan 4.F3): file not in the list, or
@@ -20,8 +20,8 @@
 #      Expected_Time cells on pending rows are filled and persisted (plan 2.2).
 #    - Page-kind sentinel (plan 3.6): an off-page text (OuterFrame/Empty/
 #      Unknown) stops and asks the operator (r=retry / s=skip / q=quit).
-#    - Detection covers GiftRecv/GfixRecv (F3). NoGfix (F4) detection is M6;
-#      until then NoGfix keeps the pure-screenshot behavior (field=1).
+#    - Detection covers GiftRecv/GfixRecv (F3) and NoGfix (F4). NoGfix NG
+#      writes a .note.json sidecar when localisation is available.
 #    - SnapEnabled=$false reverts all modes to pure screenshot.
 #
 #  Conventions:
@@ -138,9 +138,10 @@ $groupCol   = $modeCfg.GroupCol
 $searchCol  = $modeCfg.SearchCol
 $job        = $modeCfg.JOB
 
-# F3 detection applies to the receive modes only; NoGfix (F4) is M6, so for now
-# NoGfix keeps the pure-screenshot path even when SnapVerify is enabled.
-$detectMode = $snapVerifyOn -and ($Mode -in 'GiftRecv','GfixRecv')
+# F3/F4 detection applies to receive modes and NoGfix.  In NoGfix mode a
+# matching Jenkins file is not a stop-the-world NG; it marks the snap field as
+# 2 and writes a note sidecar so MarkGift can add the past-data annotation.
+$detectMode = $snapVerifyOn -and ($Mode -in 'GiftRecv','GfixRecv','NoGfix')
 
 # -- mapping -------------------------------------------------------------------
 $mappingFile = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
@@ -589,7 +590,7 @@ foreach ($toCode in $groupOrder) {
                 }
             }
 
-            # -- Detection OFF (or NoGfix, pending M6): legacy screenshot -> 1 --
+            # -- Detection OFF: legacy screenshot -> 1 ------------------------
             if (-not $detectMode) {
                 try {
                     $row.$snapField = '1'
@@ -606,7 +607,7 @@ foreach ($toCode in $groupOrder) {
                 $resolved = $true; break
             }
 
-            # -- F3 verdict (plan 4.F3): ok -> field=1, ng -> field=2 ----------
+            # -- F3/F4 verdict: ok -> field=1, ng -> field=2 ------------------
             $rowExpected = $null
             if ($timeMode -ne 'none') {
                 $rowExpected = ConvertTo-ExpectedDateTime -Value (Get-RowProp $row $TimeColumn) -Format $TimeFormat
@@ -615,8 +616,9 @@ foreach ($toCode in $groupOrder) {
             $verdict = $null
             try {
                 $files   = ConvertFrom-JenkinsListText $pageText
+                $expectExists = ($Mode -ne 'NoGfix')
                 $verdict = Test-JenkinsFile -Files $files -CorrelId $searchTerm -Expected $rowExpected `
-                            -ToleranceMin $runTolerance -ExpectExists $true
+                            -ToleranceMin $runTolerance -ExpectExists $expectExists
             } catch {
                 # Detection bugs must never block the screenshot workflow: keep the
                 # shot, mark done, and record a warning for review.
@@ -642,10 +644,38 @@ foreach ($toCode in $groupOrder) {
             }
 
             # M5/F5: best-effort <correl>.loc.json sidecar (orange Ctrl+F highlight row).
+            $locPath = $null
             if ([bool]$Localize['Enabled'] -and (Get-Command -Name 'Write-SnapLocalize' -ErrorAction SilentlyContinue)) {
                 $locPath = Write-SnapLocalize -Page 'Jenkins' -Localize $Localize -SnapDir $snapDir `
                     -Correl $correl -PngPath $snapPath
                 if ($locPath) { Write-Host ("    loc: snap\{0}\{1}.loc.json" -f $snapFolder, $correl) -ForegroundColor DarkGray }
+            }
+
+            # M6/F4: for NoGfix past-data hits, carry the localisation payload
+            # forward to ReplaceEvidence/Mark via <correl>.note.json.
+            if ($Mode -eq 'NoGfix' -and $verdict.Verdict -eq 'ng' -and $locPath -and (Test-Path -LiteralPath $locPath)) {
+                try {
+                    $loc = Get-Content -LiteralPath $locPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                    $fileDt = ''
+                    if ($verdict.File -and $verdict.File.DateTime) { $fileDt = ([datetime]$verdict.File.DateTime).ToString('yyyy/MM/dd HH:mm:ss') }
+                    $note = [ordered]@{
+                        kind         = 'NoGfixPastData'
+                        correl       = $correl
+                        folder       = $snapFolder
+                        reason       = [string]$verdict.Reason
+                        fileDateTime = $fileDt
+                        pixelRect    = [ordered]@{ x = [int]$loc.x; y = [int]$loc.y; w = [int]$loc.w; h = [int]$loc.h }
+                        imageWidth   = [int]$loc.imageWidth
+                        imageHeight  = [int]$loc.imageHeight
+                        created      = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                    }
+                    $notePath = Join-Path $snapDir ("{0}.note.json" -f $correl)
+                    $enc = New-Object System.Text.UTF8Encoding($false)
+                    [System.IO.File]::WriteAllText($notePath, ($note | ConvertTo-Json -Depth 6), $enc)
+                    Write-Host ("    note: snap\{0}\{1}.note.json" -f $snapFolder, $correl) -ForegroundColor DarkGray
+                } catch {
+                    Write-Host ("    [WARN] note sidecar failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                }
             }
 
             try {

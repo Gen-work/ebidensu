@@ -1426,6 +1426,9 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($Config.Mark.NamePrefix) { $args['NamePrefix']  = [string]$Config.Mark.NamePrefix }
             if ($Config.Mark.LineWeight) { $args['LineWeight']  = [double]$Config.Mark.LineWeight }
         }
+        if ($mode -eq 'Gift' -and $Config.SnapVerify -and -not [string]::IsNullOrWhiteSpace([string]$Config.SnapVerify.NoGfixNoteColumn)) {
+            $args['NoGfixNoteColumn'] = [string]$Config.SnapVerify.NoGfixNoteColumn
+        }
         # GFIX log yellow-highlight is folded into MarkGfix (no separate phase).
         # Pass the GfixLog settings through for -Mode Gfix.
         if ($mode -eq 'Gfix' -and $Config.GfixLog) {
