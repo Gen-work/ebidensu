@@ -25,13 +25,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ── Force console to UTF-8 ──
+# -- Force console to UTF-8 --
 try {
     [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
     $OutputEncoding           = [System.Text.UTF8Encoding]::new()
 } catch {}
 
-# ── Interactive fallback ──
+# -- Interactive fallback --
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host "WorkDir path" }
 
 Write-Host ""
@@ -42,7 +42,7 @@ Write-Host ("  Mode    : {0}" -f $(if ($Visible.IsPresent) { "Visible + xlScreen
 Write-Host ("  Force   : {0}" -f $Force.IsPresent)
 Write-Host ""
 
-# ── Validate ──
+# -- Validate --
 if (-not (Test-Path -LiteralPath $WorkDir)) {
     Write-Host "[ERROR] WorkDir not found." -ForegroundColor Red; exit 1
 }
@@ -51,7 +51,7 @@ if (-not (Test-Path -LiteralPath $mappingPath)) {
     Write-Host ("[ERROR] mapping file not found: {0}" -f $mappingPath) -ForegroundColor Red; exit 1
 }
 
-# ── Find GFIX file ──
+# -- Find GFIX file --
 $gfixFiles = @(Get-ChildItem -LiteralPath $WorkDir -Filter "*GFIX*.xlsx" -File -ErrorAction SilentlyContinue |
                 Where-Object { -not $_.Name.StartsWith("~$") })
 if ($gfixFiles.Count -eq 0) { Write-Host "[ERROR] No GFIX*.xlsx" -ForegroundColor Red; exit 1 }
@@ -63,18 +63,18 @@ $gfixPath = $gfixFiles[0].FullName
 Write-Host ("[INFO] GFIX     : {0}" -f (Split-Path -Leaf $gfixPath))
 Write-Host ("[INFO] Mapping  : {0}" -f (Split-Path -Leaf $mappingPath))
 
-# ── Output dir ──
+# -- Output dir --
 $snapDir = Join-Path $WorkDir "snap\excel"
 if (-not (Test-Path -LiteralPath $snapDir)) {
     New-Item -ItemType Directory -Path $snapDir -Force | Out-Null
 }
 Write-Host ("[INFO] OutDir   : {0}" -f $snapDir)
 
-# ── Warn about clipboard ──
+# -- Warn about clipboard --
 Write-Host ""
 Write-Host "[NOTE] Script uses clipboard for image transfer. Avoid Ctrl+C/V during run." -ForegroundColor Yellow
 
-# ── Japanese label constants ──
+# -- Japanese label constants --
 $LBL_GFIX_SHEET = "GFIX" + [char]0x9001 + [char]0x53D7 + [char]0x4FE1 + [char]0x4E00 + [char]0x89A7  # GFIX送受信一覧
 $LBL_SYS_TYPE   = [char]0x30B7 + [char]0x30B9 + [char]0x30C6 + [char]0x30E0 + [char]0x7A2E + [char]0x5225  # システム種別
 $LBL_SEND       = [char]0x9001 + [char]0x4FE1                                                            # 送信
@@ -82,7 +82,7 @@ $LBL_JOB        = [char]0x30B8 + [char]0x30E7 + [char]0x30D6                    
 $LBL_SRC_FILE   = [char]0x5143 + [char]0x30D5 + [char]0x30A1 + [char]0x30A4 + [char]0x30EB              # 元ファイル
 $LBL_FROM       = "from"
 
-# ── Helpers ──
+# -- Helpers --
 function Get-ColLetter([int]$c) {
     if ($c -le 0)  { return "?" }
     if ($c -le 26) { return [char]([byte][char]'A' + $c - 1) }
@@ -208,7 +208,7 @@ try {
     if (-not $wsGfix) { throw ("GFIX sheet '{0}' not found." -f $LBL_GFIX_SHEET) }
     $wsGfix.Activate() | Out-Null
 
-    # ── Resolve columns (B = from システム種別 ... O = 送信 元ファイル ... filter on 送信 ジョブ) ──
+    # -- Resolve columns (B = from システム種別 ... O = 送信 元ファイル ... filter on 送信 ジョブ) --
     Write-Host "[Step 4] Resolving header columns..." -ForegroundColor Cyan
     $MAX_COL = 30
     $row4 = @{}; $row5 = @{}
@@ -277,7 +277,7 @@ try {
     $lastRow = $wsGfix.UsedRange.Rows.Count
     Write-Host ("  Data last row   : {0}" -f $lastRow)
 
-    # ── Bottom-line clear of any pre-existing filter ──
+    # -- Bottom-line clear of any pre-existing filter --
     if ($wsGfix.AutoFilterMode) { $wsGfix.AutoFilterMode = $false }
 
     # CopyPicture: Invoke-RangeCopyPicture tries xlScreen first (truest to
@@ -319,7 +319,7 @@ try {
             $wsGfix.Cells.Item(4, $col_left),
             $wsGfix.Cells.Item($lastRow, $col_right))
 
-        # ── Compute visible bounding box (filter hides middle rows) ──
+        # -- Compute visible bounding box (filter hides middle rows) --
         # Sum visible row heights between row 4 and lastRow.
         $visibleHeight = 0
         for ($rr = 4; $rr -le $lastRow; $rr++) {
@@ -330,7 +330,7 @@ try {
         # Width: cols aren't hidden, use range.Width directly
         $rangeWidth = $snapRange.Width
 
-        # ── Copy as picture (retry + appearance/format fallbacks) ──
+        # -- Copy as picture (retry + appearance/format fallbacks) --
         # xlScreen can fail outright when the window is parked off-screen;
         # Invoke-RangeCopyPicture re-activates + retries + falls back to
         # xlPrinter so the capture works even when nothing is on a monitor.
@@ -338,7 +338,7 @@ try {
         # mode); xlPicture is kept only as a lower-priority fallback.
         [void](Invoke-RangeCopyPicture -Excel $excel -Worksheet $wsGfix -Range $snapRange)
 
-        # ── Insert chart sized to actual visible content, paste, export ──
+        # -- Insert chart sized to actual visible content, paste, export --
         $chartObj = $wsGfix.ChartObjects().Add(0, 0, $rangeWidth + 2, $visibleHeight + 2)
         try {
             # Remove chart's default fill so PNG has no gray border

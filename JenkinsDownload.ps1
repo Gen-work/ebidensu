@@ -3,7 +3,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # Capture at dot-source time: here $MyInvocation.MyCommand is ExternalScriptInfo (has .Path).
-# Inside a function it becomes FunctionInfo (no .Path) — so cache it now.
+# Inside a function it becomes FunctionInfo (no .Path) -- so cache it now.
 $_JD_ScriptDir = Split-Path $MyInvocation.MyCommand.Path
 
 function ConvertTo-JenkinsDownloadUri {

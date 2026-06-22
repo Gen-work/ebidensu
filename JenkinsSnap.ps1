@@ -103,7 +103,7 @@ $Global:Timing = @{ ActionWaitMs = $ActionWaitMs; ResultWaitMs = $ResultWaitMs }
 
 if (-not $WorkDir) { throw '-WorkDir is required' }
 
-# ── mode config ───────────────────────────────────────────────────────────────
+# -- mode config ---------------------------------------------------------------
 # Field    : CSV column that tracks completion for this mode
 # Folder   : subfolder under snap\ for screenshots
 # GroupCol : CSV column to group rows by (navigate to Jenkins once per group)
@@ -142,7 +142,7 @@ $job        = $modeCfg.JOB
 # NoGfix keeps the pure-screenshot path even when SnapVerify is enabled.
 $detectMode = $snapVerifyOn -and ($Mode -in 'GiftRecv','GfixRecv')
 
-# ── mapping ───────────────────────────────────────────────────────────────────
+# -- mapping -------------------------------------------------------------------
 $mappingFile = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 
 # MappingStore: single source of truth for read/filter/write.
@@ -183,13 +183,13 @@ Write-Host "`n===== JenkinsSnap $Mode =====" -ForegroundColor Green
 Write-Host "Pending rows: $($pending.Count)" -ForegroundColor Cyan
 Write-Host ("Detection   : {0} (tol +-{1} min)" -f $detectMode, $ToleranceMinutes) -ForegroundColor Cyan
 
-# ── paths ─────────────────────────────────────────────────────────────────────
+# -- paths ---------------------------------------------------------------------
 $snapDir = Join-Path (Join-Path $WorkDir 'snap') $snapFolder
 $dataRoot = Join-Path $WorkDir 'DATA'
 Ensure-Dir $snapDir
 if ($Mode -in 'GiftRecv','GfixRecv') { Ensure-Dir $dataRoot }
 
-# ── URL cache (PS5.1-safe: no -AsHashtable) ──────────────────────────────────
+# -- URL cache (PS5.1-safe: no -AsHashtable) ----------------------------------
 $urlCacheFile = Join-Path $WorkDir 'jenkins_urls.json'
 $urlCache = @{}
 if (Test-Path $urlCacheFile) {
@@ -200,7 +200,7 @@ if (Test-Path $urlCacheFile) {
 }
 $urlDirty = $false
 
-# ── inline helpers ────────────────────────────────────────────────────────────
+# -- inline helpers ------------------------------------------------------------
 function Invoke-CropPng([string]$path, [int]$crop) {
     if ($crop -le 0 -or -not (Test-Path -LiteralPath $path)) { return }
     try {
@@ -270,10 +270,38 @@ function Get-CurrentEdgeUrl {
     return ''
 }
 
+# Click the CENTER of the Jenkins page. This (a) gives the document keyboard
+# focus so the select-all/copy reads the page rather than the find bar, and
+# (b) collapses any prior Ctrl+A select-all so it is not captured in a later
+# screenshot -- Esc does NOT clear an Edge text selection, only a click does.
+# The generic Click-PageBody clicks (Left+150, Top+150), which on a Jenkins
+# folder page lands in the LEFT sidebar; when a build is queued the "Build Queue"
+# widget shows a job hyperlink there, so that click navigates Edge into the job.
+# The page center carries no link, so it is safe -- same approach as MqSnap's
+# Click-MqPageCenter.
+function Click-JenkinsPageCenter {
+    $hWnd = [WinAPI]::GetForegroundWindow()
+    if ($hWnd -eq [IntPtr]::Zero) { return }
+
+    $rect = New-Object WinAPI+RECT
+    [WinAPI]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
+
+    $x = [int]($rect.Left + (($rect.Right  - $rect.Left) / 2))
+    $y = [int]($rect.Top  + (($rect.Bottom - $rect.Top)  / 2))
+
+    [MouseAPI]::SetCursorPos($x, $y) | Out-Null
+    Start-Sleep -Milliseconds 100
+    [MouseAPI]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)  # LEFTDOWN
+    Start-Sleep -Milliseconds 50
+    [MouseAPI]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)  # LEFTUP
+    Start-Sleep -Milliseconds 400
+}
+
 # Grab the foreground Edge page text once (Ctrl+A/Ctrl+C via Read-PageText).
-# Click-PageBody first so the select-all lands on the page, not the find bar.
+# Click the page center first so the select-all lands on the document (not the
+# find bar) and so any earlier selection is cleared before we re-select.
 function Get-JenkinsPageTextOnce {
-    Click-PageBody
+    Click-JenkinsPageCenter
     $txt = & $pageTextScript -SelectWaitMs $ActionWaitMs -CopyWaitMs $ResultWaitMs
     if ($null -eq $txt) { return '' }
     return [string]$txt
@@ -300,7 +328,7 @@ function Wait-JenkinsPageReady {
     return @{ Text = $text; Kind = $kind }
 }
 
-# ── Group pending rows by TO_code ─────────────────────────────────────────────
+# -- Group pending rows by TO_code ---------------------------------------------
 # Build an ordered list of distinct TO_code values (preserving first-seen order)
 $groupOrder = [System.Collections.Generic.List[string]]::new()
 $groupMap   = @{}   # TO_code -> list of rows
@@ -320,7 +348,7 @@ foreach ($g in $groupOrder) {
     Write-Host ("  {0,-12} : {1} rows" -f $g, $groupMap[$g].Count) -ForegroundColor DarkGray
 }
 
-# ── Batch run-time inquiry (plan 2.2) -- one prompt, applied to pending rows ────
+# -- Batch run-time inquiry (plan 2.2) -- one prompt, applied to pending rows ----
 $timeMode     = 'none'
 $runTolerance = $ToleranceMinutes
 if ($detectMode -and -not $dryFlag) {
@@ -356,7 +384,7 @@ if ($detectMode -and -not $dryFlag) {
     Write-Host ("  Tolerance: +-{0} min" -f $runTolerance) -ForegroundColor Gray
 }
 
-# ── Process each TO_code group ────────────────────────────────────────────────
+# -- Process each TO_code group ------------------------------------------------
 $cntDone = 0
 $cntSkip = 0
 $cntFail = 0
@@ -372,7 +400,7 @@ foreach ($toCode in $groupOrder) {
     Write-Host ''
     Write-Host ("===== TO_code: {0}  ({1} rows) =====" -f $toCode, $rows.Count) -ForegroundColor Cyan
 
-    # ── DryRun: report the plan only; never open Edge or prompt. ──────────────
+    # -- DryRun: report the plan only; never open Edge or prompt. --------------
     if ($dryFlag) {
         foreach ($row in $rows) {
             $correl = [string]$row.Correl_ID_S
@@ -383,7 +411,7 @@ foreach ($toCode in $groupOrder) {
         continue
     }
 
-    # ── Navigate Edge to this system's Jenkins folder ─────────────────────────
+    # -- Navigate Edge to this system's Jenkins folder -------------------------
     $cacheKey  = "{0}_{1}" -f $Mode, $toCode
     $cachedUrl = if ($urlCache.ContainsKey($cacheKey)) { $urlCache[$cacheKey] } else { '' }
 
@@ -430,7 +458,7 @@ foreach ($toCode in $groupOrder) {
         }
     }
 
-    # ── Per-row screenshot loop ───────────────────────────────────────────────
+    # -- Per-row screenshot loop -----------------------------------------------
     foreach ($row in $rows) {
         if ($userQuit) { break }
 
@@ -456,9 +484,16 @@ foreach ($toCode in $groupOrder) {
                 $cntFail++; $resolved = $true; break
             }
 
+            # Click the page center BEFORE Ctrl+F: it clears any select-all left
+            # by the previous row's page-text read (Esc does not clear an Edge
+            # selection) so the highlight is not captured here, and it focuses the
+            # page. The center is used rather than Click-PageBody's
+            # (Left+150, Top+150), which lands on the left-sidebar "Build Queue"
+            # job link when a build is queued and navigates Edge into that job
+            # before we capture.
+            Click-JenkinsPageCenter
             # Ctrl+F search for CORREL_ID_S; leave the find bar open so the
             # screenshot shows the highlighted match (ESC is sent after capture).
-            Click-PageBody
             Send-CtrlF
             Paste-Replace $searchTerm
             Start-Sleep -Milliseconds $ResultWaitMs
@@ -554,7 +589,7 @@ foreach ($toCode in $groupOrder) {
                 }
             }
 
-            # ── Detection OFF (or NoGfix, pending M6): legacy screenshot -> 1 ──
+            # -- Detection OFF (or NoGfix, pending M6): legacy screenshot -> 1 --
             if (-not $detectMode) {
                 try {
                     $row.$snapField = '1'
@@ -571,7 +606,7 @@ foreach ($toCode in $groupOrder) {
                 $resolved = $true; break
             }
 
-            # ── F3 verdict (plan 4.F3): ok -> field=1, ng -> field=2 ──────────
+            # -- F3 verdict (plan 4.F3): ok -> field=1, ng -> field=2 ----------
             $rowExpected = $null
             if ($timeMode -ne 'none') {
                 $rowExpected = ConvertTo-ExpectedDateTime -Value (Get-RowProp $row $TimeColumn) -Format $TimeFormat
@@ -625,14 +660,14 @@ foreach ($toCode in $groupOrder) {
     }
 }
 
-# ── save URL cache ────────────────────────────────────────────────────────────
+# -- save URL cache ------------------------------------------------------------
 if ($urlDirty) {
     $urlCache | ConvertTo-Json -Depth 3 | Set-Content $urlCacheFile -Encoding UTF8
     Write-Host ''
     Write-Host "[$Mode] URL cache saved: jenkins_urls.json" -ForegroundColor DarkGray
 }
 
-# ── summary ───────────────────────────────────────────────────────────────────
+# -- summary -------------------------------------------------------------------
 Write-Host ''
 Write-Host ("===== JenkinsSnap $Mode Done =====") -ForegroundColor Green
 Write-Host ("  Done    : {0}" -f $cntDone)

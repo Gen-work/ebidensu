@@ -4,6 +4,46 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-22 - JenkinsSnap: stop page-body click navigating into a queued job (v2.9.10)
+
+### Fixed
+- **Consecutive Jenkins screenshots opened a job page
+  (`.../job/sc_str1_50_21_stop_appserver/`) and left the second file in a
+  `TO_code` group unscreenshotted.** The per-row flow called `Click-PageBody` (a
+  fixed `Left+150, Top+150` left-click) to focus the page before `Ctrl+F` and
+  before the page-text read. On a Jenkins folder page `(150,150)` lands in the
+  LEFT sidebar; when a build is queued the "Build Queue" (`実行予定のビルド`) widget
+  shows a job hyperlink right there, so the click navigated Edge into that job.
+  Every later capture in the group then shot the wrong page and the correl `Ctrl+F`
+  found nothing. The queue widget only renders while something is queued, which is
+  why this surfaced intermittently ("it didn't used to happen"). The `(150,150)`
+  `Click-PageBody` was actually doing double duty -- focusing the page AND
+  collapsing the previous row's `Ctrl+A` select-all so it was not captured in the
+  next screenshot -- so it is replaced, not removed, with a new
+  `Click-JenkinsPageCenter` that clicks the window centre. On these Jenkins pages
+  the centre carries no hyperlink (confirmed by the operator), so the click is
+  safe; it still clears the selection and focuses the page. (`Esc` does **not**
+  clear an Edge text selection -- only a click does -- so an Esc-only fix would
+  leave the select-all highlight in the following capture.) Used at both sites:
+  before `Ctrl+F` in the per-row loop (clears the prior selection before the
+  screenshot) and in `Get-JenkinsPageTextOnce` (document focus for the
+  `Ctrl+A`/`Ctrl+C` read). Same approach as `MqSnap`'s `Click-MqPageCenter`;
+  `MqSnap`/`HmSnap` keep their own clicks (MQ/HM pages are text, not hyperlink
+  lists, so they have no navigation hazard).
+- **Mojibake comment decorations removed repo-wide.** Box-drawing `─` (U+2500)
+  and em-dash `—` (U+2014) characters used as comment rules render as garbage
+  (e.g. `笏笏`) when Windows PowerShell 5.1 reads a no-BOM `.ps1` on the CP932
+  JP-locale host. Replaced with ASCII across all 12 affected scripts:
+  `JenkinsSnap.ps1` (645x), `MarkGfixLog.ps1` (267x), `Validate.ps1` (267x),
+  `ExcelHelpers.ps1` (270x), `Mark.ps1` (182x), `ExcelSnap.ps1` (52x),
+  `Generate-HostOpenMapping.ps1` (32x), `ReviewEvidence.ps1` (31x), `Common.ps1`
+  (24x), `GfixLogDownload.ps1` / `ReplaceEvidence.ps1` (4x each) and
+  `JenkinsDownload.ps1` (1x em-dash). Only the two decoration codepoints were
+  changed (comment-only; BOM state and line endings preserved). Note: ~13 older
+  scripts still carry *raw Japanese* comments (e.g. `# 正常終了`) -- a separate,
+  larger `[char]` migration, not this box-rule garbage.
+
+
 ## 2026-06-19 - SnapVerify: ASCII-clean library + M5 pixel localisation (v2.9.9)
 
 ### Fixed

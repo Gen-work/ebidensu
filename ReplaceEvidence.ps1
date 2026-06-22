@@ -76,7 +76,7 @@ if (-not (Test-Path -LiteralPath $WorkDir)) { Write-Host "[ERROR] WorkDir not fo
 $forceFlag        = [bool]$Force.IsPresent
 $allowNoGfixFlag  = [bool]$AllowMissingOptionalNoGfix.IsPresent
 
-# ── dot-source ExcelHelpers (robust path resolve) + shared libs ──
+# -- dot-source ExcelHelpers (robust path resolve) + shared libs --
 $candidates = @()
 if (-not [string]::IsNullOrWhiteSpace($ExcelHelpersScript)) { $candidates += $ExcelHelpersScript }
 $candidates += @(

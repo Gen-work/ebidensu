@@ -10,7 +10,7 @@
 #    - no Add-Type (caller handles Common.ps1 first)
 # ============================================================
 
-# ── Excel application lifecycle ─────────────────────────────
+# -- Excel application lifecycle -----------------------------
 
 function New-ExcelApp {
     $excel = New-Object -ComObject Excel.Application
@@ -40,7 +40,7 @@ function Close-Workbook($wb, [bool]$save = $false) {
     try { $wb.Close([bool]$save) } catch {}
 }
 
-# ── Sheet operations ────────────────────────────────────────
+# -- Sheet operations ----------------------------------------
 
 function Get-SheetByName($wb, [string]$name) {
     foreach ($ws in $wb.Worksheets) {
@@ -55,7 +55,7 @@ function Unhide-AllSheets($wb) {
     }
 }
 
-# ── Cleanup helpers ─────────────────────────────────────────
+# -- Cleanup helpers -----------------------------------------
 
 function Reset-SheetBelowRow($ws, [int]$startRow, [int]$endCol = 20) {
     <#
@@ -137,7 +137,7 @@ function Reset-SheetBelowRow($ws, [int]$startRow, [int]$endCol = 20) {
     }
 }
 
-# ── Anchor row math ─────────────────────────────────────────
+# -- Anchor row math -----------------------------------------
 
 function Get-MaxSheetRow($ws) {
     <#
@@ -226,7 +226,7 @@ function Get-CellRangeRect($ws, [string]$colRange, [int]$startRow, [int]$endRow)
     return @{ Left = $left; Top = $top; Width = ($right - $left); Height = ($bot - $top) }
 }
 
-# ── Inserts ─────────────────────────────────────────────────
+# -- Inserts -------------------------------------------------
 
 function Insert-PictureSendToBack($ws, [int]$row, [int]$col, [string]$imgPath) {
     <#
@@ -274,7 +274,7 @@ function Write-LogLines($ws, [int]$startRow, [int]$col, [string[]]$lines) {
     return ($startRow + $lines.Count)
 }
 
-# ── Bitmask helpers (mapping-side; used by callers) ─────────
+# -- Bitmask helpers (mapping-side; used by callers) ---------
 
 function Get-BitValue($row, [string]$field) {
     if ($null -eq $row) { return 0 }
@@ -302,7 +302,7 @@ function Ensure-Column([array]$rows, [string]$field, [string]$default = '0') {
     }
 }
 
-# ── Shape metadata (AltText payload "v1|<key>|<value>") ─────
+# -- Shape metadata (AltText payload "v1|<key>|<value>") -----
 
 function Set-ShapeMetadata($shape, [string]$key, [string]$value) {
     <#
@@ -327,7 +327,7 @@ function Get-ShapeMetadata($shape) {
     return @{ Key = $parts[0]; Value = $parts[1] }
 }
 
-# ── Red rectangle helper (Mark phase) ───────────────────────
+# -- Red rectangle helper (Mark phase) -----------------------
 
 function Add-RedRectangle($ws, [double]$left, [double]$top, [double]$width, [double]$height, [string]$name, [double]$lineWeight = 1.5) {
     <#
@@ -375,7 +375,7 @@ function Remove-MarkShapes($ws, [string]$namePrefix) {
     return $cnt
 }
 
-# ── GFIX log highlight (folded into MarkGfix) ───────────────
+# -- GFIX log highlight (folded into MarkGfix) ---------------
 
 function Invoke-GfixLogHighlight {
     <#
