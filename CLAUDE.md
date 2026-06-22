@@ -263,7 +263,30 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-19 v2.9.9)
+## Current state (last bump: 2026-06-22 v2.9.10)
+
+v2.9.10 (JenkinsSnap page-body click no longer navigates into a queued job):
+**Fixed** -- consecutive Jenkins screenshots intermittently opened a job page
+(`.../job/sc_str1_50_21_stop_appserver/`) and the second file in a `TO_code`
+group came out unscreenshotted. The per-row flow used `Click-PageBody` (a fixed
+`Left+150, Top+150` left-click) to focus the page before `Ctrl+F` and before the
+page-text read. `(150,150)` lands in the Jenkins LEFT sidebar, and when a build
+is queued the "Build Queue" (`実行予定のビルド`) widget shows a job hyperlink there,
+so the click navigated Edge into that job; later captures in the group then shot
+the wrong page and the correl `Ctrl+F` matched nothing. The queue widget only
+renders while something is queued -- hence the "didn't used to happen"
+intermittency. Since `Ctrl+F` scrolls to the match, no fixed coordinate is safe,
+so both page-body clicks were removed instead of relocated: the pre-`Ctrl+F`
+click was redundant (`Ctrl+F` opens find-in-page from the already-focused Edge
+window), and `Get-JenkinsPageTextOnce` now sends a single `{ESC}` to leave the
+find bar for the document before `Ctrl+A`/`Ctrl+C` (an Esc can never activate a
+link). Layout-/scroll-independent; `MqSnap`/`HmSnap` keep `Click-PageBody`
+(their MQ/HM pages are text, not hyperlink lists, so no navigation hazard). Also
+removed mojibake comment decorations -- `JenkinsSnap.ps1` (645x box-drawing `─`
+U+2500) and `JenkinsDownload.ps1` (one em-dash `—` U+2014), which mojibake to
+`笏笏`-style garbage on CP932 -- per the ASCII-source rule. The same box-rule
+decoration remains in ~10 sibling `.ps1` files (migrate when next touched).
+This is COM/Edge wiring, static-checked only; confirm on an office PC + Excel.
 
 v2.9.9 (SnapVerify ASCII fix + M5 pixel localisation):
 **Fixed** -- `SnapVerify.ps1` threw `The variable '$script:SV_Abend' cannot be

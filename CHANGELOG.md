@@ -4,6 +4,39 @@ Tracks iterations across Misaki's browser (work) ↔ IDE (home) workflow.
 Bump the date heading whenever a new bundle is delivered.
 
 
+## 2026-06-22 - JenkinsSnap: stop page-body click navigating into a queued job (v2.9.10)
+
+### Fixed
+- **Consecutive Jenkins screenshots opened a job page
+  (`.../job/sc_str1_50_21_stop_appserver/`) and left the second file in a
+  `TO_code` group unscreenshotted.** The per-row flow called `Click-PageBody` (a
+  fixed `Left+150, Top+150` left-click) to focus the page before `Ctrl+F` and
+  before the page-text read. On a Jenkins folder page `(150,150)` lands in the
+  LEFT sidebar; when a build is queued the "Build Queue" (`実行予定のビルド`) widget
+  shows a job hyperlink right there, so the click navigated Edge into that job.
+  Every later capture in the group then shot the wrong page and the correl `Ctrl+F`
+  found nothing. The queue widget only renders while something is queued, which is
+  why this surfaced intermittently ("it didn't used to happen"). Because `Ctrl+F`
+  scrolls the page to the match, no fixed click coordinate is safe, so the fix
+  removes the page-body clicks entirely rather than relocating them:
+  - dropped the pre-`Ctrl+F` `Click-PageBody` -- `Ctrl+F` is a browser accelerator
+    that opens find-in-page from the already-focused Edge window (set by
+    `Activate-JenkinsEdgeWindow`), so the click was redundant;
+  - in `Get-JenkinsPageTextOnce`, replaced `Click-PageBody` with a single `{ESC}`,
+    which still moves focus out of the find bar onto the document for the
+    `Ctrl+A`/`Ctrl+C` read but can never activate a link.
+  Layout- and scroll-independent (no new screen coordinates). `MqSnap`/`HmSnap`
+  keep `Click-PageBody`: their MQ/HM pages are text, not hyperlink lists, so they
+  have no equivalent navigation hazard.
+- **Mojibake comment decorations removed.** `JenkinsSnap.ps1` carried 645
+  box-drawing `─` (U+2500) characters and `JenkinsDownload.ps1` one em-dash `—`
+  (U+2014) in comment rules; on the CP932 JP-locale host these render as garbage
+  (e.g. `笏笏`). Replaced with ASCII per the project's ASCII-source rule. The same
+  box-rule decoration still exists in ~10 sibling `.ps1` files (Mark, Validate,
+  ExcelHelpers, MarkGfixLog, ...) and should be migrated when those files are next
+  touched.
+
+
 ## 2026-06-19 - SnapVerify: ASCII-clean library + M5 pixel localisation (v2.9.9)
 
 ### Fixed
