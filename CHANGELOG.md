@@ -16,25 +16,32 @@ Bump the date heading whenever a new bundle is delivered.
   shows a job hyperlink right there, so the click navigated Edge into that job.
   Every later capture in the group then shot the wrong page and the correl `Ctrl+F`
   found nothing. The queue widget only renders while something is queued, which is
-  why this surfaced intermittently ("it didn't used to happen"). Because `Ctrl+F`
-  scrolls the page to the match, no fixed click coordinate is safe, so the fix
-  removes the page-body clicks entirely rather than relocating them:
-  - dropped the pre-`Ctrl+F` `Click-PageBody` -- `Ctrl+F` is a browser accelerator
-    that opens find-in-page from the already-focused Edge window (set by
-    `Activate-JenkinsEdgeWindow`), so the click was redundant;
-  - in `Get-JenkinsPageTextOnce`, replaced `Click-PageBody` with a single `{ESC}`,
-    which still moves focus out of the find bar onto the document for the
-    `Ctrl+A`/`Ctrl+C` read but can never activate a link.
-  Layout- and scroll-independent (no new screen coordinates). `MqSnap`/`HmSnap`
-  keep `Click-PageBody`: their MQ/HM pages are text, not hyperlink lists, so they
-  have no equivalent navigation hazard.
-- **Mojibake comment decorations removed.** `JenkinsSnap.ps1` carried 645
-  box-drawing `─` (U+2500) characters and `JenkinsDownload.ps1` one em-dash `—`
-  (U+2014) in comment rules; on the CP932 JP-locale host these render as garbage
-  (e.g. `笏笏`). Replaced with ASCII per the project's ASCII-source rule. The same
-  box-rule decoration still exists in ~10 sibling `.ps1` files (Mark, Validate,
-  ExcelHelpers, MarkGfixLog, ...) and should be migrated when those files are next
-  touched.
+  why this surfaced intermittently ("it didn't used to happen"). The `(150,150)`
+  `Click-PageBody` was actually doing double duty -- focusing the page AND
+  collapsing the previous row's `Ctrl+A` select-all so it was not captured in the
+  next screenshot -- so it is replaced, not removed, with a new
+  `Click-JenkinsPageCenter` that clicks the window centre. On these Jenkins pages
+  the centre carries no hyperlink (confirmed by the operator), so the click is
+  safe; it still clears the selection and focuses the page. (`Esc` does **not**
+  clear an Edge text selection -- only a click does -- so an Esc-only fix would
+  leave the select-all highlight in the following capture.) Used at both sites:
+  before `Ctrl+F` in the per-row loop (clears the prior selection before the
+  screenshot) and in `Get-JenkinsPageTextOnce` (document focus for the
+  `Ctrl+A`/`Ctrl+C` read). Same approach as `MqSnap`'s `Click-MqPageCenter`;
+  `MqSnap`/`HmSnap` keep their own clicks (MQ/HM pages are text, not hyperlink
+  lists, so they have no navigation hazard).
+- **Mojibake comment decorations removed repo-wide.** Box-drawing `─` (U+2500)
+  and em-dash `—` (U+2014) characters used as comment rules render as garbage
+  (e.g. `笏笏`) when Windows PowerShell 5.1 reads a no-BOM `.ps1` on the CP932
+  JP-locale host. Replaced with ASCII across all 12 affected scripts:
+  `JenkinsSnap.ps1` (645x), `MarkGfixLog.ps1` (267x), `Validate.ps1` (267x),
+  `ExcelHelpers.ps1` (270x), `Mark.ps1` (182x), `ExcelSnap.ps1` (52x),
+  `Generate-HostOpenMapping.ps1` (32x), `ReviewEvidence.ps1` (31x), `Common.ps1`
+  (24x), `GfixLogDownload.ps1` / `ReplaceEvidence.ps1` (4x each) and
+  `JenkinsDownload.ps1` (1x em-dash). Only the two decoration codepoints were
+  changed (comment-only; BOM state and line endings preserved). Note: ~13 older
+  scripts still carry *raw Japanese* comments (e.g. `# 正常終了`) -- a separate,
+  larger `[char]` migration, not this box-rule garbage.
 
 
 ## 2026-06-19 - SnapVerify: ASCII-clean library + M5 pixel localisation (v2.9.9)

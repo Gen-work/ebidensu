@@ -71,7 +71,7 @@ if ([string]::IsNullOrWhiteSpace($GfixLogAnchor)) {
     $GfixLogAnchor = [char]0x25BC + 'GFIX' + [char]0x30ED + [char]0x30B0
 }
 
-# ── Dot-source ExcelHelpers.ps1 ─────────────────────────────
+# -- Dot-source ExcelHelpers.ps1 -----------------------------
 $candidates = @()
 if (-not [string]::IsNullOrWhiteSpace($ExcelHelpersScript)) { $candidates += $ExcelHelpersScript }
 $candidates += @(
@@ -89,7 +89,7 @@ if (-not (Get-Command -Name 'Add-RedRectangle' -ErrorAction SilentlyContinue)) {
     Write-Host '[ERROR] ExcelHelpers dot-source failed (Add-RedRectangle not loaded).' -ForegroundColor Red; exit 1
 }
 
-# ── Target filter ───────────────────────────────────────────
+# -- Target filter -------------------------------------------
 $targetSet = @{}
 foreach ($rawId in @($TargetIds)) {
     if ($null -eq $rawId) { continue }
@@ -106,7 +106,7 @@ function Test-TargetRow($row) {
             $targetSet.ContainsKey([string]$row.Excel_NAME))
 }
 
-# ── Mode config (sheet names + which folders carry marks) ───
+# -- Mode config (sheet names + which folders carry marks) ---
 $sheetGiftRecv = "GIFT" + [char]0x53D7 + [char]0x4FE1 + [char]0x7D50 + [char]0x679C  # GIFT受信結果
 $sheetGfixRecv = "GFIX" + [char]0x53D7 + [char]0x4FE1 + [char]0x7D50 + [char]0x679C  # GFIX受信結果
 $sheetDfDiff   = "GIFT" + [char]0x30C7 + [char]0x30FC + [char]0x30BF +
@@ -130,7 +130,7 @@ $modeCfg = switch ($Mode) {
     } }
 }
 
-# ── Header ──────────────────────────────────────────────────
+# -- Header --------------------------------------------------
 $mappingPath = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 $evDir       = Join-Path $WorkDir 'evidence'
 
@@ -182,7 +182,7 @@ if ($groups.Count -eq 0) {
     return
 }
 
-# ── Main loop ───────────────────────────────────────────────
+# -- Main loop -----------------------------------------------
 $excel = New-ExcelApp
 $cntDone = 0
 $cntSkip = 0

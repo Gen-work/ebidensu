@@ -65,13 +65,13 @@ if (-not (Test-Path -LiteralPath $WorkDir)) {
 $forceFlag = [bool]$Force.IsPresent
 $dryFlag   = [bool]$DryRun.IsPresent
 
-# ── Default anchor string ────────────────────────────────────
+# -- Default anchor string ------------------------------------
 if ([string]::IsNullOrWhiteSpace($LogAnchor)) {
     # ▼GFIXログ
     $LogAnchor = [char]0x25BC + "GFIX" + [char]0x30ED + [char]0x30B0
 }
 
-# ── Dot-source ExcelHelpers.ps1 ─────────────────────────────
+# -- Dot-source ExcelHelpers.ps1 -----------------------------
 $candidates = @()
 if (-not [string]::IsNullOrWhiteSpace($ExcelHelpersScript)) { $candidates += $ExcelHelpersScript }
 $candidates += @(
@@ -89,10 +89,10 @@ if (-not (Get-Command -Name 'Set-CellRangeFill' -ErrorAction SilentlyContinue)) 
     Write-Host '[ERROR] ExcelHelpers dot-source failed (Set-CellRangeFill not loaded).' -ForegroundColor Red; exit 1
 }
 
-# ── Sheet name ───────────────────────────────────────────────
+# -- Sheet name -----------------------------------------------
 $sheetGfixRecv = "GFIX" + [char]0x53D7 + [char]0x4FE1 + [char]0x7D50 + [char]0x679C  # GFIX受信結果
 
-# ── Target filter ────────────────────────────────────────────
+# -- Target filter --------------------------------------------
 $targetSet = @{}
 foreach ($rawId in @($TargetIds)) {
     if ($null -eq $rawId) { continue }
@@ -109,7 +109,7 @@ function Test-TargetRow($row) {
             $targetSet.ContainsKey([string]$row.Excel_NAME))
 }
 
-# ── Header ───────────────────────────────────────────────────
+# -- Header ---------------------------------------------------
 $mappingPath = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 $evDir       = Join-Path $WorkDir 'evidence'
 
@@ -144,7 +144,7 @@ if ($groups.Count -eq 0) {
     return
 }
 
-# ── Main loop ────────────────────────────────────────────────
+# -- Main loop ------------------------------------------------
 # Standalone re-highlight utility. The shared Invoke-GfixLogHighlight does the
 # actual work (same code path MarkGfix uses). No mapping column is written.
 # -Force is accepted for back-compat but is a no-op (the op is idempotent).

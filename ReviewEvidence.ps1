@@ -59,7 +59,7 @@ $forceFlag = [bool]$Force.IsPresent
 $dryRunFlag = [bool]$DryRun.IsPresent
 $maximizeFlag = [bool]$Maximize.IsPresent
 
-# ── Dot-source ExcelHelpers.ps1 ─────────────────────────────
+# -- Dot-source ExcelHelpers.ps1 -----------------------------
 $candidates = @()
 if (-not [string]::IsNullOrWhiteSpace($ExcelHelpersScript)) { $candidates += $ExcelHelpersScript }
 $candidates += @(

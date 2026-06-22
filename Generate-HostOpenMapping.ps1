@@ -55,13 +55,13 @@ $scriptDir = Split-Path $MyInvocation.MyCommand.Path
 $forceFlag = [bool]$Force.IsPresent    # capture before dot-source
 . (Join-Path $scriptDir 'MappingStore.ps1')
 
-# ── Force console to UTF-8 ──
+# -- Force console to UTF-8 --
 try {
     [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
     $OutputEncoding = [System.Text.UTF8Encoding]::new()
 } catch {}
 
-# ── Interactive fallback ──
+# -- Interactive fallback --
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host "WorkDir path" }
 
 function Convert-ToCleanList([object[]]$Values) {
@@ -125,7 +125,7 @@ Write-Host ("  Add (merge) : {0}" -f $addFlag)
 Write-Host ("  Force       : {0}" -f $Force.IsPresent)
 Write-Host ""
 
-# ── Validate ──
+# -- Validate --
 if (-not (Test-Path -LiteralPath $WorkDir)) {
     Write-Host "[ERROR] WorkDir not found." -ForegroundColor Red; exit 1
 }
@@ -137,7 +137,7 @@ $mappingFileName = "mapping_$Owner.csv"
 $mappingPath     = Join-Path $WorkDir $mappingFileName
 Write-Host ("[INFO] Output : {0}" -f $mappingFileName)
 
-# ── Find WBS & GFIX files ──
+# -- Find WBS & GFIX files --
 function Find-SingleFile([string]$dir, [string]$pattern, [string]$desc) {
     $files = @(Get-ChildItem -LiteralPath $dir -Filter $pattern -File -ErrorAction SilentlyContinue |
                  Where-Object { -not $_.Name.StartsWith("~$") })
@@ -158,7 +158,7 @@ Write-Host ("[INFO] WBS    : {0}" -f (Split-Path -Leaf $wbsPath))
 Write-Host ("[INFO] GFIX   : {0}" -f (Split-Path -Leaf $gfixPath))
 Write-Host ""
 
-# ── Japanese label constants ──
+# -- Japanese label constants --
 $LBL_WBS_SHEET  = "WBS"
 $LBL_GFIX_SHEET = "GFIX" + [char]0x9001 + [char]0x53D7 + [char]0x4FE1 + [char]0x4E00 + [char]0x89A7  # GFIX送受信一覧
 $LBL_SYS_TYPE   = [char]0x30B7 + [char]0x30B9 + [char]0x30C6 + [char]0x30E0 + [char]0x7A2E + [char]0x5225
@@ -172,7 +172,7 @@ $LBL_JOB        = [char]0x30B8 + [char]0x30E7 + [char]0x30D6
 $LBL_FROM = "from"
 $LBL_TO   = "to"
 
-# ── Helpers ──
+# -- Helpers --
 function Get-ColLetter([int]$c) {
     if ($c -le 0)  { return "?" }
     if ($c -le 26) { return [char]([byte][char]'A' + $c - 1) }
@@ -229,7 +229,7 @@ function Test-OwnerMatch([string]$ownerCell, [string]$ownerInput) {
     return $false
 }
 
-# ── Excel COM ──
+# -- Excel COM --
 $excel  = $null
 $wbWbs  = $null
 $wbGfix = $null
@@ -240,7 +240,7 @@ $excel = New-Object -ComObject Excel.Application
     $excel.Visible = $false
     $excel.DisplayAlerts = $false
 
-    # ── Suppress add-in / startup workbooks ──
+    # -- Suppress add-in / startup workbooks --
     $excel.AutomationSecurity = 3              # msoAutomationSecurityForceDisable
     $excel.AskToUpdateLinks   = $false
     $excel.EnableEvents       = $false

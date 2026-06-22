@@ -41,20 +41,20 @@ public class MouseAPI {
 
 $Global:Shell = New-Object -ComObject WScript.Shell
 
-# ── Directory ──
+# -- Directory --
 function Ensure-Dir([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) {
         New-Item -ItemType Directory -Path $Path -Force | Out-Null
     }
 }
 
-# ── Type conversion ──
+# -- Type conversion --
 function To-Int($value) {
     if ($null -eq $value -or $value -eq '') { return 0 }
     try { return [int]([double]$value) } catch { return 0 }
 }
 
-# ── Screenshot ──
+# -- Screenshot --
 function Take-WindowScreenshot($hWnd, $savePath) {
     $rect = New-Object WinAPI+RECT
     [WinAPI]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
@@ -85,7 +85,7 @@ function Take-ForegroundScreenshot([string]$savePath) {
     }
 }
 
-# ── Edge window control ──
+# -- Edge window control --
 function Activate-EdgeWindow {
     $null = $Shell.AppActivate("Microsoft Edge")
     Start-Sleep -Milliseconds 700
@@ -131,7 +131,7 @@ function Reset-FocusToBody {
     Click-PageBody
 }
 
-# ── SendKeys helpers ──
+# -- SendKeys helpers --
 function Set-ClipboardText([string]$text) {
     [System.Windows.Forms.Clipboard]::SetText($text)
     Start-Sleep -Milliseconds 200
@@ -163,7 +163,7 @@ function Paste-Replace([string]$text) {
     Send-Key "^v" 300
 }
 
-# ── UI helpers ──
+# -- UI helpers --
 function Show-RowHeader($item, [string]$stepName, [string]$sheetName) {
     Write-Host ""
     Write-Host ("=" * 72) -ForegroundColor White

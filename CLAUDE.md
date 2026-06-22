@@ -275,17 +275,24 @@ is queued the "Build Queue" (`実行予定のビルド`) widget shows a job hype
 so the click navigated Edge into that job; later captures in the group then shot
 the wrong page and the correl `Ctrl+F` matched nothing. The queue widget only
 renders while something is queued -- hence the "didn't used to happen"
-intermittency. Since `Ctrl+F` scrolls to the match, no fixed coordinate is safe,
-so both page-body clicks were removed instead of relocated: the pre-`Ctrl+F`
-click was redundant (`Ctrl+F` opens find-in-page from the already-focused Edge
-window), and `Get-JenkinsPageTextOnce` now sends a single `{ESC}` to leave the
-find bar for the document before `Ctrl+A`/`Ctrl+C` (an Esc can never activate a
-link). Layout-/scroll-independent; `MqSnap`/`HmSnap` keep `Click-PageBody`
-(their MQ/HM pages are text, not hyperlink lists, so no navigation hazard). Also
-removed mojibake comment decorations -- `JenkinsSnap.ps1` (645x box-drawing `─`
-U+2500) and `JenkinsDownload.ps1` (one em-dash `—` U+2014), which mojibake to
-`笏笏`-style garbage on CP932 -- per the ASCII-source rule. The same box-rule
-decoration remains in ~10 sibling `.ps1` files (migrate when next touched).
+intermittency. The `(150,150)` click was doing double duty -- focusing the page
+AND collapsing the previous row's `Ctrl+A` select-all so it was not captured in
+the next screenshot -- so it is REPLACED (not removed) with a new
+`Click-JenkinsPageCenter` that clicks the window centre, which on these Jenkins
+pages carries no hyperlink (confirmed by the operator). The centre click still
+clears the selection and focuses the page; `Esc` does NOT clear an Edge text
+selection (an Esc-only fix would leave the select-all highlight in the next
+capture). Used before `Ctrl+F` (clears the prior selection before the
+screenshot) and in `Get-JenkinsPageTextOnce` (document focus for the read) --
+same approach as `MqSnap`'s `Click-MqPageCenter`. `MqSnap`/`HmSnap` keep their
+own clicks (MQ/HM pages are text, not hyperlink lists, so no navigation hazard).
+Also removed mojibake comment decorations repo-wide: box-drawing `─` (U+2500) and
+em-dash `—` (U+2014) comment rules, which mojibake to `笏笏`-style garbage on
+CP932, were replaced with ASCII across all 12 affected scripts (JenkinsSnap 645x,
+MarkGfixLog/Validate 267x, ExcelHelpers 270x, Mark 182x, ExcelSnap, Common,
+ReviewEvidence, Generate-HostOpenMapping, GfixLogDownload, ReplaceEvidence,
+JenkinsDownload). ~13 older scripts still carry raw Japanese comments (e.g.
+`# 正常終了`) -- a separate, larger `[char]` migration, untouched here.
 This is COM/Edge wiring, static-checked only; confirm on an office PC + Excel.
 
 v2.9.9 (SnapVerify ASCII fix + M5 pixel localisation):

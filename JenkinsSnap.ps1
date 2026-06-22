@@ -270,15 +270,38 @@ function Get-CurrentEdgeUrl {
     return ''
 }
 
+# Click the CENTER of the Jenkins page. This (a) gives the document keyboard
+# focus so the select-all/copy reads the page rather than the find bar, and
+# (b) collapses any prior Ctrl+A select-all so it is not captured in a later
+# screenshot -- Esc does NOT clear an Edge text selection, only a click does.
+# The generic Click-PageBody clicks (Left+150, Top+150), which on a Jenkins
+# folder page lands in the LEFT sidebar; when a build is queued the "Build Queue"
+# widget shows a job hyperlink there, so that click navigates Edge into the job.
+# The page center carries no link, so it is safe -- same approach as MqSnap's
+# Click-MqPageCenter.
+function Click-JenkinsPageCenter {
+    $hWnd = [WinAPI]::GetForegroundWindow()
+    if ($hWnd -eq [IntPtr]::Zero) { return }
+
+    $rect = New-Object WinAPI+RECT
+    [WinAPI]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
+
+    $x = [int]($rect.Left + (($rect.Right  - $rect.Left) / 2))
+    $y = [int]($rect.Top  + (($rect.Bottom - $rect.Top)  / 2))
+
+    [MouseAPI]::SetCursorPos($x, $y) | Out-Null
+    Start-Sleep -Milliseconds 100
+    [MouseAPI]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)  # LEFTDOWN
+    Start-Sleep -Milliseconds 50
+    [MouseAPI]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)  # LEFTUP
+    Start-Sleep -Milliseconds 400
+}
+
 # Grab the foreground Edge page text once (Ctrl+A/Ctrl+C via Read-PageText).
-# We must move focus OUT of the find bar onto the document before the select-all,
-# but must NOT click the page to do it: on a Jenkins job-list page a body click
-# can land on a hyperlink (e.g. the left-sidebar "Build Queue" widget, which is
-# only present while a build is queued) and navigate Edge into that job, after
-# which every following screenshot captures the wrong page. Esc closes the find
-# bar and returns focus to the document without ever activating a link.
+# Click the page center first so the select-all lands on the document (not the
+# find bar) and so any earlier selection is cleared before we re-select.
 function Get-JenkinsPageTextOnce {
-    Send-Key '{ESC}' 150
+    Click-JenkinsPageCenter
     $txt = & $pageTextScript -SelectWaitMs $ActionWaitMs -CopyWaitMs $ResultWaitMs
     if ($null -eq $txt) { return '' }
     return [string]$txt
@@ -461,13 +484,16 @@ foreach ($toCode in $groupOrder) {
                 $cntFail++; $resolved = $true; break
             }
 
+            # Click the page center BEFORE Ctrl+F: it clears any select-all left
+            # by the previous row's page-text read (Esc does not clear an Edge
+            # selection) so the highlight is not captured here, and it focuses the
+            # page. The center is used rather than Click-PageBody's
+            # (Left+150, Top+150), which lands on the left-sidebar "Build Queue"
+            # job link when a build is queued and navigates Edge into that job
+            # before we capture.
+            Click-JenkinsPageCenter
             # Ctrl+F search for CORREL_ID_S; leave the find bar open so the
             # screenshot shows the highlighted match (ESC is sent after capture).
-            # Do NOT click the page body first: Ctrl+F is a browser accelerator
-            # that opens find-in-page from the already-focused Edge window, and a
-            # body click on a Jenkins job-list page can hit a hyperlink (e.g. the
-            # sidebar "Build Queue" entry) and navigate away before we capture --
-            # which is exactly how a queued job page got screenshotted instead.
             Send-CtrlF
             Paste-Replace $searchTerm
             Start-Sleep -Milliseconds $ResultWaitMs

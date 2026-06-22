@@ -64,7 +64,7 @@ Write-Host ("  WorkDir : {0}" -f $WorkDir)
 Write-Host ("  Owner   : {0}" -f $Owner)
 if ($targetSet.Count -gt 0) { Write-Host ("  Targets : {0}" -f (($targetSet.Keys | Sort-Object) -join ', ')) }
 
-# ── Mapping ─────────────────────────────────────────────────
+# -- Mapping -------------------------------------------------
 $mappingPath = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 Write-Host ''
 Write-Host '-- Mapping --' -ForegroundColor White
@@ -198,7 +198,7 @@ $groups = $workRows | Group-Object Excel_NAME |
           Sort-Object Name
 Write-Host ("  Excel_NAMEs   : {0} unique{1}" -f $groups.Count, $(if ($targetSet.Count -gt 0) { ' (after filter)' } else { '' }))
 
-# ── Filesystem ──────────────────────────────────────────────
+# -- Filesystem ----------------------------------------------
 Write-Host ''
 Write-Host '-- Filesystem --' -ForegroundColor White
 $dirsToCheck = @(
@@ -246,7 +246,7 @@ if ($templates.Count -gt 0) {
     Write-Host '  Clone will rely entirely on -CloneSourceDir if no template_<bizcode>.xlsx exists.' -ForegroundColor DarkGray
 }
 
-# ── Per Excel_NAME readiness ────────────────────────────────
+# -- Per Excel_NAME readiness --------------------------------
 $snapBase = Join-Path $WorkDir 'snap'
 $evDir    = Join-Path $WorkDir 'evidence'
 
@@ -319,7 +319,7 @@ foreach ($g in $groups) {
     }
 }
 
-# ── Detail matrix ───────────────────────────────────────────
+# -- Detail matrix -------------------------------------------
 if (-not $Compact.IsPresent -and $detailRows.Count -gt 0) {
     Write-Host ''
     Write-Host '-- Per Excel_NAME readiness --' -ForegroundColor White
@@ -339,7 +339,7 @@ if (-not $Compact.IsPresent -and $detailRows.Count -gt 0) {
     }
 }
 
-# ── Totals ──────────────────────────────────────────────────
+# -- Totals --------------------------------------------------
 Write-Host ''
 Write-Host '-- Phase totals --' -ForegroundColor White
 foreach ($k in 'Clone','ReplaceGift','ReplaceGfix','ReplaceDf') {
@@ -351,7 +351,7 @@ foreach ($k in 'Clone','ReplaceGift','ReplaceGfix','ReplaceDf') {
     Write-Host ("  {0,-13}: {1}/{2} ready" -f $k, $t, $c) -ForegroundColor $color
 }
 
-# ── Next suggested action ───────────────────────────────────
+# -- Next suggested action -----------------------------------
 Write-Host ''
 Write-Host '-- Next suggested action --' -ForegroundColor White
 if ($totals.Clone -lt $counts.Clone) {

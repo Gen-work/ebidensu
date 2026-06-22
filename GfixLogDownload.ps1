@@ -77,7 +77,7 @@ Write-ProgressEvent -WorkDir $WorkDir -Phase 'GfixLogDownload' -Action 'start' -
 
 if ($pending.Count -eq 0) { Write-Host '[GfixLogDownload] No pending rows.' -ForegroundColor Green; exit 0 }
 
-# ── local helpers ──
+# -- local helpers --
 function Get-NewDownloadedLog([datetime]$sinceTime, [hashtable]$beforeSet) {
     $hits = @(Get-ChildItem -LiteralPath $downloadDir -Filter '*.log' -ErrorAction SilentlyContinue | Where-Object {
         (-not $beforeSet.ContainsKey($_.Name)) -or ($_.LastWriteTime -gt $sinceTime) -or ($_.CreationTime -gt $sinceTime)
