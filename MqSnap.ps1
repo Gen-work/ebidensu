@@ -283,10 +283,29 @@ function Save-EdgeMainScreenshot {
     Take-WindowScreenshot $mainHwnd $outPath
 }
 
+function Click-MqPageCenter {
+    $hWnd = [WinAPI]::GetForegroundWindow()
+    if ($hWnd -eq [IntPtr]::Zero) { return }
+
+    $rect = New-Object WinAPI+RECT
+    [WinAPI]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
+
+    $x = [int]($rect.Left + (($rect.Right  - $rect.Left) / 2))
+    $y = [int]($rect.Top  + (($rect.Bottom - $rect.Top)  / 2))
+
+    [MouseAPI]::SetCursorPos($x, $y) | Out-Null
+    Start-Sleep -Milliseconds 100
+    [MouseAPI]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)  # LEFTDOWN
+    Start-Sleep -Milliseconds 50
+    [MouseAPI]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)  # LEFTUP
+    Start-Sleep -Milliseconds 400
+}
+
 # Grab the foreground Edge page text once (Ctrl+A/Ctrl+C via Read-PageText).
-# Click-PageBody first so the select-all lands on the page, not an input field.
+# Click the MQ page center first so frameset pages focus frame_main rather than
+# the left navigation frame before select-all/copy parsing.
 function Get-MqPageTextOnce {
-    Click-PageBody
+    Click-MqPageCenter
     $txt = & $pageTextScript -SelectWaitMs $ActionWaitMs -CopyWaitMs $ActionWaitMs
     if ($null -eq $txt) { return '' }
     return [string]$txt
