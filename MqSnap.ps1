@@ -500,7 +500,7 @@ foreach ($item in $pendingItems) {
         # Screenshot + crop (always)
         $outPath = Join-Path $snapDir ("{0}.png" -f $correl)
         # Ctrl+A poll leaves text selected; one click deselects before capture.
-        if ($snapVerifyOn) { Click-PageBody }
+        if ($snapVerifyOn) {  Click-MqPageCenter }
         Save-EdgeMainScreenshot $outPath
         try {
             Invoke-CropPng -path $outPath -cropPx $CropPx
