@@ -69,6 +69,7 @@ param(
 
     # ---- SnapVerify (F1) detection wiring (defaults match VerifyConfig.psd1) ----
     [bool]$SnapEnabled           = $true,
+    [bool]$TimeCheck             = $false,  # $false = existence/abend checks only (no run-time window)
     [int]$ToleranceMinutes       = 30,
     [bool]$SaveText              = $true,
     [int]$PollTimeoutSec         = 10,
@@ -383,7 +384,7 @@ if ($pendingItems.Count -eq 0) {
 # ============================================================
 $timeMode     = 'none'
 $runTolerance = $ToleranceMinutes
-if ($snapVerifyOn) {
+if ($snapVerifyOn -and $TimeCheck) {
     Bring-ShellToFront
     Write-Host ""
     Write-Host "[Time window] HM rows are checked against a run time +- tolerance." -ForegroundColor Cyan
@@ -557,6 +558,10 @@ foreach ($g in $grouped) {
                     $resolved = $true
                     break
                 }
+                # The sentinel prompt ran with the shell foreground; hand focus
+                # back to Edge before retrying so Reset-FocusToBody/keystrokes hit
+                # the page, not the console.
+                Switch-ToEdge
                 continue   # retry this row
             }
 
@@ -644,6 +649,13 @@ foreach ($g in $grouped) {
                     Write-ProgressEvent -WorkDir $WorkDir -Phase $phaseName -CorrelIdS $correl -JobName $jobName `
                         -Action 'verify' -Status 'ok' -Message ("ask -> operator OK: {0}" -f $verdict.Reason)
                 }
+                # The ASK prompt above ran with the shell in the foreground
+                # (Bring-ShellToFront). Return focus to Edge so the Send-Tab below
+                # and the next row's Reset-FocusToBody land on the HM page, not the
+                # console -- otherwise every later keystroke goes to the CLI. The
+                # 'q' branch already broke out, so we only reach here for o/n/s and
+                # the shell is known-foreground (Switch-ToEdge's Alt+Tab is valid).
+                Switch-ToEdge
             }
 
             # Persist the chosen value (skip leaves the row pending).

@@ -263,7 +263,36 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-22 v2.9.10)
+## Current state (last bump: 2026-06-25 v2.9.12)
+
+v2.9.12 (SnapVerify field fixes after the first office-PC run of M6):
+**Changed** -- the run-time window check is now OFF by default on every snap
+phase. New `SnapVerify.TimeCheck` (default `$false`, threaded to Hm/Mq/JenkinsSnap):
+detection still flags missing data / abends / missing files, but skips the
+run-time prompt and +-tolerance compare unless `TimeCheck = $true` (the window is
+mostly nice-to-have and the prompt slowed every run). **Fixed** -- (1)
+`Resolve-SnapRunTime` now also accepts time-only input `HH:mm:ss` / `HH:mm`
+(1- or 2-digit hour, anchored to today) on top of the `yyyy/MM/dd HH:mm[:ss]`
+forms, validates input, and a blank/garbage tolerance no longer zeroes the
+default (new unit tests). (2) After the HM `o/n/s` ask and the HM/MQ page-kind
+sentinel retry the shell is foreground; the phase now `Switch-ToEdge` before
+continuing so subsequent keystrokes hit the Edge page, not the CLI. (3) NoGfix
+poll no longer waits out the full timeout: `Wait-JenkinsPageReady -RequireTerm`
+is `$false` for NoGfix, so a loaded list page is ready the moment it classifies
+as a Jenkins result (the correl is expected absent). (4) A NoGfix row that reads
+OK deletes any stale `<correl>.note.json`; MarkGift's past-data note now comes
+from `ProjectLabels.ps1` (`NoGfixPastData`) and its `verifyNote` branch is guarded
+to `-Mode Gift`. COM/Excel parts are static-checked only; confirm on an office PC.
+
+v2.9.11 (SnapVerify M6: NoGfix past-data annotation -- by codex): F4 wired end to
+end. `GiftJenkinsNoFile` runs detection (`Test-JenkinsFile -ExpectExists:$false`):
+an unexpected file sets `GIFT_noGfixfile_snap = 2` and, when `Localize.Enabled`,
+writes `snap\GIFT_noGfixfile\<correl>.note.json` (PixelRect / FileDateTime /
+Reason). ReplaceEvidence stamps the NoGfix picture's AltText `verifyNote|folder|
+correl|x,y,w,h|imageWidth|fileDateTime`; MarkGift scales pixel->point via
+`Shape.Width / imageWidth`, draws the red box on the file-time field, and writes
+`過去分データー` to `SnapVerify.NoGfixNoteColumn` (default `AZ`) on the picture's
+row. Annotation requires `SnapVerify.Localize.Enabled = $true` (default `$false`).
 
 v2.9.10 (JenkinsSnap page-body click no longer navigates into a queued job):
 **Fixed** -- consecutive Jenkins screenshots intermittently opened a job page
@@ -501,9 +530,15 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   System.Drawing + `Find-ActiveHighlightRow` scan) is dot-sourced by the three
   snap scripts and writes the sidecar after each verdict when
   `SnapVerify.Localize.Enabled` (default `$false`; HM/MQ geometry must be
-  calibrated first, Jenkins uses the orange highlight). **M6 (NoGfix annotation:
-  consume the sidecar via AltText -> Mark red-box + AZ `過去分データー` note)
-  remains.** M3/M4 copied MqSnap's `Test-MqSnapDone` pattern (done == exactly '1')
+  calibrated first, Jenkins uses the orange highlight). **M6 done** (v2.9.11) --
+  NoGfix annotation: `GiftJenkinsNoFile` detects an unexpected file
+  (`Test-JenkinsFile -ExpectExists:$false`), writes `<correl>.note.json` when
+  `Localize.Enabled`, ReplaceEvidence stamps `verifyNote` AltText, MarkGift
+  pixel->point scales + draws the red box and writes `過去分データー`
+  (`ProjectLabels.NoGfixPastData`) to `SnapVerify.NoGfixNoteColumn` (default `AZ`).
+  v2.9.12 field fixes: `TimeCheck` default-off, time-only run-time input, Edge
+  refocus after prompts, NoGfix poll `-RequireTerm $false`, stale-note cleanup.
+  M3/M4 copied MqSnap's `Test-MqSnapDone` pattern (done == exactly '1')
   so NG='2' rows stay pending -- `Get-PendingRows`/`Test-SnapDone` treat any
   non-'0' value as done and would hide NG rows. Design + open questions (only Q5,
   Rtncd/Rsncd semantics, is non-blocking) live in `docs/SnapVerify-Plan.md`. The

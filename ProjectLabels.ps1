@@ -46,6 +46,11 @@ function Get-ProjectLabels {
     $L['GiftNoGfixHeader'] = 'GFIX' + [char]0x53D7 + [char]0x4FE1 +
         [char]0x30D5 + [char]0x30A1 + [char]0x30A4 + [char]0x30EB +
         [char]0x306A + [char]0x3057
+    # NoGfix past-data note (spec 2.5 / F4): kanji 'kako-bun' (U+904E U+53BB
+    # U+5206) + katakana 'de-ta-' (U+30C7 U+30FC U+30BF U+30FC). Written to the
+    # NoGfixNoteColumn cell next to a past-data screenshot by the Mark phase.
+    $L['NoGfixPastData']   = [char]0x904E + [char]0x53BB + [char]0x5206 +
+        [char]0x30C7 + [char]0x30FC + [char]0x30BF + [char]0x30FC
 
     return $L
 }
