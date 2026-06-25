@@ -277,7 +277,11 @@
     # All keys overridable per work folder via verify_config.json overlay.
     SnapVerify = @{
         Enabled           = $true   # master switch; $false = pure screenshot (no detection)
-        ToleranceMinutes  = 30
+        TimeCheck         = $false  # $false = existence/abend checks only (no run-time
+                                    # window prompt or comparison). The time window is
+                                    # mostly nice-to-have, so it is OFF by default; set
+                                    # $true to be prompted for a run time + tolerance.
+        ToleranceMinutes  = 30      # default +-minutes when TimeCheck is on
         SaveText          = $true   # save Ctrl+A text as <correl>.txt alongside PNG
         PollTimeoutSec    = 10
         PollIntervalMs    = 500

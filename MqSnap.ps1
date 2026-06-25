@@ -60,6 +60,7 @@ param(
 
     # ---- SnapVerify (F2) detection wiring (defaults match VerifyConfig.psd1) ----
     [bool]$SnapEnabled           = $true,
+    [bool]$TimeCheck             = $false,  # $false = existence checks only (no run-time window)
     [int]$ToleranceMinutes       = 30,
     [bool]$SaveText              = $true,
     [int]$PollTimeoutSec         = 10,
@@ -386,7 +387,7 @@ if ($pendingItems.Count -eq 0) {
 # ============================================================
 $timeMode     = 'none'
 $runTolerance = $ToleranceMinutes
-if ($snapVerifyOn) {
+if ($snapVerifyOn -and $TimeCheck) {
     Bring-ShellToFront
     Write-Host ""
     Write-Host "[Time window] MQ records are checked against a run time +- tolerance." -ForegroundColor Cyan
@@ -548,6 +549,9 @@ foreach ($item in $pendingItems) {
                 $resolved = $true
                 break
             }
+            # The sentinel prompt ran with the shell foreground; hand focus back
+            # to Edge before retrying so the keystrokes hit the page, not the CLI.
+            Switch-ToEdge
             continue   # retry this row
         }
 

@@ -1,3 +1,36 @@
+## 2026-06-25 - SnapVerify field fixes (time window, focus, NoGfix poll)
+
+### Changed
+- **Time-window check is now OFF by default** across HM / MQ / Jenkins snap phases.
+  New `SnapVerify.TimeCheck` (default `$false`): detection still flags missing
+  data / abends / missing files, but no run-time prompt or +-tolerance compare
+  unless `TimeCheck = $true`. The window was mostly nice-to-have and the prompt
+  was slowing every run.
+- **NoGfix poll no longer waits out the full timeout.** `Wait-JenkinsPageReady`
+  takes `-RequireTerm`; NoGfix passes `$false` so a loaded file-list page is
+  "ready" as soon as it classifies as a Jenkins result (the correl is expected
+  to be absent, so waiting for it always burned the whole `PollTimeoutSec` and
+  re-read the clipboard ~20x per row).
+
+### Fixed
+- **Run-time input parsing.** `Resolve-SnapRunTime` now accepts time-only input
+  `HH:mm:ss` / `HH:mm` (1- or 2-digit hour, anchored to today) in addition to the
+  full `yyyy/MM/dd HH:mm[:ss]` forms, validates the input, and no longer lets a
+  blank/garbage tolerance zero the default. New unit tests in `Test-SnapVerify.ps1`.
+- **Edge focus after an operator prompt.** After the HM `o/n/s` ask (and the
+  HM/MQ page-kind sentinel retry), the shell is foreground; the phase now
+  `Switch-ToEdge` before continuing so subsequent keystrokes hit the Edge page
+  instead of the CLI.
+- **Stale NoGfix note sidecar.** A NoGfix row that now reads OK deletes any
+  leftover `<correl>.note.json`, so a past-data annotation is not re-stamped once
+  the file is gone.
+- **MarkGift NoGfix note** uses the `過去分データー` label from `ProjectLabels.ps1`
+  (was inlined `[char]`), and the `verifyNote` branch is guarded to `-Mode Gift`.
+
+### Notes
+- COM/SendKeys/Excel portions remain office-PC-validated only (no PowerShell/Excel
+  in this container). Pure logic is covered by `Tests\Run-Tests.ps1`.
+
 ## 2026-06-22 - SnapVerify M6: NoGfix past-data annotation
 
 ### Added

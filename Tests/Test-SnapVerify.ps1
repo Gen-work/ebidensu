@@ -331,6 +331,35 @@ $rt5 = Resolve-SnapRunTime -TimeInput 'bad-date' -DefaultTolerance 30 -Now $refN
 Assert-True (-not $rt5.Ok)                  'RunTime: bad date -> Ok=false'
 Assert-True ($rt5.Error -ne '')             'RunTime: bad date -> Error message set'
 
+# Date + HH:mm (no seconds)
+$rt6 = Resolve-SnapRunTime -TimeInput '2026/06/12 10:35' -DefaultTolerance 30 -Now $refNow
+Assert-True $rt6.Ok                         'RunTime: date HH:mm -> Ok'
+Assert-Equal '2026/06/12 10:35:00' ($rt6.Time.ToString('yyyy/MM/dd HH:mm:ss')) 'RunTime: date HH:mm parsed'
+
+# Time-only HH:mm:ss -> anchored to Now's date
+$rt7 = Resolve-SnapRunTime -TimeInput '14:35:40' -DefaultTolerance 30 -Now $refNow
+Assert-True $rt7.Ok                         'RunTime: time-only HH:mm:ss -> Ok'
+Assert-Equal 'fixed' $rt7.TimeMode          'RunTime: time-only -> TimeMode=fixed'
+Assert-Equal '2026/06/12 14:35:40' ($rt7.Time.ToString('yyyy/MM/dd HH:mm:ss')) 'RunTime: time-only anchored to today'
+
+# Time-only HH:mm -> seconds default to 00
+$rt8 = Resolve-SnapRunTime -TimeInput '14:30' -DefaultTolerance 30 -Now $refNow
+Assert-True $rt8.Ok                         'RunTime: time-only HH:mm -> Ok'
+Assert-Equal '2026/06/12 14:30:00' ($rt8.Time.ToString('yyyy/MM/dd HH:mm:ss')) 'RunTime: time-only HH:mm value'
+
+# Time-only single-digit hour
+$rt9 = Resolve-SnapRunTime -TimeInput '9:05' -DefaultTolerance 30 -Now $refNow
+Assert-True $rt9.Ok                         'RunTime: single-digit hour -> Ok'
+Assert-Equal '2026/06/12 09:05:00' ($rt9.Time.ToString('yyyy/MM/dd HH:mm:ss')) 'RunTime: single-digit hour value'
+
+# Tolerance applies alongside a time-only input
+$rt10 = Resolve-SnapRunTime -TimeInput '14:30' -ToleranceInput '45' -DefaultTolerance 30 -Now $refNow
+Assert-Equal 45 $rt10.ToleranceMinutes      'RunTime: tolerance override with time-only input'
+
+# Blank tolerance keeps the default (a stray Enter must not zero it)
+$rt11 = Resolve-SnapRunTime -TimeInput '14:30' -ToleranceInput '  ' -DefaultTolerance 30 -Now $refNow
+Assert-Equal 30 $rt11.ToleranceMinutes      'RunTime: blank tolerance keeps default'
+
 # ===========================================================================
 # ConvertTo-ExpectedDateTime
 # ===========================================================================

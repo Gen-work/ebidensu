@@ -137,6 +137,17 @@ $evDir       = Join-Path $WorkDir 'evidence'
 
 . (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
 
+# ProjectLabels supplies the Japanese NoGfix past-data note from [char] code
+# points so this source stays ASCII (no raw Japanese / mojibake on CP932).
+$projectLabels = @{}
+$labelsPath = Join-Path $PSScriptRoot 'ProjectLabels.ps1'
+if (Test-Path -LiteralPath $labelsPath) {
+    . $labelsPath
+    if (Get-Command -Name 'Get-ProjectLabels' -ErrorAction SilentlyContinue) {
+        $projectLabels = Get-ProjectLabels
+    }
+}
+
 Write-Host ''
 Write-Host ("===== Mark ({0}) =====" -f $Mode) -ForegroundColor Green
 Write-Host ("  WorkDir   : {0}" -f $WorkDir)
@@ -243,7 +254,7 @@ try {
 
                     if ([string]$meta.Key -eq 'verifyNote') {
                         $parts = ([string]$meta.Value) -split '\|'
-                        if ($parts.Count -ge 4 -and $parts[0] -eq 'GIFT_noGfixfile') {
+                        if ($Mode -eq 'Gift' -and $parts.Count -ge 4 -and $parts[0] -eq 'GIFT_noGfixfile') {
                             try {
                                 $cid = [string]$parts[1]
                                 $xywh = @($parts[2] -split ',' | ForEach-Object { [double]$_ })
@@ -260,7 +271,11 @@ try {
 
                                 $noteCol = [int]$ws.Range(("{0}1" -f $NoGfixNoteColumn)).Column
                                 $noteRow = [int]$s.TopLeftCell.Row
-                                $pastData = [char]0x904E + [char]0x53BB + [char]0x5206 + [char]0x30C7 + [char]0x30FC + [char]0x30BF + [char]0x30FC
+                                $pastData = [string]$projectLabels['NoGfixPastData']
+                                if ([string]::IsNullOrEmpty($pastData)) {
+                                    # Fallback if ProjectLabels was unavailable.
+                                    $pastData = [char]0x904E + [char]0x53BB + [char]0x5206 + [char]0x30C7 + [char]0x30FC + [char]0x30BF + [char]0x30FC
+                                }
                                 $ws.Cells.Item($noteRow, $noteCol).Value2 = $pastData
                                 Write-Host ("  [NOTE] GIFT_noGfixfile {0,-12} L={1,6:0.0} T={2,6:0.0} W={3,5:0.0} H={4,5:0.0} {5}{6}" -f $cid, $left, $top, $bw, $bh, $NoGfixNoteColumn, $noteRow) -ForegroundColor Green
                             } catch {

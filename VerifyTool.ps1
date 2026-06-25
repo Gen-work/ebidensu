@@ -1105,6 +1105,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($Config.ContainsKey('SnapVerify')) {
             $sv = $Config.SnapVerify
             $args['SnapEnabled']      = [bool]$sv.Enabled
+            if ($sv.ContainsKey('TimeCheck')) { $args['TimeCheck'] = [bool]$sv.TimeCheck }
             $args['ToleranceMinutes'] = [int]$sv.ToleranceMinutes
             $args['SaveText']         = [bool]$sv.SaveText
             $args['PollTimeoutSec']   = [int]$sv.PollTimeoutSec
@@ -1140,6 +1141,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($Config.ContainsKey('SnapVerify')) {
             $sv = $Config.SnapVerify
             $args['SnapEnabled']     = [bool]$sv.Enabled
+            if ($sv.ContainsKey('TimeCheck')) { $args['TimeCheck'] = [bool]$sv.TimeCheck }
             $args['ToleranceMinutes'] = [int]$sv.ToleranceMinutes
             $args['SaveText']        = [bool]$sv.SaveText
             $args['PollTimeoutSec']  = [int]$sv.PollTimeoutSec
@@ -1179,6 +1181,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($Config.ContainsKey('SnapVerify')) {
             $sv = $Config.SnapVerify
             $args['SnapEnabled']      = [bool]$sv.Enabled
+            if ($sv.ContainsKey('TimeCheck')) { $args['TimeCheck'] = [bool]$sv.TimeCheck }
             $args['ToleranceMinutes'] = [int]$sv.ToleranceMinutes
             $args['SaveText']         = [bool]$sv.SaveText
             $args['PollTimeoutSec']   = [int]$sv.PollTimeoutSec

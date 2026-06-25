@@ -52,6 +52,7 @@ param(
 
     # ---- SnapVerify (F3) detection wiring (defaults match VerifyConfig.psd1) ----
     [bool]$SnapEnabled      = $true,
+    [bool]$TimeCheck        = $false,  # $false = file existence checks only (no run-time window)
     [int]$ToleranceMinutes  = 30,
     [bool]$SaveText         = $true,
     [int]$PollTimeoutSec    = 10,
@@ -313,7 +314,10 @@ function Get-JenkinsPageTextOnce {
 # A timeout on a JenkinsResult page without the term is the F3 NG case (file
 # absent) -- it falls through to the verdict. Returns @{ Text=...; Kind=... }.
 function Wait-JenkinsPageReady {
-    param([string]$SearchTerm)
+    param(
+        [string]$SearchTerm,
+        [bool]$RequireTerm = $true
+    )
 
     $text = ''
     $kind = 'Empty'
@@ -322,7 +326,14 @@ function Wait-JenkinsPageReady {
         $text = Get-JenkinsPageTextOnce
         $kind = Get-SnapPageKind -Phase 'Jenkins' -Text $text
         if ($kind -eq 'OuterFrame') { break }
-        if ($kind -eq 'JenkinsResult' -and $text.Contains($SearchTerm)) { break }
+        if ($kind -eq 'JenkinsResult') {
+            # NoGfix (RequireTerm=$false) expects the correl to be ABSENT, so a
+            # loaded file-list page is "ready" as soon as it classifies as a
+            # Jenkins result; waiting for the term to appear would always burn
+            # the full timeout (and re-read the clipboard ~20 times per row).
+            if (-not $RequireTerm) { break }
+            if ($text.Contains($SearchTerm)) { break }
+        }
         Start-Sleep -Milliseconds ([Math]::Max(100, $PollIntervalMs))
     } while ((Get-Date) -lt $deadline)
 
@@ -352,7 +363,7 @@ foreach ($g in $groupOrder) {
 # -- Batch run-time inquiry (plan 2.2) -- one prompt, applied to pending rows ----
 $timeMode     = 'none'
 $runTolerance = $ToleranceMinutes
-if ($detectMode -and -not $dryFlag) {
+if ($detectMode -and -not $dryFlag -and $TimeCheck) {
     Bring-ConsoleToFront
     Write-Host ''
     Write-Host "[Time window] Jenkins files are checked against a run time +- tolerance." -ForegroundColor Cyan
@@ -519,7 +530,7 @@ foreach ($toCode in $groupOrder) {
             $needPageText = $detectMode -or ($Mode -in 'GiftRecv','GfixRecv')
             if ($needPageText) {
                 if ($detectMode) {
-                    $ready    = Wait-JenkinsPageReady -SearchTerm $searchTerm
+                    $ready    = Wait-JenkinsPageReady -SearchTerm $searchTerm -RequireTerm ($Mode -ne 'NoGfix')
                     $pageText = [string]$ready.Text
                     $pageKind = [string]$ready.Kind
                     Write-Host ("    pageKind: {0}" -f $pageKind) -ForegroundColor DarkGray
@@ -675,6 +686,18 @@ foreach ($toCode in $groupOrder) {
                     Write-Host ("    note: snap\{0}\{1}.note.json" -f $snapFolder, $correl) -ForegroundColor DarkGray
                 } catch {
                     Write-Host ("    [WARN] note sidecar failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+                }
+            }
+
+            # M6/F4: a NoGfix row that now reads OK (the past-data file is gone)
+            # must not keep a stale note.json from an earlier run, or the next
+            # ReplaceEvidence would re-stamp a past-data annotation that no longer
+            # applies. Only clear on a clean OK (never on ng -- an un-localised
+            # ng would otherwise lose a still-valid sidecar).
+            if ($Mode -eq 'NoGfix' -and $verdict.Verdict -eq 'ok') {
+                $staleNote = Join-Path $snapDir ("{0}.note.json" -f $correl)
+                if (Test-Path -LiteralPath $staleNote) {
+                    try { Remove-Item -LiteralPath $staleNote -Force } catch {}
                 }
             }
 

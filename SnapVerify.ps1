@@ -446,7 +446,10 @@ function Get-SnapPageKind {
 #
 #   Parameters:
 #     TimeInput         string   '' or [Enter] = use Now; 'n'/'N' = no time check;
-#                                'yyyy/MM/dd HH:mm:ss' = fixed time
+#                                'yyyy/MM/dd HH:mm:ss' / 'yyyy/MM/dd HH:mm' /
+#                                'yyyy/MM/dd' = fixed date-time; 'HH:mm:ss' /
+#                                'HH:mm' (1- or 2-digit hour) = time-only, anchored
+#                                to Now's date. Anything else -> Ok=$false.
 #     ToleranceInput    string   '' = use DefaultToleranceMin; digit string = override
 #     DefaultTolerance  int      default tolerance in minutes (typically 30)
 #     Now               datetime reference clock (default: Get-Date)
@@ -462,11 +465,11 @@ function Resolve-SnapRunTime {
         [datetime]$Now          = (Get-Date)
     )
 
-    # Parse tolerance
-    $tol = $DefaultTolerance
-    if ($ToleranceInput -match '^\d+$') {
-        $tol = [int]$ToleranceInput
-    }
+    # Parse tolerance. A digit string overrides the default; blank or anything
+    # non-numeric keeps the default (so a stray Enter never zeroes tolerance).
+    $tol     = $DefaultTolerance
+    $tolTrim = if ($null -eq $ToleranceInput) { '' } else { $ToleranceInput.Trim() }
+    if ($tolTrim -match '^\d+$') { $tol = [int]$tolTrim }
 
     # No time check
     if ($TimeInput -match '^[Nn]$') {
@@ -478,28 +481,38 @@ function Resolve-SnapRunTime {
         return @{ Ok = $true; TimeMode = 'fixed'; Time = $Now; ToleranceMinutes = $tol; Error = '' }
     }
 
-    # Try to parse as explicit datetime
     $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    $styles  = [System.Globalization.DateTimeStyles]::None
+    $t       = $TimeInput.Trim()
     $parsed  = [datetime]::MinValue
-    $fmts    = @('yyyy/MM/dd HH:mm:ss', 'yyyy/MM/dd HH:mm', 'yyyy/MM/dd')
-    $ok      = $false
-    foreach ($fmt in $fmts) {
-        if ([datetime]::TryParseExact($TimeInput.Trim(), $fmt, $culture,
-                [System.Globalization.DateTimeStyles]::None, [ref]$parsed)) {
-            $ok = $true; break
-        }
-    }
-    if (-not $ok) {
-        return @{
-            Ok             = $false
-            TimeMode       = 'fixed'
-            Time           = $null
-            ToleranceMinutes = $tol
-            Error          = "cannot parse time input '$TimeInput'; expected yyyy/MM/dd HH:mm:ss or n"
+
+    # 1) Full date+time formats are used as-is.
+    $dateTimeFmts = @('yyyy/MM/dd HH:mm:ss', 'yyyy/MM/dd HH:mm', 'yyyy/MM/dd')
+    foreach ($fmt in $dateTimeFmts) {
+        if ([datetime]::TryParseExact($t, $fmt, $culture, $styles, [ref]$parsed)) {
+            return @{ Ok = $true; TimeMode = 'fixed'; Time = $parsed; ToleranceMinutes = $tol; Error = '' }
         }
     }
 
-    return @{ Ok = $true; TimeMode = 'fixed'; Time = $parsed; ToleranceMinutes = $tol; Error = '' }
+    # 2) Time-only formats (HH:mm:ss / HH:mm, 1- or 2-digit hour) are anchored
+    #    to today's date ($Now.Date) -- the common case where the operator only
+    #    types the run clock time.
+    $timeOnlyFmts = @('HH:mm:ss', 'H:mm:ss', 'HH:mm', 'H:mm')
+    $tod = [datetime]::MinValue
+    foreach ($fmt in $timeOnlyFmts) {
+        if ([datetime]::TryParseExact($t, $fmt, $culture, $styles, [ref]$tod)) {
+            $combined = $Now.Date.Add($tod.TimeOfDay)
+            return @{ Ok = $true; TimeMode = 'fixed'; Time = $combined; ToleranceMinutes = $tol; Error = '' }
+        }
+    }
+
+    return @{
+        Ok               = $false
+        TimeMode         = 'none'
+        Time             = $null
+        ToleranceMinutes = $tol
+        Error            = "cannot parse time input '$TimeInput'; expected yyyy/MM/dd HH:mm:ss, HH:mm:ss, HH:mm, or n"
+    }
 }
 
 # ---------------------------------------------------------------------------
