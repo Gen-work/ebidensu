@@ -79,6 +79,11 @@ WorkbookResolver.ps1    dot-source helper: evidence/J4 workbook filename resolut
                         (prefix + Excel_NAME stem) plus reusable full-width
                         ASCII filename fallback (`FullWidthFilenameResolver`).
                         Unit-tested.
+OwnerFilter.ps1         pure WBS owner-cell matching (Test-OwnerMatch: exact /
+                        owner<-other / other->owner; reverse dir = not owned)
+                        + Select-JobsByOwner (filter explicit -Add JOB_NAMEs by
+                        WBS owner; jobs absent from WBS kept as temp). No Excel.
+                        Unit-tested (Tests\Test-OwnerFilter.ps1).
 
 Clone.ps1               Phase Clone
 Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
@@ -154,7 +159,7 @@ Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
 `ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`, `AlignCompare.ps1`,
 `ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`, `SendMetadata.ps1`,
 `OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`, `SnapLocalize.ps1`,
-`Find-ActiveHighlightRow.ps1`. All phase scripts have `param()`
+`OwnerFilter.ps1`, `Find-ActiveHighlightRow.ps1`. All phase scripts have `param()`
 and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
@@ -263,7 +268,22 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-25 v2.9.12)
+## Current state (last bump: 2026-06-29 v2.9.13)
+
+v2.9.13 (snap TimeCheck menu toggle + -Add owner filter):
+**Added** -- (1) the HM/MQ/Jenkins snap phases now expose a `tc` interactive
+menu option that toggles the run-time window check per run. It seeds from
+`SnapVerify.TimeCheck` (still usually off) and threads `$State.TimeCheck` into
+the three snap dispatch blocks, so the operator can turn the window check on for
+a single run without editing config. (2) `Generate-HostOpenMapping -Add` now
+composes with the owner filter: explicit `JOB_NAME` / `Correl_ID_M` /
+`Excel_NAME` selectors are looked up in the WBS (col A) and dropped when their
+owner cell (col P) belongs to another operator; a JOB_NAME absent from the WBS
+is kept (temp / not-yet-listed) and reported in the warnings. Owner matching
+moved to a new pure `OwnerFilter.ps1` (`Test-OwnerMatch` + `Select-JobsByOwner`,
+unit-tested in `Tests\Test-OwnerFilter.ps1`); the WBS scan helper
+(`Build-WbsJobOwnerMap`) is COM and static-checked only. Pure logic + tests run
+via `Tests\Run-Tests.ps1`; confirm the snap toggle + Excel scan on an office PC.
 
 v2.9.12 (SnapVerify field fixes after the first office-PC run of M6):
 **Changed** -- the run-time window check is now OFF by default on every snap
@@ -545,9 +565,16 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   M5 COM/GDI+ wiring is static-checked only; confirm on an office PC + calibrate
   `SnapVerify.Localize.*Row1Top/*RowHeight/*ColLeft/*ColWidth` before trusting it.
 
-- **Generate-HostOpenMapping `-Add` cannot filter by owner at the same time** —
-  the daily flow adds new JOB_NAMEs incrementally with `-Add`, but owner
-  filtering is not applied in that mode; fix so `-Add` + owner filter compose.
+- **Generate-HostOpenMapping `-Add` + owner filter compose DONE** (v2.9.13) —
+  explicit `-Add` selectors (`JOB_NAME` / `Correl_ID_M` / `Excel_NAME`) used to
+  bypass the WBS owner-match scan, so jobs were added regardless of owner. They
+  are now looked up in the WBS (col A) via the new `Build-WbsJobOwnerMap` and
+  filtered through pure `Select-JobsByOwner` (`OwnerFilter.ps1`): a job whose WBS
+  owner cell (col P) belongs to another operator is dropped (warned); a job
+  absent from the WBS is kept as a temp/not-yet-listed job and reported. The
+  WBS-range `-Add` path already owner-filtered (Step C) and is unchanged. Pure
+  logic unit-tested in `Tests\Test-OwnerFilter.ps1`; the COM scan needs an
+  office-PC run to confirm.
 
 - **GfixLogDownload: auto-set GoAnywhere max rows to 100**
   Currently requires manual setup (default GoAnywhere list shows 20 rows — not enough for
