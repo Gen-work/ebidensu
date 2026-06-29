@@ -474,7 +474,8 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    n=NoResize     -> do not resize Edge window',
             '    w=Window       -> Edge window size',
             '    c=CropPx       -> crop captured PNG edges',
-            '    r=RefreshUrls  -> re-fetch Jenkins folder URLs (use when URLs changed)'
+            '    r=RefreshUrls  -> re-fetch Jenkins folder URLs (use when URLs changed)',
+            '    tc=TimeCheck   -> toggle the run-time window check (default: config SnapVerify.TimeCheck, usually off)'
         ) }
         '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { @(
             '  Phase params:',
@@ -483,7 +484,8 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    f=Force        -> re-capture already-done rows',
             '    n=NoResize     -> do not resize Edge window',
             '    w=Window       -> Edge window size',
-            '    c=CropPx       -> crop captured PNG edges'
+            '    c=CropPx       -> crop captured PNG edges',
+            '    tc=TimeCheck   -> toggle the run-time window check (default: config SnapVerify.TimeCheck, usually off)'
         ) }
         '^GfixLogDownload$' { @(
             '  Phase params:',
@@ -554,8 +556,8 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^MarkGfixLog$' { return @('t','f') }
         '^SendVsGift$' { return @('a','t','f','o') }
         '^Review(Gift|Gfix|Df|Evidence)$' { return @('a','t','f') }
-        '^(Gift|Gfix)Jenkins$|^GiftJenkinsNoFile$' { return @('t','i','f','n','w','c','r') }
-        '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { return @('t','i','f','n','w','c') }
+        '^(Gift|Gfix)Jenkins$|^GiftJenkinsNoFile$' { return @('t','i','f','n','w','c','r','tc') }
+        '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { return @('t','i','f','n','w','c','tc') }
         '^GfixLogDownload$' { return @('t','f') }
         '^DfSnap$' { return @('t','f','e') }
         '^Validate$' { return @('t') }
@@ -604,6 +606,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'c') { Write-Host ("  CropPx         : {0}" -f $State.CropPx) }
     if (Test-PhaseOption $allowed 'a') { Write-Host ("  CursorCell     : {0}" -f $State.CursorCell) }
     if (Test-PhaseOption $allowed 'o') { Write-Host ("  Ocr            : {0}" -f (To-BoolText $State.Ocr)) }
+    if (Test-PhaseOption $allowed 'tc') { Write-Host ("  TimeCheck      : {0}" -f (To-BoolText $State.TimeCheck)) }
     if (Test-PhaseOption $allowed 't') { Write-Host ("  TargetIds      : {0}" -f $(if ($State.TargetIds.Count -gt 0) { $State.TargetIds -join ', ' } else { '(all)' })) }
     if (Test-PhaseOption $allowed 'd') { Write-Host ("  CloneSourceDir : {0}" -f $State.CloneSourceDir) }
     if (Test-PhaseOption $allowed 'j') { Write-Host ("  J4BaseDir      : {0}" -f $State.J4BaseDir) }
@@ -630,6 +633,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 't') { $help += 't=target IDs' }
         if (Test-PhaseOption $allowed 'a') { $help += 'a=review cursor cell' }
         if (Test-PhaseOption $allowed 'o') { $help += 'o=Ocr toggle' }
+        if (Test-PhaseOption $allowed 'tc') { $help += 'tc=TimeCheck toggle' }
         if (Test-PhaseOption $allowed 'd') { $help += 'd=Clone SourceDir' }
         if (Test-PhaseOption $allowed 'j') { $help += 'j=J4 BaseDir' }
         if (Test-PhaseOption $allowed 'b') { $help += 'b=BizCodes' }
@@ -706,6 +710,10 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
             '^a$' {
                 if (-not (Test-PhaseOption $allowed 'a')) { Write-UnusedOption $PhaseKey 'a' }
                 else { $State.CursorCell = Read-Choice 'Review cursor cell' $State.CursorCell }
+            }
+            '^tc$' {
+                if (-not (Test-PhaseOption $allowed 'tc')) { Write-UnusedOption $PhaseKey 'tc' }
+                else { $State.TimeCheck = -not $State.TimeCheck; Write-Host ("  TimeCheck      : {0}" -f (To-BoolText $State.TimeCheck)) -ForegroundColor DarkGray }
             }
             '^t$' {
                 if (-not (Test-PhaseOption $allowed 't')) { Write-UnusedOption $PhaseKey 't' }
@@ -1105,7 +1113,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($Config.ContainsKey('SnapVerify')) {
             $sv = $Config.SnapVerify
             $args['SnapEnabled']      = [bool]$sv.Enabled
-            if ($sv.ContainsKey('TimeCheck')) { $args['TimeCheck'] = [bool]$sv.TimeCheck }
+            $args['TimeCheck'] = [bool]$State.TimeCheck   # menu 'tc' toggle; seeded from SnapVerify.TimeCheck
             $args['ToleranceMinutes'] = [int]$sv.ToleranceMinutes
             $args['SaveText']         = [bool]$sv.SaveText
             $args['PollTimeoutSec']   = [int]$sv.PollTimeoutSec
@@ -1141,7 +1149,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($Config.ContainsKey('SnapVerify')) {
             $sv = $Config.SnapVerify
             $args['SnapEnabled']     = [bool]$sv.Enabled
-            if ($sv.ContainsKey('TimeCheck')) { $args['TimeCheck'] = [bool]$sv.TimeCheck }
+            $args['TimeCheck'] = [bool]$State.TimeCheck   # menu 'tc' toggle; seeded from SnapVerify.TimeCheck
             $args['ToleranceMinutes'] = [int]$sv.ToleranceMinutes
             $args['SaveText']        = [bool]$sv.SaveText
             $args['PollTimeoutSec']  = [int]$sv.PollTimeoutSec
@@ -1181,7 +1189,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($Config.ContainsKey('SnapVerify')) {
             $sv = $Config.SnapVerify
             $args['SnapEnabled']      = [bool]$sv.Enabled
-            if ($sv.ContainsKey('TimeCheck')) { $args['TimeCheck'] = [bool]$sv.TimeCheck }
+            $args['TimeCheck'] = [bool]$State.TimeCheck   # menu 'tc' toggle; seeded from SnapVerify.TimeCheck
             $args['ToleranceMinutes'] = [int]$sv.ToleranceMinutes
             $args['SaveText']         = [bool]$sv.SaveText
             $args['PollTimeoutSec']   = [int]$sv.PollTimeoutSec
@@ -1792,6 +1800,9 @@ $state = @{
     Force           = [bool]$Force.IsPresent
     # OCR for SendVsGift: on by default; 'o' menu option toggles off/on per run.
     Ocr             = $true
+    # Snap run-time window check: seeded from SnapVerify.TimeCheck (usually off);
+    # 'tc' menu option toggles it per run for the HM/MQ/Jenkins snap phases.
+    TimeCheck       = [bool]($Config.ContainsKey('SnapVerify') -and $Config.SnapVerify.ContainsKey('TimeCheck') -and $Config.SnapVerify.TimeCheck)
     Interactive     = [bool]$Interactive.IsPresent
     NoResize        = ([bool]$NoResize.IsPresent -or ($Config.Window -and [bool]$Config.Window.NoResize))
     RefreshUrls     = [bool]$RefreshUrls.IsPresent

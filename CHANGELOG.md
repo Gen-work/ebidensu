@@ -1,3 +1,27 @@
+## 2026-06-29 - Snap TimeCheck menu toggle + -Add owner filter (v2.9.13)
+
+### Added
+- **`tc` menu toggle for the run-time window check** on the HM / MQ / Jenkins
+  snap phases. Previously `SnapVerify.TimeCheck` could only be set in config; now
+  the interactive options menu shows `TimeCheck : ON/off` and accepts `tc` to
+  flip it per run. It seeds from `SnapVerify.TimeCheck` (still usually off) and
+  threads `$State.TimeCheck` into the three snap dispatch blocks. (`VerifyTool.ps1`:
+  `Get-PhaseOptionKeys`, `Show-PhaseNotes`, `Ask-RunOptions`, the option loop, the
+  `$State` seed, and the GiftHmSnap/GfixHmSnap/GiftMqSnap/Jenkins dispatch.)
+- **`Generate-HostOpenMapping -Add` now composes with the owner filter.** Explicit
+  `JOB_NAME` / `Correl_ID_M` / `Excel_NAME` selectors are looked up in the WBS
+  (col A) and dropped when their owner cell (col P) belongs to another operator.
+  A JOB_NAME absent from the WBS is kept (a temp / not-yet-listed job the WBS
+  can't judge) and reported in the warnings. The WBS-range `-Add` path already
+  owner-filtered (Step C) and is unchanged.
+- **New pure lib `OwnerFilter.ps1`** (`Test-OwnerMatch` + `Select-JobsByOwner`),
+  unit-tested in `Tests\Test-OwnerFilter.ps1`. `Test-OwnerMatch` moved out of
+  `Generate-HostOpenMapping.ps1` so both the WBS scan and the new `-Add` path
+  share one implementation. The WBS scan glue (`Build-WbsJobOwnerMap`) is COM and
+  static-checked only.
+
+---
+
 ## 2026-06-25 - SnapVerify field fixes (time window, focus, NoGfix poll)
 
 ### Changed

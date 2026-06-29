@@ -29,6 +29,10 @@
 #    .\Generate-HostOpenMapping.ps1 -Add -WbsStartRow 2300 -WbsEndRow 2400
 #    -Add appends only Correl_ID_M values not already in mapping_<Owner>.csv;
 #    existing rows (and their snap/replace/mark/review state) are untouched.
+#    Owner filter composes: explicit JOB_NAME / Correl_ID_M / Excel_NAME
+#    selectors are now looked up in the WBS and dropped when their owner cell
+#    (col P) belongs to another operator. A JOB_NAME absent from the WBS is
+#    kept (temp / not-yet-listed) and reported. (Pure helper: OwnerFilter.ps1.)
 #
 #  File encoding: UTF-8, NO BOM. All Japanese used at runtime (owner
 #  arrows, sheet/label names) is built from [char] code points so PS 5.1
@@ -54,6 +58,7 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path $MyInvocation.MyCommand.Path
 $forceFlag = [bool]$Force.IsPresent    # capture before dot-source
 . (Join-Path $scriptDir 'MappingStore.ps1')
+. (Join-Path $scriptDir 'OwnerFilter.ps1')   # pure Test-OwnerMatch / Select-JobsByOwner
 
 # -- Force console to UTF-8 --
 try {
@@ -203,30 +208,41 @@ function Add-UniqueJobName($List, $Seen, [string]$JobName) {
     if ($Seen.Add($job)) { $List.Add($job) }
 }
 
-function Test-OwnerMatch([string]$ownerCell, [string]$ownerInput) {
-    # Match the current owner represented by -Owner.
-    # Count only these patterns:
-    #   1) exact owner              : Owner
-    #   2) owner followed by ←...   : Owner←Other
-    #   3) ... followed by →owner   : Other→Owner
-    # Do NOT count reverse direction such as Other←Owner.
-    if ([string]::IsNullOrWhiteSpace($ownerCell) -or [string]::IsNullOrWhiteSpace($ownerInput)) {
-        return $false
+# Test-OwnerMatch moved to OwnerFilter.ps1 (pure, dot-sourced above) so the
+# explicit -Add selector path can reuse it and it can be unit-tested.
+
+function Build-WbsJobOwnerMap([string]$wbsFilePath) {
+    # Scan the WBS (col A = JOB_NAME, col P = owner) into a JOB_NAME -> owner
+    # cell map for owner filtering of explicit -Add selectors. Mirrors Step C
+    # semantics: if a JOB_NAME appears on multiple WBS rows, an owner-matching
+    # occurrence wins over a non-matching one. Self-contained: opens and closes
+    # its own read-only workbook.
+    $map = @{}
+    $wb = $excel.Workbooks.Open($wbsFilePath, $false, $true)
+    try {
+        $ws = $null
+        foreach ($w in $wb.Worksheets) { if ($w.Name -eq $LBL_WBS_SHEET) { $ws = $w; break } }
+        if (-not $ws) { throw ("WBS sheet '{0}' not found." -f $LBL_WBS_SHEET) }
+        $ur    = $ws.UsedRange
+        $first = $ur.Row
+        $last  = $ur.Row + $ur.Rows.Count - 1
+        for ($r = $first; $r -le $last; $r++) {
+            $job = Read-CellStr $ws $r 1
+            if ([string]::IsNullOrWhiteSpace($job)) { continue }
+            $ownerCell = Read-OwnerCell $ws $r
+            if (-not $map.ContainsKey($job)) {
+                $map[$job] = $ownerCell
+            } elseif (-not (Test-OwnerMatch $map[$job] $Owner) -and (Test-OwnerMatch $ownerCell $Owner)) {
+                $map[$job] = $ownerCell
+            }
+        }
+    } finally {
+        if ($wb) {
+            try { $wb.Close($false) } catch {}
+            [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($wb)
+        }
     }
-
-    $cell  = $ownerCell.Trim()
-    $input = $ownerInput.Trim()
-
-    # NOTE: the arrows are built from [char] code points on purpose. Raw
-    # "<-"/"->" Japanese arrow literals in a BOM-less .ps1 get mis-decoded
-    # by PS 5.1 on a JP-locale host, which silently breaks owner-matching.
-    $arrowLeft  = [char]0x2190   # leftwards arrow  (owner<-...)
-    $arrowRight = [char]0x2192   # rightwards arrow (...->owner)
-    if ($cell -eq $input) { return $true }
-    if ($cell.StartsWith($input + $arrowLeft)) { return $true }
-    if ($cell.EndsWith($arrowRight + $input)) { return $true }
-
-    return $false
+    return $map
 }
 
 # -- Excel COM --
@@ -478,6 +494,37 @@ $excel = New-Object -ComObject Excel.Application
         Write-Host ("  Temp Owner / mapping name : {0} / mapping_{0}.csv" -f $Owner) -ForegroundColor Green
         Write-Host ("  Temp distinct JOB_NAMEs   : {0}" -f $jobNameList.Count) -ForegroundColor Green
         foreach ($j in $jobNameList) { Write-Host ("    - {0}" -f $j) -ForegroundColor DarkGray }
+
+        # ----------------------------------------------------------------
+        # Step C3: compose explicit -Add selectors with the owner filter.
+        # The WBS-range path already owner-filters in Step C; explicit
+        # JOB_NAME / Correl_ID_M / Excel_NAME selectors used to bypass it.
+        # Look each candidate up in the WBS (col A) and keep only those whose
+        # owner cell (col P) matches -Owner. A JOB_NAME absent from the WBS is
+        # kept (a temp / not-yet-listed job the WBS cannot judge) but reported.
+        # ----------------------------------------------------------------
+        if (-not [string]::IsNullOrWhiteSpace($Owner) -and $jobNameList.Count -gt 0) {
+            Write-Host "[Step C3] Applying owner filter to explicit JOB_NAMEs..." -ForegroundColor Cyan
+            $wbsOwnerMap = $null
+            try {
+                $wbsOwnerMap = Build-WbsJobOwnerMap $wbsPath
+            } catch {
+                Write-Host ("  [WARN] could not read WBS for owner filter (keeping all): {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+            }
+            if ($null -ne $wbsOwnerMap) {
+                $sel = Select-JobsByOwner -Jobs $jobNameList -JobOwnerMap $wbsOwnerMap -OwnerInput $Owner
+                $jobNameList = (New-Object 'System.Collections.Generic.List[System.String]')
+                foreach ($j in $sel.Kept) { [void]$jobNameList.Add($j) }
+                Write-Host ("  Owner-matched / kept JOB_NAMEs : {0}" -f $sel.Kept.Count) -ForegroundColor Green
+                foreach ($ex in $sel.Excluded) {
+                    $warnings.Add(("JOB_NAME excluded by owner filter (WBS owner '{0}'): {1}" -f $ex.OwnerCell, $ex.Job))
+                    Write-Host ("    - excluded (WBS owner '{0}'): {1}" -f $ex.OwnerCell, $ex.Job) -ForegroundColor DarkGray
+                }
+                foreach ($uk in $sel.Unknown) {
+                    $warnings.Add(("JOB_NAME not in WBS, kept without owner check: {0}" -f $uk))
+                }
+            }
+        }
     }
 
     if ($jobNameList.Count -eq 0) {
