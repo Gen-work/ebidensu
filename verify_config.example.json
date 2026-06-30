@@ -24,6 +24,7 @@
 
   "Df": {
     "ExePath": "",
+    "DefaultExePath": "C:\\tools\\DF\\DF.exe",
     "CaptureMode": "region",
     "LoadWaitSec": 8,
     "RegionX": 120, "RegionY": 280, "RegionWidth": 1250, "RegionHeight": 657,
