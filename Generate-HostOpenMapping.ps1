@@ -95,20 +95,17 @@ function Read-YesNo([string]$Prompt, [bool]$DefaultYes = $true) {
 }
 
 $requestedCorrelIdsM = @(Convert-ToCleanList $CorrelIdsM)
-$requestedJobNames   = @(Convert-ToCleanList $JobNames)
 
-# Excel_NAME selectors are accepted too (incremental add by sheet name).
-# An Excel_NAME is the JOB_NAME with index-5 'J' swapped to 'W' (8 chars),
-# so reverse that to recover the JOB_NAME used to look the row up in GFIX.
+# Accept Excel_NAME format (W at index 4, 8 chars) in either -JobNames or -ExcelNames,
+# and normalise case so lowercase input works too. Both JJODJDEI and JJODWDEI therefore
+# resolve to the same JOB_NAME and hit the same GFIX rows.
 $requestedExcelNames = @(Convert-ToCleanList $ExcelNames)
-foreach ($en in $requestedExcelNames) {
-    $jobFromExcel = $en
-    if ($en.Length -eq 8 -and $en[4] -eq 'W') {
-        $jobFromExcel = $en.Substring(0, 4) + 'J' + $en.Substring(5)
-    }
-    $requestedJobNames += $jobFromExcel
-}
-$requestedJobNames = @($requestedJobNames | Select-Object -Unique)
+$requestedJobNames = @(
+    (@(Convert-ToCleanList $JobNames) + $requestedExcelNames) | ForEach-Object {
+        $j = ([string]$_).ToUpper()
+        if ($j.Length -eq 8 -and $j[4] -eq 'W') { $j.Substring(0, 4) + 'J' + $j.Substring(5) } else { $j }
+    } | Select-Object -Unique
+)
 
 $addFlag = [bool]$Add.IsPresent
 
