@@ -178,6 +178,28 @@ function Get-SheetMetrics($ws) {
     return @{ Rows = $rows; Cols = $cols; Flat = $flat.ToArray(); PictureCount = (Get-SheetPictureCount $ws); TextRowCount = $textRows }
 }
 
+# Sheet-name match that tolerates stray whitespace and full-width vs half-width
+# ASCII (e.g. a J4 sheet named with full-width "GIFT"/"GFIX", or a trailing
+# space). Exact match wins first; the normalized compare is the fallback. Uses
+# Convert-FullWidthAsciiToHalfWidth from WorkbookResolver.ps1 (already dot-sourced).
+function Get-AlignSheetMatch($wb, [string]$name) {
+    $ws = Get-SheetByName $wb $name
+    if ($null -ne $ws) { return $ws }
+    $target = (Convert-FullWidthAsciiToHalfWidth $name).Trim()
+    foreach ($s in $wb.Worksheets) {
+        $cand = (Convert-FullWidthAsciiToHalfWidth ([string]$s.Name)).Trim()
+        if ($cand -eq $target) { return $s }
+    }
+    return $null
+}
+
+# Comma-joined list of a workbook's worksheet names (diagnostic for a miss).
+function Get-AlignSheetNameList($wb) {
+    $names = @()
+    foreach ($s in $wb.Worksheets) { $names += ("'{0}'" -f [string]$s.Name) }
+    return ($names -join ', ')
+}
+
 function Sync-Sheet($workWb, $workWs, $j4Ws) {
     $sheetName = $workWs.Name
     $idx       = $workWs.Index
@@ -257,10 +279,12 @@ try {
             Unhide-AllSheets $j4Wb
 
             foreach ($sheetName in $sheets) {
-                $wsW = Get-SheetByName $workWb $sheetName
-                $wsJ = Get-SheetByName $j4Wb $sheetName
+                $wsW = Get-AlignSheetMatch $workWb $sheetName
+                $wsJ = Get-AlignSheetMatch $j4Wb $sheetName
                 if ($null -eq $wsJ) {
                     Write-Host ("    [WARN] sheet missing in J4: {0}" -f $sheetName) -ForegroundColor Yellow
+                    Write-Host ("           J4 file: {0}" -f (Split-Path $j4Path -Leaf)) -ForegroundColor DarkGray
+                    Write-Host ("           J4 sheets present: {0}" -f (Get-AlignSheetNameList $j4Wb)) -ForegroundColor DarkGray
                     continue
                 }
 

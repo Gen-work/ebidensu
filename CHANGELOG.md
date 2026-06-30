@@ -1,3 +1,24 @@
+## 2026-06-30 - Align sheet-name miss diagnostics + tolerant match (v2.9.16)
+
+### Fixed
+- **Align still reported sheets "missing in J4" for some workbooks** even after
+  v2.9.15. `[WARN] sheet missing in J4` fires only when the J4 workbook has no
+  sheet whose name is byte-for-byte identical to the canonical label
+  (`Get-SheetByName` uses an exact `-eq`). Two distinct causes were
+  indistinguishable because the code never showed what the J4 file actually
+  contained: (a) the opened J4 file is a blank/stale template (the exact-named
+  file on disk was picked over a prepared but differently-named one -- note the
+  one workbook that DID sync, `JJODWDB2`, was resolved through the full-width
+  filename fallback), or (b) the sheet name differs only by stray whitespace or
+  full-width vs half-width ASCII (e.g. full-width `GIFT`/`GFIX`).
+  `Align.ps1` now matches sheet names with a new `Get-AlignSheetMatch`: exact
+  match first, then a normalized compare (trim + `Convert-FullWidthAsciiToHalfWidth`
+  from `WorkbookResolver.ps1`), so width/whitespace mismatches resolve. When a
+  sheet is still missing it now prints the J4 file leaf and the full list of
+  worksheet names present in that J4 file, so the operator can see immediately
+  whether it is the wrong file (cause a) or a naming variant (cause b).
+  COM/Excel path -- static-checked only; confirm on an office PC + Excel.
+
 ## 2026-06-30 - Align Host->Open default + J4 no-content guard + picture-aware diff (v2.9.15)
 
 ### Fixed
