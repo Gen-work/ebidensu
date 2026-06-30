@@ -95,20 +95,17 @@ function Read-YesNo([string]$Prompt, [bool]$DefaultYes = $true) {
 }
 
 $requestedCorrelIdsM = @(Convert-ToCleanList $CorrelIdsM)
-$requestedJobNames   = @(Convert-ToCleanList $JobNames)
 
-# Excel_NAME selectors are accepted too (incremental add by sheet name).
-# An Excel_NAME is the JOB_NAME with index-5 'J' swapped to 'W' (8 chars),
-# so reverse that to recover the JOB_NAME used to look the row up in GFIX.
+# Accept Excel_NAME format (W at index 4, 8 chars) in either -JobNames or -ExcelNames,
+# and normalise case so lowercase input works too. Both JJODJDEI and JJODWDEI therefore
+# resolve to the same JOB_NAME and hit the same GFIX rows.
 $requestedExcelNames = @(Convert-ToCleanList $ExcelNames)
-foreach ($en in $requestedExcelNames) {
-    $jobFromExcel = $en
-    if ($en.Length -eq 8 -and $en[4] -eq 'W') {
-        $jobFromExcel = $en.Substring(0, 4) + 'J' + $en.Substring(5)
-    }
-    $requestedJobNames += $jobFromExcel
-}
-$requestedJobNames = @($requestedJobNames | Select-Object -Unique)
+$requestedJobNames = @(
+    (@(Convert-ToCleanList $JobNames) + $requestedExcelNames) | ForEach-Object {
+        $j = ([string]$_).ToUpper()
+        if ($j.Length -eq 8 -and $j[4] -eq 'W') { $j.Substring(0, 4) + 'J' + $j.Substring(5) } else { $j }
+    } | Select-Object -Unique
+)
 
 $addFlag = [bool]$Add.IsPresent
 
@@ -217,6 +214,8 @@ function Build-WbsJobOwnerMap([string]$wbsFilePath) {
     # semantics: if a JOB_NAME appears on multiple WBS rows, an owner-matching
     # occurrence wins over a non-matching one. Self-contained: opens and closes
     # its own read-only workbook.
+    # Bulk-reads both columns at once to avoid per-cell COM calls on large WBS files.
+    # Col P may use merged cells; merged interiors read as null -> forward-fill.
     $map = @{}
     $wb = $excel.Workbooks.Open($wbsFilePath, $false, $true)
     try {
@@ -226,10 +225,21 @@ function Build-WbsJobOwnerMap([string]$wbsFilePath) {
         $ur    = $ws.UsedRange
         $first = $ur.Row
         $last  = $ur.Row + $ur.Rows.Count - 1
-        for ($r = $first; $r -le $last; $r++) {
-            $job = Read-CellStr $ws $r 1
+        $count = $last - $first + 1
+        $colAArr = $ws.Range($ws.Cells.Item($first, 1),  $ws.Cells.Item($last, 1)).Value2
+        $colPArr = $ws.Range($ws.Cells.Item($first, 16), $ws.Cells.Item($last, 16)).Value2
+        $lastOwner = ""
+        for ($i = 1; $i -le $count; $i++) {
+            $ownerV = if ($count -eq 1) { $colPArr } else { $colPArr[$i, 1] }
+            $ownerCell = if ($null -ne $ownerV -and -not [string]::IsNullOrWhiteSpace([string]$ownerV)) {
+                $lastOwner = ([string]$ownerV).Trim(); $lastOwner
+            } else { $lastOwner }
+
+            $jobV = if ($count -eq 1) { $colAArr } else { $colAArr[$i, 1] }
+            if ($null -eq $jobV) { continue }
+            $job = ([string]$jobV).Trim()
             if ([string]::IsNullOrWhiteSpace($job)) { continue }
-            $ownerCell = Read-OwnerCell $ws $r
+
             if (-not $map.ContainsKey($job)) {
                 $map[$job] = $ownerCell
             } elseif (-not (Test-OwnerMatch $map[$job] $Owner) -and (Test-OwnerMatch $ownerCell $Owner)) {
@@ -472,23 +482,29 @@ $excel = New-Object -ComObject Excel.Application
         foreach ($id in $requestedCorrelIdsM) { [void]$wantedIds.Add($id) }
         foreach ($jn in $requestedJobNames) { Add-UniqueJobName $jobNameList $seen $jn }
 
-        $startRow = 6
-        for ($r = $startRow; $r -le $lastRow; $r++) {
-            $cid = Read-CellStr $wsGfix $r $col_correlid
-            if ([string]::IsNullOrWhiteSpace($cid) -or -not $wantedIds.Contains($cid)) { continue }
-            $jn = Read-CellStr $wsGfix $r $col_job
-            if ([string]::IsNullOrWhiteSpace($jn)) {
-                $warnings.Add(("Correl_ID_M has empty JOB at GFIX row {0}: {1}" -f $r, $cid)); continue
+        # Only scan GFIX rows when Correl_ID_M selectors were given.
+        # Bulk-read both columns at once to avoid per-cell COM calls.
+        if ($wantedIds.Count -gt 0) {
+            $startRow = 6
+            $gfixRowCount = $lastRow - $startRow + 1
+            $cidArr = $wsGfix.Range($wsGfix.Cells.Item($startRow, $col_correlid), $wsGfix.Cells.Item($lastRow, $col_correlid)).Value2
+            $jobArr2 = $wsGfix.Range($wsGfix.Cells.Item($startRow, $col_job),      $wsGfix.Cells.Item($lastRow, $col_job)).Value2
+            $foundIds = New-Object 'System.Collections.Generic.HashSet[System.String]'
+            for ($i = 1; $i -le $gfixRowCount; $i++) {
+                $cid = if ($gfixRowCount -eq 1) { $cidArr } else { $cidArr[$i, 1] }
+                if ($null -eq $cid) { continue }
+                $cid = ([string]$cid).Trim()
+                if ([string]::IsNullOrWhiteSpace($cid) -or -not $wantedIds.Contains($cid)) { continue }
+                [void]$foundIds.Add($cid)
+                $jv = if ($gfixRowCount -eq 1) { $jobArr2 } else { $jobArr2[$i, 1] }
+                if ($null -eq $jv -or [string]::IsNullOrWhiteSpace(([string]$jv).Trim())) {
+                    $warnings.Add(("Correl_ID_M has empty JOB at GFIX row {0}: {1}" -f ($startRow + $i - 1), $cid)); continue
+                }
+                Add-UniqueJobName $jobNameList $seen ([string]$jv).Trim()
             }
-            Add-UniqueJobName $jobNameList $seen $jn
-        }
-
-        foreach ($id in $requestedCorrelIdsM) {
-            $found = $false
-            for ($r = $startRow; $r -le $lastRow; $r++) {
-                if ((Read-CellStr $wsGfix $r $col_correlid) -eq $id) { $found = $true; break }
+            foreach ($id in $requestedCorrelIdsM) {
+                if (-not $foundIds.Contains($id)) { $warnings.Add(("Correl_ID_M not in GFIX list: {0}" -f $id)) }
             }
-            if (-not $found) { $warnings.Add(("Correl_ID_M not in GFIX list: {0}" -f $id)) }
         }
 
         Write-Host ("  Temp Owner / mapping name : {0} / mapping_{0}.csv" -f $Owner) -ForegroundColor Green
