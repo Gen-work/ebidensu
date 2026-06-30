@@ -201,13 +201,39 @@ function Get-AlignSheetNameList($wb) {
 }
 
 function Sync-Sheet($workWb, $workWs, $j4Ws) {
+    # Copy the J4 sheet to immediately BEFORE the work sheet, then delete the
+    # work sheet -- this keeps the synced sheet at its original position. The old
+    # delete-then-insert-after approach shifted indices after the delete, so the
+    # new sheet landed in the wrong slot (the "order chaos" the operator saw).
     $sheetName = $workWs.Name
-    $idx       = $workWs.Index
-    $workWs.Delete()
-    $insertAfter = $workWb.Sheets.Item([Math]::Min($idx, $workWb.Sheets.Count))
-    $j4Ws.Copy([System.Reflection.Missing]::Value, $insertAfter)
-    $newWs = $workWb.ActiveSheet
-    if ($newWs.Name -ne $sheetName) { $newWs.Name = $sheetName }
+    $j4Ws.Copy($workWs)                 # Before := the work sheet
+    $newWs = $workWb.ActiveSheet        # the freshly inserted copy
+    $workWs.Delete()                    # remove the old work sheet
+    if ($newWs.Name -ne $sheetName) { try { $newWs.Name = $sheetName } catch {} }
+}
+
+# Open the J4 baseline workbook safely. The J4 file and the work file share the
+# SAME leaf filename by design (J4...(_<Excel_NAME>).xlsx in both dirs). Excel
+# cannot have two workbooks with the same name open in one instance: with
+# DisplayAlerts off, Workbooks.Open of the second same-named file returns $null
+# (no error), which made Align report every sheet "missing in J4" with an empty
+# "sheets present" list. When the leaf names collide (or it is literally the same
+# path), copy the J4 file to a uniquely-named temp file and open that copy
+# instead, so both workbooks can be open at once. Returns @{ Wb; TempPath }.
+function Open-J4Safely($excel, [string]$workPath, [string]$j4Path) {
+    $workLeaf = [System.IO.Path]::GetFileName($workPath)
+    $j4Leaf   = [System.IO.Path]::GetFileName($j4Path)
+    $samePath = $false
+    try { $samePath = ([System.IO.Path]::GetFullPath($workPath) -eq [System.IO.Path]::GetFullPath($j4Path)) } catch {}
+    $collides = $samePath -or ($workLeaf -eq $j4Leaf)
+    if (-not $collides) {
+        return @{ Wb = (Open-Workbook $excel $j4Path); TempPath = $null }
+    }
+    $ext      = [System.IO.Path]::GetExtension($j4Path)
+    $tempName = ("verify_j4_{0}{1}" -f ([guid]::NewGuid().ToString('N')), $ext)
+    $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) $tempName
+    Copy-Item -LiteralPath $j4Path -Destination $tempPath -Force
+    return @{ Wb = (Open-Workbook $excel $tempPath); TempPath = $tempPath }
 }
 
 $excel = New-ExcelApp
@@ -270,11 +296,19 @@ try {
         $sheets = Get-AlignSheetsForMigration -MigrationType $migType -SendSheets $sendSheets -RecvSheets $recvSheets
         Write-Host ("  migration: {0}   sheets to check: {1}" -f $migType, $sheets.Count) -ForegroundColor DarkGray
 
-        $workWb = $null; $j4Wb = $null
+        $workWb = $null; $j4Wb = $null; $j4Temp = $null
         $changed = $false
         try {
             $workWb = Open-Workbook $excel $workPath
-            $j4Wb   = Open-Workbook $excel $j4Path
+            $j4Open = Open-J4Safely $excel $workPath $j4Path
+            $j4Wb   = $j4Open.Wb
+            $j4Temp = $j4Open.TempPath
+            if ($null -eq $j4Wb) {
+                # Should not happen now that same-name files are opened via a temp
+                # copy, but fail loudly rather than silently report every sheet as
+                # missing (the old behavior when Excel returned a null workbook).
+                throw "J4 workbook failed to open (Workbooks.Open returned null): $j4Path"
+            }
             Unhide-AllSheets $workWb
             Unhide-AllSheets $j4Wb
 
@@ -338,6 +372,9 @@ try {
         } finally {
             Close-Workbook $j4Wb $false
             Close-Workbook $workWb $false
+            if (-not [string]::IsNullOrWhiteSpace($j4Temp)) {
+                try { Remove-Item -LiteralPath $j4Temp -Force -ErrorAction SilentlyContinue } catch {}
+            }
         }
     }
 } finally {
