@@ -1,3 +1,38 @@
+## 2026-06-30 - Align Host->Open default + J4 no-content guard + picture-aware diff (v2.9.15)
+
+### Fixed
+- **Align always failed (every sheet "missing in J4")**. Root cause: with
+  `Align.HostSystemTypes` unset, `Get-MigrationType` returns `Unknown`, and the
+  `Unknown` scope was the three *receive* sheets -- but J4 baselines never carry
+  recv sheets (operator evidence), so every sheet was reported
+  `[WARN] sheet missing in J4` and nothing synced. Align now defaults an
+  unclassifiable migration to `Align.DefaultMigrationType` (default `HostToOpen`):
+  it deletes the work `Soushin data` / `GIFT send result` / `GFIX send result`
+  sheets and copies J4's, in order. Set `HostSystemTypes` for true per-row
+  classification; the warning now prints the actual FROM_sys/TO_sys literals.
+- **Picture sheets compared as "same" and were skipped.** `Compare-SheetGrid`
+  only diffs cell values, so the image-based send-data sheet (few/no cell values)
+  read identical even when the work copy had no screenshot. New picture-aware
+  `Compare-AlignSheet` (in `AlignCompare.ps1`) also compares pasted-picture count
+  (msoPicture / msoLinkedPicture / msoGroup) so the send-data sheet syncs, and an
+  already-aligned sheet (equal grid + equal picture count) is correctly `[same]`
+  and skipped.
+
+### Added
+- **J4 "no contents" guard.** Before replacing, Align checks the J4 sheet: the
+  send-data sheet must hold >= 1 picture; the GIFT/GFIX send-result sheets must
+  hold more than `Align.MinSendResultRows` (default 3) rows of text. A J4 sheet
+  that is still a blank template is reported `[NO CONTENTS] ... replace skipped`
+  and never overwrites the work evidence. New pure helpers `Get-AlignSheetKind`
+  and `Test-J4SheetPrepared` (unit-tested in `Tests\Test-AlignCompare.ps1`);
+  `Align.ps1` reads `PictureCount` / `TextRowCount` via the new COM
+  `Get-SheetMetrics`. New config keys `Align.DefaultMigrationType` /
+  `Align.MinSendResultRows`, threaded from `VerifyTool.ps1`. Pure logic +
+  tests run via `Tests\Run-Tests.ps1`; the COM paths are static-checked only and
+  need an office-PC + Excel run to confirm.
+
+---
+
 ## 2026-06-30 - DfSnap df.exe path: configurable default + first-run prompt (v2.9.14)
 
 ### Added

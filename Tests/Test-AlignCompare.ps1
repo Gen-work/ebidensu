@@ -35,4 +35,30 @@ Assert-Equal 'S1|S3|S4' ((Get-AlignSheetsForMigration -MigrationType 'HostToOpen
 Assert-Equal 'S3|S4|R1|R2|R3' ((Get-AlignSheetsForMigration -MigrationType 'OpenToOpen' -SendSheets $send -RecvSheets $recv) -join '|') 'OpenToOpen = S3,S4 + recv'
 Assert-Equal 'R1|R2|R3' ((Get-AlignSheetsForMigration -MigrationType 'Unknown' -SendSheets $send -RecvSheets $recv) -join '|') 'Unknown -> recv only (safe)'
 
+# Compare-AlignSheet: equal grid + equal picture count -> Same
+$r = Compare-AlignSheet -RowsA 1 -ColsA 1 -FlatA @('') -PicsA 1 -RowsB 1 -ColsB 1 -FlatB @('') -PicsB 1
+Assert-True $r.Same 'equal grid + equal pics -> Same'
+
+# Compare-AlignSheet: picture-only sheet, work has no pic yet -> diff (so it syncs)
+$r = Compare-AlignSheet -RowsA 1 -ColsA 1 -FlatA @('') -PicsA 0 -RowsB 1 -ColsB 1 -FlatB @('') -PicsB 1
+Assert-True (-not $r.Same) 'picture count diff -> not Same'
+Assert-True ($r.Reason -match 'picture count differs') 'picture count diff reason'
+
+# Get-AlignSheetKind
+Assert-Equal 'SendData'   (Get-AlignSheetKind -SheetName 'S1' -SendDataName 'S1' -SendResultNames @('S3','S4')) 'send-data sheet'
+Assert-Equal 'SendResult' (Get-AlignSheetKind -SheetName 'S4' -SendDataName 'S1' -SendResultNames @('S3','S4')) 'send-result sheet'
+Assert-Equal 'Other'      (Get-AlignSheetKind -SheetName 'R1' -SendDataName 'S1' -SendResultNames @('S3','S4')) 'other sheet'
+
+# Test-J4SheetPrepared: send-data needs a picture
+Assert-True (Test-J4SheetPrepared -Kind 'SendData' -PictureCount 1 -TextRowCount 0).Prepared        'send-data with picture -> prepared'
+Assert-True (-not (Test-J4SheetPrepared -Kind 'SendData' -PictureCount 0 -TextRowCount 9).Prepared) 'send-data without picture -> not prepared'
+
+# Test-J4SheetPrepared: send-result needs > MinTextRows rows
+Assert-True (Test-J4SheetPrepared -Kind 'SendResult' -PictureCount 0 -TextRowCount 4 -MinTextRows 3).Prepared        'send-result with 4 rows -> prepared'
+Assert-True (-not (Test-J4SheetPrepared -Kind 'SendResult' -PictureCount 0 -TextRowCount 3 -MinTextRows 3).Prepared) 'send-result with 3 rows -> not prepared'
+Assert-True (-not (Test-J4SheetPrepared -Kind 'SendResult' -PictureCount 0 -TextRowCount 0 -MinTextRows 3).Prepared) 'send-result empty -> not prepared'
+
+# Other sheets are always prepared (no emptiness rule)
+Assert-True (Test-J4SheetPrepared -Kind 'Other' -PictureCount 0 -TextRowCount 0).Prepared 'other sheet -> always prepared'
+
 exit (Complete-Tests)

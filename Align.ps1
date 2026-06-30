@@ -14,8 +14,15 @@
 #    Host->Host : all send sheets.
 #    (See AlignCompare.ps1 Get-AlignSheetsForMigration.)
 #  Host vs Open is decided from FROM_sys/TO_sys via -HostSystemTypes. Until
-#  those literal values are supplied, the type is 'Unknown' and Align safely
-#  falls back to the legacy receive-sheet scope with a warning.
+#  those literal values are supplied, the type is 'Unknown' and Align defaults
+#  to -DefaultMigrationType (Host->Open: delete + copy the send-data /
+#  GIFT-send-result / GFIX-send-result sheets from J4) with a warning. (The old
+#  receive-sheet fallback was useless: J4 never carries the recv sheets.)
+#
+#  A J4 sheet that is not prepared (no picture in the send-data sheet, or
+#  <= -MinSendResultRows text rows in a send-result sheet) is reported as
+#  "[NO CONTENTS]" and its replace is skipped, so a blank J4 template never
+#  overwrites work evidence.
 #
 #  Default is force-replace (Apply always on); -DiffMode switches to report-only.
 #  -Apply is kept for backward compatibility (now a no-op; Apply is always active
@@ -36,6 +43,8 @@ param(
     [string]$ExcelPrefix = '',
     [string[]]$HostSystemTypes = @(),
     [string]$MigrationTypeOverride = '',
+    [string]$DefaultMigrationType = 'HostToOpen',
+    [int]$MinSendResultRows = 3,
     [switch]$Apply,
     [switch]$DiffMode,
     [string]$ExcelHelpersScript = ''
@@ -124,26 +133,49 @@ function Find-J4Workbook([string]$name) {
     return (Find-WorkbookByExcelName -Dir $J4BaseDir -ExcelName $name -Recurse)
 }
 
-function Read-SheetGrid($ws) {
-    $used = $null
-    try { $used = $ws.UsedRange } catch { return @{ Rows = 0; Cols = 0; Flat = @() } }
-    $rows = [int]$used.Rows.Count
-    $cols = [int]$used.Columns.Count
+# Count pasted-picture shapes (msoPicture=13, msoLinkedPicture=11, msoGroup=6 --
+# grouped screenshots). AutoShapes / text boxes / the blank template boxes do
+# NOT count, so "only shape, no pic" reads as zero pictures.
+function Get-SheetPictureCount($ws) {
+    $pics = 0
+    try {
+        foreach ($sh in $ws.Shapes) {
+            $t = 0
+            try { $t = [int]$sh.Type } catch { $t = 0 }
+            if ($t -eq 13 -or $t -eq 11 -or $t -eq 6) { $pics++ }
+        }
+    } catch {}
+    return $pics
+}
+
+# Read a sheet's value grid + picture count + count of rows that hold any text.
+function Get-SheetMetrics($ws) {
+    $rows = 0; $cols = 0; $textRows = 0
     $flat = [System.Collections.Generic.List[string]]::new()
-    $vals = $used.Value2
-    if ($rows -le 1 -and $cols -le 1) {
-        $s = ''; if ($null -ne $vals) { $s = ([string]$vals).Trim() }
-        $flat.Add($s)
-    } else {
-        for ($r = 1; $r -le $rows; $r++) {
-            for ($c = 1; $c -le $cols; $c++) {
-                $v = $vals[$r, $c]
-                $s = ''; if ($null -ne $v) { $s = ([string]$v).Trim() }
-                $flat.Add($s)
+    $used = $null
+    try { $used = $ws.UsedRange } catch { $used = $null }
+    if ($null -ne $used) {
+        $rows = [int]$used.Rows.Count
+        $cols = [int]$used.Columns.Count
+        $vals = $used.Value2
+        if ($rows -le 1 -and $cols -le 1) {
+            $s = ''; if ($null -ne $vals) { $s = ([string]$vals).Trim() }
+            $flat.Add($s)
+            if ($s -ne '') { $textRows = 1 }
+        } else {
+            for ($r = 1; $r -le $rows; $r++) {
+                $rowHasText = $false
+                for ($c = 1; $c -le $cols; $c++) {
+                    $v = $vals[$r, $c]
+                    $s = ''; if ($null -ne $v) { $s = ([string]$v).Trim() }
+                    $flat.Add($s)
+                    if ($s -ne '') { $rowHasText = $true }
+                }
+                if ($rowHasText) { $textRows++ }
             }
         }
     }
-    return @{ Rows = $rows; Cols = $cols; Flat = $flat.ToArray() }
+    return @{ Rows = $rows; Cols = $cols; Flat = $flat.ToArray(); PictureCount = (Get-SheetPictureCount $ws); TextRowCount = $textRows }
 }
 
 function Sync-Sheet($workWb, $workWs, $j4Ws) {
@@ -157,7 +189,12 @@ function Sync-Sheet($workWb, $workWs, $j4Ws) {
 }
 
 $excel = New-ExcelApp
-$cntDiff = 0; $cntSame = 0; $cntSynced = 0; $cntSkip = 0
+$cntDiff = 0; $cntSame = 0; $cntSynced = 0; $cntSkip = 0; $cntNoContent = 0
+
+# Sheet names used for the J4 "no contents" check: send-data screenshot sheet
+# (needs a picture) and the GIFT/GFIX send-result sheets (need text rows).
+$sendDataName    = $sendSheets[0]
+$sendResultNames = @($sendSheets[2], $sendSheets[3])
 
 try {
     foreach ($g in $groups) {
@@ -201,7 +238,12 @@ try {
         $migType = $MigrationTypeOverride
         if ([string]::IsNullOrWhiteSpace($migType)) { $migType = Get-MigrationType -FromSys $fromSys -ToSys $toSys -HostTypes $HostSystemTypes }
         if ($migType -eq 'Unknown') {
-            Write-Host '  [WARN] migration type unknown (set -HostSystemTypes); using legacy receive-sheet scope' -ForegroundColor Yellow
+            # HostSystemTypes not configured -> we cannot classify FROM_sys/TO_sys.
+            # The recv-sheet fallback is useless here (J4 never carries recv sheets),
+            # so default to the Host->Open send-sheet scope -- the project's normal
+            # case -- and tell the operator how to make it explicit.
+            $migType = $DefaultMigrationType
+            Write-Host ("  [WARN] migration type unknown (set -HostSystemTypes for FROM_sys='{0}' / TO_sys='{1}'); defaulting to {2}" -f $fromSys, $toSys, $migType) -ForegroundColor Yellow
         }
         $sheets = Get-AlignSheetsForMigration -MigrationType $migType -SendSheets $sendSheets -RecvSheets $recvSheets
         Write-Host ("  migration: {0}   sheets to check: {1}" -f $migType, $sheets.Count) -ForegroundColor DarkGray
@@ -221,6 +263,19 @@ try {
                     Write-Host ("    [WARN] sheet missing in J4: {0}" -f $sheetName) -ForegroundColor Yellow
                     continue
                 }
+
+                # J4 "not prepared" guard: a blank template (no screenshot in the
+                # send-data sheet, or <=3 text rows in a send-result sheet) must
+                # NOT overwrite the work evidence -- report and skip the replace.
+                $kind = Get-AlignSheetKind -SheetName $sheetName -SendDataName $sendDataName -SendResultNames $sendResultNames
+                $mj   = Get-SheetMetrics $wsJ
+                $prep = Test-J4SheetPrepared -Kind $kind -PictureCount $mj.PictureCount -TextRowCount $mj.TextRowCount -MinTextRows $MinSendResultRows
+                if (-not $prep.Prepared) {
+                    Write-Host ("    [NO CONTENTS] {0}: J4 not prepared ({1}) -- replace skipped" -f $sheetName, $prep.Reason) -ForegroundColor Magenta
+                    $cntNoContent++
+                    continue
+                }
+
                 if ($null -eq $wsW) {
                     if ($applyFlag) {
                         $insertAfter2 = $workWb.Sheets.Item($workWb.Sheets.Count)
@@ -234,18 +289,18 @@ try {
                     }
                     continue
                 }
-                $gw = Read-SheetGrid $wsW
-                $gj = Read-SheetGrid $wsJ
-                $cmp = Compare-SheetGrid -RowsA $gw.Rows -ColsA $gw.Cols -FlatA $gw.Flat -RowsB $gj.Rows -ColsB $gj.Cols -FlatB $gj.Flat
+                $gw  = Get-SheetMetrics $wsW
+                $cmp = Compare-AlignSheet -RowsA $gw.Rows -ColsA $gw.Cols -FlatA $gw.Flat -PicsA $gw.PictureCount `
+                                          -RowsB $mj.Rows -ColsB $mj.Cols -FlatB $mj.Flat -PicsB $mj.PictureCount
                 if ($cmp.Same) {
-                    Write-Host ("    [same] {0}" -f $sheetName) -ForegroundColor DarkGray
+                    Write-Host ("    [same] {0} (already aligned -- skipped)" -f $sheetName) -ForegroundColor DarkGray
                     $cntSame++
                 } else {
                     Write-Host ("    [DIFF] {0}  ({1})" -f $sheetName, $cmp.Reason) -ForegroundColor Yellow
                     $cntDiff++
                     if ($applyFlag) {
                         Sync-Sheet $workWb $wsW $wsJ
-                        Write-Host ("    [SYNC] {0} <- J4 (full copy: values + formats + shapes + pictures)" -f $sheetName) -ForegroundColor Green
+                        Write-Host ("    [SYNC] {0} <- J4 (deleted work sheet, copied J4: values + formats + shapes + pictures)" -f $sheetName) -ForegroundColor Green
                         $changed = $true; $cntSynced++
                     }
                 }
@@ -270,6 +325,7 @@ Write-Host '===== Align Done =====' -ForegroundColor Green
 Write-Host ("  Sheets same   : {0}" -f $cntSame)
 Write-Host ("  Sheets diff   : {0}" -f $cntDiff)
 Write-Host ("  Sheets synced : {0}" -f $cntSynced) -ForegroundColor $(if ($applyFlag) { 'Green' } else { 'DarkGray' })
+Write-Host ("  J4 no-content : {0}" -f $cntNoContent) -ForegroundColor $(if ($cntNoContent -gt 0) { 'Magenta' } else { 'DarkGray' })
 Write-Host ("  Groups skipped: {0}" -f $cntSkip)
 if ($diffFlag -and $cntDiff -gt 0) {
     Write-Host '  (DiffMode: re-run without -DiffMode to sync the DIFF sheets)' -ForegroundColor Magenta
