@@ -1340,14 +1340,32 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
     if ($PhaseKey -eq 'DfSnap') {
         $p = Resolve-ToolPath $Config 'DfSnap'
         $args = $base.Clone()
-        # CLI -DfExePath overrides config
+        # Resolve df.exe path: CLI/session value (State.DfExePath) wins, then
+        # config Df.ExePath. If all are empty this is the first run: prompt once,
+        # offering Df.DefaultExePath (Enter accepts), and remember the answer in
+        # the session so later runs skip the prompt.
+        if ([string]::IsNullOrWhiteSpace($State.DfExePath) -and $Config.Df `
+                -and -not [string]::IsNullOrWhiteSpace([string]$Config.Df.ExePath)) {
+            $State.DfExePath = [string]$Config.Df.ExePath
+        }
+        if ([string]::IsNullOrWhiteSpace($State.DfExePath) -and -not $State.DryRun) {
+            $def = if ($Config.Df) { [string]$Config.Df.DefaultExePath } else { '' }
+            Write-Host '[DfSnap] df.exe path not set (first run).' -ForegroundColor Yellow
+            $msg = if ([string]::IsNullOrWhiteSpace($def)) { '  Path to df.exe' } else { ("  Path to df.exe [{0}]" -f $def) }
+            $ans = (Read-Host $msg).Trim()
+            if ([string]::IsNullOrWhiteSpace($ans)) { $ans = $def }
+            $State.DfExePath = $ans
+            if (-not [string]::IsNullOrWhiteSpace($State.DfExePath)) {
+                $session['DfExePath'] = $State.DfExePath
+                Save-Session $sessionPath $session
+                Write-Host ("  [NOTE] remembered in {0}" -f $sessionPath) -ForegroundColor DarkGray
+            }
+        }
         if (-not [string]::IsNullOrWhiteSpace($State.DfExePath)) {
             $args['DfExePath'] = $State.DfExePath
         }
         if ($Config.Df) {
-            if (-not $args.ContainsKey('DfExePath') -and -not [string]::IsNullOrWhiteSpace([string]$Config.Df.ExePath)) {
-                $args['DfExePath'] = [string]$Config.Df.ExePath
-            }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.DefaultExePath)) { $args['DefaultExePath'] = [string]$Config.Df.DefaultExePath }
             if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.GiftDataDir)) { $args['GiftDataDir']   = [string]$Config.Df.GiftDataDir }
             if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.GfixDataDir)) { $args['GfixDataDir']   = [string]$Config.Df.GfixDataDir }
             if (-not [string]::IsNullOrWhiteSpace([string]$Config.Df.FilePattern)) { $args['FilePattern']   = [string]$Config.Df.FilePattern }
@@ -1734,6 +1752,13 @@ if ([string]::IsNullOrWhiteSpace($CheckSheetPath) -and $session.ContainsKey('Che
     $CheckSheetPath = [string]$session['CheckSheetPath']
 }
 
+# DfExePath: CLI > last session > config Df.ExePath. When all are empty the
+# DfSnap dispatch prompts once (first run), offering Df.DefaultExePath, and
+# the answer is remembered in the session below.
+if ([string]::IsNullOrWhiteSpace($DfExePath) -and $session.ContainsKey('DfExePath')) {
+    $DfExePath = [string]$session['DfExePath']
+}
+
 # Project-level evidence workbook prefix: CLI > work-folder config Workbook.ExcelPrefix.
 if ([string]::IsNullOrWhiteSpace($ExcelPrefix) -and $Config.Workbook -and -not [string]::IsNullOrWhiteSpace([string]$Config.Workbook.ExcelPrefix)) {
     $ExcelPrefix = [string]$Config.Workbook.ExcelPrefix
@@ -1831,6 +1856,7 @@ $session['CursorCell'] = $CursorCell
 $session['CloneSourceDir'] = $CloneSourceDir
 $session['J4BaseDir'] = $J4BaseDir
 $session['CheckSheetPath'] = $CheckSheetPath
+$session['DfExePath'] = $DfExePath
 Save-Session $sessionPath $session
 
 $mappingPath = Get-MappingPath $Config $WorkDir $Owner
@@ -1913,6 +1939,7 @@ while ($true) {
     $session['CloneSourceDir'] = $state.CloneSourceDir
     $session['J4BaseDir'] = $state.J4BaseDir
     $session['CheckSheetPath'] = $state.CheckSheetPath
+    $session['DfExePath'] = $state.DfExePath
     Save-Session $sessionPath $session
     $mappingPath = Get-MappingPath $Config $state.WorkDir $state.Owner
 

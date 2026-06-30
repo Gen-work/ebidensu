@@ -268,9 +268,9 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-30 v2.9.14)
+## Current state (last bump: 2026-06-30 v2.9.15)
 
-v2.9.14 (Align Host->Open default + J4 no-content guard + picture-aware diff):
+v2.9.15 (Align Host->Open default + J4 no-content guard + picture-aware diff):
 **Fixed** -- (1) Align always reported every sheet "missing in J4". With
 `Align.HostSystemTypes` unset the migration type is `Unknown`, whose scope was
 the three *receive* sheets -- but J4 baselines never carry recv sheets, so
@@ -288,6 +288,18 @@ needs >=1 picture and a send-result sheet needs > `Align.MinSendResultRows`
 keys `Align.DefaultMigrationType` / `Align.MinSendResultRows` threaded from
 VerifyTool. Pure logic + tests via `Tests\Run-Tests.ps1`; COM paths
 static-checked only -- confirm on an office PC + Excel.
+
+v2.9.14 (DfSnap df.exe path: configurable default + first-run prompt):
+**Added** -- `Df.DefaultExePath` (default `C:\tools\DF\DF.exe`) is the df.exe
+path the first-run prompt pre-fills (Enter accepts); `Df.ExePath` stays empty by
+default (= ask on first run) and, when set, locks the path so the prompt is
+skipped. VerifyTool now remembers the resolved path in `verify_session.json`
+(`DfExePath`) and reloads it on startup, so the operator is prompted only on the
+first DfSnap run. Resolution: CLI `-DfExePath` > session > `Df.ExePath` >
+prompt(`Df.DefaultExePath`). The first-run prompt + persistence live in
+VerifyTool's DfSnap dispatch; `DfSnap.ps1` gained a `-DefaultExePath` param so its
+standalone prompt offers the same default. COM/Excel parts static-checked only;
+confirm the prompt + persistence on an office PC.
 
 v2.9.13 (snap TimeCheck menu toggle + -Add owner filter):
 **Added** -- (1) the HM/MQ/Jenkins snap phases now expose a `tc` interactive
@@ -600,8 +612,16 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   busy BIZ codes). Future: use SendKeys / UI automation to set the rows-per-page dropdown
   to 100 automatically after `Switch-ToEdge`, before the per-row search loop.
 
-- **DfSnap: DfExePath not yet configured** — set `Df.ExePath` in `VerifyConfig.psd1` to
-  the full path of df.exe so the prompt is skipped. Or just type it when prompted each run.
+- **DfSnap: DfExePath configurable + first-run prompt DONE** — `Df.ExePath`
+  (empty by default) holds a locked path that skips the prompt entirely; the new
+  `Df.DefaultExePath` (default `C:\tools\DF\DF.exe`) is the suggestion the
+  first-run prompt pre-fills (Enter accepts). Resolution is CLI `-DfExePath` >
+  `verify_session.json` > `Df.ExePath` > prompt(`Df.DefaultExePath`). VerifyTool
+  prompts once on the first DfSnap run, remembers the answer in
+  `verify_session.json` (`DfExePath`), and passes both values to `DfSnap.ps1`
+  (which keeps its own default-pre-filled prompt for standalone use). To lock a
+  path and never be prompted, set `Df.ExePath` directly. COM/Excel parts are
+  static-checked only; confirm the prompt + persistence on an office PC.
 
 - **DfSnap region calibration** — default capture is `region` (x=120,y=280,w=1250,h=657
   for ~1980x1020). Tune `Df.RegionX/Y/Width/Height` and per-direction
@@ -640,3 +660,5 @@ Remembered between runs:
 - `CursorCell` — review cursor cell (default: A3)
 - `CloneSourceDir` — external path for Clone phase
 - `EvidenceDir` — evidence output folder (default: `<WorkDir>\evidence`)
+- `DfExePath` — df.exe path; remembered after the first DfSnap run so the
+  prompt fires only once (seeded from `Df.DefaultExePath`)

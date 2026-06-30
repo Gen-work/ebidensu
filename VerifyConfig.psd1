@@ -224,8 +224,15 @@
 
     # DF snap / mark configuration
     Df = @{
-        # Path to df.exe comparison tool. User must set for their environment.
-        ExePath      = ''
+        # Path to df.exe comparison tool.
+        #   - Leave empty to be PROMPTED on the first run (the prompt offers
+        #     DefaultExePath; press Enter to accept). The answer is remembered
+        #     in verify_session.json so later runs skip the prompt.
+        #   - Set this to a real path to lock it and never be prompted.
+        # CLI -DfExePath / verify_config.json overlay still win over this.
+        ExePath        = ''
+        # Suggested df.exe path the first-run prompt pre-fills (Enter accepts).
+        DefaultExePath = 'C:\tools\DF\DF.exe'
         # Seconds to wait after the df.exe window appears before capturing.
         LoadWaitSec  = 8
         # 'region' (recommended; df.exe window handle is flaky), 'window', 'fullscreen'.

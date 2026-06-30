@@ -1,4 +1,4 @@
-## 2026-06-30 - Align Host->Open default + J4 no-content guard + picture-aware diff (v2.9.14)
+## 2026-06-30 - Align Host->Open default + J4 no-content guard + picture-aware diff (v2.9.15)
 
 ### Fixed
 - **Align always failed (every sheet "missing in J4")**. Root cause: with
@@ -30,6 +30,29 @@
   `Align.MinSendResultRows`, threaded from `VerifyTool.ps1`. Pure logic +
   tests run via `Tests\Run-Tests.ps1`; the COM paths are static-checked only and
   need an office-PC + Excel run to confirm.
+
+---
+
+## 2026-06-30 - DfSnap df.exe path: configurable default + first-run prompt (v2.9.14)
+
+### Added
+- **`Df.DefaultExePath`** (`VerifyConfig.psd1`, default `C:\tools\DF\DF.exe`):
+  the df.exe path the first-run prompt pre-fills (press Enter to accept). Also
+  added to `verify_config.example.json`.
+- **DfExePath is now remembered between runs.** VerifyTool persists the resolved
+  df.exe path in `verify_session.json` (`DfExePath`) and loads it on startup, so
+  the prompt fires only on the first DfSnap run and is silent afterward.
+
+### Changed
+- **DfSnap df.exe path resolution** is now CLI `-DfExePath` > `verify_session.json`
+  > `Df.ExePath` > prompt(`Df.DefaultExePath`). `Df.ExePath` stays empty by
+  default (= ask on first run); set it to a real path to lock it and never be
+  prompted. The first-run prompt + persistence live in VerifyTool's DfSnap
+  dispatch; `DfSnap.ps1` gained a `-DefaultExePath` param and pre-fills its own
+  standalone prompt with it. (`VerifyTool.ps1` DfSnap dispatch + session load/save,
+  `DfSnap.ps1` prompt, `VerifyConfig.psd1`/`verify_config.example.json` Df block.)
+- COM/Excel parts are static-checked only (no PowerShell/Excel in the cloud env);
+  confirm the prompt + session persistence on an office PC.
 
 ---
 
