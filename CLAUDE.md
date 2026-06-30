@@ -268,7 +268,26 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-29 v2.9.13)
+## Current state (last bump: 2026-06-30 v2.9.14)
+
+v2.9.14 (Align Host->Open default + J4 no-content guard + picture-aware diff):
+**Fixed** -- (1) Align always reported every sheet "missing in J4". With
+`Align.HostSystemTypes` unset the migration type is `Unknown`, whose scope was
+the three *receive* sheets -- but J4 baselines never carry recv sheets, so
+nothing ever synced. `Align.ps1` now defaults an unclassifiable migration to
+`Align.DefaultMigrationType` (default `HostToOpen`): delete + copy the work
+send-data / GIFT-send-result / GFIX-send-result sheets from J4, in order.
+(2) The image-based send-data sheet compared as "same" (value-only
+`Compare-SheetGrid`) and was skipped; new picture-aware `Compare-AlignSheet`
+also compares pasted-picture count so it syncs, and an already-aligned sheet is
+correctly `[same]`/skipped. **Added** -- J4 "no contents" guard
+(`Get-AlignSheetKind` + `Test-J4SheetPrepared`, unit-tested): a send-data sheet
+needs >=1 picture and a send-result sheet needs > `Align.MinSendResultRows`
+(default 3) text rows, else `[NO CONTENTS] ... replace skipped`. New COM
+`Get-SheetMetrics` (rows/cols/flat + PictureCount + TextRowCount); new config
+keys `Align.DefaultMigrationType` / `Align.MinSendResultRows` threaded from
+VerifyTool. Pure logic + tests via `Tests\Run-Tests.ps1`; COM paths
+static-checked only -- confirm on an office PC + Excel.
 
 v2.9.13 (snap TimeCheck menu toggle + -Add owner filter):
 **Added** -- (1) the HM/MQ/Jenkins snap phases now expose a `tc` interactive

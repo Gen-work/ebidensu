@@ -405,6 +405,8 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '                      e.g. enter: HOST   (check your mapping FROM_sys/TO_sys column for the actual literal)',
             '                      HostToOpen  = send data + GIFT/GFIX send result sheets',
             '                      OpenToOpen / OpenToHost = GIFT+GFIX send sheets + 3 receive sheets',
+            '                      Empty/Unknown -> defaults to HostToOpen (config Align.DefaultMigrationType).',
+            '                      A blank J4 sheet (no picture / <=3 text rows) reports [NO CONTENTS] and is skipped.',
             '    j=J4BaseDir    -> root folder of J4 baseline workbooks (searched recursively)',
             '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME'
         ) }
@@ -1378,6 +1380,14 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
                 $hostTypes = [string[]]$Config.Align.HostSystemTypes
             }
             if ($hostTypes.Count -gt 0) { $args['HostSystemTypes'] = $hostTypes }
+            if ($Config.Align.ContainsKey('DefaultMigrationType') -and `
+                -not [string]::IsNullOrWhiteSpace([string]$Config.Align.DefaultMigrationType)) {
+                $args['DefaultMigrationType'] = [string]$Config.Align.DefaultMigrationType
+            }
+            if ($Config.Align.ContainsKey('MinSendResultRows') -and `
+                $null -ne $Config.Align.MinSendResultRows) {
+                $args['MinSendResultRows'] = [int]$Config.Align.MinSendResultRows
+            }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         # Align default is force-replace; -DiffMode switches to report-only.

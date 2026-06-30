@@ -255,9 +255,17 @@
         #   \\server\share\...\project\40.J4\07.GPCS
         J4BaseDir       = ''
         # FROM_sys / TO_sys literal values that count as "Host" (mainframe).
-        # Until set, migration type is Unknown and Align falls back to the
-        # Host->Open (3 receive sheets) scope with a warning.
+        # Until set, migration type is Unknown and Align falls back to
+        # DefaultMigrationType below (Host->Open send sheets) with a warning.
         HostSystemTypes = @()
+        # Scope used when the migration type cannot be classified (HostSystemTypes
+        # empty). 'HostToOpen' = delete + copy the send sheets (Soushin data /
+        # GIFT / GFIX send result) from J4 -- the project's normal case.
+        DefaultMigrationType = 'HostToOpen'
+        # A J4 send-result sheet (GIFT/GFIX send result) with this many text rows
+        # or fewer is treated as "not prepared" (blank template) and its replace
+        # is skipped. The send-data sheet uses a picture-present check instead.
+        MinSendResultRows = 3
     }
 
     # GFIX log cell-mark configuration

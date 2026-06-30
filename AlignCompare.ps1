@@ -47,6 +47,62 @@ function Get-MigrationType {
     return 'HostToHost'
 }
 
+# Compare two sheets that may carry pictures (e.g. the send-data screenshot
+# sheet). Picture count is a cheap proxy for "the evidence image is present":
+# we cannot diff picture bytes over COM, so a differing picture COUNT (e.g. work
+# has 0, J4 has 1) is a difference, and an equal count + equal grid is "same"
+# (treated as already-done -> skipped). Delegates the grid check to
+# Compare-SheetGrid.
+function Compare-AlignSheet {
+    param(
+        [int]$RowsA, [int]$ColsA, [string[]]$FlatA, [int]$PicsA,
+        [int]$RowsB, [int]$ColsB, [string[]]$FlatB, [int]$PicsB
+    )
+    if ($PicsA -ne $PicsB) {
+        return [pscustomobject]@{ Same = $false; Reason = ("picture count differs ({0} vs {1})" -f $PicsA, $PicsB) }
+    }
+    return Compare-SheetGrid -RowsA $RowsA -ColsA $ColsA -FlatA $FlatA -RowsB $RowsB -ColsB $ColsB -FlatB $FlatB
+}
+
+# Classify a sheet by the no-content rule it should be checked against.
+#   'SendData'   : the send-data screenshot sheet (must hold >=1 picture).
+#   'SendResult' : the GIFT/GFIX send-result sheets (must hold > MinTextRows text rows).
+#   'Other'      : no emptiness rule (always considered prepared).
+function Get-AlignSheetKind {
+    param([string]$SheetName, [string]$SendDataName, [string[]]$SendResultNames)
+    if ($SheetName -eq $SendDataName) { return 'SendData' }
+    if (@($SendResultNames) -contains $SheetName) { return 'SendResult' }
+    return 'Other'
+}
+
+# Decide whether a J4 baseline sheet actually holds evidence worth copying.
+# A J4 workbook that the host team has not filled in yet (only the blank
+# template) must NOT overwrite the work sheet -- report "no contents" and skip.
+#   SendData   : needs at least one picture.
+#   SendResult : needs more than MinTextRows rows containing text.
+# Returns @{ Prepared; Reason }.
+function Test-J4SheetPrepared {
+    param(
+        [string]$Kind,
+        [int]$PictureCount,
+        [int]$TextRowCount,
+        [int]$MinTextRows = 3
+    )
+    switch ($Kind) {
+        'SendData' {
+            if ($PictureCount -lt 1) {
+                return [pscustomobject]@{ Prepared = $false; Reason = 'no picture in send-data sheet (template only)' }
+            }
+        }
+        'SendResult' {
+            if ($TextRowCount -le $MinTextRows) {
+                return [pscustomobject]@{ Prepared = $false; Reason = ("only {0} text row(s) (<= {1})" -f $TextRowCount, $MinTextRows) }
+            }
+        }
+    }
+    return [pscustomobject]@{ Prepared = $true; Reason = '' }
+}
+
 # Which sheets Align should compare for a migration type.
 # Returns a list of sheet names from this workbook that should be checked
 # against the J4 baseline. Recv sheets (operator evidence) are included for
