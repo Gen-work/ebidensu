@@ -268,7 +268,24 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-30 v2.9.15)
+## Current state (last bump: 2026-06-30 v2.9.17)
+
+v2.9.17 (Align same-name workbook open fix + sheet-order preserve):
+**Fixed** -- (1) Align reported every sheet "missing in J4" with an empty
+"J4 sheets present:" list. Excel cannot open two workbooks with the same leaf
+filename in one instance, and the J4 baseline shares the *identical* filename
+with the work evidence by design. With `DisplayAlerts=$false` the second
+`Workbooks.Open` (J4) returns `$null` instead of erroring, so `$j4Wb` was null
+and every sheet read as missing (no `StrictMode`, no `[FAIL]`). The only
+workbook that synced (`JJODWDB2`) just happened to have a full-width `W` in its
+J4 filename, so its leaf name differed and both could open. `Align.ps1` now
+opens J4 via `Open-J4Safely`: on a leaf-name collision (or same path) it copies
+J4 to `%TEMP%\verify_j4_<guid>.xlsx` and opens the copy (removed in `finally`);
+a null-workbook guard now throws instead of misreporting. (2) `Sync-Sheet`
+preserves sheet order -- it copies the J4 sheet to *before* the work sheet then
+deletes the work sheet, instead of delete-then-insert-after (which shifted
+indices and scrambled the order). COM/Excel parts static-checked only; confirm
+on an office PC + Excel.
 
 v2.9.15 (Align Host->Open default + J4 no-content guard + picture-aware diff):
 **Fixed** -- (1) Align always reported every sheet "missing in J4". With

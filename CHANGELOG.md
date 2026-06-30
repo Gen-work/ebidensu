@@ -1,3 +1,36 @@
+## 2026-06-30 - Align same-name workbook open fix + sheet-order preserve (v2.9.17)
+
+### Fixed
+- **Align reported every sheet "missing in J4" with an empty "J4 sheets present:"
+  list** (the diagnostic added in v2.9.16 made the cause visible). Real root
+  cause: Excel cannot have two workbooks with the **same leaf filename** open in
+  one instance, and the J4 baseline shares the *identical* filename with the work
+  evidence by design (`J4...(_<Excel_NAME>).xlsx` in both the evidence dir and the
+  J4 baseline dir). `Open-Workbook` opens the work file first; the second
+  `Workbooks.Open` for the same-named J4 file, with `DisplayAlerts = $false`,
+  has Excel **suppress** the "can't open two workbooks with the same name" error
+  and return `$null` (no throw). `$j4Wb` was therefore `$null`; Align has no
+  `StrictMode`, so every `Get-AlignSheetMatch $j4Wb ...` iterated `$null.Worksheets`
+  (zero iterations, no error) -> all sheets "missing in J4", empty present-list,
+  no `[FAIL]`. The one workbook that DID sync (`JJODWDB2`) only worked because its
+  J4 file carried a full-width `W` (`..._JJODＷDB2.xlsx`), so its leaf name
+  *differed* from the work file -- the only pair Excel could open at once. This
+  affected every same-named pair, i.e. the normal case. `Align.ps1` now opens the
+  J4 baseline through a new `Open-J4Safely`: when the J4 leaf name collides with
+  the work leaf name (or it is literally the same path), it copies the J4 file to
+  a uniquely-named temp file (`%TEMP%\verify_j4_<guid>.xlsx`) and opens that copy,
+  so both workbooks can be open simultaneously; the temp file is removed in the
+  `finally`. A `$null`-workbook guard now `throw`s (-> `[FAIL]`) instead of
+  silently misreporting.
+- **Synced sheets landed in the wrong position** ("the order is chaos"):
+  `Sync-Sheet` deleted the work sheet first, then re-inserted the J4 copy by
+  index -- but the delete shifted every later sheet's index, so the copy landed
+  in the wrong slot. It now copies the J4 sheet to immediately **before** the work
+  sheet and then deletes the work sheet, keeping the synced sheet at its original
+  position.
+- COM/Excel path -- static-checked only (no PowerShell/Excel in the cloud build
+  env); confirm on an office PC + Excel 2019.
+
 ## 2026-06-30 - Align sheet-name miss diagnostics + tolerant match (v2.9.16)
 
 ### Fixed
