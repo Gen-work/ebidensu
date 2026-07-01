@@ -53,7 +53,9 @@ param(
     [switch]$NoResize,
     [switch]$RefreshUrls,
     [switch]$DryRun,
-    [switch]$MoveData,
+    [switch]$SkipExcel,
+    [switch]$SkipData,
+    [switch]$Backup,
     [switch]$AllowTempMapping,
     [switch]$Add,
     [switch]$Help,
@@ -148,7 +150,9 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail         # one Outlook draft per Excel; you click Send + Enter'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail -TargetIds SJRVWD64'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles       # copy evidence Excel + DATA to J4'
-    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -MoveData  # move DATA files'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -SkipData   # evidence Excel only'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -SkipExcel  # DATA files only'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -Backup     # back up J4 files before overwrite'
     Write-Host '  .\VerifyTool.ps1 -Phase InitConfig          # write/update per-folder verify_config.json'
     Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive # grouped config editor (peek/edit/delete/save)'
     Write-Host ''
@@ -529,13 +533,30 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
             '    f=Force        -> re-draft rows already marked delivered',
             '  NOTE: one Outlook DRAFT per Excel (never auto-sent). You click Send, then',
-            '        press Enter to mark isDelivered. Append  -m "comment"  to record a note.'
+            '        press Enter to mark isDelivered. Append  -m "comment"  to record a note.',
+            '  Requires (set in this work folder''s verify_config.json, group "mail"):',
+            '    Reviewer.Address / DisplayName / ShortName, Mail.EvidenceFolder,',
+            '    Mail.CheckSheetFolder, Mail.CheckSheetFile.',
+            '  {n} placeholders (config Mail.SubjectTemplate / Mail.BodyLines):',
+            '    Mail.SubjectTemplate: {0}=Mail.Phase  {1}=Excel_NAME',
+            '    Mail.BodyLines:       {0}=Reviewer.ShortName  {1}=Owner',
+            '                          {2}=Mail.EvidenceFolder  {3}=this Excel''s filename',
+            '                          {4}=Mail.CheckSheetFolder  {5}=Mail.CheckSheetFile',
+            '  Edit the {n} numbers'' surrounding text freely; do not remove/renumber the {n} tokens.'
         ) }
         '^DeliverFiles$' { @(
             '  Phase params:',
             '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
             '    f=Force        -> re-copy files already marked delivered',
-            '    mv=MoveData    -> Move DATA files (delete source). Evidence Excel is always Copied.'
+            '    xe=SkipExcel   -> skip the evidence Excel copy (DATA files only)',
+            '    xd=SkipData    -> skip DATA\GFIX/GIFT (evidence Excel only)',
+            '    bk=Backup      -> back up any J4 file this run overwrites/removes',
+            '  NOTE: default copies BOTH evidence Excel and DATA files. Source files are',
+            '        never deleted (copy only). J4EvidenceDir must be set in verify_config.json',
+            '        (DeliverFiles.J4EvidenceDir or Mail.EvidenceFolder) -- run -Phase InitConfig.',
+            '        If the local evidence file has no configured prefix, the prefix is added',
+            '        on the J4 copy. A same-name-but-full-width duplicate already in J4 is',
+            '        offered for removal (kept: the half-width work-folder name), after asking.'
         ) }
         '^InitConfig$' { @(
             '  Phase params:',
@@ -567,7 +588,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^Crop$' { return @('c','f') }
         '^CheckSheet$' { return @('t','f','k') }
         '^DeliverMail$' { return @('t','f') }
-        '^DeliverFiles$' { return @('t','f','mv') }
+        '^DeliverFiles$' { return @('t','f','xe','xd','bk') }
         '^Mapping$' { return @('f','owner','from','range','cm','jobs','ex','temp','add') }
         '^ExcelSnap$' { return @('f') }
         '^InitConfig$' { return @('i','f') }
@@ -618,7 +639,9 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'p') { Write-Host ("  ProbeFile      : {0}" -f $State.ProbeFile) }
     if (Test-PhaseOption $allowed 's') { Write-Host ("  ProbeSheet     : {0}" -f $State.ProbeSheet) }
     if (Test-PhaseOption $allowed 'k') { Write-Host ("  CheckSheetPath : {0}" -f $(if ([string]::IsNullOrWhiteSpace($State.CheckSheetPath)) { '(config/prompt)' } else { $State.CheckSheetPath })) }
-    if (Test-PhaseOption $allowed 'mv') { Write-Host ("  MoveData       : {0}" -f (To-BoolText $State.MoveData)) }
+    if (Test-PhaseOption $allowed 'xe') { Write-Host ("  SkipExcel      : {0}" -f (To-BoolText $State.SkipExcel)) }
+    if (Test-PhaseOption $allowed 'xd') { Write-Host ("  SkipData       : {0}" -f (To-BoolText $State.SkipData)) }
+    if (Test-PhaseOption $allowed 'bk') { Write-Host ("  Backup         : {0}" -f (To-BoolText $State.Backup)) }
 
     Write-Host ''
     if ($allowed.Count -eq 0) {
@@ -644,7 +667,9 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 'p') { $help += 'p=ProbeFile' }
         if (Test-PhaseOption $allowed 's') { $help += 's=ProbeSheet' }
         if (Test-PhaseOption $allowed 'k') { $help += 'k=CheckSheet path' }
-        if (Test-PhaseOption $allowed 'mv') { $help += 'mv=MoveData' }
+        if (Test-PhaseOption $allowed 'xe') { $help += 'xe=SkipExcel toggle' }
+        if (Test-PhaseOption $allowed 'xd') { $help += 'xd=SkipData toggle' }
+        if (Test-PhaseOption $allowed 'bk') { $help += 'bk=Backup toggle' }
         if (Test-PhaseOption $allowed 'owner') { $help += 'owner=Owner' }
         if (Test-PhaseOption $allowed 'from') { $help += 'from=FromBizCode' }
         if (Test-PhaseOption $allowed 'range') { $help += 'r/range=WBS rows' }
@@ -846,11 +871,25 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
                     Write-Host ("  DiffMode(Align): {0}" -f (To-BoolText $State.DiffMode)) -ForegroundColor DarkGray
                 }
             }
-            '^-?mv$' {
-                if (-not (Test-PhaseOption $allowed 'mv')) { Write-UnusedOption $PhaseKey 'mv' }
+            '^-?xe$' {
+                if (-not (Test-PhaseOption $allowed 'xe')) { Write-UnusedOption $PhaseKey 'xe' }
                 else {
-                    $State.MoveData = -not $State.MoveData
-                    Write-Host ("  MoveData       : {0}" -f (To-BoolText $State.MoveData)) -ForegroundColor DarkGray
+                    $State.SkipExcel = -not $State.SkipExcel
+                    Write-Host ("  SkipExcel      : {0}" -f (To-BoolText $State.SkipExcel)) -ForegroundColor DarkGray
+                }
+            }
+            '^-?xd$' {
+                if (-not (Test-PhaseOption $allowed 'xd')) { Write-UnusedOption $PhaseKey 'xd' }
+                else {
+                    $State.SkipData = -not $State.SkipData
+                    Write-Host ("  SkipData       : {0}" -f (To-BoolText $State.SkipData)) -ForegroundColor DarkGray
+                }
+            }
+            '^-?bk$' {
+                if (-not (Test-PhaseOption $allowed 'bk')) { Write-UnusedOption $PhaseKey 'bk' }
+                else {
+                    $State.Backup = -not $State.Backup
+                    Write-Host ("  Backup         : {0}" -f (To-BoolText $State.Backup)) -ForegroundColor DarkGray
                 }
             }
             default { Write-Host '  unknown option' -ForegroundColor Yellow }
@@ -1554,14 +1593,25 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if (-not [string]::IsNullOrWhiteSpace([string]$df.J4EvidenceDir)) { $j4Ev = [string]$df.J4EvidenceDir; $args['J4EvidenceDir'] = $j4Ev }
             if (-not [string]::IsNullOrWhiteSpace([string]$df.J4GfixDataDir)) { $args['J4GfixDataDir'] = [string]$df.J4GfixDataDir }
             if (-not [string]::IsNullOrWhiteSpace([string]$df.J4GiftDataDir)) { $args['J4GiftDataDir'] = [string]$df.J4GiftDataDir }
-            if ($df.MoveData -or $State.MoveData)  { $args['MoveData'] = $true }
+            if ($df.ContainsKey('Backup') -and ($df.Backup -or $State.Backup)) { $args['Backup'] = $true }
         }
         if ([string]::IsNullOrWhiteSpace($j4Ev)) {
             # Fall back to Mail.EvidenceFolder
             if ($Config.Mail -and -not [string]::IsNullOrWhiteSpace([string]$Config.Mail.EvidenceFolder)) {
-                $args['J4EvidenceDir'] = [string]$Config.Mail.EvidenceFolder
+                $j4Ev = [string]$Config.Mail.EvidenceFolder
+                $args['J4EvidenceDir'] = $j4Ev
             }
         }
+        if ([string]::IsNullOrWhiteSpace($j4Ev)) {
+            Write-Host '[ERROR] J4 destination not configured.' -ForegroundColor Red
+            Write-Host '  Set DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder) in this work' -ForegroundColor Yellow
+            Write-Host '  folder''s verify_config.json -- run: .\VerifyTool.ps1 -Phase InitConfig -Interactive' -ForegroundColor Yellow
+            Write-Host '  (group "path" or "mail"), or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
+            return
+        }
+        if ($State.SkipExcel) { $args['SkipExcel'] = $true }
+        if ($State.SkipData)  { $args['SkipData']  = $true }
+        if ($State.Backup)    { $args['Backup']    = $true }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
         $args['EvidenceDir'] = $State.EvidenceDir
@@ -1843,7 +1893,9 @@ $state = @{
     RefreshUrls     = [bool]$RefreshUrls.IsPresent
     DryRun          = [bool]$DryRun.IsPresent
     DiffMode        = $false
-    MoveData        = [bool]$MoveData.IsPresent
+    SkipExcel       = [bool]$SkipExcel.IsPresent
+    SkipData        = [bool]$SkipData.IsPresent
+    Backup          = [bool]$Backup.IsPresent
 }
 
 $session['WorkDir'] = $WorkDir

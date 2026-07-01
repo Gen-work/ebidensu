@@ -1,3 +1,39 @@
+## 2026-07-01 - DeliverFiles rework + config error messages + GfixLogDownload naming (v2.9.20)
+
+### Changed
+- `DeliverFiles.ps1` no longer has a "move" mode: it only ever copies, and
+  source DATA\GIFT/GFIX files are never deleted. `-MoveData` (and the
+  `DeliverFiles.MoveData` config key) is removed, replaced by `-SkipExcel` /
+  `-SkipData` (default: copy both the evidence Excel and the DATA files) and
+  a new `-Backup` switch that copies any J4 file about to be
+  overwritten/removed into `J4EvidenceDir\_bak\<name>.<timestamp>.bak` first.
+
+### Fixed
+- DeliverFiles now falls back to the bare `Excel_NAME` when the local
+  evidence workbook predates the configured `Workbook.ExcelPrefix`, and
+  always names the J4 copy with the resolved prefix regardless of the
+  source's on-disk name.
+- DeliverFiles detects a same-stem full-width-ASCII duplicate already sitting
+  in J4EvidenceDir (e.g. a workbook name typed with `０` instead of `0`) and,
+  after asking the operator to confirm, removes it so only the half-width
+  (work-folder) copy remains -- `-Backup` saves the removed file first.
+- `VerifyTool.ps1`'s DeliverFiles dispatch now fails with an explicit
+  "set DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder) in
+  verify_config.json -- run -Phase InitConfig" message instead of only the
+  child script's bare `-J4EvidenceDir is required` error; DeliverMail's
+  missing-reviewer error and phase notes got the same "where to configure
+  this" treatment, including a full breakdown of every `{n}` placeholder in
+  `Mail.SubjectTemplate` / `Mail.BodyLines`.
+- `GfixLogDownload.ps1` downloaded logs as
+  `<JobNo>_<timestamp>_<originalName>.log`, but GoAnywhere itself names the
+  file after the job number, so the first and last filename fields were
+  always identical. The job number is now replaced with the mapping
+  `JOB_NAME`(s) that needed it (joined with `+` for the duplicate-IF_NO
+  case), falling back to the job number only if no JOB_NAME is known.
+- Static-checked only (no Windows/Excel/Edge in this dev environment) --
+  confirm the full-width J4 prompt, the prefix fallback, and the new
+  GfixLogDownload log filenames on an office PC.
+
 ## 2026-06-30 - Align same-name workbook open fix + sheet-order preserve (v2.9.17)
 
 ### Fixed
