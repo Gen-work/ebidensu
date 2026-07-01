@@ -2,9 +2,20 @@
 # ============================================================
 # DeliverFiles.ps1 - Phase DeliverFiles
 #
-# Copies evidence Excel workbooks from <EvidenceDir> to J4EvidenceDir,
-# and copies DATA\GFIX and DATA\GIFT files to the corresponding J4 data
-# directories. Source files are NEVER deleted -- this phase only copies.
+# Delivers evidence to J4: for each targeted Excel_NAME, replaces the three
+# delivery-scope sheets (GIFT recv result / GFIX recv result / GIFT-vs-GFIX
+# data compare -- the operator's own captured evidence, same set as
+# Align.ps1's Get-AlignRecvSheets) in the CORRESPONDING J4 workbook with the
+# matching sheets from the work evidence workbook, in place -- like Align,
+# but in the opposite direction (work -> J4) and only for these three
+# sheets. Every other J4 sheet (host-managed send sheets, etc.) is left
+# untouched. If J4 does not have a workbook for this Excel_NAME yet (first
+# delivery), the whole work evidence file is copied in as a bootstrap
+# (same as this phase's old, pre-rework behavior).
+#
+# Also copies DATA\GFIX and DATA\GIFT files to the corresponding J4 data
+# directories. Source files are NEVER deleted -- this phase only copies /
+# in-place sheet-replaces.
 #
 # Completion is tracked per Excel_NAME via the isFilesDelivered column
 # in the mapping CSV. Uses net use drive mapping to handle long UNC paths.
@@ -13,8 +24,12 @@
 #   .\DeliverFiles.ps1 -WorkDir C:\work\proj -J4EvidenceDir \\srv\...\JRV
 #   .\DeliverFiles.ps1 -WorkDir ... -SkipData        # evidence Excel only
 #   .\DeliverFiles.ps1 -WorkDir ... -SkipExcel       # DATA files only
-#   .\DeliverFiles.ps1 -WorkDir ... -Backup          # back up J4 files before overwrite
+#   .\DeliverFiles.ps1 -WorkDir ... -Backup          # back up the whole J4 file before its sheets are replaced
 #   .\DeliverFiles.ps1 -WorkDir ... -Force            # redo already-delivered files
+#
+# NOTE: -Backup only covers the run's own J4EvidenceDir\_bak safety copy.
+# To keep a LOCAL rollback copy of J4 files before running this phase, use
+# the standalone BackupJ4 phase (-Phase BackupJ4) first.
 #
 # J4 filename ambiguity: J4 sometimes carries a workbook name typed with
 # full-width ASCII characters (e.g. a full-width digit instead of a normal
@@ -58,6 +73,12 @@ $nonInteractiveFlag = [bool]$NonInteractive.IsPresent
 . (Join-Path $PSScriptRoot 'MappingStore.ps1')
 . (Join-Path $PSScriptRoot 'ProgressLog.ps1')
 . (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
+. (Join-Path $PSScriptRoot 'ExcelHelpers.ps1')
+. (Join-Path $PSScriptRoot 'ProjectLabels.ps1')
+
+# The three delivery-scope sheets: same set as Align.ps1's Get-AlignRecvSheets
+# (the operator's own captured evidence, never the host-managed send sheets).
+$deliverSheetNames = @(Get-AlignRecvSheets)
 
 if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host 'WorkDir path' }
 if (-not (Test-Path -LiteralPath $WorkDir)) {
@@ -164,6 +185,93 @@ function Remove-FullWidthDuplicates([string]$Dir, [string]$DestLeaf, [string]$De
     }
 }
 
+# Sheet-name match tolerant of stray whitespace / full-width ASCII (mirrors
+# Align.ps1's Get-AlignSheetMatch -- kept local since Align.ps1 has a param()
+# block and cannot be dot-sourced).
+function Get-DeliverSheetMatch($wb, [string]$name) {
+    $ws = Get-SheetByName $wb $name
+    if ($null -ne $ws) { return $ws }
+    $target = (Convert-FullWidthAsciiToHalfWidth $name).Trim()
+    foreach ($s in $wb.Worksheets) {
+        $cand = (Convert-FullWidthAsciiToHalfWidth ([string]$s.Name)).Trim()
+        if ($cand -eq $target) { return $s }
+    }
+    return $null
+}
+
+# Opens $workPath for reading. Work and J4 copies of an Excel_NAME are named
+# identically by design, and Excel cannot hold two same-named workbooks open
+# at once. Since J4 (opened by the caller) must be saved in place, a temp
+# copy of the WORK file is opened instead when the names collide.
+function Open-WorkForDeliverRead($excel, [string]$workPath, [string]$j4Path) {
+    $workLeaf = [System.IO.Path]::GetFileName($workPath)
+    $j4Leaf   = [System.IO.Path]::GetFileName($j4Path)
+    $samePath = $false
+    try { $samePath = ([System.IO.Path]::GetFullPath($workPath) -eq [System.IO.Path]::GetFullPath($j4Path)) } catch {}
+    if (-not ($samePath -or ($workLeaf -eq $j4Leaf))) {
+        return @{ Wb = (Open-Workbook $excel $workPath); TempPath = $null }
+    }
+    $ext      = [System.IO.Path]::GetExtension($workPath)
+    $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) ("verify_deliver_{0}{1}" -f ([guid]::NewGuid().ToString('N')), $ext)
+    Copy-Item -LiteralPath $workPath -Destination $tempPath -Force
+    return @{ Wb = (Open-Workbook $excel $tempPath); TempPath = $tempPath }
+}
+
+# Copies $srcWs into $destWb, replacing the existing same-named sheet in
+# place (kept at its original position), or appending it at the end when J4
+# does not have it yet. Mirrors Align.ps1's Sync-Sheet, direction reversed
+# (work -> J4).
+function Copy-SheetIntoJ4($destWb, $destWsOld, $srcWs) {
+    $sheetName = $srcWs.Name
+    if ($null -ne $destWsOld) {
+        $srcWs.Copy($destWsOld)              # Before := the existing J4 sheet
+        $newWs = $destWb.ActiveSheet
+        $destWsOld.Delete()
+    } else {
+        $srcWs.Copy([System.Reflection.Missing]::Value, $destWb.Sheets.Item($destWb.Sheets.Count))
+        $newWs = $destWb.ActiveSheet
+    }
+    if ($newWs.Name -ne $sheetName) { try { $newWs.Name = $sheetName } catch {} }
+    return $newWs
+}
+
+# Replaces the delivery-scope sheets ($SheetNames) in the J4 workbook at
+# $J4Path with the matching sheets from the work evidence workbook at
+# $WorkPath, saves J4, and reports per-sheet lines. Other J4 sheets are
+# never touched.
+function Sync-DeliverSheets($excel, [string]$WorkPath, [string]$J4Path, [string[]]$SheetNames) {
+    $workWb = $null; $j4Wb = $null; $workTemp = $null
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $changed = $false
+    try {
+        $workOpen = Open-WorkForDeliverRead $excel $WorkPath $J4Path
+        $workWb   = $workOpen.Wb
+        $workTemp = $workOpen.TempPath
+        $j4Wb     = Open-Workbook $excel $J4Path
+        Unhide-AllSheets $workWb
+        Unhide-AllSheets $j4Wb
+        foreach ($sheetName in $SheetNames) {
+            $wsWork = Get-DeliverSheetMatch $workWb $sheetName
+            if ($null -eq $wsWork) {
+                $lines.Add(("     [MISS] {0} not found in work evidence -- skipped" -f $sheetName))
+                continue
+            }
+            $wsJ4Old = Get-DeliverSheetMatch $j4Wb $sheetName
+            Copy-SheetIntoJ4 $j4Wb $wsJ4Old $wsWork | Out-Null
+            $changed = $true
+            $lines.Add(("     [OK]   {0} {1}" -f $sheetName, $(if ($wsJ4Old) { 'replaced' } else { 'added' })))
+        }
+        if ($changed) { $j4Wb.Save() }
+    } finally {
+        Close-Workbook $j4Wb $false
+        Close-Workbook $workWb $false
+        if (-not [string]::IsNullOrWhiteSpace($workTemp)) {
+            try { Remove-Item -LiteralPath $workTemp -Force -ErrorAction SilentlyContinue } catch {}
+        }
+    }
+    return @{ Changed = $changed; Lines = $lines.ToArray() }
+}
+
 # Resolve data dirs
 $localGfixDir = Join-Path $WorkDir "DATA\GFIX"
 $localGiftDir = Join-Path $WorkDir "DATA\GIFT"
@@ -216,6 +324,10 @@ $cntOk = 0; $cntSkip = 0; $cntFail = 0
 if (-not $skipExcelFlag) {
 Write-Host ''
 Write-Host '-- Evidence Excel --' -ForegroundColor Cyan
+Write-Host ("  (delivery sheets: {0})" -f ($deliverSheetNames -join ' / ')) -ForegroundColor DarkGray
+$excel = $null
+if (-not $dryRunFlag) { $excel = New-ExcelApp }
+try {
 foreach ($name in $names) {
     $rows = $rowsByName[$name]
     $alreadyDone = ($rows | Where-Object { [string]$_.isFilesDelivered -ne '1' }).Count -eq 0
@@ -248,12 +360,27 @@ foreach ($name in $names) {
     if (-not $dryRunFlag) {
         try {
             Remove-FullWidthDuplicates -Dir $J4EvidenceDir -DestLeaf $destLeaf -DestPath $destPath -ExcelName $name
-            if ($backupFlag -and (Test-Path -LiteralPath $destPath)) { Backup-ExistingFile $destPath | Out-Null }
-            Copy-LongPath $srcFile $J4EvidenceDir $destLeaf | Out-Null
+            $existingJ4 = $null
+            if (Test-Path -LiteralPath $destPath) { $existingJ4 = $destPath }
+            else { $existingJ4 = Find-WorkbookByExcelName -Dir $J4EvidenceDir -ExcelName $fullStem -FullWidthFallback Reject }
+            if ($null -ne $existingJ4) {
+                if ($backupFlag) { Backup-ExistingFile $existingJ4 | Out-Null }
+                $result = Sync-DeliverSheets -excel $excel -WorkPath $srcFile -J4Path $existingJ4 -SheetNames $deliverSheetNames
+                foreach ($ln in $result.Lines) {
+                    $color = if ($ln -match '\[MISS\]') { 'Yellow' } else { 'Green' }
+                    Write-Host $ln -ForegroundColor $color
+                }
+                if (-not $result.Changed) {
+                    Write-Host '     [WARN] no delivery sheets matched in work evidence -- J4 file left unchanged' -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host '     [INFO] no existing J4 workbook found -- first delivery: copying whole file' -ForegroundColor DarkGray
+                Copy-LongPath $srcFile $J4EvidenceDir $destLeaf | Out-Null
+            }
             foreach ($r in $rows) { $r.isFilesDelivered = '1' }
             Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
             Write-ProgressEvent -WorkDir $WorkDir -Phase 'DeliverFiles' -JobName $name -Action 'copy' -Status 'ok' -Message $destLeaf
-            Write-Host '     copied to J4EvidenceDir' -ForegroundColor Green
+            Write-Host '     delivered to J4EvidenceDir' -ForegroundColor Green
             $cntOk++
         } catch {
             Write-Host ("  [FAIL] {0}: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
@@ -264,6 +391,9 @@ foreach ($name in $names) {
         Remove-FullWidthDuplicates -Dir $J4EvidenceDir -DestLeaf $destLeaf -DestPath $destPath -ExcelName $name
         $cntOk++
     }
+}
+} finally {
+    if ($null -ne $excel) { Close-ExcelApp $excel }
 }
 } else {
     Write-Host ''

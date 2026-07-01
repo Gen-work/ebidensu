@@ -235,7 +235,7 @@ function Get-ConfigOverlayReadmeText {
         '- Reviewer.* and Mail.*: Outlook draft recipient, subject and body templates.',
         '- Df.*: df.exe path, capture mode, region, crop and data file lookup.',
         '- Mark.Boxes: red rectangle definitions per snap folder.',
-        '- DeliverFiles.*: final copy/move destinations.',
+        '- DeliverFiles.*: J4 delivery destinations + local BackupJ4 folder override.',
         '',
         'Workbook prefix note',
         '- New mappings no longer generate Excel_Prefix.',

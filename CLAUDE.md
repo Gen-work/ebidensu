@@ -115,6 +115,21 @@ DeliverMail.ps1         Phase DeliverMail: one Outlook *draft* per Excel_NAME
                         (CreateItem+Display, never auto-sent); operator clicks
                         Send then Enter -> sets isDelivered. ASCII source;
                         subject/body/reviewer come from config (Mail/Reviewer).
+DeliverFiles.ps1        Phase DeliverFiles: replaces the 3 delivery-scope
+                        sheets (GIFT/GFIX recv result + GIFT-vs-GFIX data
+                        compare -- Align.ps1's Get-AlignRecvSheets set) in
+                        the corresponding J4 workbook with the matching
+                        work sheets, in place (other J4 sheets untouched);
+                        first delivery for an Excel_NAME copies the whole
+                        file instead. Also copies DATA\GFIX/GIFT. Never
+                        deletes source files. Sets isFilesDelivered.
+BackupJ4.ps1            Phase BackupJ4 ("bk"): read-only against J4 --
+                        copies each targeted Excel_NAME's current J4
+                        workbook into a local, timestamped backup folder
+                        (default <WorkDir>\bk). Run before DeliverFiles to
+                        keep a local rollback point (DeliverFiles now edits
+                        J4 workbooks in place instead of always overwriting
+                        the whole file).
 Validate.ps1            Phase Validate (read-only diagnostic)
 Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
 Check-Encoding.ps1      read-only encoding policy checker + label self-test
@@ -276,7 +291,32 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-01 v2.9.20)
+## Current state (last bump: 2026-07-01 v2.9.21)
+
+v2.9.21 (DeliverFiles: sheet-level replace instead of whole-file overwrite; new BackupJ4 phase):
+**Changed** -- `DeliverFiles.ps1`'s evidence-Excel step no longer overwrites
+the whole J4 workbook. It now works like `Align.ps1` but in the opposite
+direction: it opens the CORRESPONDING J4 workbook and replaces its GIFT
+受信結果 / GFIX受信結果 / GIFTデータvsGFIXデータ sheets (the operator's own
+captured evidence -- exactly `Align.ps1`'s `Get-AlignRecvSheets` set) with
+the matching sheets from the work evidence workbook, in place
+(`Sync-DeliverSheets`, mirroring `Align.ps1`'s `Sync-Sheet` with source/dest
+swapped: the J4 sheet is deleted and the work sheet copied into its old slot
+to preserve position, or appended when J4 doesn't have it yet). Every other
+J4 sheet (host-managed send sheets, etc.) is left untouched. When J4 has no
+workbook yet for an Excel_NAME (first delivery), the phase falls back to the
+old whole-file copy as a bootstrap. `-Backup` still backs up the whole J4
+file (into `J4EvidenceDir\_bak`) before its sheets are replaced. **Added** --
+new standalone `BackupJ4.ps1` phase (alias `Bk`/`BkJ4`, menu key `bk`):
+read-only against J4, copies each targeted Excel_NAME's current J4 workbook
+into a local, timestamped folder (`DeliverFiles.BackupLocalDir`, default
+`<WorkDir>\bk`) so the operator can keep a local rollback point before
+running the now-in-place-editing DeliverFiles. `VerifyTool.ps1` wires
+`-Phase BackupJ4` the same way as `DeliverFiles` (J4EvidenceDir resolution
+falls back to `Mail.EvidenceFolder`). Static-checked only (no
+Windows/Excel/Edge in this dev environment) -- confirm the sheet-replace
+(including the first-delivery bootstrap fallback and the same-leaf-filename
+Excel-COM handling) and the BackupJ4 copy on an office PC.
 
 v2.9.20 (DeliverFiles rework -- no source deletion + full-width J4 dedup; DeliverMail/DeliverFiles config error messages; GfixLogDownload log naming):
 **Changed** -- `DeliverFiles.ps1` no longer has a "move" mode at all: it only
