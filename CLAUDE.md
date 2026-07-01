@@ -276,7 +276,51 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-01 v2.9.19)
+## Current state (last bump: 2026-07-01 v2.9.20)
+
+v2.9.20 (DeliverFiles rework -- no source deletion + full-width J4 dedup; DeliverMail/DeliverFiles config error messages; GfixLogDownload log naming):
+**Changed** -- `DeliverFiles.ps1` no longer has a "move" mode at all: it only
+ever **copies**, and source DATA files (GIFT/GFIX) are never deleted. The old
+`-MoveData` switch (and `DeliverFiles.MoveData` config key) is removed --
+replaced by `-SkipExcel` / `-SkipData` (default: copy BOTH the evidence Excel
+and the DATA files; either can be excluded for a given run) and a new
+`-Backup` switch that copies any J4 file this phase is about to
+overwrite/remove into `J4EvidenceDir\_bak\<name>.<timestamp>.bak` first.
+**Fixed** -- (1) if the local evidence Excel was saved without the configured
+`Workbook.ExcelPrefix` (e.g. cloned before the prefix was set), DeliverFiles
+now falls back to finding it by the bare `Excel_NAME` and still writes the J4
+copy under the fully-prefixed name (previously it copied under whatever name
+the source happened to have, so J4 could end up with an unprefixed file).
+(2) J4 can carry a stale copy of the same workbook typed with full-width
+ASCII characters (e.g. `０` vs `0`) while the work-folder copy is half-width;
+`Find-WorkbookByExcelName`'s tolerant match already handles this on the READ
+side, but on delivery this used to leave BOTH the old full-width J4 file and
+the new half-width copy sitting side by side. DeliverFiles now scans J4 for a
+same-stem full-width variant (`WorkbookResolver.Get-FullWidthWorkbookCandidates`,
+already used elsewhere for this), and -- after asking the operator to confirm
+-- removes it so only the half-width (work-folder) name remains; `-Backup`
+saves the removed file first. (3) The interactive/CLI dispatch in
+`VerifyTool.ps1` now fails DeliverFiles with an explicit, actionable message
+when `DeliverFiles.J4EvidenceDir` / `Mail.EvidenceFolder` are both unset
+("set DeliverFiles.J4EvidenceDir ... in verify_config.json -- run -Phase
+InitConfig") instead of only the child script's bare `-J4EvidenceDir is
+required` error -- these two fields (like `Reviewer.Address` for
+DeliverMail) are intentionally blank in the committed `VerifyConfig.psd1`
+(scrubbed of personal defaults so nobody's real path/address ships in the
+repo) and must be set per work folder via `verify_config.json`; DeliverMail's
+missing-reviewer error got the same "where to set it" treatment.
+`Show-PhaseNotes` for DeliverMail now spells out every `{n}` placeholder
+in `Mail.SubjectTemplate` / `Mail.BodyLines` and which config field feeds it.
+**Fixed** -- `GfixLogDownload.ps1` named downloaded logs
+`<JobNo>_<timestamp>_<originalName>.log`, but GoAnywhere itself names the
+downloaded file after the job number, so `<originalName>` was always
+`<JobNo>.log` too -- the first and last filename fields were always
+identical. The job number is now replaced with the mapping `JOB_NAME`(s)
+that needed it (joined with `+` when more than one correl shares a job, the
+duplicate-IF_NO case from v2.9.18), falling back to the job number only if
+no JOB_NAME is known. Static-checked only (no Windows/Excel/Edge in this dev
+environment) -- confirm the full-width J4 prompt, the prefix fallback, and
+the new GfixLogDownload log filenames on an office PC.
 
 v2.9.19 (Common.ps1: Edge activation robustness -- promote JenkinsSnap's process-handle fix):
 **Fixed** -- the operator-reported symptom of "auto-switch to GoAnywhere after
@@ -670,6 +714,35 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   is actually inserted, so may be the more meaningful place to ask), (2) a
   non-interactive fallback (keep "newest wins" under `-NonInteractive`, same
   as the rest of this codebase's interactive/non-interactive split).
+
+- **Mark: image-recognition placement for the red rectangle** — `Mark.Boxes`
+  today is a fixed per-folder list of pixel/point offsets in
+  `VerifyConfig.psd1`, calibrated once by hand (`Probe-Shapes.ps1` /
+  `Calibrate-HmGeometry.ps1`) and then applied blindly to every screenshot in
+  that folder. That breaks whenever the captured page shifts (window resize,
+  scroll position, a slightly different HM/MQ/Jenkins layout). Planned:
+  reuse the existing template-matching helpers (`Locate-ByImage.ps1`,
+  `Find-Abend.ps1`, `Find-ActiveHighlightRow.ps1` already do LockBits-based
+  image matching for other detection needs) to locate the actual mark target
+  on the picture before drawing `verifyMark_*`, instead of trusting a fixed
+  offset -- falling back to the configured `Mark.Boxes` offset when no match
+  is found, so this degrades gracefully rather than blocking Mark entirely.
+  Needs a reference template image per mark target (or a distinctive text/
+  color anchor to match against, since these are pasted screenshots, not
+  live pages) and an office-PC/Excel session to develop and calibrate against
+  real evidence -- no Windows/Excel in this dev environment.
+
+- **GiftJenkinsNoFile: callout bubble on the past-data mark** — SnapVerify M6
+  (v2.9.11) already detects an unexpected *old* file in the no-GFIX-expected
+  case (`Test-JenkinsFile -ExpectExists:$false`), draws the red box on the
+  file's timestamp field, and stamps `過去分データー` (`ProjectLabels.NoGfixPastData`)
+  into `SnapVerify.NoGfixNoteColumn` (default `AZ`). Requested follow-up: add
+  an actual callout/comment-bubble shape next to the mark (not just the AZ
+  column text) so the "this is old/past data" note is visible directly on the
+  evidence picture itself. Needs a design decision on the shape to use (Excel
+  `msoShapeCallout` via COM ~= `Shapes.AddCallout`, sized/positioned relative
+  to the existing `verifyNote` AltText rect) plus an office-PC/Excel session
+  to confirm placement -- no Windows/Excel in this dev environment.
 
 - **Edge activation robustness DONE** (v2.9.18) — `Common.ps1`'s
   `Activate-EdgeWindow` (used by `Switch-ToEdge`, which `GfixLogDownload` /

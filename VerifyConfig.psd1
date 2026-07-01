@@ -191,8 +191,11 @@
     }
 
     # DeliverFiles phase: copy evidence Excel + DATA files to J4 destination.
+    # Source files are never deleted -- this phase only copies.
     DeliverFiles = @{
-        # Root J4 folder for evidence Excel files.
+        # Root J4 folder for evidence Excel files. REQUIRED (no personal
+        # default is committed here) -- set this per work folder in
+        # verify_config.json, e.g. via  .\VerifyTool.ps1 -Phase InitConfig.
         # Defaults to Mail.EvidenceFolder if blank.
         J4EvidenceDir = ''
         # Destination for DATA\GFIX files.
@@ -201,9 +204,9 @@
         # Destination for DATA\GIFT files.
         # Defaults to J4EvidenceDir + '\DATA\GIFT' if blank.
         J4GiftDataDir = ''
-        # true = Move DATA files (delete source after copy).
-        # false = Copy only (evidence Excel is always copied, never moved).
-        MoveData = $false
+        # true = back up any J4 file this phase overwrites/removes (into
+        # J4EvidenceDir\_bak) before doing so. false = overwrite directly.
+        Backup = $false
     }
 
     # CheckSheet phase: append one row per Excel to the shared review check

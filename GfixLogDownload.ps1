@@ -33,9 +33,17 @@
 #  Detail-page open: Ctrl+F <job number>, Enter, Esc, Enter (job number is
 #  itself the row's link target -- no Shift+Tab needed).
 #
-#  Log file naming: <JobNo>_<timestamp>_<originalName>.log (never named
-#  after a correl -- correctness comes from content matching, not from
-#  which row happened to be opened first).
+#  Log file naming: <JobName(s)>_<timestamp>_<originalName>.log, where
+#  JobName(s) are the mapping JOB_NAME value(s) that need this GoAnywhere
+#  job number (joined with '+' when more than one correl shares a job,
+#  the duplicate-IF_NO case -- see v2.9.18), falling back to the raw job
+#  number if no JOB_NAME is known. NOT named after a correl -- correctness
+#  still comes from content matching (Find-GfixLogForCorrel), not from
+#  which row happened to be opened first. GoAnywhere itself names the
+#  downloaded file after the job number, so using the job number as the
+#  prefix too used to duplicate it in the final name
+#  (<jobNo>_<timestamp>_<jobNo>.log); JOB_NAME makes the two fields
+#  distinct and the file easier to eyeball in log\.
 #
 #  On download failure for a job number (no new log AND none already
 #  present for that job number):
@@ -131,9 +139,21 @@ function Get-NewDownloadedLog([datetime]$sinceTime, [hashtable]$beforeSet) {
 function Test-JobLogExists([string]$jobNo) {
     return (@(Get-ChildItem -LiteralPath $logDir -Filter ("*{0}*" -f $jobNo) -File -ErrorAction SilentlyContinue).Count -gt 0)
 }
+function Get-LogNamePrefix([string]$jobNo) {
+    # Prefer the mapping JOB_NAME(s) that need this job number (readable,
+    # e.g. "CJODJDEH") over the raw GoAnywhere job number: GoAnywhere itself
+    # names the downloaded file after the job number
+    # (<jobNo>.log), so keeping <jobNo> as the prefix too just duplicates it
+    # in the final filename (<jobNo>_<ts>_<jobNo>.log). Falls back to the
+    # job number when no JOB_NAME is known (should not normally happen).
+    if ($script:jobNoToNames.ContainsKey($jobNo) -and $script:jobNoToNames[$jobNo].Count -gt 0) {
+        return ($script:jobNoToNames[$jobNo] -join '+')
+    }
+    return $jobNo
+}
 function Move-JobLogToWork($file, [string]$jobNo) {
     $ts = (Get-Date).ToString('yyyyMMdd_HHmmss')
-    $targetName = "{0}_{1}_{2}" -f $jobNo, $ts, $file.Name
+    $targetName = "{0}_{1}_{2}" -f (Get-LogNamePrefix $jobNo), $ts, $file.Name
     Move-Item -LiteralPath $file.FullName -Destination (Join-Path $logDir $targetName) -Force
     return $targetName
 }
@@ -185,6 +205,7 @@ $cntDone = 0; $cntFail = 0; $cntSkip = 0
 $stopRun = $false
 $resolved = @{}     # Correl_ID_S -> $true once GFIX_log has been finalized
 $correlToRow = @{}  # Correl_ID_S -> mapping row (for HardMiss lookback below)
+$jobNoToNames = @{} # JobNo -> distinct JOB_NAME(s) that need it (Get-LogNamePrefix)
 
 # -- rows with empty IF are skipped up front (nothing to plan for); everything
 #    else feeds the pure planner (Get-GfixLogDownloadPlan, GfixJobList.ps1) --
@@ -219,6 +240,30 @@ foreach ($miss in @($plan.HardMiss)) {
 $neededJobNumbers = @($plan.NeededJobNumbers)
 if ($neededJobNumbers.Count -gt 0) {
     Write-Host ("[GfixLogDownload] {0} distinct job number(s) to fetch." -f $neededJobNumbers.Count) -ForegroundColor DarkGray
+}
+
+# Build JobNo -> JOB_NAME(s) for readable log filenames (Get-LogNamePrefix).
+# Re-derives the same IF_NO -> job-list-row match Get-GfixLogDownloadPlan used
+# (Get-GfixJobListRowsForIf, pure/unit-tested), grouped by the correls that
+# share each IfNorm. A job can serve more than one correl (duplicate IF_NO
+# case, see v2.9.18): names are joined with '+'.
+$ifNormToCorrels = @{}
+foreach ($p in $plannerRows) {
+    $ifn = [string]$p.IfNorm
+    if (-not $ifNormToCorrels.ContainsKey($ifn)) { $ifNormToCorrels[$ifn] = [System.Collections.Generic.List[string]]::new() }
+    $ifNormToCorrels[$ifn].Add([string]$p.CorrelIdS)
+}
+foreach ($ifn in @($ifNormToCorrels.Keys)) {
+    $rowsForIf = @(Get-GfixJobListRowsForIf -Rows $jobListRows -IfNorm $ifn -ReceiveOnly $true)
+    foreach ($jr in $rowsForIf) {
+        if (-not $jobNoToNames.ContainsKey($jr.JobNo)) { $jobNoToNames[$jr.JobNo] = [System.Collections.Generic.List[string]]::new() }
+        foreach ($correl in $ifNormToCorrels[$ifn]) {
+            $jn = Get-JobNameForRow $correlToRow[$correl]
+            if (-not [string]::IsNullOrWhiteSpace($jn) -and -not $jobNoToNames[$jr.JobNo].Contains($jn)) {
+                $jobNoToNames[$jr.JobNo].Add($jn)
+            }
+        }
+    }
 }
 
 # -- download every needed job number (idempotent: skip ones already in log\) --
