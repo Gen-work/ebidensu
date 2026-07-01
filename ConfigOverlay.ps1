@@ -160,7 +160,8 @@ function New-ConfigOverlaySnapshot {
     $snap['_README'] = @(
         'Clean JSON only: see verify_config.README.txt for field explanations.',
         'Precedence: CLI args > this JSON > VerifyConfig.psd1 > session fallback.',
-        'Run .\VerifyTool.ps1 -Phase InitConfig -Interactive for grouped view/edit/delete/save.'
+        'Run .\VerifyTool.ps1 -Phase InitConfig -Interactive -- pick w to walk a group',
+        'field-by-field (no path typing needed), or view/edit/delete/save by JSON path.'
     )
 
     $skipKeys = @{
@@ -212,6 +213,9 @@ function Get-ConfigOverlayReadmeText {
         '- Standard JSON has no // or /* */ comments. Use this README for comments.',
         '- Save as UTF-8. Japanese strings are OK.',
         '- Run .\VerifyTool.ps1 -Phase InitConfig -Interactive to view groups, edit values, delete keys, and confirm save.',
+        '- In the editor, pick w to WALK a group: it prompts field-by-field (Enter=keep,',
+        '  value=set, -del=delete, q=stop) so you never have to type a JSON path yourself.',
+        '  v/e/d still take a manual path when you already know exactly what to touch.',
         '',
         'Groups in the InitConfig editor',
         '- intro: _README introduction lines shown at the top of the JSON.',
