@@ -98,6 +98,11 @@
         GiftNoGfixLabel  = ''
         GfixLogLabel     = 'GFIX受信log'
         GfixLogTodoText  = '<<TODO: GFIX 受信 log>>'
+        # Font forced on every pasted GFIX receive-log line (ReplaceGfix).
+        # 'MS Gothic' is the ASCII-typeable alias Windows/Excel resolve to
+        # the Japanese fixed-width font "MS ゴシック". Blank -> leave the
+        # workbook's default font untouched.
+        GfixLogFontName  = 'MS Gothic'
     }
 
     # Mark phase configuration (マークフェーズ設定)
@@ -107,8 +112,18 @@
         # 各ソースフォルダごとの設定：画像の左上隅を基準とした相対的な赤枠（矩形）の描画リスト。
         # 幅 (Width) / 高さ (Height) の単位はポイント（1pt = 1/72インチ）。
         # 空のリスト = 該当フォルダにはマークを描画しない。
-        # 調整方法：手動でマークした検証用ワークブックに対して Probe-Shapes.ps1 を実行し、
-        # AutoShape とその親となる Picture のオフセット差分を読み取る。
+        #
+        # 調整方法（固定オフセット方式）：手動でマークした検証用ワークブックに対して
+        # Probe-Shapes.ps1 を実行し、AutoShape とその親となる Picture のオフセット差分を読み取る。
+        #
+        # 画像認識方式（任意）：各エントリに Template = '<ファイル名>.png' を追加すると、
+        # そのフォルダ/correl の元スクリーンショット（<WorkDir>\snap\<folder>\<correl>.png）に対して
+        # テンプレートマッチング（Locate-ByImage.ps1）を先に試み、一致した領域に赤枠を描画する
+        # （見つからない場合は下の OffsetX/OffsetY/Width/Height にフォールバックするので安全）。
+        #   Template  : テンプレート画像ファイル名 (TemplateDir または <repo>\mark_templates を検索)
+        #               絶対/相対パスも可。
+        #   Tolerance : このボックスだけの許容誤差上書き (既定 ImageMatch.Tolerance)
+        #   PadX/PadY : 一致した領域の左右/上下に加える余白 (px, 既定 0)
         Boxes = @{
             'excel'           = @()
             'GIFT_HM'         = @( @{ OffsetX = 395.3; OffsetY = 189.2; Width = 62.2; Height = 16.5 } )
@@ -118,6 +133,16 @@
             'GFIX_HM'         = @( @{ OffsetX = 395.3; OffsetY = 189.2; Width = 62.2; Height = 16.5 } )
             'GFIX_Jenkins'    = @( @{ OffsetX = 301.5; OffsetY = 282.0; Width = 288.8; Height = 18.8 } )
             'DF'              = @( @{ CellCols = 'AW:BC'; RowsFromBottom = 2 } )
+        }
+        # Folder searched for a Box's 'Template' filename when it is not
+        # already an absolute/relative path that resolves on its own.
+        # Blank -> <repo>\mark_templates (always tried as a second fallback
+        # even when this is set).
+        TemplateDir = ''
+        ImageMatch = @{
+            # LockBits color tolerance per channel (0 = exact, higher = looser).
+            # Per-box 'Tolerance' overrides this.
+            Tolerance = 15
         }
     }
 
@@ -297,9 +322,21 @@
         CommandPattern   = "Command:\s*'/appl/[A-Za-z0-9]+/shell/"
         # OLE color for highlight. Yellow RGB(255,255,0) = 65535.
         HighlightColor   = 65535
-        # Column range to highlight (B=2, AY=51).
+        # Column range to highlight (B=2, AY=51). When AutoHighlightWidth is
+        # on (default), this is also the CAP: the auto-computed width never
+        # exceeds it, and the idempotent re-run clear still scans this full
+        # range regardless of what width was actually applied last time.
         HighlightColStart = 2
         HighlightColEnd   = 51
+        # true (default) = size the highlight to the target row's ACTUAL
+        # pasted text width (measured with its real cell font) instead of
+        # always filling out to HighlightColStart..HighlightColEnd -- a long
+        # Command: line no longer risks running past a short fixed range, and
+        # a short one no longer leaves an oversized highlight band.
+        # false = legacy fixed-width behavior (always HighlightColStart..HighlightColEnd).
+        AutoHighlightWidth = $true
+        # Extra columns of padding added after the measured text width.
+        HighlightPadCols   = 1
     }
 
     # SnapVerify: instant NG detection for HM / MQ / Jenkins snap phases.

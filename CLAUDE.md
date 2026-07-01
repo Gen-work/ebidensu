@@ -96,7 +96,17 @@ OwnerFilter.ps1         pure WBS owner-cell matching (Test-OwnerMatch: exact /
 Clone.ps1               Phase Clone
 Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
 ReplaceEvidence.ps1     Phase ReplaceGift / ReplaceGfix / ReplaceDf (plan-driven)
-Mark.ps1                Phase MarkGift / MarkGfix / MarkDf
+Mark.ps1                Phase MarkGift / MarkGfix / MarkDf. Each Mark.Boxes
+                        entry may add a 'Template' key to try image-recognition
+                        placement (Locate-ByImage.ps1 LockBits match against
+                        the source snap PNG) before falling back to the fixed
+                        OffsetX/OffsetY box -- see mark_templates/README.txt.
+                        -Mode Gfix also highlights the GFIX log Command: row,
+                        auto-sized to the row's actual text width (GfixLog.
+                        AutoHighlightWidth, capped at HighlightColEnd).
+mark_templates/         reference images for Mark.ps1's optional image-match
+                        box placement (see mark_templates/README.txt). Ships
+                        empty; populated per project on an office PC.
 ReviewEvidence.ps1      Phase ReviewGift / ReviewGfix / ReviewDf / ReviewEvidence
 SendVsGift.ps1          Phase SendVsGift: GIFT file metadata vs SEND evidence review.
                         Rows grouped per workbook (opened once); cursor jumps to each
@@ -154,7 +164,9 @@ Generate-HostOpenMapping.ps1  generates mapping CSV from wipGFIX一覧.xlsx.
 Calibrate-HmGeometry.ps1  4-click WinForms calibration for HM geometry offsets
 Find-Abend.ps1          template-match for HM status cell
 Find-ActiveHighlightRow.ps1  detects Edge Ctrl+F active-match (orange) row
-Locate-ByImage.ps1      C#-compiled LockBits template matcher
+Locate-ByImage.ps1      C#-compiled LockBits template matcher; called by
+                        Mark.ps1 (see the Mark.ps1 entry above) for optional
+                        image-recognition box placement
 Mark.ps1                draws red rectangles on evidence Excel shapes
 Pack-LlmContext.ps1     packs project context to clipboard for LLM ingestion
 Apply-LlmPatch.ps1      applies XML / git-unified-diff patches from clipboard
@@ -291,7 +303,49 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-01 v2.9.22)
+## Current state (last bump: 2026-07-01 v2.9.23)
+
+v2.9.23 (Mark: image-recognition box placement + GFIX highlight auto-width +
+forced GFIX log font):
+**Added** -- (1) `Mark.Boxes` entries can now carry an optional `Template`
+key (see `mark_templates/README.txt`); when set, `Mark.ps1` tries
+`Locate-ByImage.ps1` (LockBits template match) against the original snap PNG
+before drawing the red rectangle, scales the hit to the inserted picture's
+on-sheet point size, and falls back to the existing fixed
+`OffsetX/OffsetY/Width/Height` box on any miss (no Template, missing file, no
+match) -- this never blocks Mark. Per-box `Tolerance`/`PadX`/`PadY`
+overrides; new `Mark.TemplateDir` / `Mark.ImageMatch.Tolerance` config, new
+`mark_templates/` folder (ships empty; needs real reference crops captured
+on an office PC). (2) `-Mode Gfix`'s GFIX-log yellow highlight (also
+`MarkGfixLog.ps1` standalone) is now sized to the Command: row's ACTUAL
+pasted text width by default (`GfixLog.AutoHighlightWidth`, default `$true`)
+instead of always filling the fixed `HighlightColStart..HighlightColEnd`
+range -- new `ExcelHelpers.ps1` helpers `Get-TextPixelWidth` (GDI+
+`MeasureString`, needs `Add-Type -AssemblyName System.Drawing`, now loaded by
+both `Mark.ps1` and `MarkGfixLog.ps1`) and `Get-AutoHighlightColEnd` (walks
+the sheet's real column widths to find where the measured text lands, capped
+at `HighlightColEnd` so this only ever tightens the old fixed-width
+behavior, plus `GfixLog.HighlightPadCols` extra columns of padding); the
+column-accumulation math is split into a pure `Get-ColumnsForWidth` and
+unit-tested (`Tests\Test-ExcelHelpers.ps1`). `AutoHighlightWidth = $false`
+restores the old fixed-width behavior. (3) `ReplaceGfix` now forces every
+pasted GFIX receive-log line to a fixed font -- `Write-LogLines`
+(`ExcelHelpers.ps1`) gained a `FontName` parameter, threaded through
+`EvidenceExecutor.ps1`'s `Invoke-EvidencePlan` and a new
+`ReplaceEvidence.ps1 -GfixLogFontName` parameter (default `'MS Gothic'`, the
+ASCII-typeable alias Windows/Excel resolve to the Japanese fixed-width font
+"MS ゴシック" -- kept ASCII per this repo's source-encoding rule rather than
+embedding the raw full-width Japanese name); new `Replace.GfixLogFontName`
+config field (blank leaves the workbook's default font untouched).
+`VerifyTool.ps1` threads all of the above from `VerifyConfig.psd1`/
+`verify_config.json` into `Mark`/`MarkGfixLog`/`Replace` dispatch;
+`ConfigOverlay.ps1`'s `excel` editor group now includes `GfixLog`, and its
+README text + `verify_config.example.json` document the new fields. Pure
+logic (`Get-ColumnsForWidth`) is unit-tested; the COM/GDI+ paths (template
+match scaling, column-width reads, font assignment, MeasureString DPI
+assumption) are static-checked only (no Windows/Excel in this dev
+environment) -- confirm image-match placement (needs real templates first),
+the auto-width highlight, and the forced log font on an office PC.
 
 v2.9.22 (InitConfig editor: grouped field walker -- no manual path typing):
 **Added** -- the `-Phase InitConfig -Interactive` editor gained a `w` command
@@ -785,22 +839,25 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   non-interactive fallback (keep "newest wins" under `-NonInteractive`, same
   as the rest of this codebase's interactive/non-interactive split).
 
-- **Mark: image-recognition placement for the red rectangle** — `Mark.Boxes`
-  today is a fixed per-folder list of pixel/point offsets in
-  `VerifyConfig.psd1`, calibrated once by hand (`Probe-Shapes.ps1` /
-  `Calibrate-HmGeometry.ps1`) and then applied blindly to every screenshot in
-  that folder. That breaks whenever the captured page shifts (window resize,
-  scroll position, a slightly different HM/MQ/Jenkins layout). Planned:
-  reuse the existing template-matching helpers (`Locate-ByImage.ps1`,
-  `Find-Abend.ps1`, `Find-ActiveHighlightRow.ps1` already do LockBits-based
-  image matching for other detection needs) to locate the actual mark target
-  on the picture before drawing `verifyMark_*`, instead of trusting a fixed
-  offset -- falling back to the configured `Mark.Boxes` offset when no match
-  is found, so this degrades gracefully rather than blocking Mark entirely.
-  Needs a reference template image per mark target (or a distinctive text/
-  color anchor to match against, since these are pasted screenshots, not
-  live pages) and an office-PC/Excel session to develop and calibrate against
-  real evidence -- no Windows/Excel in this dev environment.
+- **Mark: image-recognition placement for the red rectangle -- WIRING DONE**
+  (v2.9.23), calibration still open. `Mark.Boxes` entries can now add a
+  `Template` key (filename resolved against `Mark.TemplateDir`, then
+  `mark_templates/`); when present, Mark.ps1 calls the existing
+  `Locate-ByImage.ps1` (LockBits template match) against the original snap
+  PNG (`<WorkDir>\snap\<folder>\<correl>.png`, the same file
+  ReplaceEvidence pasted) instead of trusting a fixed offset, scales the hit
+  from source-PNG pixels to the inserted picture's on-sheet point size, and
+  falls back to the configured `OffsetX/OffsetY/Width/Height` box whenever
+  there is no Template, the file is missing, or no match is found -- so this
+  degrades gracefully and never blocks Mark. Per-box `Tolerance`/`PadX`/`PadY`
+  overrides; console lines are tagged `[MARK-IMG]` (matched) vs `[MARK]`
+  (fixed offset fallback) so a run makes it obvious which path was used.
+  Still needs: real reference template PNGs per mark target (a small,
+  visually distinctive crop of the target field -- see
+  `mark_templates/README.txt` for the how-to) captured from real evidence,
+  and an office-PC/Excel session to calibrate and confirm the pixel->point
+  scaling -- no Windows/Excel in this dev environment, so `mark_templates/`
+  ships empty and this stays fixed-offset-only until templates are added.
 
 - **GiftJenkinsNoFile: callout bubble on the past-data mark** — SnapVerify M6
   (v2.9.11) already detects an unexpected *old* file in the no-GFIX-expected

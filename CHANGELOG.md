@@ -1,3 +1,52 @@
+## 2026-07-01 - Mark image-recognition placement + GFIX highlight auto-width + forced log font (v2.9.23)
+
+### Added
+- `Mark.Boxes` entries can now add a `Template` key (PNG filename, resolved
+  against `Mark.TemplateDir` then `mark_templates/`). When set, `Mark.ps1`
+  tries `Locate-ByImage.ps1` (existing LockBits template matcher) against the
+  original snap PNG for that folder/correl before drawing the red rectangle,
+  scales the pixel hit to the inserted picture's on-sheet point size, and
+  falls back to the existing fixed `OffsetX/OffsetY/Width/Height` box when
+  there is no Template, the file is missing, or nothing matches -- this never
+  blocks Mark. Per-box `Tolerance`/`PadX`/`PadY` overrides; console lines are
+  tagged `[MARK-IMG]` vs `[MARK]` so a run shows which path was used. New
+  `Mark.TemplateDir` / `Mark.ImageMatch.Tolerance` config; new (empty)
+  `mark_templates/` folder with a `README.txt` explaining how to capture and
+  wire up a reference crop per mark target.
+- The GFIX-log yellow highlight (`-Mode Gfix` in `Mark.ps1`, and the
+  standalone `MarkGfixLog.ps1`) now sizes itself to the Command: row's
+  ACTUAL pasted text width by default, instead of always filling the fixed
+  `HighlightColStart..HighlightColEnd` range -- a long Command: path no
+  longer risks running past a short fixed range, and a short one no longer
+  leaves an oversized highlight band. New `ExcelHelpers.ps1` helpers:
+  `Get-TextPixelWidth` (GDI+ `MeasureString`), `Get-AutoHighlightColEnd`
+  (walks the sheet's real column widths to find where the measured width
+  lands, capped at the existing `HighlightColEnd` so this only ever tightens
+  the old behavior, then pads by `GfixLog.HighlightPadCols`), and a pure
+  `Get-ColumnsForWidth` (the column-accumulation math, unit-tested in the new
+  `Tests\Test-ExcelHelpers.ps1`). New `GfixLog.AutoHighlightWidth` config
+  (default `$true`; `$false` restores the old fixed-width behavior).
+- `ReplaceGfix` now forces a fixed font on every pasted GFIX receive-log
+  line. `Write-LogLines` (`ExcelHelpers.ps1`) gained a `FontName` parameter,
+  threaded through `EvidenceExecutor.ps1`'s `Invoke-EvidencePlan` and a new
+  `ReplaceEvidence.ps1 -GfixLogFontName` parameter defaulting to `'MS
+  Gothic'` (the ASCII-typeable name Windows/Excel resolve to the Japanese
+  fixed-width font "MS ゴシック" -- kept ASCII per this repo's source-encoding
+  rule). New `Replace.GfixLogFontName` config field (blank leaves the
+  workbook's default font untouched).
+- `VerifyTool.ps1` threads all three new settings from
+  `VerifyConfig.psd1`/`verify_config.json` into the `Mark`/`MarkGfixLog`/
+  `Replace` dispatch blocks. `ConfigOverlay.ps1`'s `excel` editor group now
+  includes `GfixLog`; its README text and `verify_config.example.json`
+  document the new fields.
+- Pure logic (`Get-ColumnsForWidth`) is unit-tested. The COM/GDI+ paths
+  (image-match pixel->point scaling, live column-width reads, font
+  assignment, the 96-DPI pixel<->point assumption in `MeasureString`) are
+  static-checked only (no Windows/Excel in this dev environment) -- confirm
+  image-match placement (needs real template PNGs captured first per
+  `mark_templates/README.txt`), the auto-width highlight, and the forced log
+  font on an office PC.
+
 ## 2026-07-01 - InitConfig editor: grouped field walker (v2.9.22)
 
 ### Added

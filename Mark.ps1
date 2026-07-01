@@ -40,6 +40,13 @@ param(
     [double]$LineWeight = 1.5,
     [string]$NoGfixNoteColumn = 'AZ',
 
+    # Image-recognition box placement (opt-in per Mark.Boxes entry via a
+    # 'Template' key). Folder searched for a bare Template filename;
+    # <repo>\mark_templates is always tried too. Tolerance is the default
+    # LockBits color tolerance (a box's own 'Tolerance' key overrides it).
+    [string]$TemplateDir = '',
+    [int]$ImageMatchTolerance = 15,
+
     # GFIX log yellow-highlight settings. Folded in from the old standalone
     # MarkGfixLog phase: in -Mode Gfix the log "Command:" row is highlighted in
     # the same pass that draws the red rectangles (one workbook open, one bit).
@@ -47,7 +54,9 @@ param(
     [string]$GfixLogCommandPattern = "Command:\s*'/appl/[A-Za-z0-9]+/shell/",
     [long]$GfixLogHighlightColor = 65535,
     [int]$GfixLogColStart = 2,
-    [int]$GfixLogColEnd   = 51
+    [int]$GfixLogColEnd   = 51,
+    [bool]$GfixLogAutoWidth = $true,
+    [int]$GfixLogPadCols = 1
 )
 
 $ErrorActionPreference = 'Stop'
@@ -88,6 +97,114 @@ if (-not $helpersPath) { Write-Host '[ERROR] ExcelHelpers.ps1 not found.' -Foreg
 . $helpersPath
 if (-not (Get-Command -Name 'Add-RedRectangle' -ErrorAction SilentlyContinue)) {
     Write-Host '[ERROR] ExcelHelpers dot-source failed (Add-RedRectangle not loaded).' -ForegroundColor Red; exit 1
+}
+
+# -- Image-recognition box placement (optional, per-box 'Template') --------
+# Needs System.Drawing (source PNG pixel size) and Locate-ByImage.ps1 (LockBits
+# template match, its own Add-Type). Both are loaded unconditionally here but
+# only ever exercised when a Mark.Boxes entry actually carries a 'Template'
+# key -- with no Template configured, behavior is byte-for-byte the old
+# fixed-offset path.
+try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch {
+    Write-Host ("[WARN] System.Drawing unavailable ({0}); image-match boxes will fall back to fixed offsets." -f $_.Exception.Message) -ForegroundColor Yellow
+}
+$locateByImagePath = Join-Path $PSScriptRoot 'Locate-ByImage.ps1'
+if (-not (Test-Path -LiteralPath $locateByImagePath)) { $locateByImagePath = '' }
+
+function Resolve-MarkTemplatePath {
+    <#
+    Resolves a Mark.Boxes 'Template' value to a real file path. Tries the
+    value as-is (absolute or relative to cwd), then <TemplateDir>\<value>,
+    then <repo>\mark_templates\<value>. Returns $null when nothing matches.
+    #>
+    param([string]$Template, [string]$TemplateDir)
+    if ([string]::IsNullOrWhiteSpace($Template)) { return $null }
+    if (Test-Path -LiteralPath $Template) { return (Resolve-Path -LiteralPath $Template).Path }
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($TemplateDir)) { $candidates += (Join-Path $TemplateDir $Template) }
+    $candidates += (Join-Path (Join-Path $PSScriptRoot 'mark_templates') $Template)
+    foreach ($c in $candidates) {
+        if (Test-Path -LiteralPath $c) { return (Resolve-Path -LiteralPath $c).Path }
+    }
+    return $null
+}
+
+function Get-ImagePixelSize {
+    param([string]$Path)
+    $img = $null
+    try {
+        $img = [System.Drawing.Image]::FromFile($Path)
+        return @{ Width = [double]$img.Width; Height = [double]$img.Height }
+    } finally {
+        if ($null -ne $img) { $img.Dispose() }
+    }
+}
+
+function Find-MarkBoxByImage {
+    <#
+    Attempts template-match placement for one Mark.Boxes entry against the
+    original snap PNG for ($Folder, $Cid) (<WorkDir>\snap\<Folder>\<Cid>.png
+    -- the same file ReplaceEvidence pasted into the picture, per
+    EvidencePlan.ps1's Get-SnapPath). Returns @{ Left; Top; Width; Height }
+    in points (already scaled to the inserted picture's on-sheet size and
+    padded), or $null when the box has no Template / files are missing / no
+    match is found / anything errors -- caller falls back to the fixed
+    OffsetX/OffsetY/Width/Height box in that case, so this never blocks Mark.
+    #>
+    param(
+        [hashtable]$Box,
+        [string]$Folder,
+        [string]$Cid,
+        [string]$WorkDir,
+        [string]$TemplateDir,
+        [int]$DefaultTolerance,
+        [string]$LocateScript,
+        $Shape
+    )
+    if (-not $Box.ContainsKey('Template')) { return $null }
+    $tplName = [string]$Box.Template
+    if ([string]::IsNullOrWhiteSpace($tplName)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($LocateScript)) { return $null }
+
+    $tplPath = Resolve-MarkTemplatePath -Template $tplName -TemplateDir $TemplateDir
+    if ($null -eq $tplPath) {
+        Write-Host ("  [WARN] image-match template not found: {0}" -f $tplName) -ForegroundColor Yellow
+        return $null
+    }
+    $srcPath = Join-Path $WorkDir ("snap\{0}\{1}.png" -f $Folder, $Cid)
+    if (-not (Test-Path -LiteralPath $srcPath)) { return $null }
+
+    $tol = $DefaultTolerance
+    if ($Box.ContainsKey('Tolerance')) { try { $tol = [int]$Box.Tolerance } catch {} }
+
+    try {
+        $hit = & $LocateScript -SourcePath $srcPath -TemplatePath $tplPath -Tolerance $tol -Quiet
+        if ($null -eq $hit) { return $null }
+
+        $dim = Get-ImagePixelSize -Path $srcPath
+        if ($dim.Width -le 0 -or $dim.Height -le 0) { return $null }
+        $scaleX = ([double]$Shape.Width)  / $dim.Width
+        $scaleY = ([double]$Shape.Height) / $dim.Height
+
+        $padX = 0.0; $padY = 0.0
+        if ($Box.ContainsKey('PadX')) { try { $padX = [double]$Box.PadX } catch {} }
+        if ($Box.ContainsKey('PadY')) { try { $padY = [double]$Box.PadY } catch {} }
+
+        $px = [double]$hit.X - $padX
+        $py = [double]$hit.Y - $padY
+        $pw = [double]$hit.Width  + (2 * $padX)
+        $ph = [double]$hit.Height + (2 * $padY)
+
+        return @{
+            Left   = ([double]$Shape.Left) + ($px * $scaleX)
+            Top    = ([double]$Shape.Top)  + ($py * $scaleY)
+            Width  = $pw * $scaleX
+            Height = $ph * $scaleY
+        }
+    } catch {
+        Write-Host ("  [WARN] image-match failed for {0}\{1}: {2}" -f $Folder, $Cid, $_.Exception.Message) -ForegroundColor Yellow
+        return $null
+    }
 }
 
 # -- Target filter -------------------------------------------
@@ -176,6 +293,21 @@ if ($configuredFolders.Count -eq 0 -and $Mode -ne 'Gift') {
 }
 Write-Host ("  Boxes     : {0}" -f ($configuredFolders -join ', ')) -ForegroundColor DarkGray
 if ($Mode -eq 'Gift') { Write-Host ("  NoGfixNoteColumn: {0}" -f $NoGfixNoteColumn) -ForegroundColor DarkGray }
+
+# Image-match summary: how many boxes carry a 'Template' key (opt-in).
+$templatedBoxCount = 0
+foreach ($f in $modeCfg.Folders) {
+    foreach ($b in @($BoxesConfig[$f])) {
+        if ($b -is [hashtable] -and $b.ContainsKey('Template') -and -not [string]::IsNullOrWhiteSpace([string]$b.Template)) { $templatedBoxCount++ }
+    }
+}
+if ($templatedBoxCount -gt 0) {
+    $tplDirShown = if ([string]::IsNullOrWhiteSpace($TemplateDir)) { (Join-Path $PSScriptRoot 'mark_templates') } else { $TemplateDir }
+    Write-Host ("  ImageMatch: {0} box(es) with Template configured (TemplateDir={1}, Tolerance={2})" -f $templatedBoxCount, $tplDirShown, $ImageMatchTolerance) -ForegroundColor DarkGray
+    if ([string]::IsNullOrWhiteSpace($locateByImagePath)) {
+        Write-Host '  [WARN] Locate-ByImage.ps1 not found -- image-match boxes will fall back to fixed offsets.' -ForegroundColor Yellow
+    }
+}
 Write-Host ''
 
 if (-not (Test-Path -LiteralPath $mappingPath)) {
@@ -304,6 +436,7 @@ try {
                         }
 
                         $left = 0.0; $top = 0.0; $bw = 100.0; $bh = 20.0
+                        $imgHit = $null
                         if ($b.ContainsKey('CellCols')) {
                             # Cell-range positioning: place rect relative to sheet
                             # columns/rows rather than the picture's pixel corner.
@@ -319,21 +452,35 @@ try {
                             $bw   = $rect.Width
                             $bh   = $rect.Height
                         } else {
-                            $ox = 0.0; $oy = 0.0
-                            try { $ox = [double]$b.OffsetX } catch {}
-                            try { $oy = [double]$b.OffsetY } catch {}
-                            try { $bw = [double]$b.Width } catch {}
-                            try { $bh = [double]$b.Height } catch {}
-                            $left = $picLeft + $ox
-                            $top  = $picTop  + $oy
+                            # Image-recognition placement (opt-in via the box's
+                            # 'Template' key): locate the actual mark target on
+                            # the source snap PNG instead of trusting a fixed
+                            # offset. Falls back to OffsetX/OffsetY/Width/Height
+                            # below when no Template is configured or no match
+                            # is found, so this degrades gracefully.
+                            $imgHit = Find-MarkBoxByImage -Box $b -Folder $folder -Cid $cid -WorkDir $WorkDir `
+                                -TemplateDir $TemplateDir -DefaultTolerance $ImageMatchTolerance `
+                                -LocateScript $locateByImagePath -Shape $s
+                            if ($null -ne $imgHit) {
+                                $left = $imgHit.Left; $top = $imgHit.Top; $bw = $imgHit.Width; $bh = $imgHit.Height
+                            } else {
+                                $ox = 0.0; $oy = 0.0
+                                try { $ox = [double]$b.OffsetX } catch {}
+                                try { $oy = [double]$b.OffsetY } catch {}
+                                try { $bw = [double]$b.Width } catch {}
+                                try { $bh = [double]$b.Height } catch {}
+                                $left = $picLeft + $ox
+                                $top  = $picTop  + $oy
+                            }
                         }
 
                         $name = ("{0}{1}_{2}_{3}" -f $NamePrefix, $folder, $cid, $idx)
+                        $tag  = if ($null -ne $imgHit) { 'MARK-IMG' } else { 'MARK' }
 
                         try {
                             Add-RedRectangle $ws $left $top $bw $bh $name $lw | Out-Null
                             $marksDrawn++
-                            Write-Host ("  [MARK] {0,-16} {1,-12} [{2,3}] L={3,6:0.0} T={4,6:0.0} W={5,5:0.0} H={6,5:0.0}" -f $folder, $cid, $idx, $left, $top, $bw, $bh) -ForegroundColor Green
+                            Write-Host ("  [{0}] {1,-16} {2,-12} [{3,3}] L={4,6:0.0} T={5,6:0.0} W={6,5:0.0} H={7,5:0.0}" -f $tag, $folder, $cid, $idx, $left, $top, $bw, $bh) -ForegroundColor Green
                         } catch {
                             Write-Host ("  [FAIL] AddShape {0}: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
                             $allOk = $false
@@ -348,9 +495,10 @@ try {
                 if ($Mode -eq 'Gfix') {
                     $hl = Invoke-GfixLogHighlight -ws $ws -LogAnchor $GfixLogAnchor `
                         -CommandPattern $GfixLogCommandPattern -HighlightColor $GfixLogHighlightColor `
-                        -ColStart $GfixLogColStart -ColEnd $GfixLogColEnd
+                        -ColStart $GfixLogColStart -ColEnd $GfixLogColEnd `
+                        -AutoWidth $GfixLogAutoWidth -PadCols $GfixLogPadCols
                     foreach ($w in @($hl.Warnings)) { Write-Host ("  [GfixLog WARN] {0}" -f $w) -ForegroundColor Yellow }
-                    Write-Host ("  [GfixLog] highlights applied: {0} (anchors: {1})" -f $hl.Applied, $hl.Anchors) -ForegroundColor DarkGray
+                    Write-Host ("  [GfixLog] highlights applied: {0} (anchors: {1}, AutoWidth={2})" -f $hl.Applied, $hl.Anchors, $GfixLogAutoWidth) -ForegroundColor DarkGray
                 }
             }
 

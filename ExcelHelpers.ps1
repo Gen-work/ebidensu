@@ -260,9 +260,12 @@ function Write-PlainText($ws, [int]$row, [int]$col, [string]$text) {
     } catch {}
 }
 
-function Write-LogLines($ws, [int]$startRow, [int]$col, [string[]]$lines) {
+function Write-LogLines($ws, [int]$startRow, [int]$col, [string[]]$lines, [string]$FontName = '') {
     <#
     Paste each line in $lines into separate rows starting at $startRow.
+    When $FontName is non-blank, every pasted line's font is forced to it
+    (used to paste the GFIX receive log in a fixed-width font, e.g. 'MS
+    Gothic', regardless of the workbook's default font).
     Returns the row index immediately after the last pasted line.
     #>
     if ($null -eq $lines -or $lines.Count -eq 0) { return $startRow }
@@ -270,6 +273,9 @@ function Write-LogLines($ws, [int]$startRow, [int]$col, [string[]]$lines) {
         $cell = $ws.Cells.Item($startRow + $i, $col)
         $cell.Value2 = $lines[$i]
         try { $cell.Font.Bold = $false } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($FontName)) {
+            try { $cell.Font.Name = $FontName } catch {}
+        }
     }
     return ($startRow + $lines.Count)
 }
@@ -377,13 +383,125 @@ function Remove-MarkShapes($ws, [string]$namePrefix) {
 
 # -- GFIX log highlight (folded into MarkGfix) ---------------
 
+function Get-TextPixelWidth {
+    <#
+    PURE-ish (GDI+ only, no COM): measures $Text's rendered width in pixels
+    for the given font via System.Drawing.Graphics.MeasureString. Caller must
+    have already loaded System.Drawing (Add-Type -AssemblyName System.Drawing)
+    -- this file makes no Add-Type calls itself (dot-source safety rule: no
+    param() at file scope, no side-loading).
+    #>
+    param(
+        [string]$Text,
+        [string]$FontName = 'Calibri',
+        [double]$FontSize = 11,
+        [bool]$Bold = $false
+    )
+    if ([string]::IsNullOrEmpty($Text)) { return 0.0 }
+    if ([string]::IsNullOrWhiteSpace($FontName)) { $FontName = 'Calibri' }
+    if ($FontSize -le 0) { $FontSize = 11 }
+    $style = if ($Bold) { [System.Drawing.FontStyle]::Bold } else { [System.Drawing.FontStyle]::Regular }
+    $font = $null; $bmp = $null; $gfx = $null
+    try {
+        $font = New-Object System.Drawing.Font($FontName, [float]$FontSize, $style)
+        $bmp  = New-Object System.Drawing.Bitmap(1, 1)
+        $gfx  = [System.Drawing.Graphics]::FromImage($bmp)
+        $size = $gfx.MeasureString($Text, $font)
+        return [double]$size.Width
+    } finally {
+        if ($null -ne $gfx)  { $gfx.Dispose() }
+        if ($null -ne $bmp)  { $bmp.Dispose() }
+        if ($null -ne $font) { $font.Dispose() }
+    }
+}
+
+function Get-ColumnsForWidth {
+    <#
+    PURE (no COM/GDI): given an ordered array of column widths (points, one
+    per column starting at the highlight's ColStart) and a target width in
+    points, returns the 0-based offset from ColStart of the last column
+    needed so the cumulative width covers $NeededPoints. Split out from
+    Get-AutoHighlightColEnd so the column-accumulation math is unit-testable
+    without Excel/GDI+ (Tests\Test-ExcelHelpers.ps1).
+    #>
+    param(
+        [double[]]$ColumnWidths,
+        [double]$NeededPoints
+    )
+    if ($NeededPoints -le 0 -or $null -eq $ColumnWidths -or $ColumnWidths.Count -eq 0) { return 0 }
+    $acc = 0.0
+    for ($i = 0; $i -lt $ColumnWidths.Count; $i++) {
+        $acc += [double]$ColumnWidths[$i]
+        if ($acc -ge $NeededPoints) { return $i }
+    }
+    return ($ColumnWidths.Count - 1)
+}
+
+function Get-AutoHighlightColEnd {
+    <#
+    Determines how many columns from $ColStart the yellow highlight needs to
+    cover the ACTUAL pasted text on $Row (the GFIX log 'Command:' row),
+    instead of always filling out to a fixed width -- a long Command: path
+    could run past a short fixed range, and a short one leaves an
+    unnecessarily wide highlight. Measures the row's text with its real cell
+    font (GDI+) and walks the sheet's actual column widths to find where that
+    rendered width lands, then pads by $PadCols. Never narrower than
+    $ColStart, never wider than $MaxColEnd (also the fixed legacy default --
+    used as an upper bound so this only ever tightens the old behavior).
+    Falls back to $MaxColEnd on any read/measurement problem.
+    #>
+    param(
+        $ws,
+        [int]$Row,
+        [int]$ColStart,
+        [int]$MaxColEnd,
+        [int]$PadCols = 1
+    )
+    if ($MaxColEnd -lt $ColStart) { return $MaxColEnd }
+    $text = $null
+    try { $text = [string]$ws.Cells.Item($Row, $ColStart).Value2 } catch {}
+    if ([string]::IsNullOrEmpty($text)) { return $MaxColEnd }
+
+    $fontName = 'Calibri'; $fontSize = 11.0; $bold = $false
+    try {
+        $cell = $ws.Cells.Item($Row, $ColStart)
+        try { $fontName = [string]$cell.Font.Name } catch {}
+        try { $fontSize = [double]$cell.Font.Size } catch {}
+        try { $bold     = [bool]$cell.Font.Bold } catch {}
+    } catch {}
+
+    $pxWidth = 0.0
+    try { $pxWidth = Get-TextPixelWidth -Text $text -FontName $fontName -FontSize $fontSize -Bold $bold } catch {}
+    if ($pxWidth -le 0) { return $MaxColEnd }
+
+    # 96 DPI screen assumption (matches Excel's on-screen point<->pixel basis):
+    # 1 point = 1/72 inch, 1 pixel = 1/96 inch at 96 DPI -> points = pixels * 0.75.
+    $neededPoints = $pxWidth * 0.75
+
+    $widths = New-Object System.Collections.Generic.List[double]
+    for ($c = $ColStart; $c -le $MaxColEnd; $c++) {
+        $w = 59.0   # ~8.43-char default column width in points, used only if the COM read below fails
+        try { $w = [double]$ws.Columns($c).Width } catch {}
+        $widths.Add($w)
+    }
+    $offset = Get-ColumnsForWidth -ColumnWidths $widths.ToArray() -NeededPoints $neededPoints
+    $colEnd = $ColStart + $offset + [Math]::Max(0, $PadCols)
+    if ($colEnd -gt $MaxColEnd) { $colEnd = $MaxColEnd }
+    if ($colEnd -lt $ColStart)  { $colEnd = $ColStart }
+    return $colEnd
+}
+
 function Invoke-GfixLogHighlight {
     <#
     Highlights the GFIX-log "Command:" row in a GFIX receive sheet. For each
     $LogAnchor cell in column B, finds the first row in that region whose B
-    cell matches $CommandPattern and fills $ColStart..$ColEnd with
-    $HighlightColor. Any prior matching fill in the region is cleared first,
-    so re-runs are idempotent.
+    cell matches $CommandPattern and fills $ColStart..<end> with
+    $HighlightColor. When $AutoWidth is set, <end> is computed per row from
+    the row's actual text width (Get-AutoHighlightColEnd), capped at
+    $ColEnd; otherwise <end> is always the fixed $ColEnd (legacy behavior).
+    Any prior matching fill in the full $ColStart..$ColEnd region is cleared
+    first (regardless of AutoWidth), so re-runs are idempotent even after
+    the computed width changes between runs.
 
     Returns a hashtable: @{ Applied=<int>; Anchors=<int>; Ok=<bool>; Warnings=<string[]> }
     COM-only; the caller supplies an already-open worksheet.
@@ -394,7 +512,9 @@ function Invoke-GfixLogHighlight {
         [string]$CommandPattern = "Command:\s*'/appl/[A-Za-z0-9]+/shell/",
         [long]$HighlightColor = 65535,
         [int]$ColStart = 2,
-        [int]$ColEnd   = 51
+        [int]$ColEnd   = 51,
+        [bool]$AutoWidth = $true,
+        [int]$PadCols = 1
     )
     $warnings = New-Object System.Collections.Generic.List[string]
     $applied  = 0
@@ -448,7 +568,12 @@ function Invoke-GfixLogHighlight {
         if ($matchCount -gt 1) {
             $warnings.Add(("anchor row {0}: {1} Command: matches; using first (row {2})" -f $anchorRows[$ai], $matchCount, $targetRow))
         }
-        Set-CellRangeFill $ws $targetRow $ColStart $ColEnd $HighlightColor
+        $rowColEnd = $ColEnd
+        if ($AutoWidth) {
+            try { $rowColEnd = Get-AutoHighlightColEnd -ws $ws -Row $targetRow -ColStart $ColStart -MaxColEnd $ColEnd -PadCols $PadCols }
+            catch { $rowColEnd = $ColEnd }
+        }
+        Set-CellRangeFill $ws $targetRow $ColStart $rowColEnd $HighlightColor
         $applied++
     }
 
