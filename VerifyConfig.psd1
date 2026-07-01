@@ -144,6 +144,7 @@
         WatchProgress   = 'Watch-MappingProgress.ps1'
         DeliverMail     = 'DeliverMail.ps1'
         DeliverFiles    = 'DeliverFiles.ps1'
+        BackupJ4        = 'BackupJ4.ps1'
         FillCheckSheet  = 'FillCheckSheet.ps1'
         SendVsGift      = 'SendVsGift.ps1'
         SnapVerify      = 'SnapVerify.ps1'
@@ -190,13 +191,19 @@
         )
     }
 
-    # DeliverFiles phase: copy evidence Excel + DATA files to J4 destination.
-    # Source files are never deleted -- this phase only copies.
+    # DeliverFiles phase: replaces the delivery-scope sheets (GIFT/GFIX recv
+    # result + GIFT-vs-GFIX data compare -- Align.ps1's Get-AlignRecvSheets
+    # set) in the corresponding J4 evidence workbook with the matching work
+    # sheets, in place (other J4 sheets untouched); first delivery for an
+    # Excel_NAME (no existing J4 workbook yet) copies the whole file instead.
+    # Also copies DATA\GFIX and DATA\GIFT files to J4. Source files are never
+    # deleted -- this phase only copies / in-place sheet-replaces.
     DeliverFiles = @{
         # Root J4 folder for evidence Excel files. REQUIRED (no personal
         # default is committed here) -- set this per work folder in
         # verify_config.json, e.g. via  .\VerifyTool.ps1 -Phase InitConfig.
-        # Defaults to Mail.EvidenceFolder if blank.
+        # Defaults to Mail.EvidenceFolder if blank. Also used as the J4
+        # source directory for the BackupJ4 phase.
         J4EvidenceDir = ''
         # Destination for DATA\GFIX files.
         # Defaults to J4EvidenceDir + '\DATA\GFIX' if blank.
@@ -204,9 +211,13 @@
         # Destination for DATA\GIFT files.
         # Defaults to J4EvidenceDir + '\DATA\GIFT' if blank.
         J4GiftDataDir = ''
-        # true = back up any J4 file this phase overwrites/removes (into
-        # J4EvidenceDir\_bak) before doing so. false = overwrite directly.
+        # true = back up the whole J4 file this phase is about to modify
+        # (into J4EvidenceDir\_bak) before replacing its sheets. false = edit
+        # directly. For a LOCAL rollback copy instead, use the BackupJ4 phase.
         Backup = $false
+        # Local folder the BackupJ4 phase copies J4 files into.
+        # Defaults to <WorkDir>\bk if blank.
+        BackupLocalDir = ''
     }
 
     # CheckSheet phase: append one row per Excel to the shared review check
@@ -379,7 +390,8 @@
         @{ Key='ReviewEvidence';     Field='isReviewed'; BitValue=7; Label='全体 目視 review + 保存';          Status='implemented' }
         @{ Key='Comments';           Field='';                     Label='review コメント 一覧 (read-only)';   Status='implemented' }
         @{ Key='CheckSheet';         Field='';                     Label='レビューチェックシート 記入';        Status='implemented' }
-        @{ Key='DeliverFiles';       Field='isFilesDelivered';     Label='J4 ﾌｧｲﾙ転送 (証跡Excel + DATA)';   Status='implemented' }
+        @{ Key='BackupJ4';           Field='';                     Label='J4 ﾌｧｲﾙ ﾛｰｶﾙ backup (bk)';        Status='implemented' }
+        @{ Key='DeliverFiles';       Field='isFilesDelivered';     Label='J4 ﾌｧｲﾙ転送 (証跡Excel sheet + DATA)'; Status='implemented' }
         @{ Key='DeliverMail';        Field='isDelivered';          Label='レビュー依頼メール 送付';            Status='implemented' }
         @{ Key='Validate';           Field='';                     Label='就緒状態 診断 (read-only)';         Status='implemented' }
         @{ Key='RepairMapping';      Field='';                     Label='mapping 列補完 (auto on startup)';  Status='implemented' }
@@ -447,6 +459,10 @@
         FilesDeliver      = 'DeliverFiles'
         CopyJ4            = 'DeliverFiles'
         MoveJ4            = 'DeliverFiles'
+
+        BackupJ4          = 'BackupJ4'
+        Bk                = 'BackupJ4'
+        BkJ4              = 'BackupJ4'
 
         SendVsGift        = 'SendVsGift'
         Svgift            = 'SendVsGift'

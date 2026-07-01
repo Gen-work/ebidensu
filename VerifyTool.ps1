@@ -149,10 +149,11 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase CheckSheet -CheckSheetPath "\\srv\...\check.xlsx"'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail         # one Outlook draft per Excel; you click Send + Enter'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverMail -TargetIds SJRVWD64'
-    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles       # copy evidence Excel + DATA to J4'
+    Write-Host '  .\VerifyTool.ps1 -Phase BackupJ4            # local rollback copy of J4 files (run before DeliverFiles)'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles       # replace GIFT/GFIX recv + Df-compare sheets in J4'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -SkipData   # evidence Excel only'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -SkipExcel  # DATA files only'
-    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -Backup     # back up J4 files before overwrite'
+    Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -Backup     # back up J4 file before its sheets are replaced'
     Write-Host '  .\VerifyTool.ps1 -Phase InitConfig          # write/update per-folder verify_config.json'
     Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive # grouped config editor (peek/edit/delete/save)'
     Write-Host ''
@@ -547,16 +548,31 @@ function Show-PhaseNotes([string]$PhaseKey) {
         '^DeliverFiles$' { @(
             '  Phase params:',
             '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
-            '    f=Force        -> re-copy files already marked delivered',
-            '    xe=SkipExcel   -> skip the evidence Excel copy (DATA files only)',
+            '    f=Force        -> re-deliver Excels already marked delivered',
+            '    xe=SkipExcel   -> skip the evidence Excel delivery (DATA files only)',
             '    xd=SkipData    -> skip DATA\GFIX/GIFT (evidence Excel only)',
-            '    bk=Backup      -> back up any J4 file this run overwrites/removes',
-            '  NOTE: default copies BOTH evidence Excel and DATA files. Source files are',
-            '        never deleted (copy only). J4EvidenceDir must be set in verify_config.json',
-            '        (DeliverFiles.J4EvidenceDir or Mail.EvidenceFolder) -- run -Phase InitConfig.',
+            '    bk=Backup      -> back up the whole J4 file before its sheets are replaced',
+            '  NOTE: replaces the GIFT/GFIX 受信結果 + GIFTデータvsGFIXデータ sheets in the',
+            '        corresponding J4 workbook with the matching work sheets, in place --',
+            '        like Align but work -> J4, and only these 3 sheets; every other J4',
+            '        sheet is left untouched. First delivery (no existing J4 workbook yet)',
+            '        copies the whole work file instead. Source files are never deleted.',
+            '        J4EvidenceDir must be set in verify_config.json (DeliverFiles.J4EvidenceDir',
+            '        or Mail.EvidenceFolder) -- run -Phase InitConfig.',
             '        If the local evidence file has no configured prefix, the prefix is added',
             '        on the J4 copy. A same-name-but-full-width duplicate already in J4 is',
-            '        offered for removal (kept: the half-width work-folder name), after asking.'
+            '        offered for removal (kept: the half-width work-folder name), after asking.',
+            '  TIP: run -Phase BackupJ4 first to keep a local rollback copy of J4 files.'
+        ) }
+        '^BackupJ4$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
+            '  NOTE: read-only against J4 -- copies each targeted Excel_NAME''s CURRENT J4',
+            '        workbook into a local folder (default <WorkDir>\bk, or',
+            '        DeliverFiles.BackupLocalDir), timestamped so repeated runs never',
+            '        overwrite an earlier snapshot. Run before DeliverFiles to keep a',
+            '        local rollback point of J4 files as they stood before delivery.',
+            '        Requires DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder).'
         ) }
         '^InitConfig$' { @(
             '  Phase params:',
@@ -589,6 +605,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^CheckSheet$' { return @('t','f','k') }
         '^DeliverMail$' { return @('t','f') }
         '^DeliverFiles$' { return @('t','f','xe','xd','bk') }
+        '^BackupJ4$' { return @('t') }
         '^Mapping$' { return @('f','owner','from','range','cm','jobs','ex','temp','add') }
         '^ExcelSnap$' { return @('f') }
         '^InitConfig$' { return @('i','f') }
@@ -1578,6 +1595,36 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
         Write-Host '[RUN] DeliverMail' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'BackupJ4') {
+        $p = Resolve-ToolPath $Config 'BackupJ4'
+        $args = $base.Clone()
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
+        $j4Ev = ''
+        if ($Config.DeliverFiles) {
+            $df = $Config.DeliverFiles
+            if (-not [string]::IsNullOrWhiteSpace([string]$df.J4EvidenceDir)) { $j4Ev = [string]$df.J4EvidenceDir; $args['J4EvidenceDir'] = $j4Ev }
+            if (-not [string]::IsNullOrWhiteSpace([string]$df.BackupLocalDir)) { $args['LocalDir'] = [string]$df.BackupLocalDir }
+        }
+        if ([string]::IsNullOrWhiteSpace($j4Ev)) {
+            if ($Config.Mail -and -not [string]::IsNullOrWhiteSpace([string]$Config.Mail.EvidenceFolder)) {
+                $j4Ev = [string]$Config.Mail.EvidenceFolder
+                $args['J4EvidenceDir'] = $j4Ev
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace($j4Ev)) {
+            Write-Host '[ERROR] J4 source not configured.' -ForegroundColor Red
+            Write-Host '  Set DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder) in this work' -ForegroundColor Yellow
+            Write-Host '  folder''s verify_config.json -- run: .\VerifyTool.ps1 -Phase InitConfig -Interactive' -ForegroundColor Yellow
+            Write-Host '  (group "path" or "mail"), or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
+            return
+        }
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        Write-Host '[RUN] BackupJ4' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
         return
