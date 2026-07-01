@@ -86,13 +86,36 @@ function Take-ForegroundScreenshot([string]$savePath) {
 }
 
 # -- Edge window control --
-function Activate-EdgeWindow {
-    $null = $Shell.AppActivate("Microsoft Edge")
-    Start-Sleep -Milliseconds 700
+# Process handle first, AppActivate-by-title as a fallback only -- the
+# opposite of this function's old AppActivate-only behavior. AppActivate
+# matches by a substring of the window TITLE ("Microsoft Edge"), which is
+# fragile: it silently returns $false if Edge's title text doesn't contain
+# that substring verbatim (title format/locale changes across Edge versions,
+# a PDF/app-mode tab with a different title, multiple Edge windows, etc.),
+# and the old code discarded that return value -- so on a title-match miss it
+# silently "activated" whatever window already happened to be foreground,
+# with zero indication anything went wrong. Get-EdgeMainWindowHandle instead
+# finds Edge by its process name (msedge.exe), which does not depend on
+# window text at all. This mirrors the fix JenkinsSnap.ps1 already carries
+# locally (Activate-JenkinsEdgeWindow) -- promoted here so GfixLogDownload /
+# MqSnap / HmSnap (which all route through Switch-ToEdge -> this function)
+# get the same robustness instead of only Jenkins having it.
+function Get-EdgeMainWindowHandle {
+    $procs = @(Get-Process -Name 'msedge' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero })
+    if ($procs.Count -eq 0) { return [IntPtr]::Zero }
+    return $procs[0].MainWindowHandle
+}
 
-    $hWnd = [WinAPI]::GetForegroundWindow()
+function Activate-EdgeWindow {
+    $hWnd = Get-EdgeMainWindowHandle
     if ($hWnd -eq [IntPtr]::Zero) {
-        Write-Host "  [WARN] Edge window not found." -ForegroundColor Yellow
+        try { [void]$Shell.AppActivate("Microsoft Edge") } catch {}
+        Start-Sleep -Milliseconds 700
+        $hWnd = Get-EdgeMainWindowHandle
+    }
+
+    if ($hWnd -eq [IntPtr]::Zero) {
+        Write-Host "  [WARN] Edge window not found (msedge process lookup and AppActivate title match both failed)." -ForegroundColor Yellow
         return $hWnd
     }
 
