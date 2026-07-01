@@ -37,6 +37,14 @@ MappingStore.ps1        single source of truth for mapping_<Owner>.csv: read/fil
                         Get-PendingRows, Set-MappingBit. ALL scripts use this.
 GfixLog.ps1             pure GFIX receive-log matcher (SS_CODE=Substring(4,1); newest
                         wins; whole-file lines). No Excel. Unit-tested.
+GfixJobList.ps1         pure parser for the GoAnywhere completed-jobs LIST page text
+                        (Ctrl+A/Ctrl+C capture): ConvertFrom-GfixJobListText (tab-
+                        delimited rows keyed by JobNo, data rows identified by a
+                        numeric JobNo regex -- no Japanese literals needed) +
+                        Get-GfixJobListRowsForIf (filter by normalized IF_NO,
+                        receive-side only by default). No COM. Unit-tested. Lets
+                        GfixLogDownload fetch every job matching a needed IF_NO
+                        (job numbers are unique; IF_NO/project-name text is not).
 EvidencePlan.ps1        pure correl-major Replace plan builders (Build-Gift/Gfix/Df
                         EvidencePlan) encoding the review order. No Excel. Unit-tested.
 EvidenceExecutor.ps1    walks an EvidencePlan and performs the Excel inserts.
@@ -155,12 +163,12 @@ CHANGELOG.md            iteration log
 ### Dot-source safety rule
 
 Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
-`MappingStore.ps1`, `GfixLog.ps1`, `EvidencePlan.ps1`, `EvidenceExecutor.ps1`,
-`ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`, `AlignCompare.ps1`,
-`ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`, `SendMetadata.ps1`,
-`OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`, `SnapLocalize.ps1`,
-`OwnerFilter.ps1`, `Find-ActiveHighlightRow.ps1`. All phase scripts have `param()`
-and are called via `& $path @args`.
+`MappingStore.ps1`, `GfixLog.ps1`, `GfixJobList.ps1`, `EvidencePlan.ps1`,
+`EvidenceExecutor.ps1`, `ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`,
+`AlignCompare.ps1`, `ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`,
+`SendMetadata.ps1`, `OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`,
+`SnapLocalize.ps1`, `OwnerFilter.ps1`, `Find-ActiveHighlightRow.ps1`. All phase
+scripts have `param()` and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
 ```powershell
@@ -268,7 +276,46 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-06-30 v2.9.17)
+## Current state (last bump: 2026-07-01 v2.9.18)
+
+v2.9.18 (GfixLogDownload: duplicate-IF_NO fix -- download by job number, verify by content):
+**Fixed** -- one IF_NO commonly feeds more than one downstream SS_CODE receive
+job (e.g. `JIDSC02S` and `JIDSC03S` both off `IF5001_001`), so the GoAnywhere
+completed-jobs list carries duplicate rows with the identical project name.
+`GfixLogDownload.ps1` used to find its target row by `Ctrl+F`-searching that
+project-name text, which cannot tell duplicate rows apart -- both correls
+landed on the SAME physical job (confirmed from a real run: both `JIDSC02S`
+and `JIDSC03S` "moved" the identical `1000002995601.log`), so one correl's
+real log was never downloaded, and -- worse -- the old code marked
+`GFIX_log=1` on ANY new file appearing in Downloads with no content check, so
+the miss was silent (only surfacing later as a `[MISS-REQ]` in `ReplaceGfix`,
+by which point the mapping already claimed the row was done). Rewritten:
+Ctrl+A the LIST page once (`Read-PageText.ps1`, same technique the SnapVerify
+phases already use), parse it with the new pure `GfixJobList.ps1`
+(`ConvertFrom-GfixJobListText`, data rows identified by a numeric JobNo regex
+-- no Japanese literals needed), group pending mapping rows by normalized
+IF_NO, and for each IF_NO download **every** matching job (`Get-
+GfixJobListRowsForIf`, receive-side only) keyed by its unique job number --
+not just the first Find-in-page hit. Detail pages now open via `Ctrl+F
+<job number>, Enter, Esc, Enter` (job number is itself the link target; no
+Shift+Tab needed, confirmed against the real page). Logs are named
+`<JobNo>_<timestamp>_<originalName>.log`, never after a correl. After
+downloads, every pending correl is resolved by content match via the
+existing, unit-tested `Find-GfixLogForCorrel` (`GfixLog.ps1`, unchanged --
+its any-`*.log`-in-dir fallback already does exactly the disambiguation
+needed): a real match sets `GFIX_log=1`; otherwise `GFIX_log=2` with the
+match error logged. An IF_NO with zero matching rows in today's list is a
+hard miss -- resolved immediately to `GFIX_log=2` (no interactive prompt,
+since there is no GoAnywhere state to retry against) and the run continues
+with the next IF_NO. `GFIX_log` is a plain value column (not a bitmask) with
+the same NG=2-still-pending convention as `SendVsGift`/Mq/Hm/JenkinsSnap: a
+local `Test-GfixLogDone` (`== '1'`) replaces the generic `Get-PendingRows`
+call, since `2` is non-empty/non-'0' and would otherwise read as done. New
+pure lib `GfixJobList.ps1` + `Tests\Test-GfixJobList.ps1` (fixtures include
+the real duplicate-IF_NO case from a live run). COM/Edge parts are static-
+checked only (no PowerShell/Excel/Edge in this dev environment); confirm the
+job-number Ctrl+F open sequence and the end-to-end download+match flow on an
+office PC before trusting it in production.
 
 v2.9.17 (Align same-name workbook open fix + sheet-order preserve):
 **Fixed** -- (1) Align reported every sheet "missing in J4" with an empty
