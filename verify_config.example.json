@@ -5,7 +5,8 @@
     "Only include the keys you want to override - every other setting falls back to VerifyConfig.psd1.",
     "Tip: run  VerifyTool.ps1 -Phase InitConfig  inside your WorkDir to generate/update a FULL file",
     "pre-filled from the live config (including existing overlay values and new defaults).",
-    "Run  VerifyTool.ps1 -Phase InitConfig -Interactive  for grouped peek/edit/delete/save.",
+    "Run  VerifyTool.ps1 -Phase InitConfig -Interactive  then pick w to walk a group field-by-field",
+    "(no path typing needed), or v/e/d to peek/edit/delete by JSON path; s to save.",
     "InitConfig also writes verify_config.README.txt with field explanations; JSON itself cannot use // comments.",
     "Save as UTF-8 (no BOM). Japanese text is fine as plain UTF-8."
   ],

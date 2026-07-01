@@ -291,7 +291,37 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-01 v2.9.21)
+## Current state (last bump: 2026-07-01 v2.9.22)
+
+v2.9.22 (InitConfig editor: grouped field walker -- no manual path typing):
+**Added** -- the `-Phase InitConfig -Interactive` editor gained a `w` command
+next to the existing `v`/`e`/`d`/`s`/`q` ones. Picking `w` and a group (by
+number or key, same lookup as the other group commands) now WALKS every
+editable field in that group one at a time -- showing the current value and
+prompting Enter=keep / a value=set it / `-del`=delete it / `q`=stop walking --
+instead of requiring the operator to already know and type the exact dotted
+JSON path (e.g. `Mark.Boxes.GIFT_HM.0.OffsetX`) for every field they want to
+touch. New pure-ish helpers in `VerifyTool.ps1`: `Expand-ConfigWalkPath`
+recurses a group's top-level paths down to leaf fields (hashtables always
+recurse into every key; an array recurses by index only when every element is
+itself a hashtable -- structured records like `Mark.Boxes` entries or
+`PhaseOrder` rows -- otherwise the whole array, e.g. `Mail.BodyLines`, is one
+atomic JSON-edit leaf, same as before); `Get-ConfigWalkLeaves` expands a
+group's `Paths` (including the `all` group's `*`) into the leaf list;
+`Invoke-ConfigFieldWalk` drives the per-field prompt loop (edits apply to the
+in-memory `$Data`, same as `e`/`d`; still only written to disk via the main
+menu's `s` + typed `YES` confirmation) and asks for confirmation before
+walking a group with more than 30 fields (e.g. `phase`/`PhaseOrder`, which
+expands to one leaf per `Key`/`Field`/`Label`/`Status`/`BitValue` per phase
+row). `v`/`e`/`d` are unchanged and still take a manual path for operators who
+already know exactly what to touch. Updated the editor's intro text, the
+`InitConfig` phase notes, `ConfigOverlay.ps1`'s `_README` snapshot text and
+`Get-ConfigOverlayReadmeText`, `README.md`, and `verify_config.example.json`
+to describe `w` alongside `v`/`e`/`d`. Pure logic (`Expand-ConfigWalkPath` /
+`Get-ConfigWalkLeaves`) is straightforward path-tree recursion with no
+Excel/COM involvement; `Invoke-ConfigFieldWalk`'s console I/O is static-
+checked only (no PowerShell in this dev environment) -- confirm the walk
+prompts/confirmations on an office PC.
 
 v2.9.21 (DeliverFiles: sheet-level replace instead of whole-file overwrite; new BackupJ4 phase):
 **Changed** -- `DeliverFiles.ps1`'s evidence-Excel step no longer overwrites

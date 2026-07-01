@@ -1,3 +1,29 @@
+## 2026-07-01 - InitConfig editor: grouped field walker (v2.9.22)
+
+### Added
+- `-Phase InitConfig -Interactive` gained a `w` editor command: pick a group
+  (same number/key lookup as the other commands) and it walks every editable
+  field in that group one at a time -- current value shown, Enter=keep,
+  a value=set it, `-del`=delete it, `q`=stop walking -- so the operator never
+  has to type a dotted JSON path (e.g. `Mark.Boxes.GIFT_HM.0.OffsetX`) from
+  memory. `v`/`e`/`d` are unchanged for operators who already know the exact
+  path they want.
+- New `VerifyTool.ps1` helpers: `Expand-ConfigWalkPath` (recurses a group's
+  top-level paths to leaf fields -- hashtables always recurse per key; an
+  array recurses by index only when every element is a hashtable, e.g.
+  `Mark.Boxes` entries / `PhaseOrder` rows, otherwise the whole array is one
+  atomic edit leaf), `Get-ConfigWalkLeaves` (expands a group's `Paths`,
+  including `all`'s `*`), and `Invoke-ConfigFieldWalk` (the per-field prompt
+  loop; edits apply in memory and still require `s` + typed `YES` to save).
+  Walking a group with more than 30 fields (e.g. `phase`) asks for
+  confirmation first.
+- Updated the editor's intro text, `InitConfig` phase notes,
+  `ConfigOverlay.ps1`'s `_README` snapshot text + `Get-ConfigOverlayReadmeText`,
+  `README.md`, and `verify_config.example.json` to document `w` alongside
+  `v`/`e`/`d`.
+- Static-checked only (no PowerShell in this dev environment) -- confirm the
+  walk prompts and the >30-field confirmation on an office PC.
+
 ## 2026-07-01 - DeliverFiles rework + config error messages + GfixLogDownload naming (v2.9.20)
 
 ### Changed

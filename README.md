@@ -42,17 +42,21 @@ config, including existing overlay values plus any new defaults):
 
 ```powershell
 .\VerifyTool.ps1 -Phase InitConfig
-.\VerifyTool.ps1 -Phase InitConfig -Interactive  # grouped peek/edit/delete/save UI
+.\VerifyTool.ps1 -Phase InitConfig -Interactive  # grouped walk/peek/edit/delete/save UI
 .\VerifyTool.ps1 -Phase InitConfig -Force        # accepted for old habit; updates still keep a .bak
 ```
 
 `InitConfig` also writes `verify_config.README.txt` next to the JSON with field
 explanations, so the JSON can stay clean (standard JSON does not support
 `//` comments). Interactive mode groups settings by `intro`, `phase`, `snap`,
-`excel`, `wbs`, `path`, `mail`, and `all`; it lets you peek without changing,
-edit any JSON path (for example `Window.Width` or `Mail.BodyLines`), delete a
-path, then save only after typing `YES`. The `_README` introduction shown in
-the JSON is included in the `intro` group and can be changed the same way. Then
+`excel`, `wbs`, `path`, `mail`, and `all`. Pick `w` to **walk** a group: it
+prompts field-by-field (Enter = keep, a value = set it, `-del` = delete it,
+`q` = stop walking) so you never have to type a JSON path yourself. `v`/`e`/`d`
+still let you peek/edit/delete by JSON path (for example `Window.Width` or
+`Mail.BodyLines`) when you already know exactly what to touch. Either way,
+changes only land on disk after `s` and typing `YES`. The `_README`
+introduction shown in the JSON is included in the `intro` group and can be
+changed the same way. Then
 edit values such as `DefaultOwner`, `Workbook.ExcelPrefix`, `Window`,
 `Mark.Boxes` (red-rectangle positions), `Mail` (subject/body templates),
 `Reviewer`, `CheckSheet`, `Df` (capture region) and `ExpectedTime`. Save as

@@ -155,7 +155,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -SkipExcel  # DATA files only'
     Write-Host '  .\VerifyTool.ps1 -Phase DeliverFiles -Backup     # back up J4 file before its sheets are replaced'
     Write-Host '  .\VerifyTool.ps1 -Phase InitConfig          # write/update per-folder verify_config.json'
-    Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive # grouped config editor (peek/edit/delete/save)'
+    Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive # grouped config editor (walk/peek/edit/delete/save)'
     Write-Host ''
     Write-Host 'Common options:'
     Write-Host '  -WorkDir <path>       Work folder. If omitted, last used path is remembered.'
@@ -576,7 +576,8 @@ function Show-PhaseNotes([string]$PhaseKey) {
         ) }
         '^InitConfig$' { @(
             '  Phase params:',
-            '    i=Interactive  -> grouped editor: peek, edit, delete, save with confirmation',
+            '    i=Interactive  -> grouped editor: walk a group field-by-field (no path typing),',
+            '                      or peek/edit/delete by JSON path, then save with confirmation',
             '    f=Force        -> keep for compatibility; InitConfig now updates/refreshes existing JSON by default',
             '  NOTE: this phase writes all editable config keys into verify_config.json,',
             '        preserving loaded per-folder values and adding new defaults when the tool changes.'
@@ -1036,12 +1037,98 @@ function Show-ConfigEditorGroup([hashtable]$Data, [hashtable]$Group) {
     }
 }
 
+function Expand-ConfigWalkPath([string]$Path, [object]$Value) {
+    # Recurse a group's top-level paths down to editable "leaf" fields so the
+    # walker can prompt one field at a time without the operator ever typing a
+    # dotted path themselves. Hashtables always recurse into every key. An
+    # array recurses by index ONLY when every element is itself a hashtable
+    # (structured records like Mark.Boxes entries / PhaseOrder rows, where each
+    # index has named sub-fields worth visiting individually); an array of
+    # scalars (e.g. Mail.BodyLines) is edited as one atomic JSON value instead,
+    # since there is no named field to descend into.
+    if ($Value -is [System.Collections.IDictionary]) {
+        if ($Value.Count -eq 0) { return ,@($Path) }
+        $out = @()
+        foreach ($k in @($Value.Keys | Sort-Object)) {
+            $out += @(Expand-ConfigWalkPath ("{0}.{1}" -f $Path, $k) $Value[$k])
+        }
+        return ,$out
+    }
+    if (($Value -is [System.Collections.IList]) -and ($Value -isnot [string])) {
+        $items = @($Value)
+        if ($items.Count -eq 0) { return ,@($Path) }
+        $allDict = $true
+        foreach ($item in $items) { if ($item -isnot [System.Collections.IDictionary]) { $allDict = $false; break } }
+        if (-not $allDict) { return ,@($Path) }
+        $out = @()
+        for ($i = 0; $i -lt $items.Count; $i++) {
+            $out += @(Expand-ConfigWalkPath ("{0}.{1}" -f $Path, $i) $items[$i])
+        }
+        return ,$out
+    }
+    return ,@($Path)
+}
+
+function Get-ConfigWalkLeaves([hashtable]$Data, [object[]]$Paths) {
+    $topPaths = @()
+    foreach ($p in $Paths) {
+        if ($p -eq '*') { foreach ($k in @($Data.Keys | Sort-Object)) { $topPaths += [string]$k } }
+        else { $topPaths += [string]$p }
+    }
+    $leaves = @()
+    foreach ($p in @($topPaths | Select-Object -Unique)) {
+        $value = Get-ConfigValueByPath $Data $p
+        if ($null -eq $value) { continue }
+        $leaves += @(Expand-ConfigWalkPath $p $value)
+    }
+    return ,$leaves
+}
+
+function Invoke-ConfigFieldWalk([hashtable]$Data, [hashtable]$Group) {
+    $leaves = @(Get-ConfigWalkLeaves $Data $Group.Paths)
+    if ($leaves.Count -eq 0) { Write-Host '  (group has no fields to walk)' -ForegroundColor Yellow; return }
+    Write-Host ''
+    Write-Host ("Walking group [{0}] {1} -- {2} field(s)." -f $Group.Key, $Group.Label, $leaves.Count) -ForegroundColor Cyan
+    if ($leaves.Count -gt 30) {
+        $go = Read-Choice ("This group has {0} fields; walk them all?" -f $leaves.Count) 'yes'
+        if ($go -inotmatch '^y') { Write-Host '  cancelled.' -ForegroundColor Yellow; return }
+    }
+    Write-Host 'For each field: Enter = keep as-is, type a new value (JSON or raw text) = set it, -del = delete it, q = stop walking.' -ForegroundColor DarkGray
+    $i = 0
+    foreach ($path in $leaves) {
+        $i++
+        $current = Get-ConfigValueByPath $Data $path
+        Write-Host ''
+        Write-Host ("[{0}/{1}] {2}" -f $i, $leaves.Count, $path) -ForegroundColor Cyan
+        Write-Host (Get-ConfigOverlayJson $current)
+        $raw = Read-Host 'new value (Enter=keep, -del=delete, q=stop)'
+        if ($raw -eq 'q') { Write-Host '  stopped walking; remaining fields in this group left unchanged.' -ForegroundColor Yellow; return }
+        if ([string]::IsNullOrEmpty($raw)) { continue }
+        if ($raw -eq '-del') {
+            $confirm = Read-Choice ("Delete {0}? type DELETE" -f $path) 'no'
+            if ($confirm -ceq 'DELETE') {
+                if (Remove-ConfigValueByPath $Data $path) { Write-Host '  deleted in memory.' -ForegroundColor Green }
+                else { Write-Host '  delete failed' -ForegroundColor Yellow }
+            } else { Write-Host '  delete cancelled.' -ForegroundColor Yellow }
+            continue
+        }
+        $newValue = ConvertFrom-ConfigEditorValue $raw
+        try {
+            Set-ConfigValueByPath $Data $path $newValue
+            Write-Host '  updated in memory.' -ForegroundColor Green
+        } catch { Write-Host ("  update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow }
+    }
+    Write-Host ''
+    Write-Host '  finished walking group (choose s in the main menu to save).' -ForegroundColor Green
+}
+
 function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath) {
     $groups = @(Get-ConfigOverlayGroups)
     Write-Host ''
     Write-Host '===== InitConfig editor =====' -ForegroundColor Green
     Write-Host 'View by group, edit any JSON path, delete paths, then save with confirmation.' -ForegroundColor DarkGray
-    Write-Host 'Path examples: Window.Width, Mail.BodyLines, Mark.Boxes.GIFT_HM.0.OffsetX, PhaseOrder.0.Label' -ForegroundColor DarkGray
+    Write-Host 'Prefer w: pick a group and it walks every field in it one at a time -- no path typing needed.' -ForegroundColor DarkGray
+    Write-Host 'Path examples for v/e/d: Window.Width, Mail.BodyLines, Mark.Boxes.GIFT_HM.0.OffsetX, PhaseOrder.0.Label' -ForegroundColor DarkGray
     Write-Host 'Value input accepts JSON (true, 123, [..], {..}, "text") or raw text.' -ForegroundColor DarkGray
     Write-Host ("Target: {0}" -f $DestPath) -ForegroundColor DarkGray
 
@@ -1059,6 +1146,7 @@ function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath) {
         Write-Host '   v  Peek path'
         Write-Host '   e  Edit path'
         Write-Host '   d  Delete path'
+        Write-Host '   w  Walk a group field-by-field (guided, no path typing)'
         Write-Host '   s  Save'
         Write-Host '   q  Quit without saving'
         $ans = (Read-Host 'config').Trim().ToLower()
@@ -1106,6 +1194,13 @@ function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath) {
                 if (Remove-ConfigValueByPath $Data $path) { Write-Host '  deleted in memory (choose s to save).' -ForegroundColor Green }
                 else { Write-Host '  delete failed' -ForegroundColor Yellow }
             }
+            continue
+        }
+        if ($ans -eq 'w') {
+            $groupAns = (Read-Choice 'Which group to walk? (number or key)' '').Trim().ToLower()
+            if ([string]::IsNullOrWhiteSpace($groupAns)) { Write-Host '  group is required' -ForegroundColor Yellow; continue }
+            if ($menu.ContainsKey($groupAns)) { Invoke-ConfigFieldWalk $Data $menu[$groupAns] }
+            else { Write-Host '  unknown group' -ForegroundColor Yellow }
             continue
         }
         if ($menu.ContainsKey($ans)) { Show-ConfigEditorGroup $Data $menu[$ans]; continue }
