@@ -276,7 +276,32 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-01 v2.9.18)
+## Current state (last bump: 2026-07-01 v2.9.19)
+
+v2.9.19 (Common.ps1: Edge activation robustness -- promote JenkinsSnap's process-handle fix):
+**Fixed** -- the operator-reported symptom of "auto-switch to GoAnywhere after
+pressing Enter" occasionally not working traces to `Common.ps1`'s shared
+`Activate-EdgeWindow` (called by `Switch-ToEdge`, which `GfixLogDownload` /
+`MqSnap` / `HmSnap` all use): it activated Edge purely via
+`$Shell.AppActivate("Microsoft Edge")` -- a substring match against the
+window TITLE -- and discarded the success/failure return value entirely
+(`$null = $Shell.AppActivate(...)`). If Edge's title text doesn't contain
+"Microsoft Edge" verbatim at that moment (title format changes across Edge
+versions, an app-mode/PDF tab with a different title, multiple Edge windows
+open), `AppActivate` silently returns `$false` and the old code proceeded to
+"activate" whatever window already happened to be in the foreground, with no
+warning that anything went wrong. `JenkinsSnap.ps1` had already hit and fixed
+this exact flakiness for itself, independently, with a process-name lookup
+(`Get-EdgeMainWindowHandle` scanning for `msedge.exe` by `MainWindowHandle`,
+title match only as a fallback) -- but that fix was never carried back into
+the shared `Common.ps1` helper, so GfixLogDownload/MqSnap/HmSnap were still
+on the old, title-only path. Promoted the process-handle-first approach into
+`Common.ps1.Activate-EdgeWindow` verbatim (byte-for-byte the same logic
+JenkinsSnap already had proven); removed JenkinsSnap's now-redundant local
+copy (`Activate-JenkinsEdgeWindow`) in favor of the shared one. See the new
+TODO below for the related next-stage plan (ReplaceGfix duplicate-candidate
+confirmation). Static-checked only (no Windows/Edge in this dev environment)
+-- confirm on an office PC.
 
 v2.9.18 (GfixLogDownload: duplicate-IF_NO fix -- download by job number, verify by content):
 **Fixed** -- one IF_NO commonly feeds more than one downstream SS_CODE receive
@@ -624,6 +649,46 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   earlier `Get-EdgeHwnd`/`Capture-Window` phantom-function risk is resolved.
 
 ## TODOs
+
+- **NEXT: ReplaceGfix duplicate-candidate confirmation** — since v2.9.18,
+  `GfixLogDownload` deliberately downloads *every* GoAnywhere job matching a
+  needed IF_NO (not just one), because duplicate-IF_NO rows are common and
+  content matching (`Find-GfixLogForCorrel`) is what actually decides which
+  correl a log belongs to. This means `log\` can now legitimately hold more
+  than one candidate log for a single correl (e.g. genuine retries of the
+  same job) more often than before. Today `Find-GfixLogForCorrel` silently
+  picks the newest candidate by its `Command:` line timestamp and only prints
+  a `[WARN] N logs matched; chose newest (...)` — it never stops for operator
+  confirmation. Planned next step: when `ReplaceGfix` (or `GfixLogDownload`'s
+  finalize step) hits a multi-candidate `Warning`, show the operator each
+  candidate's file name + parsed timestamp and require an explicit pick
+  (Enter = accept newest, or choose another) before the log is pasted into
+  the evidence workbook / before `GFIX_log`/`isReplaced` is marked done,
+  instead of trusting "newest wins" silently. Needs: (1) deciding where the
+  prompt belongs (`GfixLogDownload` finalize vs `ReplaceGfix`'s log op in
+  `EvidenceExecutor.ps1` — the latter runs later and closer to when the log
+  is actually inserted, so may be the more meaningful place to ask), (2) a
+  non-interactive fallback (keep "newest wins" under `-NonInteractive`, same
+  as the rest of this codebase's interactive/non-interactive split).
+
+- **Edge activation robustness DONE** (v2.9.18) — `Common.ps1`'s
+  `Activate-EdgeWindow` (used by `Switch-ToEdge`, which `GfixLogDownload` /
+  `MqSnap` / `HmSnap` all call after the operator presses Enter) used to
+  activate Edge purely via `$Shell.AppActivate("Microsoft Edge")`, a
+  title-substring match, and silently discarded its success/failure return
+  value. `JenkinsSnap.ps1` had already independently fixed this exact
+  flakiness for itself with a process-name-based lookup
+  (`Get-EdgeMainWindowHandle` / `Activate-JenkinsEdgeWindow`, msedge.exe by
+  process rather than window title), but that fix never made it into the
+  shared `Common.ps1` helper the other phases use. Promoted the
+  process-handle-first / title-match-fallback approach into
+  `Common.ps1.Activate-EdgeWindow` (title match is now only a fallback, and a
+  real `[WARN]` is printed when both paths fail instead of silently
+  "activating" whatever window already happened to be foreground);
+  `JenkinsSnap.ps1`'s duplicate local copy was removed in favor of the shared
+  one. Static-checked only (no Windows/Edge in this dev environment) --
+  confirm on an office PC that `Switch-ToEdge` reliably reaches GoAnywhere
+  again.
 
 - **SnapVerify M1–M5 done** — M1: `SnapVerify.ps1` pure library +
   `Tests/Test-SnapVerify.ps1` unit tests + `SnapVerify` config section in

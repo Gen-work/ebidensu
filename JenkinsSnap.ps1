@@ -222,31 +222,9 @@ function Invoke-CropPng([string]$path, [int]$crop) {
     }
 }
 
-function Get-EdgeMainWindowHandle {
-    $edge = @(Get-Process -Name 'msedge' -ErrorAction SilentlyContinue |
-        Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
-        Select-Object -First 1)
-    if ($edge.Count -gt 0) { return [IntPtr]$edge[0].MainWindowHandle }
-    return [IntPtr]::Zero
-}
-
-function Activate-JenkinsEdgeWindow {
-    $hWnd = Get-EdgeMainWindowHandle
-    if ($hWnd -eq [IntPtr]::Zero) {
-        [void]$Shell.AppActivate('Microsoft Edge')
-        Start-Sleep -Milliseconds 700
-        $hWnd = Get-EdgeMainWindowHandle
-    }
-    if ($hWnd -eq [IntPtr]::Zero) {
-        Write-Host '  [WARN] Edge window not found.' -ForegroundColor Yellow
-        return [IntPtr]::Zero
-    }
-
-    [WinAPI]::ShowWindowAsync($hWnd, 9) | Out-Null
-    [WinAPI]::SetForegroundWindow($hWnd) | Out-Null
-    Start-Sleep -Milliseconds 400
-    return $hWnd
-}
+# Get-EdgeMainWindowHandle / Activate-EdgeWindow (process-handle-first,
+# AppActivate-by-title fallback) now live in Common.ps1 -- this used to be a
+# JenkinsSnap-only fix; promoted so GfixLogDownload/MqSnap/HmSnap share it too.
 
 function Move-EdgeToWorkPos([IntPtr]$hWnd) {
     if ($hWnd -eq [IntPtr]::Zero) { return }
@@ -438,7 +416,7 @@ foreach ($toCode in $groupOrder) {
             # force re-navigate
             $cachedUrl = ''
         } else {
-            $edgeHwnd = Activate-JenkinsEdgeWindow
+            $edgeHwnd = Activate-EdgeWindow
             if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
             # Navigate to cached URL
             Send-Key '^l' 300
@@ -456,7 +434,7 @@ foreach ($toCode in $groupOrder) {
         $resp = Read-Host
         if ($resp -eq 'q') { $userQuit = $true; break }
 
-        $edgeHwnd = Activate-JenkinsEdgeWindow
+        $edgeHwnd = Activate-EdgeWindow
         if (-not $noResizeFlag) { Move-EdgeToWorkPos $edgeHwnd }
 
         # Capture and cache the URL
@@ -488,7 +466,7 @@ foreach ($toCode in $groupOrder) {
         do {
             $attempt++
 
-            $edgeHwnd = Activate-JenkinsEdgeWindow
+            $edgeHwnd = Activate-EdgeWindow
             if ($edgeHwnd -eq [IntPtr]::Zero) {
                 Write-Host "    [FAIL] Edge not found" -ForegroundColor Red
                 Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
