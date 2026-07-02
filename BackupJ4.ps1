@@ -53,9 +53,9 @@ if (-not (Test-Path -LiteralPath $mappingPath)) {
 
 if ([string]::IsNullOrWhiteSpace($J4EvidenceDir)) {
     Write-Host '[ERROR] J4 source not configured.' -ForegroundColor Red
-    Write-Host '  Set DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder) in this work' -ForegroundColor Yellow
-    Write-Host '  folder''s verify_config.json -- run: .\VerifyTool.ps1 -Phase InitConfig -Interactive' -ForegroundColor Yellow
-    Write-Host '  (group "path" or "mail"), or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
+    Write-Host '  Set J4EvidenceDir in this work folder''s verify_config.json -- run:' -ForegroundColor Yellow
+    Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive  (group "path" or "mail"),' -ForegroundColor Yellow
+    Write-Host '  or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
     exit 1
 }
 
