@@ -18,6 +18,8 @@
 #   Remove-ConfigMetadataKeys   drop _README/_comment docs before runtime merge
 #   Merge-ConfigHashtable       deep-merge overlay onto base (base wins structure)
 #   New-ConfigOverlaySnapshot   operator-facing editable snapshot of a config
+#   Update-ConfigOverlayData    repair mode: add missing default keys to an
+#                               existing overlay WITHOUT touching its values
 #   Get-ConfigOverlayGroups      grouped InitConfig editor/readme sections
 #   Remove-ConfigEmptyArray     drop empty arrays (PS 5.1 serializes them as "")
 #   ConvertFrom-JsonUnicodeEscape  turn \uXXXX (>=0x80) back into real chars
@@ -160,6 +162,9 @@ function New-ConfigOverlaySnapshot {
     $snap['_README'] = @(
         'Clean JSON only: see verify_config.README.txt for field explanations.',
         'Precedence: CLI args > this JSON > VerifyConfig.psd1 > session fallback.',
+        'Re-running -Phase InitConfig on this existing file REPAIRS it: your settings',
+        'are kept as-is and only newly-added config fields are appended (f=Force',
+        'regenerates the full snapshot instead).',
         'Run .\VerifyTool.ps1 -Phase InitConfig -Interactive -- pick w to walk a group',
         'field-by-field (no path typing needed), or view/edit/delete/save by JSON path.'
     )
@@ -176,6 +181,42 @@ function New-ConfigOverlaySnapshot {
     }
 
     return (Remove-ConfigEmptyArray $snap)
+}
+
+function Update-ConfigOverlayData {
+    # REPAIR/UPDATE an existing overlay in place of a full regenerate:
+    # keep every key + value the operator already has (their settings are
+    # never overwritten, and a sparse hand-written overlay stays sparse
+    # apart from the additions), and ADD only the keys that exist in
+    # $Defaults (a New-ConfigOverlaySnapshot result) but are missing from
+    # $Existing -- i.e. fields the tool gained since the overlay was written.
+    # Nested hashtables are walked recursively; arrays and scalars are
+    # treated as atomic (an existing array is kept wholesale, matching
+    # Merge-ConfigHashtable's runtime merge semantics).
+    # Returns @{ Data = <hashtable>; Added = <string[] dotted paths> }.
+    param([hashtable]$Existing, [hashtable]$Defaults)
+
+    $added = New-Object System.Collections.Generic.List[string]
+
+    function Add-MissingKeysWorker([hashtable]$Cur, [hashtable]$Def, [string]$Prefix, $AddedList) {
+        foreach ($k in @($Def.Keys | Sort-Object)) {
+            $path = if ([string]::IsNullOrEmpty($Prefix)) { [string]$k } else { ('{0}.{1}' -f $Prefix, $k) }
+            if (-not $Cur.ContainsKey($k)) {
+                $Cur[$k] = $Def[$k]
+                $AddedList.Add($path)
+                continue
+            }
+            if (($Cur[$k] -is [hashtable]) -and ($Def[$k] -is [hashtable])) {
+                Add-MissingKeysWorker $Cur[$k] $Def[$k] $path $AddedList
+            }
+            # existing scalar/array (or type mismatch): keep the operator's value
+        }
+    }
+
+    $data = @{}
+    if ($null -ne $Existing) { $data = $Existing }
+    if ($null -ne $Defaults) { Add-MissingKeysWorker $data $Defaults '' $added }
+    return @{ Data = $data; Added = $added.ToArray() }
 }
 
 function Get-ConfigOverlayGroups {
@@ -212,6 +253,9 @@ function Get-ConfigOverlayReadmeText {
         '- Do not put WorkDir in this JSON. The tool must know WorkDir before it can load this file.',
         '- Standard JSON has no // or /* */ comments. Use this README for comments.',
         '- Save as UTF-8. Japanese strings are OK.',
+        ('- Re-running -Phase InitConfig on an existing {0} REPAIRS it by default:' -f $OverlayName),
+        '  your settings are kept as-is and only newly-added config fields are appended.',
+        '  Use the f=Force option to regenerate the full snapshot (keeps a .bak).',
         '- Run .\VerifyTool.ps1 -Phase InitConfig -Interactive to view groups, edit values, delete keys, and confirm save.',
         '- In the editor, pick w to WALK a group: it prompts field-by-field (Enter=keep,',
         '  value=set, -del=delete, q=stop) so you never have to type a JSON path yourself.',
@@ -245,8 +289,10 @@ function Get-ConfigOverlayReadmeText {
         '- GfixLog.AutoHighlightWidth / HighlightPadCols: size the GFIX log',
         '  Command-row yellow highlight to the row''s actual text width instead',
         '  of the fixed HighlightColStart..HighlightColEnd range (still the cap).',
-        '- Replace.GfixLogFontName: font forced on every pasted GFIX log line',
-        '  (default MS Gothic); blank leaves the workbook default font.',
+        '- Replace.GfixLogFontName / GfixLogFontSize: font + size forced on every',
+        '  pasted GFIX log line (default MS Gothic / 11); blank name or size 0',
+        '  leaves the workbook default. The same font/size drive the auto-width',
+        '  highlight measurement in MarkGfix.',
         '- DeliverFiles.*: J4 delivery destinations + local BackupJ4 folder override.',
         '',
         'Workbook prefix note',

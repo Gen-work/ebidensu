@@ -56,7 +56,12 @@ param(
     [int]$GfixLogColStart = 2,
     [int]$GfixLogColEnd   = 51,
     [bool]$GfixLogAutoWidth = $true,
-    [int]$GfixLogPadCols = 1
+    [int]$GfixLogPadCols = 1,
+    # Font the GFIX log was PASTED in (Replace.GfixLogFontName/GfixLogFontSize).
+    # Used by the AutoWidth measurement so the computed highlight width always
+    # matches the rendered text. Blank/0 -> measure with the cell's own font.
+    [string]$GfixLogFontName = '',
+    [double]$GfixLogFontSize = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -496,7 +501,8 @@ try {
                     $hl = Invoke-GfixLogHighlight -ws $ws -LogAnchor $GfixLogAnchor `
                         -CommandPattern $GfixLogCommandPattern -HighlightColor $GfixLogHighlightColor `
                         -ColStart $GfixLogColStart -ColEnd $GfixLogColEnd `
-                        -AutoWidth $GfixLogAutoWidth -PadCols $GfixLogPadCols
+                        -AutoWidth $GfixLogAutoWidth -PadCols $GfixLogPadCols `
+                        -FontName $GfixLogFontName -FontSize $GfixLogFontSize
                     foreach ($w in @($hl.Warnings)) { Write-Host ("  [GfixLog WARN] {0}" -f $w) -ForegroundColor Yellow }
                     Write-Host ("  [GfixLog] highlights applied: {0} (anchors: {1}, AutoWidth={2})" -f $hl.Applied, $hl.Anchors, $GfixLogAutoWidth) -ForegroundColor DarkGray
                 }

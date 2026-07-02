@@ -94,6 +94,37 @@ Assert-True ($jpOut.Contains($jp)) 'generated JSON keeps Japanese readable (not 
 $jpRt = ConvertFrom-ConfigJson $jpOut
 Assert-Equal $jp $jpRt['Mail']['Greeting'] 'Japanese value round-trips'
 
+# --- Update-ConfigOverlayData : repair mode keeps operator values, adds only
+#     missing default keys (deep), arrays/scalars stay atomic.
+$existing = @{
+    DefaultOwner = '9999'                      # operator-changed scalar: must survive
+    Window       = @{ Width = 800 }            # sparse nested: keep Width, gain missing keys
+    Align        = @{ HostSystemTypes = @('HOST') }  # operator array: must survive wholesale
+}
+$defaults = @{
+    _README      = @('readme line')
+    DefaultOwner = '0602'
+    Window       = @{ Width = 1050; Height = 761 }
+    Align        = @{ HostSystemTypes = @(); J4BaseDir = '' }
+    Replace      = @{ GfixLogFontName = 'MS Gothic'; GfixLogFontSize = 11 }
+}
+$rep = Update-ConfigOverlayData -Existing $existing -Defaults $defaults
+Assert-Equal '9999' $rep.Data['DefaultOwner']            'repair keeps operator scalar'
+Assert-Equal 800    $rep.Data['Window']['Width']         'repair keeps nested operator value'
+Assert-Equal 761    $rep.Data['Window']['Height']        'repair adds missing nested default'
+Assert-Equal 'HOST' (@($rep.Data['Align']['HostSystemTypes'])[0]) 'repair keeps operator array wholesale'
+Assert-Equal ''     $rep.Data['Align']['J4BaseDir']      'repair adds missing sibling of kept array'
+Assert-Equal 'MS Gothic' $rep.Data['Replace']['GfixLogFontName'] 'repair adds whole missing section'
+Assert-True ($rep.Data.ContainsKey('_README'))           'repair adds missing _README'
+$addedPaths = @($rep.Added)
+Assert-True ($addedPaths -contains 'Window.Height')      'added list reports dotted nested path'
+Assert-True ($addedPaths -contains 'Replace')            'added list reports new top-level section'
+Assert-True (-not ($addedPaths -contains 'DefaultOwner')) 'existing key not reported as added'
+
+# A complete overlay (every default key already present) adds nothing.
+$repNone = Update-ConfigOverlayData -Existing $defaults -Defaults $defaults
+Assert-Equal 0 (@($repNone.Added).Count) 'repair of a complete overlay adds nothing'
+
 # --- Get-ConfigOverlayGroups : editor exposes the requested group tags.
 $groups = @(Get-ConfigOverlayGroups)
 $groupKeys = @($groups | ForEach-Object { $_.Key })

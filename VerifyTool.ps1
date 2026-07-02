@@ -419,7 +419,9 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  Writes verify_config.json in the work folder: a JSON overlay that',
             '  overrides VerifyConfig.psd1 for THIS folder only (owner, window,',
             '  mail format, mark boxes, expected-time defaults, ...).',
-            '  Edit the file, then re-run any phase. f=Force regenerates (keeps a .bak).'
+            '  When the file already exists, the default is REPAIR/UPDATE: your',
+            '  settings are kept as-is and only newly-added config fields are',
+            '  appended. f=Force regenerates the full snapshot (keeps a .bak).'
         ) }
         '^Clone$' { @(
             '  Phase params:',
@@ -505,7 +507,10 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> re-capture already-done rows',
             '    e=DfExePath    -> override df.exe path for this run',
-            '  NOTE: set Df.ExePath in VerifyConfig.psd1 to skip the path prompt.'
+            '  NOTE: set Df.ExePath in VerifyConfig.psd1 to skip the path prompt.',
+            '  NOTE: rows with mapping isZip=1 are unzipped into DATA\GIFT\unzip /',
+            '        DATA\GFIX\unzip first and df.exe compares the UNZIPPED files',
+            '        (never the two zip binaries).'
         ) }
         '^Validate$' { @(
             '  Phase params:',
@@ -578,9 +583,12 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  Phase params:',
             '    i=Interactive  -> grouped editor: walk a group field-by-field (no path typing),',
             '                      or peek/edit/delete by JSON path, then save with confirmation',
-            '    f=Force        -> keep for compatibility; InitConfig now updates/refreshes existing JSON by default',
-            '  NOTE: this phase writes all editable config keys into verify_config.json,',
-            '        preserving loaded per-folder values and adding new defaults when the tool changes.'
+            '    f=Force        -> full regenerate: rewrite verify_config.json as a complete snapshot',
+            '                      of the merged config (loaded values survive; keeps a .bak)',
+            '  NOTE: when verify_config.json already exists, the DEFAULT is repair/update:',
+            '        the existing file is kept exactly as-is (your values untouched, a sparse',
+            '        file stays sparse) and only config fields the tool gained since it was',
+            '        written are added. No file yet -> a full snapshot is generated.'
         ) }
         default { @() }
     }
@@ -1471,6 +1479,9 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($Config.Replace.ContainsKey('GfixLogFontName')) {
                 $args['GfixLogFontName'] = [string]$Config.Replace.GfixLogFontName
             }
+            if ($Config.Replace.ContainsKey('GfixLogFontSize') -and $null -ne $Config.Replace.GfixLogFontSize) {
+                $args['GfixLogFontSize'] = [double]$Config.Replace.GfixLogFontSize
+            }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
@@ -1594,6 +1605,11 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($Config.GfixLog.ContainsKey('AutoHighlightWidth')) { $args['AutoWidth'] = [bool]$Config.GfixLog.AutoHighlightWidth }
             if ($Config.GfixLog.HighlightPadCols)  { $args['PadCols']            = [int]$Config.GfixLog.HighlightPadCols }
         }
+        # Measure the highlight with the font ReplaceGfix pasted the log in.
+        if ($Config.Replace) {
+            if ($Config.Replace.ContainsKey('GfixLogFontName')) { $args['FontName'] = [string]$Config.Replace.GfixLogFontName }
+            if ($Config.Replace.ContainsKey('GfixLogFontSize') -and $null -ne $Config.Replace.GfixLogFontSize) { $args['FontSize'] = [double]$Config.Replace.GfixLogFontSize }
+        }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force)  { $args['Force']  = $true }
         if ($State.DryRun) { $args['DryRun'] = $true }
@@ -1636,6 +1652,11 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($Config.GfixLog.HighlightColEnd)   { $args['GfixLogColEnd']         = [int]$Config.GfixLog.HighlightColEnd }
             if ($Config.GfixLog.ContainsKey('AutoHighlightWidth')) { $args['GfixLogAutoWidth'] = [bool]$Config.GfixLog.AutoHighlightWidth }
             if ($Config.GfixLog.HighlightPadCols)  { $args['GfixLogPadCols']         = [int]$Config.GfixLog.HighlightPadCols }
+            # Measure the highlight with the font ReplaceGfix pasted the log in.
+            if ($Config.Replace) {
+                if ($Config.Replace.ContainsKey('GfixLogFontName')) { $args['GfixLogFontName'] = [string]$Config.Replace.GfixLogFontName }
+                if ($Config.Replace.ContainsKey('GfixLogFontSize') -and $null -ne $Config.Replace.GfixLogFontSize) { $args['GfixLogFontSize'] = [double]$Config.Replace.GfixLogFontSize }
+            }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
@@ -1854,6 +1875,32 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
                 return
             }
             $snap = $edited
+        } elseif ($exists -and -not $State.Force) {
+            # REPAIR/UPDATE mode (default when the overlay already exists):
+            # keep the operator's file exactly as it is -- values untouched, a
+            # sparse file stays sparse -- and only ADD fields the tool gained
+            # since it was written. f=Force regenerates the full snapshot
+            # (old behavior; loaded values still survive via the merge).
+            $existing = $null
+            try {
+                $raw = Get-Content -LiteralPath $dest -Raw -Encoding UTF8
+                if (-not [string]::IsNullOrWhiteSpace($raw)) {
+                    $existing = ConvertTo-ConfigHashtable ($raw | ConvertFrom-Json)
+                }
+            } catch {
+                Write-Host ("  [FAIL] existing overlay could not be parsed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+                Write-Host '         Fix the JSON, or re-run with f=Force to regenerate a full snapshot (keeps a .bak).' -ForegroundColor Yellow
+                return
+            }
+            if (-not ($existing -is [hashtable])) { $existing = @{} }
+            $repair = Update-ConfigOverlayData -Existing $existing -Defaults $snap
+            $snap = $repair.Data
+            if (@($repair.Added).Count -eq 0) {
+                Write-Host '  [OK] repair: overlay already has every current config field; nothing to add.' -ForegroundColor Green
+                return
+            }
+            Write-Host ("  [repair] keeping existing settings; adding {0} new field(s):" -f @($repair.Added).Count) -ForegroundColor Cyan
+            foreach ($a in @($repair.Added)) { Write-Host ("    + {0}" -f $a) -ForegroundColor DarkGray }
         }
         if ($State.DryRun) {
             Write-Host '  [dry-run] would write this overlay snapshot:' -ForegroundColor DarkGray
