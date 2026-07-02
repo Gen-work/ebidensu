@@ -103,6 +103,10 @@
         # the Japanese fixed-width font "MS ゴシック". Blank -> leave the
         # workbook's default font untouched.
         GfixLogFontName  = 'MS Gothic'
+        # Font size forced on every pasted GFIX receive-log line (ReplaceGfix).
+        # 0 -> leave the workbook's default size untouched. The same font +
+        # size also drive MarkGfix's auto-width highlight measurement.
+        GfixLogFontSize  = 11
     }
 
     # Mark phase configuration (マークフェーズ設定)

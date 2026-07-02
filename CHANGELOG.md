@@ -1,3 +1,74 @@
+## 2026-07-02 - GFIX log font size + highlight measurement fixes, InitConfig repair mode, DfSnap isZip unzip-compare (v2.9.24)
+
+### Added
+- **ReplaceGfix: forced font SIZE on the pasted GFIX log** (operator bug 1:
+  "all text should be MS Gothic and size 11"). v2.9.23 forced only the font
+  NAME; the size still came from the workbook default. `Write-LogLines`
+  (`ExcelHelpers.ps1`) gained a `FontSize` parameter, threaded through
+  `EvidenceExecutor.ps1`'s `Invoke-EvidencePlan -GfixLogFontSize` and a new
+  `ReplaceEvidence.ps1 -GfixLogFontSize` parameter (default `11`). New
+  `Replace.GfixLogFontSize` config field (default `11`; `0` leaves the
+  workbook's default size untouched), threaded by `VerifyTool.ps1` and
+  documented in `verify_config.example.json` + the ConfigOverlay README text.
+- **InitConfig repair/update mode** (operator bug 3: "it always generates a
+  new one; sometimes I just want to update it"). When `verify_config.json`
+  already exists, a plain `-Phase InitConfig` run now REPAIRS it instead of
+  rewriting a full snapshot: the operator's file is kept exactly as-is
+  (values untouched, a sparse hand-written file stays sparse) and only
+  config fields the tool gained since the file was written are added -- each
+  added dotted path is listed on the console, and a run with nothing to add
+  changes nothing. `f=Force` performs the old full-snapshot regenerate
+  (loaded values still survive via the merge; a `.bak` is kept either way).
+  A file that fails to parse is NOT touched (explicit error + hint instead).
+  New pure `Update-ConfigOverlayData` in `ConfigOverlay.ps1` (recursive
+  add-missing-keys; existing scalars/arrays kept wholesale, matching the
+  runtime merge semantics), unit-tested in `Tests\Test-ConfigOverlay.ps1`.
+- **DfSnap: isZip rows compare the UNZIPPED data** (operator bug 4). Rows
+  whose mapping `isZip`/`isZIP` flag is `1` hold ZIP archives on both sides;
+  df.exe used to be launched on the two zip binaries, which compares
+  nothing meaningful. DfSnap now extracts each side's zip into
+  `DATA\GIFT\unzip` / `DATA\GFIX\unzip` (named after the correl id, same
+  convention as SendVsGift's `data\unzip`) and launches df.exe on the two
+  extracted files. Zip discovery + entry selection mirror SendVsGift's
+  proven logic (exact `<correl>.zip` first, then prefixed zips, then any
+  readable prefixed file; entry matched by name/basename, else the single
+  entry). A flagged row with no readable zip on one side falls back to the
+  plain data file with a warning; an extraction failure (e.g. multi-entry
+  zip with no matching entry) fails the row (`progress.jsonl` `unzip/fail`)
+  instead of silently comparing zips. Zip helpers were exercised end-to-end
+  with real archives (PS 7 on the build box); the df.exe/capture flow is
+  unchanged.
+
+### Fixed
+- **GFIX-log highlight width detection** (operator bug 2: "highlight longer
+  or shorter"). Three fixes in `ExcelHelpers.ps1`:
+  (1) `Get-TextPixelWidth` now measures with `StringFormat.GenericTypographic`
+  (+ `MeasureTrailingSpaces`) -- plain `MeasureString` pads the result with
+  layout margins (roughly an em of slack), which pushed the auto-sized
+  highlight several grid columns LONGER than the text on narrow-column
+  evidence sheets.
+  (2) `Get-AutoHighlightColEnd` / `Invoke-GfixLogHighlight` gained optional
+  `FontName`/`FontSize` overrides: `VerifyTool.ps1` passes
+  `Replace.GfixLogFontName/GfixLogFontSize` into MarkGfix (`Mark.ps1
+  -GfixLogFontName/-GfixLogFontSize`) and `MarkGfixLog.ps1`
+  (`-FontName/-FontSize`), so the width is measured with the font the log
+  was actually PASTED in -- previously a log pasted before the font forcing
+  existed (or a failed cell-font read) was measured with the wrong font,
+  making the highlight longer OR shorter than the real text.
+  (3) The per-column width read uses `$ws.Columns.Item($c)` (canonical COM
+  form used everywhere else in this codebase) instead of `$ws.Columns($c)`.
+  Also fixed a latent case-collision in the new override code: PowerShell
+  variables are case-insensitive, so the measurement locals are named
+  `$measureFont`/`$measureSize` (NOT `$fontName`/`$fontSize`, which would
+  silently overwrite the `$FontName`/`$FontSize` parameters).
+- GDI+/COM paths (font-size assignment, typographic measurement on the
+  JP-locale host, the column-width read) are static-checked only -- no
+  Windows/Excel in this dev environment; parse checks + the pure unit tests
+  (`Tests\Run-Tests.ps1`) run clean under PowerShell 7 on the build box
+  (2 pre-existing `Test-EvidencePlan` failures are Linux path-separator
+  artifacts only). Confirm the size-11 paste, the tightened highlight, the
+  InitConfig repair flow, and the DfSnap unzip-compare on an office PC.
+
 ## 2026-07-01 - Mark image-recognition placement + GFIX highlight auto-width + forced log font (v2.9.23)
 
 ### Added

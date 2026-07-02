@@ -303,7 +303,40 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-01 v2.9.23)
+## Current state (last bump: 2026-07-02 v2.9.24)
+
+v2.9.24 (GFIX log font size + highlight measurement fixes; InitConfig repair
+mode; DfSnap isZip unzip-compare):
+**Added** -- (1) `ReplaceGfix` now forces font SIZE as well as name on every
+pasted GFIX receive-log line: new `Replace.GfixLogFontSize` config (default
+`11`; `0` = leave workbook default), threaded `VerifyTool` ->
+`ReplaceEvidence -GfixLogFontSize` -> `Invoke-EvidencePlan` ->
+`Write-LogLines` (new `FontSize` param). (2) `-Phase InitConfig` on an
+EXISTING `verify_config.json` now defaults to REPAIR/UPDATE: the operator's
+file is kept exactly as-is (values untouched, sparse stays sparse) and only
+newly-added config fields are appended (each added dotted path listed);
+`f=Force` = old full-snapshot regenerate (.bak kept either way); an
+unparseable file is never touched. New pure `Update-ConfigOverlayData`
+(`ConfigOverlay.ps1`, unit-tested). (3) `DfSnap` rows with mapping
+`isZip`=1 no longer hand df.exe the two ZIP binaries: each side's zip is
+extracted into `DATA\GIFT\unzip` / `DATA\GFIX\unzip` (file named after the
+correl id, SendVsGift `data\unzip` convention; discovery/entry-selection
+logic mirrors SendVsGift's) and df.exe compares the extracted files. No
+readable zip on a flagged side -> warn + fall back to the plain data file;
+extraction failure -> row fails (`unzip/fail` progress event). **Fixed** --
+the GFIX-log highlight auto-width was "longer or shorter" than the pasted
+text: `Get-TextPixelWidth` now measures with GenericTypographic (+
+MeasureTrailingSpaces) instead of padded plain `MeasureString`;
+`Get-AutoHighlightColEnd`/`Invoke-GfixLogHighlight` accept
+`FontName`/`FontSize` overrides so MarkGfix/MarkGfixLog measure with the
+font the log was PASTED in (`Replace.GfixLogFontName/Size`, threaded by
+VerifyTool) instead of trusting the cell-font read; the column-width read
+uses `$ws.Columns.Item($c)`. (Beware: PS variables are case-insensitive --
+the measurement locals are `$measureFont`/`$measureSize` because
+`$fontName` would silently overwrite the `$FontName` param.) Pure logic
+unit-tested; zip helpers exercised with real archives under PS 7; COM/GDI+
+paths static-checked only -- confirm size-11 paste, highlight width,
+InitConfig repair, and DfSnap unzip on an office PC.
 
 v2.9.23 (Mark: image-recognition box placement + GFIX highlight auto-width +
 forced GFIX log font):

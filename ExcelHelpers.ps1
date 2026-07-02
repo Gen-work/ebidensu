@@ -260,12 +260,14 @@ function Write-PlainText($ws, [int]$row, [int]$col, [string]$text) {
     } catch {}
 }
 
-function Write-LogLines($ws, [int]$startRow, [int]$col, [string[]]$lines, [string]$FontName = '') {
+function Write-LogLines($ws, [int]$startRow, [int]$col, [string[]]$lines, [string]$FontName = '', [double]$FontSize = 0) {
     <#
     Paste each line in $lines into separate rows starting at $startRow.
     When $FontName is non-blank, every pasted line's font is forced to it
     (used to paste the GFIX receive log in a fixed-width font, e.g. 'MS
-    Gothic', regardless of the workbook's default font).
+    Gothic', regardless of the workbook's default font). When $FontSize is
+    > 0, the font size is forced too (e.g. 11), so the pasted log renders
+    identically no matter what the workbook's default style is.
     Returns the row index immediately after the last pasted line.
     #>
     if ($null -eq $lines -or $lines.Count -eq 0) { return $startRow }
@@ -275,6 +277,9 @@ function Write-LogLines($ws, [int]$startRow, [int]$col, [string[]]$lines, [strin
         try { $cell.Font.Bold = $false } catch {}
         if (-not [string]::IsNullOrWhiteSpace($FontName)) {
             try { $cell.Font.Name = $FontName } catch {}
+        }
+        if ($FontSize -gt 0) {
+            try { $cell.Font.Size = $FontSize } catch {}
         }
     }
     return ($startRow + $lines.Count)
@@ -401,14 +406,22 @@ function Get-TextPixelWidth {
     if ([string]::IsNullOrWhiteSpace($FontName)) { $FontName = 'Calibri' }
     if ($FontSize -le 0) { $FontSize = 11 }
     $style = if ($Bold) { [System.Drawing.FontStyle]::Bold } else { [System.Drawing.FontStyle]::Regular }
-    $font = $null; $bmp = $null; $gfx = $null
+    $font = $null; $bmp = $null; $gfx = $null; $fmt = $null
     try {
         $font = New-Object System.Drawing.Font($FontName, [float]$FontSize, $style)
         $bmp  = New-Object System.Drawing.Bitmap(1, 1)
         $gfx  = [System.Drawing.Graphics]::FromImage($bmp)
-        $size = $gfx.MeasureString($Text, $font)
+        # Plain MeasureString pads the result with layout margins (roughly an
+        # em of slack), which made the auto-sized GFIX highlight run several
+        # grid columns LONGER than the text on narrow-column evidence sheets.
+        # GenericTypographic measures the actual glyph advance width;
+        # MeasureTrailingSpaces keeps any trailing blanks in the log line.
+        $fmt = New-Object System.Drawing.StringFormat([System.Drawing.StringFormat]::GenericTypographic)
+        $fmt.FormatFlags = $fmt.FormatFlags -bor [System.Drawing.StringFormatFlags]::MeasureTrailingSpaces
+        $size = $gfx.MeasureString($Text, $font, [int]::MaxValue, $fmt)
         return [double]$size.Width
     } finally {
+        if ($null -ne $fmt)  { $fmt.Dispose() }
         if ($null -ne $gfx)  { $gfx.Dispose() }
         if ($null -ne $bmp)  { $bmp.Dispose() }
         if ($null -ne $font) { $font.Dispose() }
@@ -449,29 +462,41 @@ function Get-AutoHighlightColEnd {
     $ColStart, never wider than $MaxColEnd (also the fixed legacy default --
     used as an upper bound so this only ever tightens the old behavior).
     Falls back to $MaxColEnd on any read/measurement problem.
+    $FontName/$FontSize (optional) override the cell-font read for the
+    measurement: pass the font ReplaceGfix forced onto the log paste
+    (Replace.GfixLogFontName/GfixLogFontSize) so the measured width always
+    matches the pasted font even when the cell read fails or the log was
+    pasted before the font forcing existed.
     #>
     param(
         $ws,
         [int]$Row,
         [int]$ColStart,
         [int]$MaxColEnd,
-        [int]$PadCols = 1
+        [int]$PadCols = 1,
+        [string]$FontName = '',
+        [double]$FontSize = 0
     )
     if ($MaxColEnd -lt $ColStart) { return $MaxColEnd }
     $text = $null
     try { $text = [string]$ws.Cells.Item($Row, $ColStart).Value2 } catch {}
     if ([string]::IsNullOrEmpty($text)) { return $MaxColEnd }
 
-    $fontName = 'Calibri'; $fontSize = 11.0; $bold = $false
+    # NOTE: locals deliberately NOT named $fontName/$fontSize -- PowerShell
+    # variables are case-insensitive, so those would collide with the
+    # $FontName/$FontSize override parameters.
+    $measureFont = 'Calibri'; $measureSize = 11.0; $measureBold = $false
     try {
         $cell = $ws.Cells.Item($Row, $ColStart)
-        try { $fontName = [string]$cell.Font.Name } catch {}
-        try { $fontSize = [double]$cell.Font.Size } catch {}
-        try { $bold     = [bool]$cell.Font.Bold } catch {}
+        try { $measureFont = [string]$cell.Font.Name } catch {}
+        try { $measureSize = [double]$cell.Font.Size } catch {}
+        try { $measureBold = [bool]$cell.Font.Bold } catch {}
     } catch {}
+    if (-not [string]::IsNullOrWhiteSpace($FontName)) { $measureFont = $FontName }
+    if ($FontSize -gt 0) { $measureSize = $FontSize }
 
     $pxWidth = 0.0
-    try { $pxWidth = Get-TextPixelWidth -Text $text -FontName $fontName -FontSize $fontSize -Bold $bold } catch {}
+    try { $pxWidth = Get-TextPixelWidth -Text $text -FontName $measureFont -FontSize $measureSize -Bold $measureBold } catch {}
     if ($pxWidth -le 0) { return $MaxColEnd }
 
     # 96 DPI screen assumption (matches Excel's on-screen point<->pixel basis):
@@ -481,7 +506,7 @@ function Get-AutoHighlightColEnd {
     $widths = New-Object System.Collections.Generic.List[double]
     for ($c = $ColStart; $c -le $MaxColEnd; $c++) {
         $w = 59.0   # ~8.43-char default column width in points, used only if the COM read below fails
-        try { $w = [double]$ws.Columns($c).Width } catch {}
+        try { $w = [double]$ws.Columns.Item($c).Width } catch {}
         $widths.Add($w)
     }
     $offset = Get-ColumnsForWidth -ColumnWidths $widths.ToArray() -NeededPoints $neededPoints
@@ -502,6 +527,9 @@ function Invoke-GfixLogHighlight {
     Any prior matching fill in the full $ColStart..$ColEnd region is cleared
     first (regardless of AutoWidth), so re-runs are idempotent even after
     the computed width changes between runs.
+    $FontName/$FontSize (optional) are the font the log was PASTED in
+    (Replace.GfixLogFontName/GfixLogFontSize); when set, the AutoWidth
+    measurement uses them instead of trusting the cell-font read.
 
     Returns a hashtable: @{ Applied=<int>; Anchors=<int>; Ok=<bool>; Warnings=<string[]> }
     COM-only; the caller supplies an already-open worksheet.
@@ -514,7 +542,9 @@ function Invoke-GfixLogHighlight {
         [int]$ColStart = 2,
         [int]$ColEnd   = 51,
         [bool]$AutoWidth = $true,
-        [int]$PadCols = 1
+        [int]$PadCols = 1,
+        [string]$FontName = '',
+        [double]$FontSize = 0
     )
     $warnings = New-Object System.Collections.Generic.List[string]
     $applied  = 0
@@ -570,7 +600,7 @@ function Invoke-GfixLogHighlight {
         }
         $rowColEnd = $ColEnd
         if ($AutoWidth) {
-            try { $rowColEnd = Get-AutoHighlightColEnd -ws $ws -Row $targetRow -ColStart $ColStart -MaxColEnd $ColEnd -PadCols $PadCols }
+            try { $rowColEnd = Get-AutoHighlightColEnd -ws $ws -Row $targetRow -ColStart $ColStart -MaxColEnd $ColEnd -PadCols $PadCols -FontName $FontName -FontSize $FontSize }
             catch { $rowColEnd = $ColEnd }
         }
         Set-CellRangeFill $ws $targetRow $ColStart $rowColEnd $HighlightColor

@@ -49,6 +49,12 @@ param(
     [bool]$AutoWidth = $true,
     [int]$PadCols = 1,
 
+    # Font the GFIX log was PASTED in (Replace.GfixLogFontName/GfixLogFontSize).
+    # Used by the AutoWidth measurement so the computed highlight width always
+    # matches the rendered text. Blank/0 -> measure with the cell's own font.
+    [string]$FontName = '',
+    [double]$FontSize = 0,
+
     [switch]$DryRun
 )
 
@@ -135,7 +141,8 @@ Write-Host ("  Mapping   : {0}" -f $mappingPath)
 Write-Host ("  Sheet     : {0}" -f $sheetGfixRecv)
 Write-Host ("  Anchor    : {0}" -f $LogAnchor)
 Write-Host ("  Pattern   : {0}" -f $CommandPattern)
-Write-Host ("  HighlightCol: {0}..{1}  AutoWidth: {2}  PadCols: {3}" -f $HighlightColStart, $HighlightColEnd, $AutoWidth, $PadCols)
+Write-Host ("  HighlightCol: {0}..{1}  AutoWidth: {2}  PadCols: {3}  MeasureFont: {4} {5}" -f $HighlightColStart, $HighlightColEnd, $AutoWidth, $PadCols, `
+    $(if ([string]::IsNullOrWhiteSpace($FontName)) { '(cell font)' } else { $FontName }), $(if ($FontSize -le 0) { '' } else { [string]$FontSize }))
 Write-Host ("  Force     : {0}" -f $forceFlag)
 Write-Host ("  DryRun    : {0}" -f $dryFlag)
 if ($targetSet.Count -gt 0) { Write-Host ("  TargetIds : {0}" -f (($targetSet.Keys | Sort-Object) -join ', ')) }
@@ -203,7 +210,8 @@ try {
                 $hl = Invoke-GfixLogHighlight -ws $ws -LogAnchor $LogAnchor `
                     -CommandPattern $CommandPattern -HighlightColor $HighlightColor `
                     -ColStart $HighlightColStart -ColEnd $HighlightColEnd `
-                    -AutoWidth $AutoWidth -PadCols $PadCols
+                    -AutoWidth $AutoWidth -PadCols $PadCols `
+                    -FontName $FontName -FontSize $FontSize
                 foreach ($w in @($hl.Warnings)) { Write-Host ("  [WARN] {0}" -f $w) -ForegroundColor Yellow }
                 Write-Host ("  highlights applied: {0} (anchors: {1})" -f $hl.Applied, $hl.Anchors) -ForegroundColor DarkGray
                 $wb.Save()

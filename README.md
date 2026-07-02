@@ -37,14 +37,20 @@ so a single case can customize almost everything without editing the shared
 
 Precedence: **CLI args > work-folder `verify_config.json` > `VerifyConfig.psd1` > session fallback** (for the few values that still support session fallback).
 
-Generate or refresh a work-folder file (pre-filled from the current effective
-config, including existing overlay values plus any new defaults):
+Generate or repair a work-folder file:
 
 ```powershell
-.\VerifyTool.ps1 -Phase InitConfig
+.\VerifyTool.ps1 -Phase InitConfig               # no file yet -> full snapshot; file exists -> REPAIR
 .\VerifyTool.ps1 -Phase InitConfig -Interactive  # grouped walk/peek/edit/delete/save UI
-.\VerifyTool.ps1 -Phase InitConfig -Force        # accepted for old habit; updates still keep a .bak
+.\VerifyTool.ps1 -Phase InitConfig -Force        # full regenerate of the complete snapshot (keeps a .bak)
 ```
+
+When `verify_config.json` already exists, the default run is a **repair/update**:
+your file is kept exactly as-is (values untouched, a sparse hand-written file
+stays sparse) and only config fields the tool gained since the file was written
+are appended -- each added field is listed on the console. `-Force` switches to
+the old full-snapshot regenerate (your loaded values still survive via the
+merge; a `.bak` of the previous file is kept either way).
 
 `InitConfig` also writes `verify_config.README.txt` next to the JSON with field
 explanations, so the JSON can stay clean (standard JSON does not support
