@@ -132,7 +132,7 @@ $To = $ReviewerAddress
 if ([string]::IsNullOrWhiteSpace($To)) { $To = $ReviewerDisplay }
 if ([string]::IsNullOrWhiteSpace($To)) {
     Write-Host '[ERROR] reviewer address/display not configured.' -ForegroundColor Red
-    Write-Host '  Set Reviewer.Address (or Reviewer.DisplayName) in this work folder''s' -ForegroundColor Yellow
+    Write-Host '  Set Address (or Reviewer.DisplayName) in this work folder''s' -ForegroundColor Yellow
     Write-Host '  verify_config.json -- run: .\VerifyTool.ps1 -Phase InitConfig -Interactive (group "mail").' -ForegroundColor Yellow
     exit 1
 }

@@ -47,20 +47,34 @@ Generate or repair a work-folder file:
 
 When `verify_config.json` already exists, the default run is a **repair/update**:
 your file is kept exactly as-is (values untouched, a sparse hand-written file
-stays sparse) and only config fields the tool gained since the file was written
-are appended -- each added field is listed on the console. `-Force` switches to
-the old full-snapshot regenerate (your loaded values still survive via the
-merge; a `.bak` of the previous file is kept either way).
+stays sparse) and only config fields the tool gained since the file was last
+written are appended -- each added field is listed on the console. Repair knows
+what is "new" from the hidden `_SCHEMA` field inventory the file carries (leave
+`_SCHEMA` alone; it is ignored at runtime). A file without a `_SCHEMA` stamp is
+only stamped on its first repair -- nothing is added, so the full snapshot is
+never dumped into a sparse file. `-Force` switches to the old full-snapshot
+regenerate (your loaded values still survive via the merge; a `.bak` of the
+previous file is kept either way).
+
+Duplicated fields were merged into single canonical top-level fields:
+`J4EvidenceDir` (was `DeliverFiles.J4EvidenceDir` / `Mail.EvidenceFolder`) and
+`Address` (was `Reviewer.Address`). Old files that still set the legacy fields
+keep working -- a non-empty legacy value wins -- but InitConfig no longer
+generates them.
 
 `InitConfig` also writes `verify_config.README.txt` next to the JSON with field
 explanations, so the JSON can stay clean (standard JSON does not support
 `//` comments). Interactive mode groups settings by `intro`, `phase`, `snap`,
 `excel`, `wbs`, `path`, `mail`, and `all`. Pick `w` to **walk** a group: it
-prompts field-by-field (Enter = keep, a value = set it, `-del` = delete it,
-`q` = stop walking) so you never have to type a JSON path yourself. `v`/`e`/`d`
-still let you peek/edit/delete by JSON path (for example `Window.Width` or
-`Mail.BodyLines`) when you already know exactly what to touch. Either way,
-changes only land on disk after `s` and typing `YES`. The `_README`
+prompts field-by-field (Enter = keep, a value = set it, `-d` = delete it,
+`q` = stop walking) so you never have to type a JSON path yourself; when a
+group is done it offers the next group / `s`ave / Enter back to the menu.
+`v`/`e`/`d` still let you peek/edit/delete by JSON path (for example
+`Window.Width` or `Mail.BodyLines`) when you already know exactly what to
+touch. Either way, changes only land on disk after `s` and typing `YES`; if
+the write fails (the JSON is open in another program), nothing is lost --
+close the file and `r` retries, Enter goes back to the menu with all edits
+kept. The `_README`
 introduction shown in the JSON is included in the `intro` group and can be
 changed the same way. Then
 edit values such as `DefaultOwner`, `Workbook.ExcelPrefix`, `Window`,
@@ -323,6 +337,12 @@ For each pending row:
 
 Use `-CursorCell A1` if the fallback cursor rule changes.
 
+All review phases (`ReviewGift`/`ReviewGfix`/`ReviewDf`/`ReviewEvidence`) accept
+`-J4` (menu option `j4`): the workbook is opened from the delivered J4 folder
+(`J4EvidenceDir`) instead of `work\evidence` -- use it to re-check the delivered
+copies after `DeliverFiles`. Saves land on the J4 file; the local mapping's
+review bits update as usual.
+
 ## CheckSheet behavior
 
 Phase: `CheckSheet` (aliases: `FillCheckSheet`, `RvCheck`). Appends one row per
@@ -353,7 +373,9 @@ Phase: `DeliverMail` (aliases: `Mail`, `SendMail`, `Deliver`). Builds one Outloo
 **draft** per `Excel_NAME` via Outlook COM (`CreateItem` + `Display`) — it never
 sends automatically. Subject is
 `【GIFT廃止対応】<Phase>レビュー依頼(<Excel_NAME>)`; the body, reviewer (`To`),
-and UNC paths are all config-driven (`Mail` / `Reviewer` in `VerifyConfig.psd1`).
+and UNC paths are all config-driven (top-level `Address` / `J4EvidenceDir` plus
+`Mail` / `Reviewer` in `VerifyConfig.psd1` -- legacy `Reviewer.Address` /
+`Mail.EvidenceFolder` still win when set).
 
 For each pending group:
 
