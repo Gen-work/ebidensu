@@ -42,6 +42,13 @@ param(
     [int]$HighlightColStart = 2,
     [int]$HighlightColEnd   = 51,
 
+    # true (default) = size the highlight to the target row's actual pasted
+    # text width instead of always filling to HighlightColEnd (see
+    # Get-AutoHighlightColEnd in ExcelHelpers.ps1). HighlightColEnd stays the
+    # upper bound either way.
+    [bool]$AutoWidth = $true,
+    [int]$PadCols = 1,
+
     [switch]$DryRun
 )
 
@@ -88,6 +95,12 @@ if (-not $helpersPath) { Write-Host '[ERROR] ExcelHelpers.ps1 not found.' -Foreg
 if (-not (Get-Command -Name 'Set-CellRangeFill' -ErrorAction SilentlyContinue)) {
     Write-Host '[ERROR] ExcelHelpers dot-source failed (Set-CellRangeFill not loaded).' -ForegroundColor Red; exit 1
 }
+# Needed by Get-TextPixelWidth (AutoWidth path of Invoke-GfixLogHighlight).
+# Missing/failed load degrades gracefully (AutoWidth falls back to the fixed
+# HighlightColEnd), but load it so AutoWidth actually works standalone too.
+try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch {
+    Write-Host ("[WARN] System.Drawing unavailable ({0}); AutoWidth will fall back to the fixed HighlightColEnd." -f $_.Exception.Message) -ForegroundColor Yellow
+}
 
 # -- Sheet name -----------------------------------------------
 $sheetGfixRecv = "GFIX" + [char]0x53D7 + [char]0x4FE1 + [char]0x7D50 + [char]0x679C  # GFIX受信結果
@@ -122,7 +135,7 @@ Write-Host ("  Mapping   : {0}" -f $mappingPath)
 Write-Host ("  Sheet     : {0}" -f $sheetGfixRecv)
 Write-Host ("  Anchor    : {0}" -f $LogAnchor)
 Write-Host ("  Pattern   : {0}" -f $CommandPattern)
-Write-Host ("  HighlightCol: {0}..{1}" -f $HighlightColStart, $HighlightColEnd)
+Write-Host ("  HighlightCol: {0}..{1}  AutoWidth: {2}  PadCols: {3}" -f $HighlightColStart, $HighlightColEnd, $AutoWidth, $PadCols)
 Write-Host ("  Force     : {0}" -f $forceFlag)
 Write-Host ("  DryRun    : {0}" -f $dryFlag)
 if ($targetSet.Count -gt 0) { Write-Host ("  TargetIds : {0}" -f (($targetSet.Keys | Sort-Object) -join ', ')) }
@@ -189,7 +202,8 @@ try {
             } else {
                 $hl = Invoke-GfixLogHighlight -ws $ws -LogAnchor $LogAnchor `
                     -CommandPattern $CommandPattern -HighlightColor $HighlightColor `
-                    -ColStart $HighlightColStart -ColEnd $HighlightColEnd
+                    -ColStart $HighlightColStart -ColEnd $HighlightColEnd `
+                    -AutoWidth $AutoWidth -PadCols $PadCols
                 foreach ($w in @($hl.Warnings)) { Write-Host ("  [WARN] {0}" -f $w) -ForegroundColor Yellow }
                 Write-Host ("  highlights applied: {0} (anchors: {1})" -f $hl.Applied, $hl.Anchors) -ForegroundColor DarkGray
                 $wb.Save()

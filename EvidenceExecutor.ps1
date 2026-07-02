@@ -48,7 +48,10 @@ function Invoke-EvidencePlan {
         [string]$LogDir = '',
         [int]$StartRow = 3,
         [int]$Col = 2,
-        [string]$GiftNoGfixLabelOverride = ''
+        [string]$GiftNoGfixLabelOverride = '',
+        # Font forced onto every pasted GFIX log line (e.g. 'MS Gothic').
+        # Blank -> leave the workbook's default font untouched.
+        [string]$GfixLogFontName = ''
     )
     $anchor = $StartRow
     $inserted = 0
@@ -119,7 +122,7 @@ function Invoke-EvidencePlan {
                     Write-Host ("    [MISS-REQ] gfix log for {0}: {1}" -f $op.CorrelIdS, $res.Error) -ForegroundColor Red
                     $anchor++
                 } else {
-                    $anchor = Write-LogLines $Worksheet $anchor $Col $res.Chosen.Lines
+                    $anchor = Write-LogLines $Worksheet $anchor $Col $res.Chosen.Lines $GfixLogFontName
                     $logMatched++
                     Write-Host ("    [OK]  gfix log for {0}: {1} line(s)" -f $op.CorrelIdS, $res.Chosen.Lines.Count) -ForegroundColor DarkGreen
                 }

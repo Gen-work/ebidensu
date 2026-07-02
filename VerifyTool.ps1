@@ -1468,6 +1468,9 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if (-not [string]::IsNullOrWhiteSpace([string]$Config.Replace.GfixLogTodoText)) {
                 $args['GfixLogTodoText'] = [string]$Config.Replace.GfixLogTodoText
             }
+            if ($Config.Replace.ContainsKey('GfixLogFontName')) {
+                $args['GfixLogFontName'] = [string]$Config.Replace.GfixLogFontName
+            }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }
@@ -1588,6 +1591,8 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($Config.GfixLog.HighlightColor)    { $args['HighlightColor']    = [long]$Config.GfixLog.HighlightColor }
             if ($Config.GfixLog.HighlightColStart) { $args['HighlightColStart'] = [int]$Config.GfixLog.HighlightColStart }
             if ($Config.GfixLog.HighlightColEnd)   { $args['HighlightColEnd']   = [int]$Config.GfixLog.HighlightColEnd }
+            if ($Config.GfixLog.ContainsKey('AutoHighlightWidth')) { $args['AutoWidth'] = [bool]$Config.GfixLog.AutoHighlightWidth }
+            if ($Config.GfixLog.HighlightPadCols)  { $args['PadCols']            = [int]$Config.GfixLog.HighlightPadCols }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force)  { $args['Force']  = $true }
@@ -1615,6 +1620,8 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($Config.Mark.Boxes)      { $args['BoxesConfig'] = $Config.Mark.Boxes }
             if ($Config.Mark.NamePrefix) { $args['NamePrefix']  = [string]$Config.Mark.NamePrefix }
             if ($Config.Mark.LineWeight) { $args['LineWeight']  = [double]$Config.Mark.LineWeight }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Mark.TemplateDir)) { $args['TemplateDir'] = [string]$Config.Mark.TemplateDir }
+            if ($Config.Mark.ImageMatch -and $Config.Mark.ImageMatch.Tolerance) { $args['ImageMatchTolerance'] = [int]$Config.Mark.ImageMatch.Tolerance }
         }
         if ($mode -eq 'Gift' -and $Config.SnapVerify -and -not [string]::IsNullOrWhiteSpace([string]$Config.SnapVerify.NoGfixNoteColumn)) {
             $args['NoGfixNoteColumn'] = [string]$Config.SnapVerify.NoGfixNoteColumn
@@ -1627,6 +1634,8 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($Config.GfixLog.HighlightColor)    { $args['GfixLogHighlightColor'] = [long]$Config.GfixLog.HighlightColor }
             if ($Config.GfixLog.HighlightColStart) { $args['GfixLogColStart']       = [int]$Config.GfixLog.HighlightColStart }
             if ($Config.GfixLog.HighlightColEnd)   { $args['GfixLogColEnd']         = [int]$Config.GfixLog.HighlightColEnd }
+            if ($Config.GfixLog.ContainsKey('AutoHighlightWidth')) { $args['GfixLogAutoWidth'] = [bool]$Config.GfixLog.AutoHighlightWidth }
+            if ($Config.GfixLog.HighlightPadCols)  { $args['GfixLogPadCols']         = [int]$Config.GfixLog.HighlightPadCols }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }

@@ -55,7 +55,13 @@ param(
     # Kept for VerifyTool back-compat; the bold log header is now the
     # standard ProjectLabels 'GfixLogLabel' so these are unused.
     [string]$GfixLogLabel = '',
-    [string]$GfixLogTodoText = ''
+    [string]$GfixLogTodoText = '',
+
+    # Font forced onto every pasted GFIX receive-log line. Defaults to
+    # 'MS Gothic' (fixed-width; matches the source log's own formatting) so
+    # the log paste looks right even with no config override. Blank ->
+    # leave the workbook's default font untouched.
+    [string]$GfixLogFontName = 'MS Gothic'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -121,6 +127,7 @@ Write-Host ("===== ReplaceEvidence ({0}) =====" -f $Mode) -ForegroundColor Green
 Write-Host ("  WorkDir  : {0}" -f $WorkDir)
 Write-Host ("  Sheet    : {0}" -f $modeCfg.Sheet)
 Write-Host ("  Bit      : {0}   Force: {1}   AllowMissingNoGfix: {2}" -f $modeCfg.Bit, $forceFlag, $allowNoGfixFlag)
+if ($Mode -eq 'Gfix') { Write-Host ("  GfixLogFontName: {0}" -f $(if ([string]::IsNullOrWhiteSpace($GfixLogFontName)) { '(workbook default)' } else { $GfixLogFontName })) }
 Write-Host ''
 
 if (-not (Test-Path -LiteralPath $mappingPath)) { Write-Host "[ERROR] mapping not found: $mappingPath" -ForegroundColor Red; exit 1 }
@@ -233,7 +240,8 @@ try {
                 }
 
                 $exec = Invoke-EvidencePlan -Worksheet $ws -Plan $plan -Labels $labels `
-                            -LogDir $logDir -StartRow 3 -Col 2 -GiftNoGfixLabelOverride $GiftNoGfixLabel
+                            -LogDir $logDir -StartRow 3 -Col 2 -GiftNoGfixLabelOverride $GiftNoGfixLabel `
+                            -GfixLogFontName $GfixLogFontName
 
                 foreach ($w in @($exec.Warnings)) { Write-Host ("  [WARN] {0}" -f $w) -ForegroundColor Yellow }
 

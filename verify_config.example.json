@@ -23,6 +23,15 @@
   "CheckSheet": { "Path": "", "SheetName": "Check Sheet_J4", "Language": "JAVA" },
   "Reviewer":   { "DisplayName": "", "Address": "", "ShortName": "" },
 
+  "Replace": {
+    "GfixLogFontName": "MS Gothic"
+  },
+
+  "GfixLog": {
+    "AutoHighlightWidth": true,
+    "HighlightPadCols": 1
+  },
+
   "Df": {
     "ExePath": "",
     "DefaultExePath": "C:\\tools\\DF\\DF.exe",
@@ -49,6 +58,9 @@
       "GFIX_HM":      [ { "OffsetX": 395.3, "OffsetY": 189.2, "Width": 62.2,  "Height": 16.5 } ],
       "GFIX_Jenkins": [ { "OffsetX": 301.5, "OffsetY": 282.0, "Width": 288.8, "Height": 18.8 } ],
       "DF":           [ { "CellCols": "AW:BC", "RowsFromBottom": 2 } ]
-    }
+    },
+    "_TemplateExample": "Add \"Template\": \"gift_hm_status.png\" (+ optional Tolerance/PadX/PadY) to a Boxes entry to try image-recognition placement first, falling back to OffsetX/OffsetY/Width/Height above when no match is found. See mark_templates/README.txt.",
+    "TemplateDir": "",
+    "ImageMatch": { "Tolerance": 15 }
   }
 }
