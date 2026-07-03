@@ -47,6 +47,15 @@ param(
     [string]$TemplateDir = '',
     [int]$ImageMatchTolerance = 15,
 
+    # Optional stamp image inserted next to a 'verifyNote' annotation (see
+    # EvidenceExecutor.ps1 -> Set-ShapeMetadata 'verifyNote'), keyed by the
+    # note's Folder value (currently only 'GIFT_noGfixfile', the F4/M6
+    # past-data annotation). Each entry: @{ Image; Column; RowOffset }.
+    # Reuses the pixel rect already carried in the verifyNote payload (from
+    # the snap-time <correl>.loc.json / .note.json sidecars) instead of
+    # re-scanning the source PNG at Mark time. Empty/missing key = no stamp.
+    [hashtable]$NoteStampConfig = @{},
+
     # GFIX log yellow-highlight settings. Folded in from the old standalone
     # MarkGfixLog phase: in -Mode Gfix the log "Command:" row is highlighted in
     # the same pass that draws the red rectangles (one workbook open, one bit).
@@ -313,6 +322,9 @@ if ($templatedBoxCount -gt 0) {
         Write-Host '  [WARN] Locate-ByImage.ps1 not found -- image-match boxes will fall back to fixed offsets.' -ForegroundColor Yellow
     }
 }
+if ($Mode -eq 'Gift' -and $NoteStampConfig -and $NoteStampConfig.Count -gt 0) {
+    Write-Host ("  NoteStamps: {0}" -f (($NoteStampConfig.Keys | Sort-Object) -join ', ')) -ForegroundColor DarkGray
+}
 Write-Host ''
 
 if (-not (Test-Path -LiteralPath $mappingPath)) {
@@ -415,6 +427,45 @@ try {
                                 }
                                 $ws.Cells.Item($noteRow, $noteCol).Value2 = $pastData
                                 Write-Host ("  [NOTE] GIFT_noGfixfile {0,-12} L={1,6:0.0} T={2,6:0.0} W={3,5:0.0} H={4,5:0.0} {5}{6}" -f $cid, $left, $top, $bw, $bh, $NoGfixNoteColumn, $noteRow) -ForegroundColor Green
+
+                                # Optional stamp image (e.g. already_exists.png), keyed by the
+                                # note's Folder ('GIFT_noGfixfile') in -NoteStampConfig. Reuses
+                                # the same scaled $top this block already computed for the red
+                                # rectangle -- no re-scan of the source PNG needed. Best-effort:
+                                # a stamp failure only warns, it never fails the verifyNote mark.
+                                if ($NoteStampConfig -and $NoteStampConfig.ContainsKey($parts[0])) {
+                                    try {
+                                        $stampCfg = $NoteStampConfig[$parts[0]]
+                                        $stampImage = [string]$stampCfg.Image
+                                        $stampTplPath = Resolve-MarkTemplatePath -Template $stampImage -TemplateDir $TemplateDir
+                                        if ($null -eq $stampTplPath) {
+                                            Write-Host ("  [WARN] noteStamp image not found: {0}" -f $stampImage) -ForegroundColor Yellow
+                                        } else {
+                                            $stampCol = 'AF'
+                                            if (-not [string]::IsNullOrWhiteSpace([string]$stampCfg.Column)) { $stampCol = [string]$stampCfg.Column }
+                                            $stampRowOffset = 0
+                                            try { $stampRowOffset = [int]$stampCfg.RowOffset } catch {}
+
+                                            # $top is the row's pixel-scaled sheet Top; Get-RowAtOrBelow
+                                            # returns the row AFTER it (Top >= target), same off-by-one
+                                            # Get-PictureBottomRow corrects for -- so -1 lands ON the
+                                            # highlighted row itself (RowOffset=0 means "same row").
+                                            $stampStartScan = 1
+                                            try { $stampStartScan = [Math]::Max(1, [int]([Math]::Floor($top / 15.0))) } catch {}
+                                            $rowAfterTop = Get-RowAtOrBelow $ws $top $stampStartScan 0
+                                            $highlightRow = [Math]::Max(1, $rowAfterTop - 1)
+                                            $stampRow = [Math]::Max(1, $highlightRow + $stampRowOffset)
+                                            $stampColIdx = [int]$ws.Range(("{0}1" -f $stampCol)).Column
+
+                                            $stampPic = Insert-PictureBringToFront $ws $stampRow $stampColIdx $stampTplPath
+                                            try { $stampPic.Name = ("{0}verifyNoteStamp_{1}_0" -f $NamePrefix, $cid) } catch {}
+                                            $marksDrawn++
+                                            Write-Host ("  [STAMP] GIFT_noGfixfile {0,-12} {1}{2}" -f $cid, $stampCol, $stampRow) -ForegroundColor Green
+                                        }
+                                    } catch {
+                                        Write-Host ("  [WARN] noteStamp failed for {0}: {1}" -f $cid, $_.Exception.Message) -ForegroundColor Yellow
+                                    }
+                                }
                             } catch {
                                 Write-Host ("  [FAIL] verifyNote: {0}" -f $_.Exception.Message) -ForegroundColor Red
                                 $allOk = $false

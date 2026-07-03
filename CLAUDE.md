@@ -303,7 +303,37 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-02 v2.9.25)
+## Current state (last bump: 2026-07-03 v2.9.26)
+
+v2.9.26 (Mark: NoteStamp images on verifyNote annotations -- GIFT_noGfixfile):
+**Added** -- `Mark.NoteStamps` config: a new opt-in way to insert a whole
+stamp image (e.g. `already_exists.png`, dropped into `mark_templates/`) next
+to a `verifyNote` annotation instead of just the existing red rectangle +
+`SnapVerify.NoGfixNoteColumn` text. Keyed by the note's `Folder` value (the
+first `|` field of the AltText payload `EvidenceExecutor.ps1` stamps via
+`Set-ShapeMetadata 'verifyNote'`), so more note kinds can register a stamp
+later without touching `Mark.ps1`; only `GIFT_noGfixfile` (the F4/M6
+past-data hit) is wired today. Each entry is `@{ Image; Column; RowOffset }`
+(default `AF`, `RowOffset=0`). Implementation deliberately reuses the pixel
+rect the `verifyNote` payload already carries (sourced from the snap-time
+`<correl>.loc.json` / `.note.json` sidecars, M5/M6) instead of re-scanning
+the source PNG for the orange Ctrl+F highlight band a second time at Mark
+time -- the existing `Mark.ps1` verifyNote block already scales that rect's
+Top to a sheet-space Y (`$top`); this just also runs `Get-RowAtOrBelow` on
+it (with the same `-1` off-by-one correction `Get-PictureBottomRow` already
+established, since `Get-RowAtOrBelow` returns the row *after* the target
+pixel) to get an Excel row, then inserts the image at `(row + RowOffset,
+Column)` via a new `ExcelHelpers.ps1` `Insert-PictureBringToFront` (same
+shape as `Insert-PictureSendToBack` but `ZOrder(0)`, since a stamp must sit
+on top). The inserted picture is named `<NamePrefix>verifyNoteStamp_<correl>_0`
+so it is cleaned up by the existing `Remove-MarkShapes` idempotent-rerun pass
+like every other mark shape. A stamp failure (image not found, bad config)
+only warns -- it never fails the surrounding verifyNote mark or blocks
+`isMarked`. Threaded `VerifyConfig.psd1`/`verify_config.json` ->
+`VerifyTool.ps1` (`-Mode Gift` only, mirroring `NoGfixNoteColumn`) ->
+`Mark.ps1 -NoteStampConfig`. Static-checked only (no Windows/Excel in this
+dev environment) -- confirm the row math and stamp placement on an office PC
+once `already_exists.png` is added to `mark_templates/`.
 
 v2.9.25 (DeliverFiles unzip delivery; Review -J4; config field merge +
 _SCHEMA-based repair + InitConfig walker rework):

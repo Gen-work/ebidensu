@@ -148,6 +148,21 @@
             # Per-box 'Tolerance' overrides this.
             Tolerance = 15
         }
+        # Optional stamp images attached to a 'verifyNote' annotation instead
+        # of a per-picture Boxes entry -- keyed by the note's Folder value
+        # (the first '|' field of the AltText payload EvidenceExecutor.ps1
+        # stamps via Set-ShapeMetadata 'verifyNote'), so future note kinds can
+        # be added here later without touching Mark.ps1. Only 'GIFT_noGfixfile'
+        # (the F4/M6 past-data annotation) is wired today: -Mode Gift reuses
+        # the pixel rect already carried in that payload (from the snap-time
+        # <correl>.loc.json / .note.json sidecars) to find the highlighted
+        # row, then inserts Image at (that row + RowOffset, Column).
+        #   Image     : template filename (TemplateDir or <repo>\mark_templates)
+        #   Column    : column letter the stamp is inserted at
+        #   RowOffset : rows added to the highlighted row (0 = same row; may be negative)
+        NoteStamps = @{
+            'GIFT_noGfixfile' = @{ Image = 'already_exists.png'; Column = 'AF'; RowOffset = 0 }
+        }
     }
 
     Scripts = @{

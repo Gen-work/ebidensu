@@ -1,3 +1,40 @@
+## 2026-07-03 - Mark: NoteStamp images on verifyNote annotations (v2.9.26)
+
+### Added
+- **`Mark.NoteStamps`**: an opt-in way to insert a whole stamp image (e.g.
+  `already_exists.png`, dropped into `mark_templates/`) next to a
+  `verifyNote` annotation, alongside the existing red rectangle +
+  `SnapVerify.NoGfixNoteColumn` text note. Keyed by the note's `Folder`
+  value (the first `|` field of the AltText payload `EvidenceExecutor.ps1`
+  stamps via `Set-ShapeMetadata 'verifyNote'`), so future note kinds can
+  register a stamp later without touching `Mark.ps1`; only
+  `GIFT_noGfixfile` (the F4/M6 past-data hit) is wired today. Each entry:
+  `@{ Image; Column; RowOffset }` (default column `AF`, `RowOffset=0`).
+- Reuses the pixel rect already carried in the `verifyNote` payload (from
+  the snap-time `<correl>.loc.json` / `.note.json` sidecars, M5/M6) instead
+  of re-scanning the source PNG for the orange Ctrl+F highlight band a
+  second time at Mark time: the existing verifyNote block's scaled sheet-Y
+  (`$top`) is fed through `Get-RowAtOrBelow` (with the same `-1`
+  off-by-one correction `Get-PictureBottomRow` already uses, since
+  `Get-RowAtOrBelow` returns the row *after* the target pixel) to get an
+  Excel row, then the image is inserted at `(row + RowOffset, Column)`.
+- New `ExcelHelpers.ps1` `Insert-PictureBringToFront` (same shape as
+  `Insert-PictureSendToBack` but `ZOrder(0)`, since a stamp must sit on
+  top of the base screenshot). The inserted picture is named
+  `<NamePrefix>verifyNoteStamp_<correl>_0` so `Remove-MarkShapes` cleans
+  it up on every idempotent Mark re-run like any other mark shape. A
+  stamp failure (image not found, bad config) only warns; it never fails
+  the surrounding verifyNote mark or blocks `isMarked`.
+- Threaded `VerifyConfig.psd1` / `verify_config.json` -> `VerifyTool.ps1`
+  (`-Mode Gift` only, mirroring `NoGfixNoteColumn`) -> `Mark.ps1
+  -NoteStampConfig`. Documented in `mark_templates/README.txt` and
+  `ConfigOverlay.ps1`'s InitConfig readme text.
+
+### Notes
+- Static-checked only (no Windows/Excel in this dev environment); confirm
+  the row math and stamp placement on an office PC once `already_exists.png`
+  is added to `mark_templates/`.
+
 ## 2026-07-02 - DeliverFiles unzip delivery, Review -J4 option, config field merge + _SCHEMA repair + walker rework (v2.9.25)
 
 ### Added

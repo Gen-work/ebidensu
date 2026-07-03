@@ -245,6 +245,24 @@ function Insert-PictureSendToBack($ws, [int]$row, [int]$col, [string]$imgPath) {
     return $pic
 }
 
+function Insert-PictureBringToFront($ws, [int]$row, [int]$col, [string]$imgPath) {
+    <#
+    Insert an image at the top-left of (row, col), native size.
+    ZOrder = msoBringToFront (0) -- unlike Insert-PictureSendToBack, this is
+    for annotation stamps (e.g. Mark.ps1's verifyNote stamp overlay) that must
+    sit visibly on top of the base screenshot and any red-rectangle marks.
+    Returns the Shape object.
+    #>
+    if (-not (Test-Path -LiteralPath $imgPath)) {
+        throw ("Image not found: {0}" -f $imgPath)
+    }
+    $left = [double]$ws.Cells.Item($row, $col).Left
+    $top  = [double]$ws.Cells.Item($row, $col).Top
+    $pic = $ws.Shapes.AddPicture($imgPath, 0, -1, $left, $top, -1, -1)
+    try { $pic.ZOrder(0) | Out-Null } catch {}  # msoBringToFront
+    return $pic
+}
+
 function Write-PlainText($ws, [int]$row, [int]$col, [string]$text) {
     <#
     Write a plain-text label without bold / color / fill.
