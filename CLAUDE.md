@@ -328,9 +328,9 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-03 v2.9.28)
+## Current state (last bump: 2026-07-03 v2.9.29)
 
-v2.9.28 (FillCheckSheet: on-disk prefix fallback + CheckSheetPath remembered):
+v2.9.29 (FillCheckSheet: on-disk prefix fallback + CheckSheetPath remembered):
 **Fixed** -- (1) check-sheet column F (review target) could list a filename
 that didn't match the real workbook: `Resolve-ExcelPrefix` (mapping row's
 legacy `Excel_Prefix` column, else `Workbook.ExcelPrefix`) had no way to
@@ -360,6 +360,33 @@ value, format mirrored from the row above, equivalent to Ctrl+;). Static-
 checked only (no Windows/Excel in this dev environment) -- confirm the
 on-disk prefix fallback and the CheckSheetPath remember-once flow on an
 office PC.
+
+v2.9.28 (InitConfig: fix GetNewClosure() losing ConfigOverlay.ps1 functions
++ silent non-terminating failure):
+**Fixed** -- the first real Windows/PowerShell run of `-Phase InitConfig`
+threw `Get-ConfigOverlayJson`/`Get-ConfigOverlayReadmeText : ... Command
+NotFoundException`, then a `WriteAllText` `IOException` (verify_config.json
+open in another program), yet still printed `[OK] wrote/updated work-folder
+config overlay`. Root cause: the repair/full-snapshot writer (`$writeOverlay`,
+built via `{...}.GetNewClosure()`) is invoked from more than one call site
+(the direct non-interactive path and the `-Interactive` editor's save
+command), so it needs its own captured copy of `$dest`/`$dryRunFlag`/etc --
+but `GetNewClosure()` only snapshots *variables* from the defining scope into
+a detached session state; it does not carry over *functions*. `Get-Config
+OverlayJson`/`Get-ConfigOverlayReadmeText` only exist because `ConfigOverlay.
+ps1` is dot-sourced at the top of `VerifyTool.ps1`, so they were unreachable
+from inside the closure. The same detachment also silently dropped this
+script's `$ErrorActionPreference = 'Stop'` override (the closure's own scope
+falls back to PowerShell's true default `Continue`), turning both failures
+into non-terminating errors the closure just printed past. Fix: capture
+`Resolve-ToolPath $Config 'ConfigOverlay'` (a plain string, which
+`GetNewClosure()` DOES preserve) and re-dot-source it at the top of the
+closure body, and set `$ErrorActionPreference = 'Stop'` there too, so the
+functions always resolve and a real failure (e.g. a locked file) now stops
+and reports instead of limping on to a false `[OK]`. See CHANGELOG.md for
+the full writeup. No PowerShell in this dev environment to re-run
+`Tests\Run-Tests.ps1` -- confirm both the default repair path and
+`-Interactive` save on an office PC.
 
 v2.9.27 (Mark.Boxes: StampImage -- image-recognition-only stamp for
 GIFT_noGfixfile, no fixed-offset fallback):

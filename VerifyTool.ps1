@@ -1994,8 +1994,24 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         # losing the in-memory edits.
         $dryRunFlag  = [bool]$State.DryRun
         $workDirPath = [string]$State.WorkDir
+        # GetNewClosure() below snapshots VARIABLES from this scope into a
+        # detached session state, but it does NOT carry over functions -- so
+        # Get-ConfigOverlayJson/Get-ConfigOverlayReadmeText (only defined
+        # because ConfigOverlay.ps1 was dot-sourced at the top of this script)
+        # are unreachable from inside the closure, and the closure's detached
+        # scope also loses this script's $ErrorActionPreference = 'Stop'
+        # override (falls back to PowerShell's true default 'Continue'), so a
+        # CommandNotFoundException there is silently non-terminating and the
+        # closure limps on to print false [OK] lines. Capture the script PATH
+        # (a plain string, which GetNewClosure() does preserve) and
+        # re-dot-source it inside the closure body so the functions -- and a
+        # restored fail-fast $ErrorActionPreference -- are always available
+        # regardless of where/when the closure is invoked.
+        $configOverlayPath = Resolve-ToolPath $Config 'ConfigOverlay'
         $writeOverlay = {
             param([hashtable]$OverlayData)
+            $ErrorActionPreference = 'Stop'
+            . $configOverlayPath
             if ($dryRunFlag) {
                 Write-Host '  [dry-run] would write this overlay snapshot:' -ForegroundColor DarkGray
                 Write-Host (Get-ConfigOverlayJson $OverlayData)
