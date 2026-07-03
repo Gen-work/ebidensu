@@ -1,3 +1,41 @@
+## 2026-07-03 - InitConfig: fix GetNewClosure() losing ConfigOverlay.ps1 functions (v2.9.28)
+
+### Fixed
+- `-Phase InitConfig`'s repair/full-snapshot writer (`$writeOverlay`, built
+  via `{...}.GetNewClosure()` so it can be invoked from more than one call
+  site with its own captured `$dest`/`$dryRunFlag`/etc.) threw
+  `Get-ConfigOverlayJson`/`Get-ConfigOverlayReadmeText : ... 用語 ... 認識
+  されません` (`CommandNotFoundException`) on a real Windows/PowerShell run.
+  `GetNewClosure()` snapshots *variables* from the defining scope into a
+  detached session state, but does not carry over *functions* -- the two
+  `ConfigOverlay.ps1` functions only exist because that file is dot-sourced
+  at the top of `VerifyTool.ps1`, so they were unreachable from inside the
+  closure.
+- The same detachment silently dropped the script's top-level
+  `$ErrorActionPreference = 'Stop'` override -- the closure's own scope
+  falls back to PowerShell's true default `Continue` -- so the
+  `CommandNotFoundException`, and a real follow-on `WriteAllText`
+  `IOException` (verify_config.json open in another program), were both
+  non-terminating: the run printed `[OK] wrote/updated work-folder config
+  overlay` and `[OK] wrote config field guide` even though neither file was
+  written correctly.
+- Fix: capture `Resolve-ToolPath $Config 'ConfigOverlay'` (a plain string,
+  which `GetNewClosure()` DOES preserve) and re-dot-source it at the top of
+  the closure body -- this loads the functions into the closure's own
+  scope regardless of where/when it is invoked -- and set
+  `$ErrorActionPreference = 'Stop'` there too, so a real failure (e.g. a
+  locked destination file) now stops and reports instead of limping on to
+  a false `[OK]`.
+
+### Notes
+- Root-caused from an operator's actual console output on the first real
+  Windows/PowerShell exercise of the InitConfig repair path -- confirms the
+  repo's long-standing "static-checked only" caveat on InitConfig was
+  hiding this. No PowerShell in this dev environment to re-run
+  `Tests\Run-Tests.ps1`; confirm both the default (non-interactive) repair
+  path and the `-Interactive` editor's save on an office PC, including the
+  locked-file retry behavior in `Invoke-ConfigEditorSave`.
+
 ## 2026-07-03 - Mark.Boxes: StampImage image-recognition-only stamp (v2.9.27)
 
 ### Added
