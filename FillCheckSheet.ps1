@@ -20,6 +20,11 @@
 #   D (resource id)  : left blank
 #   E (kakunin phase): Phase      (J4 internal review label)
 #   F (review target): full evidence filename  <Workbook.ExcelPrefix>_<Excel_NAME>.xlsx
+#                      (if no prefix is configured/overridden, EvidenceDir is
+#                      checked for the real on-disk filename's prefix first --
+#                      see the Resolve-ExcelPrefix / Find-WorkbookByExcelName
+#                      block below -- so this never lists a bare name that
+#                      doesn't match the actual workbook.)
 #   G (tantou)       : Owner
 #   H (kakuninsha)   : Viewer     (reviewer short name)
 #   I (kanryou kibou-bi) / J~ : left blank
@@ -32,6 +37,7 @@ param(
     [string]$WorkDir = '',
     [string]$Owner = '',
     [string[]]$TargetIds = @(),
+    [string]$EvidenceDir = '',
 
     [string]$CheckSheetPath = '',
     [string]$ExcelPrefix = '',
@@ -128,13 +134,14 @@ function Apply-CheckSheetRows($ws, [object[]]$Candidates, [bool]$WriteCells) {
 
     $today    = (Get-Date).Date
     $todaySer = [double]$today.ToOADate()
+    $todayText = $today.ToString('yyyy/MM/dd')
     $nextNo   = $lastNo + 1
     $row      = $startRow
 
     foreach ($cand in $Candidates) {
         $target = [string]$cand.TargetFile
         if ((-not $forceFlag) -and $existing.ContainsKey($target.ToLower())) {
-            $summary.Add([pscustomobject]@{ Row = 0; No = ''; Target = $target; Action = 'skip (already listed)' })
+            $summary.Add([pscustomobject]@{ Row = 0; No = ''; Date = ''; Target = $target; Action = 'skip (already listed)' })
             continue
         }
 
@@ -163,7 +170,7 @@ function Apply-CheckSheetRows($ws, [object[]]$Candidates, [bool]$WriteCells) {
             try { $ws.Cells.Item($row, $ColViewer).Value2 = $Viewer } catch {}
         }
 
-        $summary.Add([pscustomobject]@{ Row = $row; No = $thisNo; Target = $target; Action = 'add' })
+        $summary.Add([pscustomobject]@{ Row = $row; No = $thisNo; Date = $todayText; Target = $target; Action = 'add' })
         $row++
     }
 
@@ -175,7 +182,7 @@ function Show-Plan([object[]]$Plan) {
     Write-Host '  Planned check-sheet rows:' -ForegroundColor Cyan
     foreach ($p in $Plan) {
         if ($p.Action -eq 'add') {
-            Write-Host ("    row {0,-4} No.{1,-4} {2}" -f $p.Row, $p.No, $p.Target) -ForegroundColor White
+            Write-Host ("    row {0,-4} No.{1,-4} {2,-10} {3}" -f $p.Row, $p.No, $p.Date, $p.Target) -ForegroundColor White
         } else {
             Write-Host ("    {0,-14} {1}" -f $p.Action, $p.Target) -ForegroundColor DarkGray
         }
@@ -186,6 +193,9 @@ if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Read-Host 'WorkDir path
 if (-not (Test-Path -LiteralPath $WorkDir)) {
     Write-Host "[ERROR] WorkDir not found: $WorkDir" -ForegroundColor Red; exit 1
 }
+
+if ([string]::IsNullOrWhiteSpace($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir 'evidence' }
+elseif (-not [System.IO.Path]::IsPathRooted($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir $EvidenceDir }
 
 $mappingPath = Join-Path $WorkDir ("mapping_{0}.csv" -f $Owner)
 if (-not (Test-Path -LiteralPath $mappingPath)) {
@@ -220,7 +230,24 @@ foreach ($r in $allRows) {
     if ([string]::IsNullOrWhiteSpace($name)) { continue }
     if ($seen.ContainsKey($name)) { continue }
     $seen[$name] = $true
-    $fullStem = Get-ExcelFullStem -Prefix (Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix) -Name $name
+    $prefix = Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix
+    if ([string]::IsNullOrWhiteSpace($prefix)) {
+        # Neither the mapping row (legacy Excel_Prefix) nor Workbook.ExcelPrefix
+        # gave a prefix. Before listing a bare, unprefixed name on the shared
+        # check sheet, check whether the real evidence file already carries
+        # one on disk (e.g. this row predates Workbook.ExcelPrefix being set,
+        # or the config simply isn't configured for this run) -- same
+        # bare-name lookup DeliverFiles already uses, just read the other way.
+        $onDisk = Find-WorkbookByExcelName -Dir $EvidenceDir -ExcelName $name
+        if ($null -ne $onDisk) {
+            $foundPrefix = Get-PrefixFromFilename -FileName (Split-Path $onDisk -Leaf) -Name $name
+            if (-not [string]::IsNullOrWhiteSpace($foundPrefix)) {
+                Write-Host ("  [INFO] no configured prefix for {0}; using prefix found on disk: {1}" -f $name, $foundPrefix) -ForegroundColor DarkGray
+                $prefix = $foundPrefix
+            }
+        }
+    }
+    $fullStem = Get-ExcelFullStem -Prefix $prefix -Name $name
     $candidates.Add([pscustomobject]@{ ExcelName = $name; TargetFile = (Get-ExcelDestLeaf $fullStem) })
 }
 if ($candidates.Count -eq 0) {
@@ -231,6 +258,7 @@ if ($candidates.Count -eq 0) {
 Write-Host ''
 Write-Host '===== FillCheckSheet =====' -ForegroundColor Green
 Write-Host ("  WorkDir    : {0}" -f $WorkDir)
+Write-Host ("  EvidenceDir: {0}" -f $EvidenceDir)
 Write-Host ("  CheckSheet : {0}" -f $CheckSheetPath)
 Write-Host ("  Sheet      : {0}" -f $SheetName)
 Write-Host ("  Candidates : {0}" -f $candidates.Count)
