@@ -1,3 +1,12 @@
+## 2026-07-03 - Document versioning policy and automation guidance (v2.9.30)
+
+### Added
+- Added `docs/Versioning.md` to document the repository version format, bump decision guide, changelog expectations, and a lightweight PowerShell-friendly release automation approach.
+- Linked the versioning policy from `README.md` and `CLAUDE.md` so operators and future LLM sessions can find the rule quickly.
+
+### Notes
+- Documentation-only change; no runtime behavior changed.
+
 ## 2026-07-03 - FillCheckSheet: on-disk prefix fallback + CheckSheetPath remembered (v2.9.29)
 
 ### Fixed

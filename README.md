@@ -9,6 +9,10 @@ Daily use:
 .\VerifyTool.ps1 -Help
 ```
 
+## Versioning
+
+Version numbers follow `MAJOR.MINOR.PATCH` and are recorded in `CHANGELOG.md` release headings. See `docs/Versioning.md` for bump rules and automation recommendations.
+
 ## AI 協働ワークフロー
 
 現場と自宅の環境間で安全にコードの差分を同期・更新するためのツールです。
