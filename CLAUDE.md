@@ -303,6 +303,31 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
+### Config overlay groups must track VerifyConfig.psd1
+
+`ConfigOverlay.ps1`'s `Get-ConfigOverlayGroups` is a second, hand-maintained
+index of `VerifyConfig.psd1`'s top-level sections (used by the `-Phase
+InitConfig -Interactive` grouped field walker and by
+`Get-ConfigOverlayReadmeText`). `New-ConfigOverlaySnapshot`/
+`Update-ConfigOverlayData` read `VerifyConfig.psd1` generically (every
+top-level key is captured and schema-repaired automatically), so a new
+top-level section written into `.psd1` is silently correct at the JSON/repair
+layer but invisible in the grouped editor and README until someone also adds
+it to a NAMED group in `Get-ConfigOverlayGroups` -- it stays reachable only
+via the catch-all `all` group, unlabeled. This actually happened:
+`SnapVerify` (added v2.9.4, a major feature spanning six changelog entries)
+had no named group until this was caught and fixed. **Whenever a phase gains
+a new top-level `VerifyConfig.psd1` config section, add it to the most
+relevant group in `Get-ConfigOverlayGroups` (and mention it under "Common
+fields" in `Get-ConfigOverlayReadmeText`) in the same change.**
+`Tests\Test-ConfigOverlay.ps1` has a schema-drift guard that fails the build
+when a snapshot field is reachable only via `all` -- run
+`Tests\Run-Tests.ps1` after any `VerifyConfig.psd1` structural change. That
+same test file also repairs a reduced copy of the REAL `VerifyConfig.psd1`
+defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
+repair never drops an operator value and never throws against the actual
+production config shape.
+
 ## Current state (last bump: 2026-07-03 v2.9.27)
 
 v2.9.27 (Mark.Boxes: StampImage -- image-recognition-only stamp for

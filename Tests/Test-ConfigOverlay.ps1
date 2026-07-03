@@ -208,4 +208,55 @@ foreach ($needed in @('intro','phase','snap','excel','wbs','path','mail','all'))
     Assert-True ($groupKeys -contains $needed) ("group exists: {0}" -f $needed)
 }
 
+# --- Schema-drift guard : every InitConfig snapshot field must be reachable
+#     from a NAMED editor group, not only the catch-all "all". Get-ConfigOverlayGroups
+#     is a hand-maintained index of VerifyConfig.psd1's sections; the
+#     JSON/repair layer (New-ConfigOverlaySnapshot / Update-ConfigOverlayData)
+#     picks up a new .psd1 top-level section automatically, but the grouped
+#     field walker and the README stay silent about it until someone also
+#     registers it here. This is what should have caught SnapVerify (added
+#     v2.9.4) sitting reachable only via "all" for many releases -- re-run
+#     this test after any VerifyConfig.psd1 structural change; a failure
+#     names the section(s) that still need a Get-ConfigOverlayGroups entry.
+$repoRoot   = Split-Path $here -Parent
+$realConfig = Import-PowerShellDataFile -LiteralPath (Join-Path $repoRoot 'VerifyConfig.psd1')
+$realSnapshot = New-ConfigOverlaySnapshot $realConfig
+
+$namedGroupTopKeys = @{}
+foreach ($g in @($groups | Where-Object { $_.Key -ne 'all' })) {
+    foreach ($p in @($g.Paths)) {
+        $namedGroupTopKeys[(([string]$p) -split '\.')[0]] = $true
+    }
+}
+$unreachable = @()
+foreach ($k in @($realSnapshot.Keys | Sort-Object)) {
+    if ($k -eq '_README' -or $k -eq '_SCHEMA') { continue }
+    if (-not $namedGroupTopKeys.ContainsKey([string]$k)) { $unreachable += [string]$k }
+}
+Assert-Equal '' ($unreachable -join ',') 'every real VerifyConfig.psd1 snapshot field is reachable from a named editor group'
+
+# --- Repair safety against the REAL VerifyConfig.psd1 shape (Mark.Boxes
+#     arrays-of-hashtables, PhaseOrder array, SnapVerify.Localize nested
+#     hashtable, etc.), not just hand-built fixtures -- confirms running
+#     -Phase InitConfig repair on a file that predates a whole section never
+#     throws, never drops an operator value, and re-adds exactly that section.
+$reducedSnapshot = @{}
+foreach ($k in @($realSnapshot.Keys)) {
+    if ($k -eq 'SnapVerify') { continue }
+    $reducedSnapshot[$k] = $realSnapshot[$k]
+}
+$existingBeforeSnapVerify = @{
+    DefaultOwner = 'op-set-value'
+    _SCHEMA      = @(Get-ConfigSchemaPaths $reducedSnapshot)
+}
+$realRepair = Update-ConfigOverlayData -Existing $existingBeforeSnapVerify -Defaults $realSnapshot
+Assert-True (-not [bool]$realRepair.Stamped) 'real-defaults repair treats a pre-stamped file as already stamped, not stamp-less'
+Assert-Equal 'op-set-value' $realRepair.Data['DefaultOwner'] 'real-defaults repair keeps the operator value untouched'
+Assert-True ($realRepair.Data.ContainsKey('SnapVerify')) 'real-defaults repair re-adds a whole section the file predates'
+Assert-True (@($realRepair.Added) -contains 'SnapVerify.Enabled') 'added-fields list names the real SnapVerify.Enabled leaf path'
+
+$secondPass = Update-ConfigOverlayData -Existing $realRepair.Data -Defaults $realSnapshot
+Assert-Equal 0 (@($secondPass.Added).Count) 'repairing twice in a row against real defaults is idempotent'
+Assert-Equal 'op-set-value' $secondPass.Data['DefaultOwner'] 'second repair pass still keeps the operator value'
+
 exit (Complete-Tests)
