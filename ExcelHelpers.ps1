@@ -245,6 +245,23 @@ function Insert-PictureSendToBack($ws, [int]$row, [int]$col, [string]$imgPath) {
     return $pic
 }
 
+function Insert-PictureAtPointBringToFront($ws, [double]$left, [double]$top, [string]$imgPath) {
+    <#
+    Insert an image at absolute sheet (left, top) points, native size,
+    ZOrder = msoBringToFront (0). Same shape as Add-RedRectangle (raw point
+    coordinates, e.g. an image-match hit already scaled to sheet space) but
+    for a whole picture instead of a rectangle -- used by Mark.ps1's
+    Mark.Boxes 'StampImage' (image-recognition-placed stamp, no cell lookup).
+    Returns the Shape object.
+    #>
+    if (-not (Test-Path -LiteralPath $imgPath)) {
+        throw ("Image not found: {0}" -f $imgPath)
+    }
+    $pic = $ws.Shapes.AddPicture($imgPath, 0, -1, $left, $top, -1, -1)
+    try { $pic.ZOrder(0) | Out-Null } catch {}  # msoBringToFront
+    return $pic
+}
+
 function Insert-PictureBringToFront($ws, [int]$row, [int]$col, [string]$imgPath) {
     <#
     Insert an image at the top-left of (row, col), native size.

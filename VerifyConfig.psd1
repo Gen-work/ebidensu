@@ -128,12 +128,27 @@
         #               絶対/相対パスも可。
         #   Tolerance : このボックスだけの許容誤差上書き (既定 ImageMatch.Tolerance)
         #   PadX/PadY : 一致した領域の左右/上下に加える余白 (px, 既定 0)
+        #
+        # StampImage方式（任意、Templateとの組み合わせ専用）：矩形の代わりに、
+        # Templateが一致した箇所（スケール済みシート座標）に画像そのものを
+        # 等倍で貼り付ける。フォールバックのOffsetX/OffsetYは無い -- 一致しない
+        # 場合は「対象が見つからなかった」とみなして何も貼らない（例：
+        # GIFT_noGfixfile で過去分データが実際に存在するときだけ検出用テンプレート
+        # がヒットし、その位置に already_exists.png を貼る／ヒットしなければ
+        # 何もしない＝通常の「該当ファイルなし」ケース）。
+        #   StampImage : 貼り付ける画像ファイル名 (TemplateDir または
+        #                <repo>\mark_templates を検索)
         Boxes = @{
             'excel'           = @()
             'GIFT_HM'         = @( @{ OffsetX = 395.3; OffsetY = 189.2; Width = 62.2; Height = 16.5 } )
             'GIFT_MQ'         = @( @{ OffsetX = 167.9; OffsetY = 176.9; Width = 528.8; Height = 63 } )
             'GIFT_Jenkins'    = @( @{ OffsetX = 301.5; OffsetY = 282.0; Width = 288.8; Height = 18.8 } )
-            'GIFT_noGfixfile' = @()
+            # Image-recognition-only stamp: when the NoGfixHit.png pattern (a
+            # crop of what a past-data "hit" looks like on the Jenkins list
+            # page) is found on the source snap PNG, already_exists.png is
+            # inserted at that location; no match = no stamp (see StampImage
+            # note above). Both files must be added to mark_templates/ first.
+            'GIFT_noGfixfile' = @( @{ Template = 'NoGfixHit.png'; StampImage = 'already_exists.png' } )
             'GFIX_HM'         = @( @{ OffsetX = 395.3; OffsetY = 189.2; Width = 62.2; Height = 16.5 } )
             'GFIX_Jenkins'    = @( @{ OffsetX = 301.5; OffsetY = 282.0; Width = 288.8; Height = 18.8 } )
             'DF'              = @( @{ CellCols = 'AW:BC'; RowsFromBottom = 2 } )

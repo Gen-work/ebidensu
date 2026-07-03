@@ -303,7 +303,39 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-03 v2.9.26)
+## Current state (last bump: 2026-07-03 v2.9.27)
+
+v2.9.27 (Mark.Boxes: StampImage -- image-recognition-only stamp for
+GIFT_noGfixfile, no fixed-offset fallback):
+**Added** -- a `StampImage` key usable alongside `Template` on any
+`Mark.Boxes` entry: when the `Template` crop matches on the source snap PNG
+(via the existing `Locate-ByImage.ps1` LockBits scan, same as the plain
+Template box path), `StampImage` is inserted (native size, `ZOrder`
+bring-to-front) at the matched+scaled location instead of a red rectangle.
+Deliberately has NO `OffsetX/OffsetY` fallback -- unlike a plain Template
+box, where "no match" falls back to a fixed guess, a StampImage box's whole
+point is "only appear when the target pattern is actually found"; no match
+means nothing is drawn at all (`[SKIP-STAMP]` in the console, not a
+warning). New `ExcelHelpers.ps1` `Insert-PictureAtPointBringToFront` (same
+raw-point-coordinate shape as `Add-RedRectangle`, but for a whole picture).
+Wired the default `Mark.Boxes.GIFT_noGfixfile` (was `@()`) to
+`@{ Template = 'NoGfixHit.png'; StampImage = 'already_exists.png' }` --
+this is a simpler, self-contained alternative to v2.9.26's `Mark.NoteStamps`
+for the same past-data-hit use case: it runs directly against the source
+snap PNG via live template matching, with no dependency on
+`SnapVerify.Localize.Enabled` being on or a `.note.json` sidecar existing
+(both of which are off/absent by default, which is why NoteStamps alone
+never fired for the operator in practice). Both mechanisms coexist --
+NoteStamps still applies when a `verifyNote` payload exists; StampImage
+applies to the plain-metadata `GIFT_noGfixfile` pictures that are the common
+case. Inserted stamps are named `<NamePrefix><folder>_<correl>_<idx>` so
+`Remove-MarkShapes` cleans them up on every idempotent Mark re-run like any
+other mark shape. Documented in `mark_templates/README.txt`,
+`ConfigOverlay.ps1`'s InitConfig readme text, and `verify_config.example.json`.
+Static-checked only (no Windows/Excel in this dev environment) -- needs a
+real `NoGfixHit.png` crop (from an actual past-data-hit screenshot) and
+`already_exists.png` dropped into `mark_templates/` before this does
+anything on an office PC.
 
 v2.9.26 (Mark: NoteStamp images on verifyNote annotations -- GIFT_noGfixfile):
 **Added** -- `Mark.NoteStamps` config: a new opt-in way to insert a whole

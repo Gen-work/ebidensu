@@ -322,6 +322,18 @@ if ($templatedBoxCount -gt 0) {
         Write-Host '  [WARN] Locate-ByImage.ps1 not found -- image-match boxes will fall back to fixed offsets.' -ForegroundColor Yellow
     }
 }
+
+# StampImage summary: boxes that insert an image at a Template match instead
+# of a rectangle (no match = no stamp; see the box loop below).
+$stampBoxCount = 0
+foreach ($f in $modeCfg.Folders) {
+    foreach ($b in @($BoxesConfig[$f])) {
+        if ($b -is [hashtable] -and $b.ContainsKey('StampImage') -and -not [string]::IsNullOrWhiteSpace([string]$b.StampImage)) { $stampBoxCount++ }
+    }
+}
+if ($stampBoxCount -gt 0) {
+    Write-Host ("  StampImage: {0} box(es) configured (image-recognition only, no fixed-offset fallback)" -f $stampBoxCount) -ForegroundColor DarkGray
+}
 if ($Mode -eq 'Gift' -and $NoteStampConfig -and $NoteStampConfig.Count -gt 0) {
     Write-Host ("  NoteStamps: {0}" -f (($NoteStampConfig.Keys | Sort-Object) -join ', ')) -ForegroundColor DarkGray
 }
@@ -489,6 +501,46 @@ try {
                         $lw = $LineWeight
                         if ($b.ContainsKey('LineWeight')) {
                             try { $lw = [double]$b.LineWeight } catch {}
+                        }
+
+                        # Stamp-image boxes (opt-in via 'StampImage'): pure image-
+                        # recognition, no fixed-offset fallback. Requires 'Template'
+                        # on the same box; when the template is found on the source
+                        # snap PNG, StampImage is inserted (native size) at the
+                        # matched+scaled location instead of a red rectangle. No
+                        # match = nothing to stamp -- this box's whole point is
+                        # "only appear when the target pattern is actually found"
+                        # (e.g. GIFT_noGfixfile: a visible past-data hit vs. the
+                        # normal no-file-found case), so there is deliberately no
+                        # OffsetX/OffsetY fallback here.
+                        if ($b.ContainsKey('StampImage')) {
+                            $stampImageName = [string]$b.StampImage
+                            $imgHit = Find-MarkBoxByImage -Box $b -Folder $folder -Cid $cid -WorkDir $WorkDir `
+                                -TemplateDir $TemplateDir -DefaultTolerance $ImageMatchTolerance `
+                                -LocateScript $locateByImagePath -Shape $s
+                            if ($null -eq $imgHit) {
+                                Write-Host ("  [SKIP-STAMP] {0,-16} {1,-12} [{2,3}] no Template match -- nothing to stamp" -f $folder, $cid, $idx) -ForegroundColor DarkGray
+                                $idx++
+                                continue
+                            }
+                            $stampPath = Resolve-MarkTemplatePath -Template $stampImageName -TemplateDir $TemplateDir
+                            if ($null -eq $stampPath) {
+                                Write-Host ("  [WARN] StampImage not found: {0}" -f $stampImageName) -ForegroundColor Yellow
+                                $idx++
+                                continue
+                            }
+                            $name = ("{0}{1}_{2}_{3}" -f $NamePrefix, $folder, $cid, $idx)
+                            try {
+                                $stampPic = Insert-PictureAtPointBringToFront $ws $imgHit.Left $imgHit.Top $stampPath
+                                try { $stampPic.Name = $name } catch {}
+                                $marksDrawn++
+                                Write-Host ("  [STAMP-IMG] {0,-16} {1,-12} [{2,3}] L={3,6:0.0} T={4,6:0.0}" -f $folder, $cid, $idx, $imgHit.Left, $imgHit.Top) -ForegroundColor Green
+                            } catch {
+                                Write-Host ("  [FAIL] StampImage {0}: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
+                                $allOk = $false
+                            }
+                            $idx++
+                            continue
                         }
 
                         $left = 0.0; $top = 0.0; $bw = 100.0; $bh = 20.0
