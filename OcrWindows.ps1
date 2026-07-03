@@ -192,7 +192,7 @@ function Invoke-WinOcrDiag {
     $px = ''
     try {
         Add-Type -AssemblyName System.Drawing -ErrorAction Stop
-        $img = [System.Drawing.Image]::FromFile((Resolve-Path -LiteralPath $Path).Path)
+        $img = [System.Drawing.Image]::FromFile((Resolve-Path -LiteralPath $Path).ProviderPath)
         try { $px = ('{0}x{1}' -f [int]$img.Width, [int]$img.Height) } finally { $img.Dispose() }
     } catch {}
 
@@ -267,7 +267,7 @@ function Invoke-WinOcrFile {
         throw ("no OCR recognizer language available (requested '{0}'; installed: {1})" -f $LanguageTag, ((Get-WinOcrLanguageTags) -join ', '))
     }
 
-    $full = (Resolve-Path -LiteralPath $Path).Path
+    $full = (Resolve-Path -LiteralPath $Path).ProviderPath
     $file = Wait-WinOcrOperation ([Windows.Storage.StorageFile]::GetFileFromPathAsync($full)) ([Windows.Storage.StorageFile])
     $stream = Wait-WinOcrOperation ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
     try {

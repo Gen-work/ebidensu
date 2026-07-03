@@ -54,7 +54,7 @@ $candidates += (Join-Path $PSScriptRoot 'ExcelHelpers.ps1')
 $helpersPath = $null
 foreach ($c in $candidates) {
     if (-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c)) {
-        $helpersPath = (Resolve-Path -LiteralPath $c).Path; break
+        $helpersPath = (Resolve-Path -LiteralPath $c).ProviderPath; break
     }
 }
 if (-not $helpersPath) { Write-Host '[ERROR] ExcelHelpers.ps1 not found.' -ForegroundColor Red; exit 1 }

@@ -104,7 +104,7 @@ $candidates += @(
 $helpersPath = $null
 foreach ($c in $candidates) {
     if (-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c)) {
-        $helpersPath = (Resolve-Path -LiteralPath $c).Path; break
+        $helpersPath = (Resolve-Path -LiteralPath $c).ProviderPath; break
     }
 }
 if (-not $helpersPath) { Write-Host '[ERROR] ExcelHelpers.ps1 not found.' -ForegroundColor Red; exit 1 }
@@ -133,12 +133,12 @@ function Resolve-MarkTemplatePath {
     #>
     param([string]$Template, [string]$TemplateDir)
     if ([string]::IsNullOrWhiteSpace($Template)) { return $null }
-    if (Test-Path -LiteralPath $Template) { return (Resolve-Path -LiteralPath $Template).Path }
+    if (Test-Path -LiteralPath $Template) { return (Resolve-Path -LiteralPath $Template).ProviderPath }
     $candidates = @()
     if (-not [string]::IsNullOrWhiteSpace($TemplateDir)) { $candidates += (Join-Path $TemplateDir $Template) }
     $candidates += (Join-Path (Join-Path $PSScriptRoot 'mark_templates') $Template)
     foreach ($c in $candidates) {
-        if (Test-Path -LiteralPath $c) { return (Resolve-Path -LiteralPath $c).Path }
+        if (Test-Path -LiteralPath $c) { return (Resolve-Path -LiteralPath $c).ProviderPath }
     }
     return $null
 }

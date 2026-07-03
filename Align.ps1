@@ -65,7 +65,7 @@ $applyFlag = -not $diffFlag
 # dot-source ExcelHelpers + shared libs
 $helpersPath = $null
 foreach ($c in @($ExcelHelpersScript, (Join-Path $PSScriptRoot 'ExcelHelpers.ps1'))) {
-    if (-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c)) { $helpersPath = (Resolve-Path -LiteralPath $c).Path; break }
+    if (-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c)) { $helpersPath = (Resolve-Path -LiteralPath $c).ProviderPath; break }
 }
 if (-not $helpersPath) { Write-Host '[ERROR] ExcelHelpers.ps1 not found.' -ForegroundColor Red; exit 1 }
 . $helpersPath

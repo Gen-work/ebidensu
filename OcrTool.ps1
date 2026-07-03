@@ -94,7 +94,7 @@ $images = @(Get-OcrImageList $Path)
 if (-not [string]::IsNullOrWhiteSpace($Workbook)) {
     . (Join-Path $PSScriptRoot 'EvidenceImageExport.ps1')
     if (-not (Test-Path -LiteralPath $Workbook)) { throw "workbook not found: $Workbook" }
-    $wbFull = (Resolve-Path -LiteralPath $Workbook).Path
+    $wbFull = (Resolve-Path -LiteralPath $Workbook).ProviderPath
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($wbFull)
     $exportDir = $OutDir
     if ([string]::IsNullOrWhiteSpace($exportDir)) {
