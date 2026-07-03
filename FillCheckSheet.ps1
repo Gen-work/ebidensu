@@ -70,7 +70,7 @@ $dryRunFlag = [bool]$DryRun.IsPresent
 $helpersPath = $null
 foreach ($c in @($ExcelHelpersScript, (Join-Path $PSScriptRoot 'ExcelHelpers.ps1'))) {
     if (-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c)) {
-        $helpersPath = (Resolve-Path -LiteralPath $c).Path; break
+        $helpersPath = (Resolve-Path -LiteralPath $c).ProviderPath; break
     }
 }
 if (-not $helpersPath) {
@@ -202,7 +202,7 @@ if ([string]::IsNullOrWhiteSpace($CheckSheetPath) -or -not (Test-Path -LiteralPa
 if ([string]::IsNullOrWhiteSpace($CheckSheetPath) -or -not (Test-Path -LiteralPath $CheckSheetPath)) {
     Write-Host "[ERROR] check sheet not found: $CheckSheetPath" -ForegroundColor Red; exit 1
 }
-$CheckSheetPath = (Resolve-Path -LiteralPath $CheckSheetPath).Path
+$CheckSheetPath = (Resolve-Path -LiteralPath $CheckSheetPath).ProviderPath
 
 $targets = @(ConvertTo-TargetIdList $TargetIds)
 
@@ -252,22 +252,9 @@ try {
     # blank (no name, no rows/columns) even though the content is correct.
     try { $excel.ScreenUpdating = $true } catch {}
 
-    # -- DryRun: compute on a read-only open of the original, no writes --
-    if ($dryRunFlag) {
-        $wbRo = $excel.Workbooks.Open($CheckSheetPath, 0, $true)   # ReadOnly
-        try {
-            $wsRo = Get-SheetByName $wbRo $SheetName
-            if ($null -eq $wsRo) { Write-Host ("[ERROR] sheet not found: {0}" -f $SheetName) -ForegroundColor Red; return }
-            $plan = Apply-CheckSheetRows $wsRo $candidates.ToArray() $false
-            Show-Plan $plan
-            Write-Host '  [DRY RUN] nothing written.' -ForegroundColor Yellow
-        } finally {
-            try { $wbRo.Close($false) } catch {}
-        }
-        return
-    }
-
-    # Map temp drive for long UNC paths (PS5.1 MAX_PATH workaround)
+    # Map temp drive for long UNC paths (PS5.1 MAX_PATH workaround). Applies
+    # to both the DryRun read-only open and the real one below -- a long
+    # check-sheet UNC path fails the same way in either mode.
     function Get-FreeDriveLetter {
         $used = @(Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Name) + @('A','B','C')
         foreach ($l in 'Z','Y','X','W','V','U','T','S','R','Q','P') {
@@ -292,6 +279,21 @@ try {
                 Write-Host ("  [WARN] net use failed: {0}" -f ($netOut -join ' ')) -ForegroundColor Yellow
             }
         }
+    }
+
+    # -- DryRun: compute on a read-only open of the original, no writes --
+    if ($dryRunFlag) {
+        $wbRo = $excel.Workbooks.Open($effectivePath, 0, $true)   # ReadOnly
+        try {
+            $wsRo = Get-SheetByName $wbRo $SheetName
+            if ($null -eq $wsRo) { Write-Host ("[ERROR] sheet not found: {0}" -f $SheetName) -ForegroundColor Red; return }
+            $plan = Apply-CheckSheetRows $wsRo $candidates.ToArray() $false
+            Show-Plan $plan
+            Write-Host '  [DRY RUN] nothing written.' -ForegroundColor Yellow
+        } finally {
+            try { $wbRo.Close($false) } catch {}
+        }
+        return
     }
 
     $wbCs = $excel.Workbooks.Open($effectivePath)

@@ -215,7 +215,7 @@ function Resolve-ToolPath([hashtable]$Config, [string]$ScriptKey) {
     if ([string]::IsNullOrWhiteSpace($name)) { throw "Script key not configured: $ScriptKey" }
     $p = Join-Path $PSScriptRoot $name
     if (-not (Test-Path -LiteralPath $p)) { throw "Script not found: $p" }
-    return (Resolve-Path -LiteralPath $p).Path
+    return (Resolve-Path -LiteralPath $p).ProviderPath
 }
 
 function Load-Session([string]$Path) {
@@ -264,7 +264,7 @@ function Resolve-AlignJ4BaseDir([hashtable]$Config, [hashtable]$State) {
         [string]$State.CloneSourceDir
     )) {
         if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
-            return (Resolve-Path -LiteralPath $candidate).Path
+            return (Resolve-Path -LiteralPath $candidate).ProviderPath
         }
     }
     return ''

@@ -75,7 +75,7 @@ $candidates += (Join-Path $PSScriptRoot 'ExcelHelpers.ps1')
 $helpersPath = $null
 foreach ($c in $candidates) {
     if (-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c)) {
-        $helpersPath = (Resolve-Path -LiteralPath $c).Path
+        $helpersPath = (Resolve-Path -LiteralPath $c).ProviderPath
         break
     }
 }
