@@ -48,6 +48,46 @@ This needs a real Windows + Excel session with real HM/MQ/Jenkins screenshots
 to calibrate -- there is no Windows/Excel in the tool's dev environment, so
 this folder ships empty. See CLAUDE.md's TODO list for background.
 
+StampImage (image-recognition-only stamp, no fixed-offset fallback)
+---------------------------------------------------------------------
+Add a "StampImage" key ALONGSIDE "Template" on a Boxes entry to insert a
+whole image (native size) at the Template match location instead of drawing
+a rectangle. Unlike the plain Template box above, StampImage has NO
+OffsetX/OffsetY fallback: when the template does not match, nothing is
+inserted at all -- "no match" IS the answer (the target pattern genuinely
+isn't there), not a calibration miss to paper over with a fixed guess.
+
+This is the mechanism wired for GIFT_noGfixfile (F4, "no GFIX file expected"
+past-data check):
+
+    Mark.Boxes.GIFT_noGfixfile = @( @{ Template = 'NoGfixHit.png'; StampImage = 'already_exists.png' } )
+
+1. NoGfixHit.png: crop a SMALL, visually distinctive region from a real
+   GIFT_noGfixfile snap screenshot (<WorkDir>\snap\GIFT_noGfixfile\<correl>.png)
+   that ONLY appears when a past-data file was actually found on the Jenkins
+   list page (e.g. the file-list row / reference marker itself) -- the same
+   "small and unique" rule as any other Template crop. On the normal case
+   (no file found -- the expected, OK outcome) this pattern is simply absent
+   from the screenshot, so Locate-ByImage naturally returns no match and no
+   stamp is drawn; that is the correct behavior, not a failure.
+2. already_exists.png: the stamp image inserted (as-is, no scaling) at the
+   matched location when NoGfixHit.png IS found. This is the "past-data
+   exists" flag the operator sees on the evidence sheet.
+3. Both files go directly in this folder (or Mark.TemplateDir if set) --
+   same filename resolution as any other Template/StampImage value.
+4. Run `.\VerifyTool.ps1 -Phase MarkGift` and check the console:
+   [STAMP-IMG] = matched and stamped; [SKIP-STAMP] = no match, nothing drawn
+   (expected for every correl where no past-data file exists); [WARN] means
+   StampImage itself was not found even though the Template matched.
+5. Per-box Tolerance/PadX/PadY overrides work the same as plain Template
+   boxes (step 4 above).
+
+This is independent of -- and does not require -- Mark.NoteStamps below: it
+runs directly against the source snap PNG via Locate-ByImage, with no
+dependency on SnapVerify.Localize being enabled or a .note.json sidecar
+existing. Needs a real Windows + Excel session with a real past-data hit
+screenshot to calibrate NoGfixHit.png; ships without either PNG here.
+
 NoteStamps (verifyNote annotation stamp images)
 ------------------------------------------------
 This folder also holds stamp images for Mark.NoteStamps -- a SEPARATE opt-in

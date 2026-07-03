@@ -1,3 +1,34 @@
+## 2026-07-03 - Mark.Boxes: StampImage image-recognition-only stamp (v2.9.27)
+
+### Added
+- **`StampImage`**: a new key usable alongside `Template` on any
+  `Mark.Boxes` entry. When the `Template` crop matches on the source snap
+  PNG (`Locate-ByImage.ps1`, the existing LockBits scan used by plain
+  Template boxes), `StampImage` is inserted (native size, brought to front)
+  at the matched+scaled location instead of a red rectangle.
+- **Deliberately no fixed-offset fallback.** Unlike a plain Template box
+  (falls back to `OffsetX/OffsetY` on a miss), a `StampImage` box only ever
+  draws when the pattern is actually found -- a miss means nothing is
+  inserted (`[SKIP-STAMP]` in the console), because for this use case "not
+  found" is itself the correct, common outcome (no past-data file exists).
+- New `ExcelHelpers.ps1` `Insert-PictureAtPointBringToFront` (raw
+  point-coordinate insert, mirrors `Add-RedRectangle`'s shape but for a
+  whole picture).
+- Wired the default `Mark.Boxes.GIFT_noGfixfile` (previously `@()`) to
+  `@{ Template = 'NoGfixHit.png'; StampImage = 'already_exists.png' }`.
+
+### Notes
+- This is a simpler, self-contained alternative to v2.9.26's
+  `Mark.NoteStamps` for the same GIFT_noGfixfile past-data-hit annotation:
+  it runs directly against the source snap PNG via live template matching
+  and does not depend on `SnapVerify.Localize.Enabled` or a `.note.json`
+  sidecar -- both are off/absent by default, which is why `Mark.NoteStamps`
+  alone never actually fired in practice. Both mechanisms coexist without
+  conflict (they trigger on different shape-metadata paths).
+- Static-checked only (no Windows/Excel in this dev environment); needs a
+  real `NoGfixHit.png` crop and `already_exists.png` added to
+  `mark_templates/` before it does anything on an office PC.
+
 ## 2026-07-03 - Mark: NoteStamp images on verifyNote annotations (v2.9.26)
 
 ### Added
