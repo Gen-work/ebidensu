@@ -1,16 +1,16 @@
 # ============================================================
 # Locate-ByImage.ps1
 #
-# テンプレートマッチング (Template Matching) ツール。
-# 大きな画像 (Source) の中から、小さな画像 (Template) を探し出し、
-# 一致した領域のバウンディングボックス（ピクセル単位）を返す。
+# Template Matching tool.
+# Finds a small image (Template) inside a larger image (Source) and
+# returns the bounding box of the match, in pixels.
 #
-# WinRT/UWP 依存なし。純粋な .NET Framework (System.Drawing) と
-# LockBits メモリポインタアクセスを使用し、超高速（数十ms）で走査。
+# No WinRT/UWP dependency. Uses plain .NET Framework (System.Drawing) and
+# LockBits raw pointer access for a fast scan (tens of ms).
 #
-# 戻り値 (PSCustomObject):
-#   X, Y, Width, Height (画像上のピクセル座標)
-#   ※見つからない場合は $null
+# Return value (PSCustomObject):
+#   X, Y, Width, Height (pixel coordinates in the image)
+#   $null when no match is found
 #
 # Usage (Standalone Test):
 #   .\Locate-ByImage.ps1 -SourcePath "work\snap\GIFT_HM\JIDSC48S.png" -TemplatePath "work\anchor_hm.png"
@@ -27,7 +27,7 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$TemplatePath,
 
-    # ClearType 等の微小な色差を許容する範囲 (0 = 完全一致, 20 = 実用的なブレ許容)
+    # Tolerance for small color differences (e.g. ClearType); 0 = exact match, 20 = practical slack
     [int]$Tolerance = 15,
 
     [switch]$Quiet
@@ -37,7 +37,7 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
 
-# 1. C# 実行クラスのコンパイル (LockBits を用いた高速ピクセル走査)
+# 1. Compile the C# execution class (fast pixel scan via LockBits)
 $csharpCode = @"
 using System;
 using System.Drawing;
@@ -55,7 +55,7 @@ namespace VerifyTool.ImageUtils
             {
                 if (tpl.Width > src.Width || tpl.Height > src.Height) return null;
 
-                // 32bppArgb に統一してメモリ展開 (1ピクセル = 4バイト: B,G,R,A)
+                // Normalize to 32bppArgb (1 pixel = 4 bytes: B,G,R,A)
                 BitmapData srcData = src.LockBits(new Rectangle(0, 0, src.Width, src.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
                 BitmapData tplData = tpl.LockBits(new Rectangle(0, 0, tpl.Width, tpl.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
 
@@ -101,7 +101,7 @@ namespace VerifyTool.ImageUtils
                     int sIdx = srcRowOffset + (startX + tx) * 4;
                     int tIdx = tplRowOffset + tx * 4;
 
-                    // Alpha チャンネル(Index + 3) は無視し、B/G/R のみを比較
+                    // Ignore the Alpha channel (Index + 3); compare only B/G/R
                     if (Math.Abs(src[sIdx] - tpl[tIdx]) > tol ||         // Blue
                         Math.Abs(src[sIdx + 1] - tpl[tIdx + 1]) > tol || // Green
                         Math.Abs(src[sIdx + 2] - tpl[tIdx + 2]) > tol)   // Red
@@ -121,7 +121,7 @@ if (-not ([System.Management.Automation.PSTypeName]'VerifyTool.ImageUtils.Locato
     Add-Type -TypeDefinition $csharpCode -ReferencedAssemblies @("System.Drawing.dll") -ErrorAction Stop
 }
 
-# 2. パス解決と実行
+# 2. Resolve paths and run
 if (-not (Test-Path -LiteralPath $SourcePath))   { throw "Source image not found: $SourcePath" }
 if (-not (Test-Path -LiteralPath $TemplatePath)) { throw "Template image not found: $TemplatePath" }
 
