@@ -47,3 +47,21 @@ How to create a template
 This needs a real Windows + Excel session with real HM/MQ/Jenkins screenshots
 to calibrate -- there is no Windows/Excel in the tool's dev environment, so
 this folder ships empty. See CLAUDE.md's TODO list for background.
+
+NoteStamps (verifyNote annotation stamp images)
+------------------------------------------------
+This folder also holds stamp images for Mark.NoteStamps -- a SEPARATE opt-in
+feature from the Template box placement above. Instead of drawing a red
+rectangle, it inserts a whole image (e.g. already_exists.png) next to a
+'verifyNote' annotation (currently only the F4/M6 GIFT_noGfixfile past-data
+hit). It reuses the pixel rect already carried in that annotation's payload
+(from the snap-time <correl>.loc.json / .note.json sidecars) to find the
+highlighted Jenkins row -- no separate template match, no re-scanning the
+source PNG. Configure it in VerifyConfig.psd1 (or verify_config.json):
+
+    Mark.NoteStamps.GIFT_noGfixfile = @{ Image = 'already_exists.png'; Column = 'AF'; RowOffset = 0 }
+
+Image filenames resolve the same way Template does (Mark.TemplateDir first,
+then this folder). RowOffset shifts from the highlighted row (0 = same row).
+Drop already_exists.png here to enable it; leaving Mark.NoteStamps empty (or
+the key unset) disables the stamp with no other effect on Mark.

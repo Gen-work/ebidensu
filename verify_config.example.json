@@ -63,6 +63,9 @@
     },
     "_TemplateExample": "Add \"Template\": \"gift_hm_status.png\" (+ optional Tolerance/PadX/PadY) to a Boxes entry to try image-recognition placement first, falling back to OffsetX/OffsetY/Width/Height above when no match is found. See mark_templates/README.txt.",
     "TemplateDir": "",
-    "ImageMatch": { "Tolerance": 15 }
+    "ImageMatch": { "Tolerance": 15 },
+    "NoteStamps": {
+      "GIFT_noGfixfile": { "Image": "already_exists.png", "Column": "AF", "RowOffset": 0 }
+    }
   }
 }
