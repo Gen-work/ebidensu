@@ -537,11 +537,17 @@ function Show-PhaseNotes([string]$PhaseKey) {
         ) }
         '^CheckSheet$' { @(
             '  Phase params:',
-            '    k=CheckSheetPath -> review check sheet .xlsx (prompts if config path is missing)',
+            '    k=CheckSheetPath -> review check sheet .xlsx (prompts once if config path is',
+            '                        missing, then remembered in verify_session.json; set',
+            '                        CheckSheet.Path in verify_config.json to skip the prompt',
+            '                        permanently -- run -Phase InitConfig)',
             '    t=TargetIds      -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
             '    f=Force          -> add a row even if the Excel is already listed',
             '  NOTE: edits are previewed in a TEMP copy first; you press Enter to commit.',
-            '        If the real check sheet changes during the preview, the write is held.'
+            '        If the real check sheet changes during the preview, the write is held.',
+            '  NOTE: column F (review target) filename prefix comes from Workbook.ExcelPrefix',
+            '        / the mapping row''s legacy Excel_Prefix; if neither is set, the actual',
+            '        evidence file in EvidenceDir is checked for a prefix already on disk.'
         ) }
         '^DeliverMail$' { @(
             '  Phase params:',
@@ -1778,11 +1784,29 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args = $base.Clone()
         if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $args['ExcelHelpersScript'] = $eh
+        $args['EvidenceDir'] = $State.EvidenceDir
+        # Resolve the check-sheet path: State (CLI/session/menu 'k') wins, then
+        # config CheckSheet.Path. If still empty this is effectively a first
+        # run: prompt once here (not inside FillCheckSheet.ps1) and remember
+        # the answer in the session, same as DfExePath, so later runs don't
+        # ask again.
+        if ([string]::IsNullOrWhiteSpace($State.CheckSheetPath) -and $Config.CheckSheet `
+                -and -not [string]::IsNullOrWhiteSpace([string]$Config.CheckSheet.Path)) {
+            $State.CheckSheetPath = [string]$Config.CheckSheet.Path
+        }
+        if ([string]::IsNullOrWhiteSpace($State.CheckSheetPath) -and -not $State.DryRun) {
+            Write-Host '[CheckSheet] review check sheet path not set (first run).' -ForegroundColor Yellow
+            $State.CheckSheetPath = (Read-Host '  Review check sheet (.xlsx) full path').Trim()
+            if (-not [string]::IsNullOrWhiteSpace($State.CheckSheetPath)) {
+                $session['CheckSheetPath'] = $State.CheckSheetPath
+                Save-Session $sessionPath $session
+                Write-Host ("  [NOTE] remembered in {0}" -f $sessionPath) -ForegroundColor DarkGray
+                Write-Host '  [TIP] set CheckSheet.Path in this work folder''s verify_config.json (-Phase InitConfig) to make this permanent across work folders.' -ForegroundColor DarkGray
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($State.CheckSheetPath)) { $args['CheckSheetPath'] = $State.CheckSheetPath }
         if ($Config.CheckSheet) {
             $cs = $Config.CheckSheet
-            $csPath = $State.CheckSheetPath
-            if ([string]::IsNullOrWhiteSpace($csPath)) { $csPath = [string]$cs.Path }
-            if (-not [string]::IsNullOrWhiteSpace($csPath))               { $args['CheckSheetPath'] = $csPath }
             if (-not [string]::IsNullOrWhiteSpace([string]$cs.SheetName)) { $args['SheetName']      = [string]$cs.SheetName }
             if (-not [string]::IsNullOrWhiteSpace([string]$cs.Language))  { $args['Language']       = [string]$cs.Language }
             if (-not [string]::IsNullOrWhiteSpace([string]$cs.Phase))     { $args['Phase']          = [string]$cs.Phase }

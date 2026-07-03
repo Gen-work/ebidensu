@@ -1,3 +1,50 @@
+## 2026-07-03 - FillCheckSheet: on-disk prefix fallback + CheckSheetPath remembered (v2.9.29)
+
+### Fixed
+- **Check-sheet row F (review target) could list a filename that didn't
+  match the real workbook.** `FillCheckSheet.ps1` built the filename purely
+  from `Resolve-ExcelPrefix` (mapping row's legacy `Excel_Prefix` column,
+  else `Workbook.ExcelPrefix`) with no way to tell "deliberately no prefix"
+  from "nothing configured for this row" -- a row lacking both (e.g. an
+  older-vintage mapping row, or a run where `Workbook.ExcelPrefix` isn't set
+  in `verify_config.json`) silently produced a bare, unprefixed name even
+  when every sibling row in the same run got the full
+  `J4...(...)_<Excel_NAME>.xlsx` prefix from their own legacy column value.
+  `FillCheckSheet.ps1` now takes a new `-EvidenceDir` param (default
+  `<WorkDir>\evidence`, same convention as `DeliverFiles`/`DeliverMail`) and,
+  whenever the resolved prefix comes back blank, looks up the real evidence
+  file on disk (`Find-WorkbookByExcelName`) and recovers its actual prefix
+  via the existing `Get-PrefixFromFilename` (previously only used by
+  `DeliverFiles`'s bare-name-fallback path, read here in the opposite
+  direction) -- so the check sheet always lists the filename that is
+  actually on disk. `VerifyTool.ps1`'s `CheckSheet` dispatch threads
+  `State.EvidenceDir` through.
+- **`CheckSheetPath` prompted on every single run even after answering it.**
+  The path prompt lived inside `FillCheckSheet.ps1` itself; whatever the
+  operator typed there was a local variable that vanished when the script
+  returned -- `VerifyTool.ps1`'s session save (`verify_session.json`) had
+  already run *before* dispatch, so the answer was never persisted and the
+  next run prompted again from scratch (this was silent: config *was* being
+  read correctly, `CheckSheet.Path` was just genuinely unset). The prompt
+  moved up into `VerifyTool.ps1`'s `CheckSheet` dispatch itself (mirroring
+  the existing `DfExePath` first-run-prompt-then-remember pattern): State
+  (CLI/session/menu `k`) wins, then config `CheckSheet.Path`, and only if
+  both are empty does it prompt once and immediately save the answer to
+  `verify_session.json` with a `[TIP]` pointing at `-Phase InitConfig` to set
+  `CheckSheet.Path` permanently instead.
+
+### Added
+- The check-sheet row preview (`Show-Plan`) now prints column B's date
+  (`yyyy/MM/dd`) alongside each planned row, so the operator can see the
+  date that's about to be written (today, real date value, format mirrored
+  from the row above -- unchanged behavior, equivalent to pressing Ctrl+;)
+  without having to inspect the workbook directly.
+
+### Notes
+- Static-checked only (no Windows/Excel in this dev environment); confirm
+  the on-disk prefix fallback and the CheckSheetPath remember-once flow on
+  an office PC.
+
 ## 2026-07-03 - InitConfig: fix GetNewClosure() losing ConfigOverlay.ps1 functions (v2.9.28)
 
 ### Fixed

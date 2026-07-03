@@ -328,7 +328,38 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-03 v2.9.28)
+## Current state (last bump: 2026-07-03 v2.9.29)
+
+v2.9.29 (FillCheckSheet: on-disk prefix fallback + CheckSheetPath remembered):
+**Fixed** -- (1) check-sheet column F (review target) could list a filename
+that didn't match the real workbook: `Resolve-ExcelPrefix` (mapping row's
+legacy `Excel_Prefix` column, else `Workbook.ExcelPrefix`) had no way to
+tell "deliberately no prefix" from "nothing configured for this row" -- a
+row lacking both (older-vintage mapping row, or a run where
+`Workbook.ExcelPrefix` isn't set) silently produced a bare, unprefixed name
+even while sibling rows in the same run got the full prefix from their own
+legacy column value. `FillCheckSheet.ps1` gained an `-EvidenceDir` param
+(default `<WorkDir>\evidence`, same convention as DeliverFiles/DeliverMail)
+and, whenever the resolved prefix is blank, looks up the real evidence file
+on disk (`Find-WorkbookByExcelName`) and recovers its actual prefix via
+`Get-PrefixFromFilename` (existing helper, previously only used by
+DeliverFiles' bare-name fallback, read here in the opposite direction) --
+so the check sheet always lists what's actually on disk. (2) `CheckSheetPath`
+prompted on every run even after answering it: the prompt lived inside
+`FillCheckSheet.ps1`, so the operator's answer was a local variable that
+vanished when the script returned, never reaching `verify_session.json`
+(config *was* being read correctly -- `CheckSheet.Path` was just genuinely
+unset). Moved the prompt into `VerifyTool.ps1`'s `CheckSheet` dispatch,
+mirroring the existing `DfExePath` first-run-prompt-then-remember pattern:
+State (CLI/session/menu `k`) wins, then config `CheckSheet.Path`, and only
+if both are empty does it prompt once and immediately persist the answer.
+**Added** -- the check-sheet row preview now prints column B's date
+(`yyyy/MM/dd`) next to each planned row so the operator can confirm it
+without opening the workbook (behavior itself is unchanged: a real date
+value, format mirrored from the row above, equivalent to Ctrl+;). Static-
+checked only (no Windows/Excel in this dev environment) -- confirm the
+on-disk prefix fallback and the CheckSheetPath remember-once flow on an
+office PC.
 
 v2.9.28 (InitConfig: fix GetNewClosure() losing ConfigOverlay.ps1 functions
 + silent non-terminating failure):
