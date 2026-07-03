@@ -78,6 +78,37 @@ Assert-True (-not $snap.ContainsKey('Aliases'))   'snapshot excludes structural 
 Assert-True ($snap['Mark']['Boxes'].ContainsKey('GIFT_HM'))      'non-empty box folder kept'
 Assert-True (-not $snap['Mark']['Boxes'].ContainsKey('excel'))   'empty box folder dropped'
 Assert-True (-not $snap['Align'].ContainsKey('HostSystemTypes')) 'empty HostSystemTypes dropped'
+Assert-True ($snap.ContainsKey('_SCHEMA'))        'snapshot stamps a _SCHEMA field inventory'
+Assert-True (@($snap['_SCHEMA']) -contains 'Workbook.ExcelPrefix') '_SCHEMA lists snapshot leaf paths'
+Assert-True (-not (@($snap['_SCHEMA']) -contains '_README')) '_SCHEMA excludes metadata keys'
+
+# --- New-ConfigOverlaySnapshot : duplicated fields merge into the canonical
+#     top-level J4EvidenceDir / Address; legacy values migrate in; the live
+#     config hashtable is never mutated by the scrub.
+$cfgDup = @{
+    Mail         = @{ EvidenceFolder = '\\srv\j4'; CheckSheetFile = 'x.xlsx' }
+    DeliverFiles = @{ J4EvidenceDir = ''; Backup = $false }
+    Reviewer     = @{ DisplayName = 'D'; Address = 'a@b'; ShortName = 'S' }
+}
+$snapDup = New-ConfigOverlaySnapshot $cfgDup
+Assert-Equal '\\srv\j4' $snapDup['J4EvidenceDir'] 'legacy Mail.EvidenceFolder migrates into canonical J4EvidenceDir'
+Assert-Equal 'a@b'      $snapDup['Address']       'legacy Reviewer.Address migrates into canonical Address'
+Assert-True (-not $snapDup['Mail'].ContainsKey('EvidenceFolder'))         'snapshot drops Mail.EvidenceFolder'
+Assert-True (-not $snapDup['DeliverFiles'].ContainsKey('J4EvidenceDir'))  'snapshot drops DeliverFiles.J4EvidenceDir'
+Assert-True (-not $snapDup['Reviewer'].ContainsKey('Address'))            'snapshot drops Reviewer.Address'
+Assert-True ($cfgDup['Mail'].ContainsKey('EvidenceFolder'))               'live config not mutated by the scrub'
+Assert-True ($cfgDup['Reviewer'].ContainsKey('Address'))                  'live Reviewer section not mutated'
+
+# --- canonical resolution helpers : legacy wins when set, then canonical.
+$resCfg = @{ J4EvidenceDir = '\\srv\top'; Mail = @{ EvidenceFolder = '' }; DeliverFiles = @{ J4EvidenceDir = '' } }
+Assert-Equal '\\srv\top' (Get-ConfigJ4EvidenceDir $resCfg) 'top-level J4EvidenceDir used when legacy fields blank'
+$resCfg2 = @{ J4EvidenceDir = '\\srv\top'; Mail = @{ EvidenceFolder = '\\srv\legacy' } }
+Assert-Equal '\\srv\legacy' (Get-ConfigJ4EvidenceDir $resCfg2) 'legacy Mail.EvidenceFolder wins when set'
+Assert-Equal '' (Get-ConfigJ4EvidenceDir @{}) 'no J4 dir configured -> empty string'
+$addrCfg = @{ Address = 'top@x'; Reviewer = @{ Address = '' } }
+Assert-Equal 'top@x' (Get-ConfigReviewerAddress $addrCfg) 'top-level Address used when legacy blank'
+$addrCfg2 = @{ Address = 'top@x'; Reviewer = @{ Address = 'legacy@x' } }
+Assert-Equal 'legacy@x' (Get-ConfigReviewerAddress $addrCfg2) 'legacy Reviewer.Address wins when set'
 
 # --- Generator round-trip : readable Japanese + boxes survive a write/read cycle.
 $jpJson = Get-ConfigOverlayJson $snap
@@ -94,12 +125,29 @@ Assert-True ($jpOut.Contains($jp)) 'generated JSON keeps Japanese readable (not 
 $jpRt = ConvertFrom-ConfigJson $jpOut
 Assert-Equal $jp $jpRt['Mail']['Greeting'] 'Japanese value round-trips'
 
-# --- Update-ConfigOverlayData : repair mode keeps operator values, adds only
-#     missing default keys (deep), arrays/scalars stay atomic.
+# --- Get-ConfigSchemaPaths : dotted leaf inventory; hashtables recurse,
+#     arrays and scalars stay atomic, metadata keys are excluded.
+$schemaData = @{
+    _README      = @('doc')
+    DefaultOwner = '0602'
+    Window       = @{ Width = 1050; Height = 761 }
+    Mail         = @{ BodyLines = @('a', 'b') }
+    Empty        = @{}
+}
+$schemaPaths = @(Get-ConfigSchemaPaths $schemaData)
+Assert-True ($schemaPaths -contains 'DefaultOwner')   'schema lists scalar leaf'
+Assert-True ($schemaPaths -contains 'Window.Width')   'schema recurses into hashtables'
+Assert-True ($schemaPaths -contains 'Mail.BodyLines') 'schema keeps arrays atomic'
+Assert-True ($schemaPaths -contains 'Empty')          'empty hashtable is one leaf'
+Assert-True (-not ($schemaPaths -contains '_README')) 'metadata keys excluded from schema'
+Assert-True (-not ($schemaPaths -contains 'Window'))  'non-empty hashtable is not itself a leaf'
+
+# --- Update-ConfigOverlayData : a stamp-less file is only STAMPED -- values
+#     untouched, NOTHING added (the whole snapshot is never dumped into a
+#     sparse operator file).
 $existing = @{
     DefaultOwner = '9999'                      # operator-changed scalar: must survive
-    Window       = @{ Width = 800 }            # sparse nested: keep Width, gain missing keys
-    Align        = @{ HostSystemTypes = @('HOST') }  # operator array: must survive wholesale
+    Window       = @{ Width = 800 }            # deliberately sparse: must stay sparse
 }
 $defaults = @{
     _README      = @('readme line')
@@ -109,21 +157,49 @@ $defaults = @{
     Replace      = @{ GfixLogFontName = 'MS Gothic'; GfixLogFontSize = 11 }
 }
 $rep = Update-ConfigOverlayData -Existing $existing -Defaults $defaults
-Assert-Equal '9999' $rep.Data['DefaultOwner']            'repair keeps operator scalar'
-Assert-Equal 800    $rep.Data['Window']['Width']         'repair keeps nested operator value'
-Assert-Equal 761    $rep.Data['Window']['Height']        'repair adds missing nested default'
-Assert-Equal 'HOST' (@($rep.Data['Align']['HostSystemTypes'])[0]) 'repair keeps operator array wholesale'
-Assert-Equal ''     $rep.Data['Align']['J4BaseDir']      'repair adds missing sibling of kept array'
-Assert-Equal 'MS Gothic' $rep.Data['Replace']['GfixLogFontName'] 'repair adds whole missing section'
-Assert-True ($rep.Data.ContainsKey('_README'))           'repair adds missing _README'
-$addedPaths = @($rep.Added)
-Assert-True ($addedPaths -contains 'Window.Height')      'added list reports dotted nested path'
-Assert-True ($addedPaths -contains 'Replace')            'added list reports new top-level section'
-Assert-True (-not ($addedPaths -contains 'DefaultOwner')) 'existing key not reported as added'
+Assert-True  ([bool]$rep.Stamped)                        'stamp-less overlay reports Stamped'
+Assert-Equal 0 (@($rep.Added).Count)                     'stamp-less overlay gains no fields'
+Assert-Equal '9999' $rep.Data['DefaultOwner']            'operator scalar untouched'
+Assert-Equal 800    $rep.Data['Window']['Width']         'nested operator value untouched'
+Assert-True (-not $rep.Data['Window'].ContainsKey('Height')) 'sparse file stays sparse (no Height)'
+Assert-True (-not $rep.Data.ContainsKey('Replace'))      'whole snapshot NOT dumped into sparse file'
+Assert-True (-not $rep.Data.ContainsKey('_README'))      'no readme injected into operator file'
+Assert-True ($rep.Data.ContainsKey('_SCHEMA'))           '_SCHEMA stamp written'
+Assert-True (@($rep.Data['_SCHEMA']) -contains 'Replace.GfixLogFontName') 'stamp lists current default fields'
 
-# A complete overlay (every default key already present) adds nothing.
-$repNone = Update-ConfigOverlayData -Existing $defaults -Defaults $defaults
-Assert-Equal 0 (@($repNone.Added).Count) 'repair of a complete overlay adds nothing'
+# --- Update-ConfigOverlayData : with a stamp, ONLY fields newer than the
+#     stamp are appended; a field the operator deleted (still in the stamp)
+#     is never re-added; existing values survive.
+$existing2 = @{
+    DefaultOwner = '9999'
+    Window       = @{ Width = 800 }            # Height deleted by the operator
+    Align        = @{ HostSystemTypes = @('HOST') }
+    _SCHEMA      = @('DefaultOwner', 'Window.Width', 'Window.Height', 'Align.HostSystemTypes')
+}
+$defaults2 = @{
+    DefaultOwner = '0602'
+    Window       = @{ Width = 1050; Height = 761 }
+    Align        = @{ HostSystemTypes = @(); J4BaseDir = '' }
+    Replace      = @{ GfixLogFontName = 'MS Gothic' }
+}
+$rep2 = Update-ConfigOverlayData -Existing $existing2 -Defaults $defaults2
+Assert-True (-not [bool]$rep2.Stamped)                   'stamped overlay is repaired, not just stamped'
+Assert-Equal '9999' $rep2.Data['DefaultOwner']           'repair keeps operator scalar'
+Assert-Equal 800    $rep2.Data['Window']['Width']        'repair keeps nested operator value'
+Assert-True (-not $rep2.Data['Window'].ContainsKey('Height')) 'deliberately deleted field NOT re-added'
+Assert-Equal 'HOST' (@($rep2.Data['Align']['HostSystemTypes'])[0]) 'operator array survives wholesale'
+Assert-Equal ''     $rep2.Data['Align']['J4BaseDir']     'new sibling field appended into existing section'
+Assert-Equal 'MS Gothic' $rep2.Data['Replace']['GfixLogFontName'] 'new section field appended'
+$addedPaths = @($rep2.Added)
+Assert-True ($addedPaths -contains 'Align.J4BaseDir')             'added list reports dotted nested path'
+Assert-True ($addedPaths -contains 'Replace.GfixLogFontName')     'added list reports new section leaf'
+Assert-True (-not ($addedPaths -contains 'Window.Height'))        'deleted field not reported as added'
+Assert-True (@($rep2.Data['_SCHEMA']) -contains 'Replace.GfixLogFontName') 'stamp refreshed with new field'
+Assert-True (@($rep2.Data['_SCHEMA']) -contains 'Window.Height')  'stamp keeps previously known (deleted) field'
+
+# A second repair right after adds nothing.
+$rep3 = Update-ConfigOverlayData -Existing $rep2.Data -Defaults $defaults2
+Assert-Equal 0 (@($rep3.Added).Count) 'second repair in a row adds nothing'
 
 # --- Get-ConfigOverlayGroups : editor exposes the requested group tags.
 $groups = @(Get-ConfigOverlayGroups)

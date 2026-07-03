@@ -303,9 +303,9 @@ $forceFlag = [bool]$Force.IsPresent
 # use $forceFlag from here on, NOT $Force
 ```
 
-## Current state (last bump: 2026-07-03 v2.9.25)
+## Current state (last bump: 2026-07-03 v2.9.26)
 
-v2.9.25 (Mark: NoteStamp images on verifyNote annotations -- GIFT_noGfixfile):
+v2.9.26 (Mark: NoteStamp images on verifyNote annotations -- GIFT_noGfixfile):
 **Added** -- `Mark.NoteStamps` config: a new opt-in way to insert a whole
 stamp image (e.g. `already_exists.png`, dropped into `mark_templates/`) next
 to a `verifyNote` annotation instead of just the existing red rectangle +
@@ -334,6 +334,52 @@ only warns -- it never fails the surrounding verifyNote mark or blocks
 `Mark.ps1 -NoteStampConfig`. Static-checked only (no Windows/Excel in this
 dev environment) -- confirm the row math and stamp placement on an office PC
 once `already_exists.png` is added to `mark_templates/`.
+
+v2.9.25 (DeliverFiles unzip delivery; Review -J4; config field merge +
+_SCHEMA-based repair + InitConfig walker rework):
+**Added** -- (1) `DeliverFiles` now also delivers the DATA unzip subfolders
+(DfSnap isZip extractions): `work\DATA\GIFT\unzip` / `work\DATA\GFIX\unzip`
+files (per-correl `<correl>*` filter, same as the plain DATA files) are
+copied into `J4\DATA\GIFT\unzip` / `J4\DATA\GFIX\unzip`, creating the J4
+subfolder on first delivery; the specs are Optional (absent locally =
+silent). (2) All four review phases (`ReviewGift/Gfix/Df/Evidence`) gained
+`-J4` (menu toggle `j4`, shown as `ReviewJ4`): the workbook opens from the
+DELIVERED J4 folder instead of `work\evidence` (saves land on the J4 file;
+mapping bits update as usual); the J4 folder resolves via the new canonical
+config below and a missing folder errors with the where-to-set-it hint.
+(3) Duplicated config fields merged into canonical TOP-LEVEL fields:
+`J4EvidenceDir` (was `DeliverFiles.J4EvidenceDir` = `Mail.EvidenceFolder`;
+read by DeliverFiles / BackupJ4 / DeliverMail body `{2}` / Review -J4) and
+`Address` (was `Reviewer.Address`; DeliverMail To). New pure unit-tested
+`Get-ConfigJ4EvidenceDir` / `Get-ConfigReviewerAddress` (`ConfigOverlay.ps1`)
+-- a non-empty LEGACY field still wins (old configs unchanged), but
+InitConfig no longer emits the legacy duplicates and migrates a legacy value
+into the canonical field on snapshot (re)generation without mutating the
+live runtime config. **Fixed** -- (a) the v2.9.22 walker was actually
+broken: `Expand-ConfigWalkPath`/`Get-ConfigWalkLeaves` returned `,$array`
+into `@(...)`-wrapping callers, which NESTS (the v2.8.1 rule), so `w`
+collapsed a whole group into ONE "System.Object[]" pseudo-field; both now
+return plain arrays (verified by running the editor with scripted input
+under portable pwsh 7 in this dev env). (b) InitConfig repair used to dump the whole
+snapshot into a sparse overlay (it could not tell "new to the tool" from
+"deliberately omitted"). Snapshots now stamp a `_SCHEMA` dotted-path
+inventory (metadata: runtime-stripped, walker-excluded); the reworked
+`Update-ConfigOverlayData` appends ONLY fields absent from the stamp, never
+re-adds operator-deleted fields (union stamp refresh), and a stamp-less file
+is only STAMPED on first repair (nothing added; f=Force / Interactive for
+the full set). New pure `Get-ConfigSchemaPaths` + hashtable path helpers;
+repair unit tests rewritten. **Changed** -- the `-Interactive` editor: `w`
+is now a walk LOOP (pick group -> field-by-field Enter/value/`-d` delete
+(y/N confirm)/q -> then "next group / s=save / Enter=back"); saving happens
+inside the editor via a writer callback (`Invoke-ConfigEditorSave`), so a
+locked/open verify_config.json no longer loses edits -- close it then
+r=retry / Enter=back (edits kept) / q=discard; unsaved edits warn on quit.
+Same writer serves repair/Force/dry-run paths. Pure logic + the editor loop
++ repair flow + DeliverFiles DATA/unzip copy were exercised under portable
+pwsh 7 in this dev env (unit tests green; scripted-input editor harness;
+fake-workdir DeliverFiles run); Excel COM paths (Review -J4 open) remain
+static-checked -- confirm on an office PC, and re-run Tests\Run-Tests.ps1
+under Windows PS 5.1.
 
 v2.9.24 (GFIX log font size + highlight measurement fixes; InitConfig repair
 mode; DfSnap isZip unzip-compare):

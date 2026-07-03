@@ -1,4 +1,4 @@
-## 2026-07-03 - Mark: NoteStamp images on verifyNote annotations (v2.9.25)
+## 2026-07-03 - Mark: NoteStamp images on verifyNote annotations (v2.9.26)
 
 ### Added
 - **`Mark.NoteStamps`**: an opt-in way to insert a whole stamp image (e.g.
@@ -34,6 +34,101 @@
 - Static-checked only (no Windows/Excel in this dev environment); confirm
   the row math and stamp placement on an office PC once `already_exists.png`
   is added to `mark_templates/`.
+
+## 2026-07-02 - DeliverFiles unzip delivery, Review -J4 option, config field merge + _SCHEMA repair + walker rework (v2.9.25)
+
+### Added
+- **DeliverFiles: DATA unzip subfolders are delivered too** (operator item 1).
+  DfSnap's isZip rows (v2.9.24) extract zips into `work\DATA\GIFT\unzip` /
+  `work\DATA\GFIX\unzip`; DeliverFiles now copies those extracted files
+  (matched per correl id, same `<correl>*` filter as the plain DATA files)
+  into the matching `J4\DATA\GIFT\unzip` / `J4\DATA\GFIX\unzip` folders,
+  creating the J4 `unzip` subfolder on first delivery. The unzip specs are
+  optional: a work folder without them prints nothing. `-Backup` covers the
+  overwritten J4 unzip files exactly like the plain DATA files.
+- **Review phases: `-J4` / menu option `j4`** (operator item 2). All four
+  review phases (`ReviewGift`/`ReviewGfix`/`ReviewDf`/`ReviewEvidence`) can
+  now open the DELIVERED J4 workbook instead of the work `evidence` copy:
+  new `VerifyTool.ps1 -J4` switch and a `j4` toggle in the interactive
+  option prompt (shown as `ReviewJ4`), wired like `f=Force`. When ON, the
+  Review dispatch resolves the J4 folder via the new canonical
+  `J4EvidenceDir` (legacy fields honored, see below) and passes it as
+  `ReviewEvidence.ps1 -EvidenceDir`; a missing J4 folder fails with the
+  where-to-set-it message instead of opening nothing. Saves land on the J4
+  file; the local mapping's review bits update as usual.
+- **Config: duplicated fields merged into canonical top-level fields**
+  (operator item 3a). `Mail.EvidenceFolder` and `DeliverFiles.J4EvidenceDir`
+  were the same J4 evidence folder typed twice, `Reviewer.Address` the only
+  address -- now there is ONE top-level `J4EvidenceDir` (read by
+  DeliverFiles, BackupJ4, DeliverMail's body path `{2}`, and Review `-J4`)
+  and ONE top-level `Address` (DeliverMail's To). New pure helpers
+  `Get-ConfigJ4EvidenceDir` / `Get-ConfigReviewerAddress`
+  (`ConfigOverlay.ps1`, unit-tested): a non-empty legacy field still WINS so
+  existing configs behave unchanged, but InitConfig no longer generates the
+  legacy duplicates, and a legacy value migrates into the canonical field
+  when the snapshot is (re)generated (the live runtime config is never
+  mutated by the scrub). `VerifyConfig.psd1`, `verify_config.example.json`,
+  the editor groups (`path`/`mail` now list `J4EvidenceDir`/`Address`), the
+  overlay README text, and every "set DeliverFiles.J4EvidenceDir or
+  Mail.EvidenceFolder" error message were updated to the new field names.
+
+### Fixed
+- **InitConfig walker was broken: a group collapsed into ONE bogus
+  "System.Object[]" field.** `Expand-ConfigWalkPath` / `Get-ConfigWalkLeaves`
+  (v2.9.22) returned `,$array`; every caller wraps the call in `@(...)`, and
+  that combination NESTS (exactly the PS 5.1 convention documented since
+  v2.8.1: shared functions must return plain arrays). So `w` never actually
+  walked the group's fields -- it prompted once for a stringified array and
+  wrote garbage keys if answered. Both functions now return plain arrays;
+  verified end-to-end with a scripted-input harness (group `wbs` walks its
+  real 3+ fields, set/keep/delete all land on the right paths). This was
+  found by actually RUNNING the editor under PowerShell 7 in this dev
+  environment (portable pwsh), which previous static-check-only sessions
+  could not do.
+- **InitConfig repair dumped the whole snapshot into a sparse file**
+  (operator item 3b: "the repair seems to repeat the whole file").
+  v2.9.24's repair added every default field missing from the operator's
+  file -- it could not tell "field the tool gained since" apart from "field
+  the operator deliberately left out", so a sparse hand-written overlay
+  ballooned into the full snapshot on the first repair. Snapshots now carry
+  a `_SCHEMA` metadata key (the dotted field-path inventory at write time;
+  stripped at runtime by the existing `Remove-ConfigMetadataKeys`, excluded
+  from the group walker), and `Update-ConfigOverlayData` was reworked around
+  it: repair appends ONLY default fields that are NOT in the file's stamp
+  (i.e. genuinely new to the tool), never re-adds a field the operator
+  deleted (stamp keeps it "known" via a union refresh), and a stamp-less
+  file (older InitConfig or hand-written) is only STAMPED on its first
+  repair -- values untouched, nothing added, with a console note pointing at
+  `f=Force`/`i=Interactive` for the full field set. New pure
+  `Get-ConfigSchemaPaths` + path helpers in `ConfigOverlay.ps1`; repair
+  tests rewritten in `Tests\Test-ConfigOverlay.ps1` (stamp-less, stamped,
+  deleted-field, second-run-idempotent cases).
+
+### Changed
+- **InitConfig `-Interactive` walker + save flow reworked to the operator's
+  spec** (operator item 3c). `w` now runs a walk LOOP: pick a group (number
+  or key), walk its fields one at a time (`Enter`=keep, value=set,
+  `-d`=delete -- `-del` still accepted, delete confirm is a light `y/N` since
+  nothing is on disk yet, `q`=stop), and when the group finishes the prompt
+  offers the NEXT group / `s`=save / Enter=back to the menu instead of
+  silently returning. Saving now happens INSIDE the editor through a writer
+  callback (`Invoke-ConfigEditorSave`): a failed write (typically
+  verify_config.json open/locked in another program) no longer crashes the
+  phase and loses every edit -- the operator is told to close the file, then
+  `r`=retry the write, Enter=back to the menu with all edits kept,
+  `q`=quit discarding. The editor tracks unsaved edits and warns on `q`.
+  The same writer serves the non-interactive paths (repair/Force/dry-run),
+  so backup/README behavior is identical everywhere.
+
+Verified in this dev environment under portable PowerShell 7: full
+`Tests\Run-Tests.ps1` (all suites green; the 2 EvidencePlan "\\ vs /" fails
+are Linux path-separator artifacts), an end-to-end InitConfig
+snapshot/repair/overlay-load smoke, a scripted-input harness driving the
+editor's walk loop + `-d` delete + save-retry + dirty-quit paths, and a real
+`DeliverFiles -SkipExcel` run against a fake work folder (unzip files landed
+in `J4\DATA\...\unzip`, sources untouched). Excel COM paths (the `-J4`
+review open) are static-checked only -- confirm on an office PC, and re-run
+the suite once under Windows PS 5.1.
 
 ## 2026-07-02 - GFIX log font size + highlight measurement fixes, InitConfig repair mode, DfSnap isZip unzip-compare (v2.9.24)
 

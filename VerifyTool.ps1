@@ -49,6 +49,9 @@ param(
 
     [switch]$Force,
     [switch]$Ocr,
+    # Review phases: open the delivered J4 copy (J4EvidenceDir) instead of the
+    # work evidence folder. The 'j4' menu option toggles the same flag per run.
+    [switch]$J4,
     [switch]$Interactive,
     [switch]$NoResize,
     [switch]$RefreshUrls,
@@ -420,8 +423,11 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  overrides VerifyConfig.psd1 for THIS folder only (owner, window,',
             '  mail format, mark boxes, expected-time defaults, ...).',
             '  When the file already exists, the default is REPAIR/UPDATE: your',
-            '  settings are kept as-is and only newly-added config fields are',
-            '  appended. f=Force regenerates the full snapshot (keeps a .bak).'
+            '  settings are kept as-is and ONLY fields the tool gained since the',
+            '  file was last written (tracked via its _SCHEMA stamp) are appended',
+            '  -- a sparse file stays sparse. A file without a _SCHEMA stamp is',
+            '  stamped on its first repair (nothing added). f=Force regenerates',
+            '  the full snapshot (keeps a .bak).'
         ) }
         '^Clone$' { @(
             '  Phase params:',
@@ -471,6 +477,9 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    a=CursorCell   -> cell to activate when workbook opens (default: A3)',
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> re-open already-reviewed workbooks',
+            '    j4=J4 copy     -> open the DELIVERED J4 workbook (J4EvidenceDir) instead of',
+            '                      the work evidence folder (run after DeliverFiles; edits/',
+            '                      saves land on the J4 file; mapping bits update as usual)',
             '  NOTE: ReviewGift/Gfix/Df open the matching sheet up front. At the per-workbook',
             '        prompt, append  -m "comment"  (works with Enter / s / q) to record a note;',
             '        prior notes are shown on open. List all notes with the Comments phase.'
@@ -541,12 +550,13 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  NOTE: one Outlook DRAFT per Excel (never auto-sent). You click Send, then',
             '        press Enter to mark isDelivered. Append  -m "comment"  to record a note.',
             '  Requires (set in this work folder''s verify_config.json, group "mail"):',
-            '    Reviewer.Address / DisplayName / ShortName, Mail.EvidenceFolder,',
+            '    Address (reviewer To), Reviewer.DisplayName / ShortName, J4EvidenceDir,',
             '    Mail.CheckSheetFolder, Mail.CheckSheetFile.',
+            '    (legacy Reviewer.Address / Mail.EvidenceFolder still win when set)',
             '  {n} placeholders (config Mail.SubjectTemplate / Mail.BodyLines):',
             '    Mail.SubjectTemplate: {0}=Mail.Phase  {1}=Excel_NAME',
             '    Mail.BodyLines:       {0}=Reviewer.ShortName  {1}=Owner',
-            '                          {2}=Mail.EvidenceFolder  {3}=this Excel''s filename',
+            '                          {2}=J4EvidenceDir  {3}=this Excel''s filename',
             '                          {4}=Mail.CheckSheetFolder  {5}=Mail.CheckSheetFile',
             '  Edit the {n} numbers'' surrounding text freely; do not remove/renumber the {n} tokens.'
         ) }
@@ -562,8 +572,11 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '        like Align but work -> J4, and only these 3 sheets; every other J4',
             '        sheet is left untouched. First delivery (no existing J4 workbook yet)',
             '        copies the whole work file instead. Source files are never deleted.',
-            '        J4EvidenceDir must be set in verify_config.json (DeliverFiles.J4EvidenceDir',
-            '        or Mail.EvidenceFolder) -- run -Phase InitConfig.',
+            '        DATA\GIFT\unzip / DATA\GFIX\unzip files (DfSnap isZip extractions)',
+            '        are delivered to the matching J4 DATA\...\unzip folders too.',
+            '        J4EvidenceDir must be set in verify_config.json (top-level; legacy',
+            '        DeliverFiles.J4EvidenceDir / Mail.EvidenceFolder still honored)',
+            '        -- run -Phase InitConfig.',
             '        If the local evidence file has no configured prefix, the prefix is added',
             '        on the J4 copy. A same-name-but-full-width duplicate already in J4 is',
             '        offered for removal (kept: the half-width work-folder name), after asking.',
@@ -577,18 +590,21 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '        DeliverFiles.BackupLocalDir), timestamped so repeated runs never',
             '        overwrite an earlier snapshot. Run before DeliverFiles to keep a',
             '        local rollback point of J4 files as they stood before delivery.',
-            '        Requires DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder).'
+            '        Requires J4EvidenceDir (legacy DeliverFiles.J4EvidenceDir /',
+            '        Mail.EvidenceFolder still honored).'
         ) }
         '^InitConfig$' { @(
             '  Phase params:',
             '    i=Interactive  -> grouped editor: walk a group field-by-field (no path typing),',
-            '                      or peek/edit/delete by JSON path, then save with confirmation',
+            '                      or peek/edit/delete by JSON path, then save with confirmation;',
+            '                      a failed save (file open/locked) offers close-and-retry',
             '    f=Force        -> full regenerate: rewrite verify_config.json as a complete snapshot',
             '                      of the merged config (loaded values survive; keeps a .bak)',
             '  NOTE: when verify_config.json already exists, the DEFAULT is repair/update:',
             '        the existing file is kept exactly as-is (your values untouched, a sparse',
-            '        file stays sparse) and only config fields the tool gained since it was',
-            '        written are added. No file yet -> a full snapshot is generated.'
+            '        file stays sparse) and ONLY fields the tool gained since the file''s',
+            '        _SCHEMA stamp are added (a stamp-less file is stamped, nothing added).',
+            '        No file yet -> a full snapshot is generated.'
         ) }
         default { @() }
     }
@@ -603,7 +619,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^Mark(Gift|Gfix|Df)$' { return @('t','f') }
         '^MarkGfixLog$' { return @('t','f') }
         '^SendVsGift$' { return @('a','t','f','o') }
-        '^Review(Gift|Gfix|Df|Evidence)$' { return @('a','t','f') }
+        '^Review(Gift|Gfix|Df|Evidence)$' { return @('a','t','f','j4') }
         '^(Gift|Gfix)Jenkins$|^GiftJenkinsNoFile$' { return @('t','i','f','n','w','c','r','tc') }
         '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { return @('t','i','f','n','w','c','tc') }
         '^GfixLogDownload$' { return @('t','f') }
@@ -654,6 +670,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'w') { Write-Host ("  Window         : {0}x{1}" -f $State.WindowWidth, $State.WindowHeight) }
     if (Test-PhaseOption $allowed 'c') { Write-Host ("  CropPx         : {0}" -f $State.CropPx) }
     if (Test-PhaseOption $allowed 'a') { Write-Host ("  CursorCell     : {0}" -f $State.CursorCell) }
+    if (Test-PhaseOption $allowed 'j4') { Write-Host ("  ReviewJ4       : {0}  (open the delivered J4 copy)" -f (To-BoolText $State.ReviewJ4)) }
     if (Test-PhaseOption $allowed 'o') { Write-Host ("  Ocr            : {0}" -f (To-BoolText $State.Ocr)) }
     if (Test-PhaseOption $allowed 'tc') { Write-Host ("  TimeCheck      : {0}" -f (To-BoolText $State.TimeCheck)) }
     if (Test-PhaseOption $allowed 't') { Write-Host ("  TargetIds      : {0}" -f $(if ($State.TargetIds.Count -gt 0) { $State.TargetIds -join ', ' } else { '(all)' })) }
@@ -683,6 +700,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 'c') { $help += 'c=crop px' }
         if (Test-PhaseOption $allowed 't') { $help += 't=target IDs' }
         if (Test-PhaseOption $allowed 'a') { $help += 'a=review cursor cell' }
+        if (Test-PhaseOption $allowed 'j4') { $help += 'j4=J4-copy toggle' }
         if (Test-PhaseOption $allowed 'o') { $help += 'o=Ocr toggle' }
         if (Test-PhaseOption $allowed 'tc') { $help += 'tc=TimeCheck toggle' }
         if (Test-PhaseOption $allowed 'd') { $help += 'd=Clone SourceDir' }
@@ -767,6 +785,10 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
             '^tc$' {
                 if (-not (Test-PhaseOption $allowed 'tc')) { Write-UnusedOption $PhaseKey 'tc' }
                 else { $State.TimeCheck = -not $State.TimeCheck; Write-Host ("  TimeCheck      : {0}" -f (To-BoolText $State.TimeCheck)) -ForegroundColor DarkGray }
+            }
+            '^-?j4$' {
+                if (-not (Test-PhaseOption $allowed 'j4')) { Write-UnusedOption $PhaseKey 'j4' }
+                else { $State.ReviewJ4 = -not $State.ReviewJ4; Write-Host ("  ReviewJ4       : {0}" -f (To-BoolText $State.ReviewJ4)) -ForegroundColor DarkGray }
             }
             '^t$' {
                 if (-not (Test-PhaseOption $allowed 't')) { Write-UnusedOption $PhaseKey 't' }
@@ -1054,33 +1076,39 @@ function Expand-ConfigWalkPath([string]$Path, [object]$Value) {
     # index has named sub-fields worth visiting individually); an array of
     # scalars (e.g. Mail.BodyLines) is edited as one atomic JSON value instead,
     # since there is no named field to descend into.
+    # Plain array returns throughout (never ,@(...)): every caller wraps the
+    # call in @(...), and that combination NESTS in PS 5.1 (repo convention,
+    # v2.8.1). The old ,-returns collapsed a whole group into ONE bogus
+    # "System.Object[]" walk field.
     if ($Value -is [System.Collections.IDictionary]) {
-        if ($Value.Count -eq 0) { return ,@($Path) }
+        if ($Value.Count -eq 0) { return @($Path) }
         $out = @()
         foreach ($k in @($Value.Keys | Sort-Object)) {
             $out += @(Expand-ConfigWalkPath ("{0}.{1}" -f $Path, $k) $Value[$k])
         }
-        return ,$out
+        return $out
     }
     if (($Value -is [System.Collections.IList]) -and ($Value -isnot [string])) {
         $items = @($Value)
-        if ($items.Count -eq 0) { return ,@($Path) }
+        if ($items.Count -eq 0) { return @($Path) }
         $allDict = $true
         foreach ($item in $items) { if ($item -isnot [System.Collections.IDictionary]) { $allDict = $false; break } }
-        if (-not $allDict) { return ,@($Path) }
+        if (-not $allDict) { return @($Path) }
         $out = @()
         for ($i = 0; $i -lt $items.Count; $i++) {
             $out += @(Expand-ConfigWalkPath ("{0}.{1}" -f $Path, $i) $items[$i])
         }
-        return ,$out
+        return $out
     }
-    return ,@($Path)
+    return @($Path)
 }
 
 function Get-ConfigWalkLeaves([hashtable]$Data, [object[]]$Paths) {
     $topPaths = @()
     foreach ($p in $Paths) {
-        if ($p -eq '*') { foreach ($k in @($Data.Keys | Sort-Object)) { $topPaths += [string]$k } }
+        # '*' = every top-level key except the _SCHEMA repair stamp, which is
+        # maintenance metadata the operator must not hand-edit.
+        if ($p -eq '*') { foreach ($k in @($Data.Keys | Sort-Object)) { if ([string]$k -ne '_SCHEMA') { $topPaths += [string]$k } } }
         else { $topPaths += [string]$p }
     }
     $leaves = @()
@@ -1089,33 +1117,40 @@ function Get-ConfigWalkLeaves([hashtable]$Data, [object[]]$Paths) {
         if ($null -eq $value) { continue }
         $leaves += @(Expand-ConfigWalkPath $p $value)
     }
-    return ,$leaves
+    # Plain array return: the caller wraps this call in @(...) and a ,-return
+    # would nest (PS 5.1; repo convention v2.8.1).
+    return $leaves
 }
 
 function Invoke-ConfigFieldWalk([hashtable]$Data, [hashtable]$Group) {
+    # Walks every editable field of a group one at a time. Returns the number
+    # of in-memory changes made (the caller tracks unsaved edits with it).
+    $changes = 0
     $leaves = @(Get-ConfigWalkLeaves $Data $Group.Paths)
-    if ($leaves.Count -eq 0) { Write-Host '  (group has no fields to walk)' -ForegroundColor Yellow; return }
+    if ($leaves.Count -eq 0) { Write-Host '  (group has no fields to walk)' -ForegroundColor Yellow; return $changes }
     Write-Host ''
     Write-Host ("Walking group [{0}] {1} -- {2} field(s)." -f $Group.Key, $Group.Label, $leaves.Count) -ForegroundColor Cyan
     if ($leaves.Count -gt 30) {
         $go = Read-Choice ("This group has {0} fields; walk them all?" -f $leaves.Count) 'yes'
-        if ($go -inotmatch '^y') { Write-Host '  cancelled.' -ForegroundColor Yellow; return }
+        if ($go -inotmatch '^y') { Write-Host '  cancelled.' -ForegroundColor Yellow; return $changes }
     }
-    Write-Host 'For each field: Enter = keep as-is, type a new value (JSON or raw text) = set it, -del = delete it, q = stop walking.' -ForegroundColor DarkGray
+    Write-Host 'For each field: Enter = keep as-is, type a new value (JSON or raw text) = set it, -d = delete it, q = stop walking.' -ForegroundColor DarkGray
     $i = 0
     foreach ($path in $leaves) {
         $i++
         $current = Get-ConfigValueByPath $Data $path
         Write-Host ''
-        Write-Host ("[{0}/{1}] {2}" -f $i, $leaves.Count, $path) -ForegroundColor Cyan
+        Write-Host ("[{0}/{1}] field: {2}" -f $i, $leaves.Count, $path) -ForegroundColor Cyan
         Write-Host (Get-ConfigOverlayJson $current)
-        $raw = Read-Host 'new value (Enter=keep, -del=delete, q=stop)'
-        if ($raw -eq 'q') { Write-Host '  stopped walking; remaining fields in this group left unchanged.' -ForegroundColor Yellow; return }
+        $raw = Read-Host 'new value (Enter=keep, -d=delete, q=stop)'
+        if ($raw -eq 'q') { Write-Host '  stopped walking; remaining fields in this group left unchanged.' -ForegroundColor Yellow; return $changes }
         if ([string]::IsNullOrEmpty($raw)) { continue }
-        if ($raw -eq '-del') {
-            $confirm = Read-Choice ("Delete {0}? type DELETE" -f $path) 'no'
-            if ($confirm -ceq 'DELETE') {
-                if (Remove-ConfigValueByPath $Data $path) { Write-Host '  deleted in memory.' -ForegroundColor Green }
+        if ($raw -eq '-d' -or $raw -eq '-del') {
+            # In-memory only (nothing lands on disk before s + YES), so a
+            # light y/N confirm is enough here.
+            $confirm = Read-Choice ("Delete {0}? [y/N]" -f $path) 'n'
+            if ($confirm -imatch '^y') {
+                if (Remove-ConfigValueByPath $Data $path) { Write-Host '  deleted in memory.' -ForegroundColor Green; $changes++ }
                 else { Write-Host '  delete failed' -ForegroundColor Yellow }
             } else { Write-Host '  delete cancelled.' -ForegroundColor Yellow }
             continue
@@ -1124,14 +1159,45 @@ function Invoke-ConfigFieldWalk([hashtable]$Data, [hashtable]$Group) {
         try {
             Set-ConfigValueByPath $Data $path $newValue
             Write-Host '  updated in memory.' -ForegroundColor Green
+            $changes++
         } catch { Write-Host ("  update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow }
     }
     Write-Host ''
-    Write-Host '  finished walking group (choose s in the main menu to save).' -ForegroundColor Green
+    Write-Host '  finished walking group.' -ForegroundColor Green
+    return $changes
 }
 
-function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath) {
+function Invoke-ConfigEditorSave([hashtable]$Data, [scriptblock]$SaveAction) {
+    # Confirms and performs the editor's save. A failed write (typically the
+    # JSON is open/locked in another program) never ends the editing batch:
+    # the operator can close the file and retry, go back to the menu with all
+    # edits kept, or quit. Returns 'saved' | 'cancelled' | 'quit'.
+    $confirm = (Read-Choice 'Save changes? type YES to write' 'no')
+    if ($confirm -cne 'YES') {
+        Write-Host '  save cancelled; edits kept in the editor.' -ForegroundColor Yellow
+        return 'cancelled'
+    }
+    while ($true) {
+        try {
+            & $SaveAction $Data
+            return 'saved'
+        } catch {
+            Write-Host ("  [FAIL] save failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+            Write-Host '  If verify_config.json is open in another program, close it first.' -ForegroundColor Yellow
+            $r = (Read-Host '  r=retry save, Enter=back to menu (edits kept), q=quit editor (discard edits)').Trim().ToLower()
+            if ($r -eq 'r') { continue }
+            if ($r -eq 'q') { return 'quit' }
+            return 'cancelled'
+        }
+    }
+}
+
+function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath, [scriptblock]$SaveAction) {
+    # Interactive grouped editor. Saving is done INSIDE the editor via
+    # $SaveAction so a failed write (file open/locked) never loses the
+    # in-memory edits -- the operator can close the file and retry.
     $groups = @(Get-ConfigOverlayGroups)
+    $dirty = $false
     Write-Host ''
     Write-Host '===== InitConfig editor =====' -ForegroundColor Green
     Write-Host 'View by group, edit any JSON path, delete paths, then save with confirmation.' -ForegroundColor DarkGray
@@ -1157,13 +1223,20 @@ function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath) {
         Write-Host '   w  Walk a group field-by-field (guided, no path typing)'
         Write-Host '   s  Save'
         Write-Host '   q  Quit without saving'
+        if ($dirty) { Write-Host '   (unsaved edits in memory)' -ForegroundColor Yellow }
         $ans = (Read-Host 'config').Trim().ToLower()
         if ([string]::IsNullOrWhiteSpace($ans)) { continue }
-        if ($ans -eq 'q') { return $null }
+        if ($ans -eq 'q') {
+            if ($dirty) {
+                $confirm = Read-Choice 'Unsaved edits exist. Quit without saving? [y/N]' 'n'
+                if ($confirm -inotmatch '^y') { continue }
+            }
+            return
+        }
         if ($ans -eq 's') {
-            $confirm = (Read-Choice 'Save changes? type YES to write' 'no')
-            if ($confirm -ceq 'YES') { return $Data }
-            Write-Host '  save cancelled; still in editor.' -ForegroundColor Yellow
+            $saveResult = Invoke-ConfigEditorSave $Data $SaveAction
+            if ($saveResult -eq 'saved') { return }
+            if ($saveResult -eq 'quit') { return }
             continue
         }
         if ($ans -eq 'v') {
@@ -1187,6 +1260,7 @@ function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath) {
             try {
                 Set-ConfigValueByPath $Data $path $newValue
                 Write-Host '  updated in memory (choose s to save).' -ForegroundColor Green
+                $dirty = $true
             } catch { Write-Host ("  update failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow }
             continue
         }
@@ -1199,16 +1273,32 @@ function Invoke-ConfigOverlayEditor([hashtable]$Data, [string]$DestPath) {
             Write-Host (Get-ConfigOverlayJson $old)
             $confirm = Read-Choice 'Delete this path? type DELETE' 'no'
             if ($confirm -ceq 'DELETE') {
-                if (Remove-ConfigValueByPath $Data $path) { Write-Host '  deleted in memory (choose s to save).' -ForegroundColor Green }
+                if (Remove-ConfigValueByPath $Data $path) { Write-Host '  deleted in memory (choose s to save).' -ForegroundColor Green; $dirty = $true }
                 else { Write-Host '  delete failed' -ForegroundColor Yellow }
             }
             continue
         }
         if ($ans -eq 'w') {
+            # Walk-loop: pick a group, walk its fields, then keep offering the
+            # next group / save until the operator goes back to the menu.
             $groupAns = (Read-Choice 'Which group to walk? (number or key)' '').Trim().ToLower()
-            if ([string]::IsNullOrWhiteSpace($groupAns)) { Write-Host '  group is required' -ForegroundColor Yellow; continue }
-            if ($menu.ContainsKey($groupAns)) { Invoke-ConfigFieldWalk $Data $menu[$groupAns] }
-            else { Write-Host '  unknown group' -ForegroundColor Yellow }
+            while ($true) {
+                if ([string]::IsNullOrWhiteSpace($groupAns)) { break }
+                if ($groupAns -eq 'q') { break }
+                if ($groupAns -eq 's') {
+                    $saveResult = Invoke-ConfigEditorSave $Data $SaveAction
+                    if ($saveResult -eq 'saved') { return }
+                    if ($saveResult -eq 'quit') { return }
+                    # cancelled / back: keep walking
+                } elseif ($menu.ContainsKey($groupAns)) {
+                    $walkChanges = [int](Invoke-ConfigFieldWalk $Data $menu[$groupAns])
+                    if ($walkChanges -gt 0) { $dirty = $true }
+                } else {
+                    Write-Host '  unknown group' -ForegroundColor Yellow
+                }
+                Write-Host ''
+                $groupAns = (Read-Host 'next group to walk (number or key), s=save, Enter=back to menu').Trim().ToLower()
+            }
             continue
         }
         if ($menu.ContainsKey($ans)) { Show-ConfigEditorGroup $Data $menu[$ans]; continue }
@@ -1423,6 +1513,19 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args = $base.Clone()
         if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
         $args['EvidenceDir'] = $State.EvidenceDir
+        if ($State.ReviewJ4) {
+            # j4 option: review the DELIVERED J4 copy instead of the work
+            # evidence folder. Saves land on the J4 file; mapping unchanged.
+            $j4Dir = Get-ConfigJ4EvidenceDir $Config
+            if ([string]::IsNullOrWhiteSpace($j4Dir)) {
+                Write-Host '[ERROR] j4 option is ON but no J4 folder is configured.' -ForegroundColor Red
+                Write-Host '  Set J4EvidenceDir in this work folder''s verify_config.json -- run:' -ForegroundColor Yellow
+                Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive  (group "path" or "mail").' -ForegroundColor Yellow
+                return
+            }
+            $args['EvidenceDir'] = $j4Dir
+            Write-Host ("  [J4] reviewing the delivered J4 copies: {0}" -f $j4Dir) -ForegroundColor Cyan
+        }
         $args['CursorCell'] = $State.CursorCell
         $args['ReviewField'] = $Config.Review.Field
         $args['ReviewBit'] = $bit
@@ -1709,13 +1812,17 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if (-not [string]::IsNullOrWhiteSpace([string]$m.Phase))            { $args['Phase']            = [string]$m.Phase }
             if (-not [string]::IsNullOrWhiteSpace([string]$m.SubjectTemplate))  { $args['SubjectTemplate']  = [string]$m.SubjectTemplate }
             if ($m.BodyLines)                                                  { $args['BodyLines']        = [string[]]$m.BodyLines }
-            if (-not [string]::IsNullOrWhiteSpace([string]$m.EvidenceFolder))   { $args['EvidenceFolder']   = [string]$m.EvidenceFolder }
             if (-not [string]::IsNullOrWhiteSpace([string]$m.CheckSheetFolder)) { $args['CheckSheetFolder'] = [string]$m.CheckSheetFolder }
             if (-not [string]::IsNullOrWhiteSpace([string]$m.CheckSheetFile))   { $args['CheckSheetFile']   = [string]$m.CheckSheetFile }
         }
+        # Canonical single fields (legacy Mail.EvidenceFolder / Reviewer.Address
+        # still win inside the helpers when an old config sets them).
+        $mailEvidenceDir = Get-ConfigJ4EvidenceDir $Config
+        if (-not [string]::IsNullOrWhiteSpace($mailEvidenceDir)) { $args['EvidenceFolder'] = $mailEvidenceDir }
+        $reviewerAddress = Get-ConfigReviewerAddress $Config
+        if (-not [string]::IsNullOrWhiteSpace($reviewerAddress)) { $args['ReviewerAddress'] = $reviewerAddress }
         if ($Config.Reviewer) {
             $rv = $Config.Reviewer
-            if (-not [string]::IsNullOrWhiteSpace([string]$rv.Address))     { $args['ReviewerAddress'] = [string]$rv.Address }
             if (-not [string]::IsNullOrWhiteSpace([string]$rv.DisplayName)) { $args['ReviewerDisplay'] = [string]$rv.DisplayName }
             if (-not [string]::IsNullOrWhiteSpace([string]$rv.ShortName))   { $args['ReviewerShort']   = [string]$rv.ShortName }
         }
@@ -1732,25 +1839,19 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $p = Resolve-ToolPath $Config 'BackupJ4'
         $args = $base.Clone()
         if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
-        $j4Ev = ''
         if ($Config.DeliverFiles) {
             $df = $Config.DeliverFiles
-            if (-not [string]::IsNullOrWhiteSpace([string]$df.J4EvidenceDir)) { $j4Ev = [string]$df.J4EvidenceDir; $args['J4EvidenceDir'] = $j4Ev }
             if (-not [string]::IsNullOrWhiteSpace([string]$df.BackupLocalDir)) { $args['LocalDir'] = [string]$df.BackupLocalDir }
         }
-        if ([string]::IsNullOrWhiteSpace($j4Ev)) {
-            if ($Config.Mail -and -not [string]::IsNullOrWhiteSpace([string]$Config.Mail.EvidenceFolder)) {
-                $j4Ev = [string]$Config.Mail.EvidenceFolder
-                $args['J4EvidenceDir'] = $j4Ev
-            }
-        }
+        $j4Ev = Get-ConfigJ4EvidenceDir $Config
         if ([string]::IsNullOrWhiteSpace($j4Ev)) {
             Write-Host '[ERROR] J4 source not configured.' -ForegroundColor Red
-            Write-Host '  Set DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder) in this work' -ForegroundColor Yellow
-            Write-Host '  folder''s verify_config.json -- run: .\VerifyTool.ps1 -Phase InitConfig -Interactive' -ForegroundColor Yellow
-            Write-Host '  (group "path" or "mail"), or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
+            Write-Host '  Set J4EvidenceDir in this work folder''s verify_config.json -- run:' -ForegroundColor Yellow
+            Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive  (group "path" or "mail"),' -ForegroundColor Yellow
+            Write-Host '  or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
             return
         }
+        $args['J4EvidenceDir'] = $j4Ev
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         Write-Host '[RUN] BackupJ4' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
@@ -1762,28 +1863,21 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $p = Resolve-ToolPath $Config 'DeliverFiles'
         $args = $base.Clone()
         if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
-        $j4Ev = ''
         if ($Config.DeliverFiles) {
             $df = $Config.DeliverFiles
-            if (-not [string]::IsNullOrWhiteSpace([string]$df.J4EvidenceDir)) { $j4Ev = [string]$df.J4EvidenceDir; $args['J4EvidenceDir'] = $j4Ev }
             if (-not [string]::IsNullOrWhiteSpace([string]$df.J4GfixDataDir)) { $args['J4GfixDataDir'] = [string]$df.J4GfixDataDir }
             if (-not [string]::IsNullOrWhiteSpace([string]$df.J4GiftDataDir)) { $args['J4GiftDataDir'] = [string]$df.J4GiftDataDir }
             if ($df.ContainsKey('Backup') -and ($df.Backup -or $State.Backup)) { $args['Backup'] = $true }
         }
-        if ([string]::IsNullOrWhiteSpace($j4Ev)) {
-            # Fall back to Mail.EvidenceFolder
-            if ($Config.Mail -and -not [string]::IsNullOrWhiteSpace([string]$Config.Mail.EvidenceFolder)) {
-                $j4Ev = [string]$Config.Mail.EvidenceFolder
-                $args['J4EvidenceDir'] = $j4Ev
-            }
-        }
+        $j4Ev = Get-ConfigJ4EvidenceDir $Config
         if ([string]::IsNullOrWhiteSpace($j4Ev)) {
             Write-Host '[ERROR] J4 destination not configured.' -ForegroundColor Red
-            Write-Host '  Set DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder) in this work' -ForegroundColor Yellow
-            Write-Host '  folder''s verify_config.json -- run: .\VerifyTool.ps1 -Phase InitConfig -Interactive' -ForegroundColor Yellow
-            Write-Host '  (group "path" or "mail"), or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
+            Write-Host '  Set J4EvidenceDir in this work folder''s verify_config.json -- run:' -ForegroundColor Yellow
+            Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive  (group "path" or "mail"),' -ForegroundColor Yellow
+            Write-Host '  or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
             return
         }
+        $args['J4EvidenceDir'] = $j4Ev
         if ($State.SkipExcel) { $args['SkipExcel'] = $true }
         if ($State.SkipData)  { $args['SkipData']  = $true }
         if ($State.Backup)    { $args['Backup']    = $true }
@@ -1870,19 +1964,46 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         Write-Host ("  Overlay target : {0}" -f $dest)
         $exists = Test-Path -LiteralPath $dest
         $snap = New-ConfigOverlaySnapshot $Config
-        if ($State.Interactive) {
-            $editable = Copy-ConfigObject $snap
-            $edited = Invoke-ConfigOverlayEditor $editable $dest
-            if ($null -eq $edited) {
-                Write-Host '  [CANCEL] no config changes were written.' -ForegroundColor Yellow
+
+        # One writer for every InitConfig flavor. The interactive editor calls
+        # it via its save command so a locked/open file can be retried without
+        # losing the in-memory edits.
+        $dryRunFlag  = [bool]$State.DryRun
+        $workDirPath = [string]$State.WorkDir
+        $writeOverlay = {
+            param([hashtable]$OverlayData)
+            if ($dryRunFlag) {
+                Write-Host '  [dry-run] would write this overlay snapshot:' -ForegroundColor DarkGray
+                Write-Host (Get-ConfigOverlayJson $OverlayData)
                 return
             }
-            $snap = $edited
-        } elseif ($exists -and -not $State.Force) {
+            $json = Get-ConfigOverlayJson $OverlayData
+            if (Test-Path -LiteralPath $dest) {
+                $bak = ('{0}.bak.{1}' -f $dest, (Get-Date -Format 'yyyyMMdd_HHmmss'))
+                Copy-Item -LiteralPath $dest -Destination $bak -Force
+                Write-Host ("  [backup] {0}" -f $bak) -ForegroundColor DarkGray
+            }
+            [System.IO.File]::WriteAllText($dest, $json, (New-Object System.Text.UTF8Encoding($false)))
+            $readmePath = Join-Path $workDirPath 'verify_config.README.txt'
+            $readmeText = Get-ConfigOverlayReadmeText $overlayName
+            [System.IO.File]::WriteAllText($readmePath, $readmeText, (New-Object System.Text.UTF8Encoding($false)))
+            Write-Host '  [OK] wrote/updated work-folder config overlay (UTF-8, no BOM).' -ForegroundColor Green
+            Write-Host ("  [OK] wrote config field guide: {0}" -f $readmePath) -ForegroundColor Green
+            Write-Host '       Edit values, then re-run any phase. JSON overrides VerifyConfig.psd1.' -ForegroundColor DarkGray
+        }.GetNewClosure()
+
+        if ($State.Interactive) {
+            $editable = Copy-ConfigObject $snap
+            Invoke-ConfigOverlayEditor $editable $dest $writeOverlay
+            return
+        }
+
+        if ($exists -and -not $State.Force) {
             # REPAIR/UPDATE mode (default when the overlay already exists):
             # keep the operator's file exactly as it is -- values untouched, a
             # sparse file stays sparse -- and only ADD fields the tool gained
-            # since it was written. f=Force regenerates the full snapshot
+            # since the file's _SCHEMA stamp was written. A stamp-less file is
+            # stamped, nothing added. f=Force regenerates the full snapshot
             # (old behavior; loaded values still survive via the merge).
             $existing = $null
             try {
@@ -1898,31 +2019,21 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if (-not ($existing -is [hashtable])) { $existing = @{} }
             $repair = Update-ConfigOverlayData -Existing $existing -Defaults $snap
             $snap = $repair.Data
-            if (@($repair.Added).Count -eq 0) {
-                Write-Host '  [OK] repair: overlay already has every current config field; nothing to add.' -ForegroundColor Green
+            if ($repair.Stamped) {
+                Write-Host '  [repair] this file had no _SCHEMA stamp yet: stamping the current field' -ForegroundColor Cyan
+                Write-Host '           inventory. Your settings are untouched and NOTHING was added;' -ForegroundColor Cyan
+                Write-Host '           from now on repair appends only fields the tool gains later.' -ForegroundColor Cyan
+                Write-Host '           (need the full field set instead? use f=Force or i=Interactive)' -ForegroundColor DarkGray
+            } elseif (@($repair.Added).Count -eq 0) {
+                Write-Host '  [OK] repair: no new config fields since this file was last written; nothing to add.' -ForegroundColor Green
                 return
+            } else {
+                Write-Host ("  [repair] keeping existing settings; adding {0} new field(s):" -f @($repair.Added).Count) -ForegroundColor Cyan
+                foreach ($a in @($repair.Added)) { Write-Host ("    + {0}" -f $a) -ForegroundColor DarkGray }
             }
-            Write-Host ("  [repair] keeping existing settings; adding {0} new field(s):" -f @($repair.Added).Count) -ForegroundColor Cyan
-            foreach ($a in @($repair.Added)) { Write-Host ("    + {0}" -f $a) -ForegroundColor DarkGray }
         }
-        if ($State.DryRun) {
-            Write-Host '  [dry-run] would write this overlay snapshot:' -ForegroundColor DarkGray
-            Write-Host (Get-ConfigOverlayJson $snap)
-            return
-        }
-        $json = Get-ConfigOverlayJson $snap
-        if ($exists) {
-            $bak = ('{0}.bak.{1}' -f $dest, (Get-Date -Format 'yyyyMMdd_HHmmss'))
-            Copy-Item -LiteralPath $dest -Destination $bak -Force
-            Write-Host ("  [backup] {0}" -f $bak) -ForegroundColor DarkGray
-        }
-        [System.IO.File]::WriteAllText($dest, $json, (New-Object System.Text.UTF8Encoding($false)))
-        $readmePath = Join-Path $State.WorkDir 'verify_config.README.txt'
-        $readmeText = Get-ConfigOverlayReadmeText $overlayName
-        [System.IO.File]::WriteAllText($readmePath, $readmeText, (New-Object System.Text.UTF8Encoding($false)))
-        Write-Host '  [OK] wrote/updated work-folder config overlay (UTF-8, no BOM).' -ForegroundColor Green
-        Write-Host ("  [OK] wrote config field guide: {0}" -f $readmePath) -ForegroundColor Green
-        Write-Host '       Edit values, then re-run any phase. JSON overrides VerifyConfig.psd1.' -ForegroundColor DarkGray
+
+        & $writeOverlay $snap
         return
     }
 
@@ -2084,6 +2195,9 @@ $state = @{
     DfExePath       = $DfExePath
     CheckSheetPath  = $CheckSheetPath
     Force           = [bool]$Force.IsPresent
+    # Review phases: open the delivered J4 copy instead of the work evidence
+    # folder; 'j4' menu option toggles it per run.
+    ReviewJ4        = [bool]$J4.IsPresent
     # OCR for SendVsGift: on by default; 'o' menu option toggles off/on per run.
     Ocr             = $true
     # Snap run-time window check: seeded from SnapVerify.TimeCheck (usually off);

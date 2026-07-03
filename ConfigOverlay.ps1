@@ -18,8 +18,17 @@
 #   Remove-ConfigMetadataKeys   drop _README/_comment docs before runtime merge
 #   Merge-ConfigHashtable       deep-merge overlay onto base (base wins structure)
 #   New-ConfigOverlaySnapshot   operator-facing editable snapshot of a config
-#   Update-ConfigOverlayData    repair mode: add missing default keys to an
-#                               existing overlay WITHOUT touching its values
+#                               (canonical J4EvidenceDir/Address; stamps _SCHEMA)
+#   Get-ConfigSchemaPaths       dotted leaf-path list of a config tree (the
+#                               _SCHEMA stamp repair mode compares against)
+#   Update-ConfigOverlayData    repair mode: add ONLY fields the tool gained
+#                               since the overlay's _SCHEMA stamp was written --
+#                               a sparse operator file stays sparse
+#   Get-ConfigJ4EvidenceDir     canonical J4 evidence folder (legacy
+#                               DeliverFiles.J4EvidenceDir / Mail.EvidenceFolder
+#                               still win when set)
+#   Get-ConfigReviewerAddress   canonical reviewer mail address (legacy
+#                               Reviewer.Address still wins when set)
 #   Get-ConfigOverlayGroups      grouped InitConfig editor/readme sections
 #   Remove-ConfigEmptyArray     drop empty arrays (PS 5.1 serializes them as "")
 #   ConvertFrom-JsonUnicodeEscape  turn \uXXXX (>=0x80) back into real chars
@@ -151,11 +160,130 @@ function Remove-ConfigEmptyArray {
     return $Value
 }
 
+function Copy-ConfigSectionWithoutKeys {
+    # Shallow-copy a config section minus the named keys. Used by the snapshot
+    # builder so dropping a deprecated duplicate field never mutates the live
+    # runtime $Config the section hashtable is shared with.
+    param([hashtable]$Section, [string[]]$RemoveKeys)
+
+    $out = @{}
+    foreach ($k in @($Section.Keys)) {
+        if (@($RemoveKeys) -contains [string]$k) { continue }
+        $out[$k] = $Section[$k]
+    }
+    return $out
+}
+
+function Get-ConfigOverlayPathValue {
+    # Hashtable-only dotted-path read (schema paths never index into arrays).
+    param([hashtable]$Data, [string]$Path)
+
+    $cur = $Data
+    foreach ($part in @($Path -split '\.')) {
+        if (-not ($cur -is [hashtable]) -or -not $cur.ContainsKey($part)) { return $null }
+        $cur = $cur[$part]
+    }
+    return $cur
+}
+
+function Test-ConfigOverlayPathPresent {
+    # $true when every segment of the dotted path exists (hashtable walk).
+    param([hashtable]$Data, [string]$Path)
+
+    $cur = $Data
+    foreach ($part in @($Path -split '\.')) {
+        if (-not ($cur -is [hashtable]) -or -not $cur.ContainsKey($part)) { return $false }
+        $cur = $cur[$part]
+    }
+    return $true
+}
+
+function Set-ConfigOverlayPathValue {
+    # Hashtable-only dotted-path write; creates missing parent hashtables.
+    # Returns $false (and writes nothing) when an existing ancestor is not a
+    # hashtable -- the operator holds a non-object there and it must be kept.
+    param([hashtable]$Data, [string]$Path, [object]$Value)
+
+    $parts = @($Path -split '\.')
+    $cur = $Data
+    for ($i = 0; $i -lt ($parts.Count - 1); $i++) {
+        $part = $parts[$i]
+        if (-not $cur.ContainsKey($part)) { $cur[$part] = @{} }
+        elseif (-not ($cur[$part] -is [hashtable])) { return $false }
+        $cur = $cur[$part]
+    }
+    $cur[$parts[$parts.Count - 1]] = $Value
+    return $true
+}
+
+function Get-ConfigFirstNonBlank {
+    # First non-blank string value among the dotted paths, else ''.
+    param([hashtable]$Config, [string[]]$Paths)
+
+    if ($null -eq $Config) { return '' }
+    foreach ($p in @($Paths)) {
+        $v = Get-ConfigOverlayPathValue $Config $p
+        if ($null -ne $v -and -not [string]::IsNullOrWhiteSpace([string]$v)) { return ([string]$v).Trim() }
+    }
+    return ''
+}
+
+function Get-ConfigJ4EvidenceDir {
+    # The ONE J4 evidence folder consumers should read (DeliverFiles /
+    # BackupJ4 / DeliverMail body path / Review j4 option). Canonical field:
+    # top-level J4EvidenceDir. The legacy duplicates DeliverFiles.J4EvidenceDir
+    # and Mail.EvidenceFolder still WIN when non-empty so configs written
+    # before the merge keep behaving unchanged; InitConfig no longer emits them.
+    param([hashtable]$Config)
+
+    return (Get-ConfigFirstNonBlank $Config @('DeliverFiles.J4EvidenceDir', 'Mail.EvidenceFolder', 'J4EvidenceDir'))
+}
+
+function Get-ConfigReviewerAddress {
+    # The reviewer mail address (Outlook To). Canonical field: top-level
+    # Address. Legacy Reviewer.Address still wins when set (old configs keep
+    # working); InitConfig no longer emits it.
+    param([hashtable]$Config)
+
+    return (Get-ConfigFirstNonBlank $Config @('Reviewer.Address', 'Address'))
+}
+
+function Get-ConfigSchemaPaths {
+    # Dotted leaf-path inventory of a config tree: hashtables recurse; arrays
+    # and scalars are one atomic leaf (matching repair's add semantics);
+    # metadata keys (_README/_SCHEMA/...) are excluded. This is what the
+    # _SCHEMA stamp stores so repair can tell "field the tool gained since the
+    # overlay was written" apart from "field the operator deliberately removed".
+    param([hashtable]$Data)
+
+    function Get-SchemaPathsWorker([hashtable]$Cur, [string]$Prefix, $OutList) {
+        foreach ($k in @($Cur.Keys | Sort-Object)) {
+            if ([string]$k -match '^_') { continue }
+            $path = if ([string]::IsNullOrEmpty($Prefix)) { [string]$k } else { ('{0}.{1}' -f $Prefix, $k) }
+            if (($Cur[$k] -is [hashtable]) -and ($Cur[$k].Count -gt 0)) {
+                Get-SchemaPathsWorker $Cur[$k] $path $OutList
+            } else {
+                $OutList.Add($path)
+            }
+        }
+    }
+
+    # Plain array return (never ,@(...)): callers wrap the call in @(...),
+    # and that combination NESTS in PS 5.1 (repo convention, v2.8.1).
+    $list = New-Object System.Collections.Generic.List[string]
+    if ($null -ne $Data) { Get-SchemaPathsWorker $Data '' $list }
+    return @($list.ToArray() | Sort-Object)
+}
+
 function New-ConfigOverlaySnapshot {
     # Build the operator-facing snapshot that InitConfig writes to
     # <WorkDir>\verify_config.json. Runtime-only bootstrap values are excluded,
     # but all editable workflow config (including PhaseOrder) is emitted so a
     # work folder can be refreshed when VerifyConfig.psd1 gains new keys.
+    # The duplicated fields are merged into their canonical single field
+    # (J4EvidenceDir / Address; any legacy value migrates in), and a _SCHEMA
+    # field inventory is stamped so a later repair run adds only fields the
+    # tool gained after this write.
     param([hashtable]$Config)
 
     $snap = @{}
@@ -163,8 +291,9 @@ function New-ConfigOverlaySnapshot {
         'Clean JSON only: see verify_config.README.txt for field explanations.',
         'Precedence: CLI args > this JSON > VerifyConfig.psd1 > session fallback.',
         'Re-running -Phase InitConfig on this existing file REPAIRS it: your settings',
-        'are kept as-is and only newly-added config fields are appended (f=Force',
-        'regenerates the full snapshot instead).',
+        'are kept as-is and only config fields the tool gained since the last write',
+        'are appended (f=Force regenerates the full snapshot instead). Repair relies',
+        'on the _SCHEMA field inventory below -- leave _SCHEMA alone (ignored at runtime).',
         'Run .\VerifyTool.ps1 -Phase InitConfig -Interactive -- pick w to walk a group',
         'field-by-field (no path typing needed), or view/edit/delete/save by JSON path.'
     )
@@ -180,43 +309,73 @@ function New-ConfigOverlaySnapshot {
         $snap[$k] = $Config[$k]
     }
 
-    return (Remove-ConfigEmptyArray $snap)
+    # Merge the duplicated fields into their canonical top-level single field.
+    # A value set in a legacy duplicate migrates into the canonical field; the
+    # duplicates themselves are dropped from the snapshot (section hashtables
+    # are copied first -- $snap shares them with the live $Config).
+    $snap['J4EvidenceDir'] = Get-ConfigJ4EvidenceDir $Config
+    $snap['Address']       = Get-ConfigReviewerAddress $Config
+    if ($snap['Mail'] -is [hashtable])         { $snap['Mail']         = Copy-ConfigSectionWithoutKeys $snap['Mail'] @('EvidenceFolder') }
+    if ($snap['DeliverFiles'] -is [hashtable]) { $snap['DeliverFiles'] = Copy-ConfigSectionWithoutKeys $snap['DeliverFiles'] @('J4EvidenceDir') }
+    if ($snap['Reviewer'] -is [hashtable])     { $snap['Reviewer']     = Copy-ConfigSectionWithoutKeys $snap['Reviewer'] @('Address') }
+
+    $clean = Remove-ConfigEmptyArray $snap
+    $clean['_SCHEMA'] = @(Get-ConfigSchemaPaths $clean)
+    return $clean
 }
 
 function Update-ConfigOverlayData {
-    # REPAIR/UPDATE an existing overlay in place of a full regenerate:
-    # keep every key + value the operator already has (their settings are
-    # never overwritten, and a sparse hand-written overlay stays sparse
-    # apart from the additions), and ADD only the keys that exist in
-    # $Defaults (a New-ConfigOverlaySnapshot result) but are missing from
-    # $Existing -- i.e. fields the tool gained since the overlay was written.
-    # Nested hashtables are walked recursively; arrays and scalars are
-    # treated as atomic (an existing array is kept wholesale, matching
-    # Merge-ConfigHashtable's runtime merge semantics).
-    # Returns @{ Data = <hashtable>; Added = <string[] dotted paths> }.
+    # REPAIR/UPDATE an existing overlay in place of a full regenerate.
+    # The overlay's _SCHEMA stamp (written by New-ConfigOverlaySnapshot) lists
+    # every field path that existed when the file was last written. Repair
+    # adds ONLY the $Defaults fields that are NOT in that stamp -- fields the
+    # tool gained since -- so a sparse, hand-trimmed operator file stays
+    # sparse and a deliberately deleted field is never re-added. Existing
+    # values are never overwritten. A file WITHOUT a _SCHEMA stamp (written
+    # by an older InitConfig, or by hand) is only STAMPED on its first repair
+    # -- nothing is added, so the whole snapshot is never dumped into it;
+    # use f=Force / the interactive editor to pull in the full field set.
+    # Arrays and scalars stay atomic, matching Merge-ConfigHashtable.
+    # Returns @{ Data = <hashtable>; Added = <string[] dotted paths>; Stamped = <bool> }.
     param([hashtable]$Existing, [hashtable]$Defaults)
-
-    $added = New-Object System.Collections.Generic.List[string]
-
-    function Add-MissingKeysWorker([hashtable]$Cur, [hashtable]$Def, [string]$Prefix, $AddedList) {
-        foreach ($k in @($Def.Keys | Sort-Object)) {
-            $path = if ([string]::IsNullOrEmpty($Prefix)) { [string]$k } else { ('{0}.{1}' -f $Prefix, $k) }
-            if (-not $Cur.ContainsKey($k)) {
-                $Cur[$k] = $Def[$k]
-                $AddedList.Add($path)
-                continue
-            }
-            if (($Cur[$k] -is [hashtable]) -and ($Def[$k] -is [hashtable])) {
-                Add-MissingKeysWorker $Cur[$k] $Def[$k] $path $AddedList
-            }
-            # existing scalar/array (or type mismatch): keep the operator's value
-        }
-    }
 
     $data = @{}
     if ($null -ne $Existing) { $data = $Existing }
-    if ($null -ne $Defaults) { Add-MissingKeysWorker $data $Defaults '' $added }
-    return @{ Data = $data; Added = $added.ToArray() }
+    $defaultPaths = @(Get-ConfigSchemaPaths $Defaults)
+
+    $known = $null
+    if ($data.ContainsKey('_SCHEMA')) {
+        $known = @{}
+        foreach ($p in @($data['_SCHEMA'])) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$p)) { $known[[string]$p] = $true }
+        }
+    }
+
+    if ($null -eq $known) {
+        # Legacy file without a stamp: record the current field inventory and
+        # change nothing else. From the next run on, repair can tell genuinely
+        # new fields apart from fields this file simply never carried.
+        $data['_SCHEMA'] = $defaultPaths
+        return @{ Data = $data; Added = @(); Stamped = $true }
+    }
+
+    $added = New-Object System.Collections.Generic.List[string]
+    foreach ($path in $defaultPaths) {
+        if ($known.ContainsKey($path)) { continue }
+        if (Test-ConfigOverlayPathPresent $data $path) { continue }   # operator already added it by hand
+        $value = Get-ConfigOverlayPathValue $Defaults $path
+        if (Set-ConfigOverlayPathValue $data $path $value) { $added.Add($path) }
+    }
+
+    # Refresh the stamp as the UNION of what was known and the current
+    # defaults, so a field the operator deleted stays "known" and is never
+    # re-added by a later repair.
+    $stamp = @{}
+    foreach ($p in @($known.Keys)) { $stamp[[string]$p] = $true }
+    foreach ($p in $defaultPaths)  { $stamp[[string]$p] = $true }
+    $data['_SCHEMA'] = @($stamp.Keys | Sort-Object)
+
+    return @{ Data = $data; Added = $added.ToArray(); Stamped = $false }
 }
 
 function Get-ConfigOverlayGroups {
@@ -229,8 +388,8 @@ function Get-ConfigOverlayGroups {
         @{ Key = 'snap';  Label = 'Snap size / waits / capture geometry'; Paths = @('Window','Timing','Hm','Mq','Df','Mark') },
         @{ Key = 'excel'; Label = 'Excel workbook / replace / review / check sheet'; Paths = @('Workbook','ExcelSnap','Review','Replace','CheckSheet','SendVsGift','GfixLog') },
         @{ Key = 'wbs';   Label = 'WBS / mapping / compare helpers'; Paths = @('DefaultOwner','ExpectedTime','Align') },
-        @{ Key = 'path';  Label = 'Paths / folders / external tools'; Paths = @('Paths','Clone','Align.J4BaseDir','Df.ExePath','Df.GiftDataDir','Df.GfixDataDir','Review.EvidenceDir','Mail.EvidenceFolder','Mail.CheckSheetFolder','CheckSheet.Path','DeliverFiles') },
-        @{ Key = 'mail';  Label = 'Mail / reviewer / delivery'; Paths = @('Reviewer','Mail','DeliverFiles','CheckSheet') },
+        @{ Key = 'path';  Label = 'Paths / folders / external tools'; Paths = @('Paths','Clone','Align.J4BaseDir','Df.ExePath','Df.GiftDataDir','Df.GfixDataDir','Review.EvidenceDir','J4EvidenceDir','Mail.CheckSheetFolder','CheckSheet.Path','DeliverFiles') },
+        @{ Key = 'mail';  Label = 'Mail / reviewer / delivery'; Paths = @('Address','J4EvidenceDir','Reviewer','Mail','DeliverFiles','CheckSheet') },
         @{ Key = 'all';   Label = 'All editable JSON variables'; Paths = @('*') }
     )
 }
@@ -254,12 +413,19 @@ function Get-ConfigOverlayReadmeText {
         '- Standard JSON has no // or /* */ comments. Use this README for comments.',
         '- Save as UTF-8. Japanese strings are OK.',
         ('- Re-running -Phase InitConfig on an existing {0} REPAIRS it by default:' -f $OverlayName),
-        '  your settings are kept as-is and only newly-added config fields are appended.',
-        '  Use the f=Force option to regenerate the full snapshot (keeps a .bak).',
+        '  your settings are kept as-is and ONLY config fields the tool gained since the',
+        '  file was last written are appended -- a sparse file stays sparse. Repair uses',
+        '  the hidden _SCHEMA field inventory in the JSON; leave _SCHEMA alone (it is',
+        '  ignored at runtime). A file without _SCHEMA is stamped on its first repair',
+        '  (nothing added). Use the f=Force option to regenerate the full snapshot',
+        '  (keeps a .bak).',
         '- Run .\VerifyTool.ps1 -Phase InitConfig -Interactive to view groups, edit values, delete keys, and confirm save.',
         '- In the editor, pick w to WALK a group: it prompts field-by-field (Enter=keep,',
-        '  value=set, -del=delete, q=stop) so you never have to type a JSON path yourself.',
+        '  value=set, -d=delete, q=stop), then offers the next group / save when the',
+        '  group is done -- you never have to type a JSON path yourself.',
         '  v/e/d still take a manual path when you already know exactly what to touch.',
+        '- If saving fails (e.g. the JSON is open in an editor), nothing is lost: close',
+        '  the file, then r=retry; Enter keeps your edits in the editor menu.',
         '',
         'Groups in the InitConfig editor',
         '- intro: _README introduction lines shown at the top of the JSON.',
@@ -271,6 +437,12 @@ function Get-ConfigOverlayReadmeText {
         '- mail: Reviewer/Mail/DeliverFiles/CheckSheet hand-off settings.',
         '',
         'Common fields',
+        '- J4EvidenceDir: the ONE J4 evidence folder, used by DeliverFiles, BackupJ4,',
+        '  the DeliverMail body path, and the review phases'' j4 option. (Legacy',
+        '  DeliverFiles.J4EvidenceDir / Mail.EvidenceFolder from an old file still win',
+        '  when set, but are no longer generated.)',
+        '- Address: reviewer mail address (Outlook To). (Legacy Reviewer.Address from',
+        '  an old file still wins when set, but is no longer generated.)',
         '- DefaultOwner: owner suffix for mapping_<Owner>.csv and operator name used by phases.',
         '- Workbook.ExcelPrefix: fixed project prefix before _<Excel_NAME>. Example: J4 review title (REQ-000xxxxx_GIFT project).',
         '- Window.Width / Height / CropPx / NoResize: browser screenshot window and crop behavior for HM/MQ/Jenkins snapshots.',

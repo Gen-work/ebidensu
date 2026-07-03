@@ -4,16 +4,22 @@
     "It is deep-merged over VerifyConfig.psd1 at startup. Precedence: CLI args > this JSON > .psd1 > session fallback.",
     "Only include the keys you want to override - every other setting falls back to VerifyConfig.psd1.",
     "Tip: run  VerifyTool.ps1 -Phase InitConfig  inside your WorkDir. First run generates a FULL file;",
-    "when the file already exists it REPAIRS instead: your settings are kept as-is and only",
-    "newly-added config fields are appended. Use the f=Force option to regenerate the full snapshot.",
+    "when the file already exists it REPAIRS instead: your settings are kept as-is and ONLY fields the",
+    "tool gained since the file's _SCHEMA stamp are appended (a sparse file stays sparse; leave _SCHEMA",
+    "alone -- it is ignored at runtime). Use the f=Force option to regenerate the full snapshot.",
     "Run  VerifyTool.ps1 -Phase InitConfig -Interactive  then pick w to walk a group field-by-field",
-    "(no path typing needed), or v/e/d to peek/edit/delete by JSON path; s to save.",
+    "(Enter=keep, value=set, -d=delete, q=stop; no path typing needed), or v/e/d by JSON path; s to save.",
+    "J4EvidenceDir and Address below are the SINGLE canonical fields (they replaced the duplicated",
+    "DeliverFiles.J4EvidenceDir / Mail.EvidenceFolder / Reviewer.Address, which still win if an old file sets them).",
     "InitConfig also writes verify_config.README.txt with field explanations; JSON itself cannot use // comments.",
     "Save as UTF-8 (no BOM). Japanese text is fine as plain UTF-8."
   ],
 
   "DefaultOwner": "0602",
   "Workbook": { "ExcelPrefix": "" },
+
+  "J4EvidenceDir": "",
+  "Address": "",
 
   "Window":     { "Width": 1050, "Height": 761, "CropPx": 6, "NoResize": false },
   "Timing":     { "ActionWaitMs": 500, "ResultWaitSec": 2, "ResultWaitMs": 500 },
@@ -22,7 +28,7 @@
   "Clone":      { "SourceDir": "" },
   "Align":      { "J4BaseDir": "", "HostSystemTypes": [] },
   "CheckSheet": { "Path": "", "SheetName": "Check Sheet_J4", "Language": "JAVA" },
-  "Reviewer":   { "DisplayName": "", "Address": "", "ShortName": "" },
+  "Reviewer":   { "DisplayName": "", "ShortName": "" },
 
   "Replace": {
     "GfixLogFontName": "MS Gothic",

@@ -13,9 +13,11 @@
 # delivery), the whole work evidence file is copied in as a bootstrap
 # (same as this phase's old, pre-rework behavior).
 #
-# Also copies DATA\GFIX and DATA\GIFT files to the corresponding J4 data
-# directories. Source files are NEVER deleted -- this phase only copies /
-# in-place sheet-replaces.
+# Also copies DATA\GFIX and DATA\GIFT files (including each side's unzip
+# subfolder -- DfSnap isZip extractions -- into the matching J4
+# DATA\...\unzip folder) to the corresponding J4 data directories. Source
+# files are NEVER deleted -- this phase only copies / in-place
+# sheet-replaces.
 #
 # Completion is tracked per Excel_NAME via the isFilesDelivered column
 # in the mapping CSV. Uses net use drive mapping to handle long UNC paths.
@@ -95,9 +97,9 @@ if (-not (Test-Path -LiteralPath $mappingPath)) {
 
 if ([string]::IsNullOrWhiteSpace($J4EvidenceDir)) {
     Write-Host '[ERROR] J4 destination not configured.' -ForegroundColor Red
-    Write-Host '  Set DeliverFiles.J4EvidenceDir (or Mail.EvidenceFolder) in this work' -ForegroundColor Yellow
-    Write-Host '  folder''s verify_config.json -- run: .\VerifyTool.ps1 -Phase InitConfig -Interactive' -ForegroundColor Yellow
-    Write-Host '  (group "path" or "mail"), or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
+    Write-Host '  Set J4EvidenceDir in this work folder''s verify_config.json -- run:' -ForegroundColor Yellow
+    Write-Host '  .\VerifyTool.ps1 -Phase InitConfig -Interactive  (group "path" or "mail"),' -ForegroundColor Yellow
+    Write-Host '  or pass -J4EvidenceDir on the command line.' -ForegroundColor Yellow
     exit 1
 }
 
@@ -401,11 +403,18 @@ foreach ($name in $names) {
 }
 
 # ---- Phase B/C: DATA files ----
+# Each side also delivers its unzip subfolder (DfSnap isZip extractions,
+# named after the correl id) into the matching J4 DATA\...\unzip folder.
+# The unzip specs are Optional: absent locally on most rows, so no dir is
+# no message; their J4 subfolder is created on first delivery.
 if (-not $skipDataFlag) {
 foreach ($spec in @(
-    @{ Label = 'GFIX'; LocalDir = $localGfixDir; J4Dir = $J4GfixDataDir },
-    @{ Label = 'GIFT'; LocalDir = $localGiftDir; J4Dir = $J4GiftDataDir }
+    @{ Label = 'GFIX';       LocalDir = $localGfixDir;                   J4Dir = $J4GfixDataDir;                   Optional = $false },
+    @{ Label = 'GFIX unzip'; LocalDir = (Join-Path $localGfixDir 'unzip'); J4Dir = (Join-Path $J4GfixDataDir 'unzip'); Optional = $true },
+    @{ Label = 'GIFT';       LocalDir = $localGiftDir;                   J4Dir = $J4GiftDataDir;                   Optional = $false },
+    @{ Label = 'GIFT unzip'; LocalDir = (Join-Path $localGiftDir 'unzip'); J4Dir = (Join-Path $J4GiftDataDir 'unzip'); Optional = $true }
 )) {
+    if ($spec.Optional -and -not (Test-Path -LiteralPath $spec.LocalDir)) { continue }
     Write-Host ''
     Write-Host ("-- DATA {0} --" -f $spec.Label) -ForegroundColor Cyan
     if (Test-Path -LiteralPath $spec.LocalDir) {
@@ -416,6 +425,9 @@ foreach ($spec in @(
                 Write-Host ("  -> {0}" -f $f.Name) -ForegroundColor White
                 if (-not $dryRunFlag) {
                     try {
+                        if ($spec.Optional -and -not (Test-Path -LiteralPath $spec.J4Dir)) {
+                            New-Item -ItemType Directory -Path $spec.J4Dir -Force | Out-Null
+                        }
                         $destPath = Join-Path $spec.J4Dir $f.Name
                         if ($backupFlag -and (Test-Path -LiteralPath $destPath)) { Backup-ExistingFile $destPath | Out-Null }
                         Copy-LongPath $f.FullName $spec.J4Dir | Out-Null
