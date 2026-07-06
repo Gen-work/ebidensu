@@ -355,6 +355,15 @@ silently-wrong-language fallback (e.g. `Get-WinOcrEngine` picking the
 Japanese user-profile recognizer because no English pack is installed) or a
 garbled/empty OCR read is now visible instead of invisible. No behavior
 change to box placement, console output only.
+**Added** -- the OCR tier now applies two lessons from the SendVsGift Stage 2
+OCR debugging (`docs/SendVsGift.md` "Troubleshooting: OCR reads nothing"),
+since MQ's raw page text is the same shape of problem (9 TAB-separated
+fields per record): (1) reconstructs true rows from word boxes via
+`SendMetadata.ps1`'s `ConvertTo-SendRowLines` instead of trusting the
+engine's own line breaks, which can fragment one wide row into several OCR
+"lines"; (2) OCRs with BOTH `en-US` and `ja` and pools every reconstructed
+row from both before parsing, since the `ja` recognizer garbles ASCII digit
+runs on this font family while `en-US` reads them cleanly (and vice versa).
 
 v2.10.1 (GIFT_MQ RowHeight calibrated from a real evidence workbook):
 **Changed** -- `Mark.Boxes.GIFT_MQ.RowHeight` moved from `0` (disabled) to

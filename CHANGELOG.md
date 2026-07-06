@@ -18,7 +18,24 @@
   `Get-WinOcrEngine` silently fell back to the user-profile (e.g. Japanese)
   recognizer, or when OCR ran but read too little/garbled text to match any
   MQ record row.
-- No behavior change to box placement -- purely additive console output.
+
+### Added
+- The OCR tier (`Get-MarkMqRowInfoFromOcr`) now applies the two lessons
+  already learned the hard way in the SendVsGift Stage 2 OCR work (see
+  `docs/SendVsGift.md` "Troubleshooting: OCR reads nothing"), since MQ's raw
+  page text is the same shape of problem (9 TAB-separated fields per
+  record): (1) the recognizer can fragment ONE wide row into SEVERAL OCR
+  "lines", so it no longer trusts the engine's own line breaks -- it reuses
+  `SendMetadata.ps1`'s `ConvertTo-SendRowLines` to reconstruct true rows by
+  re-clustering word boxes on vertical position; (2) the `ja` recognizer
+  garbles ASCII digit runs on this font family while `en-US` reads them
+  cleanly (and vice versa), so it now OCRs with BOTH `en-US` and `ja` and
+  pools every reconstructed row from both languages before parsing -- a
+  garbled read from one language just fails to match and is ignored, a clean
+  read from the other produces the hit. `[rowinfo]` now prints one line per
+  language attempted (engine, strategy, row count, char count).
+- No behavior change to box placement -- purely additive/improved fallback
+  logic and console output.
 
 ### Changed
 - `Mark.Boxes.GIFT_MQ.RowHeight` changed from `0` (disabled) to `63.8`, so the
