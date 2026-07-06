@@ -1,3 +1,28 @@
+## 2026-07-06 - GIFT_MQ row-info: fall back to the "Number of records" header when the per-record regex misses (v2.10.4)
+
+### Fixed
+- Real-world `.ocr.txt` dumps (v2.10.3) showed the actual bug behind the
+  wrong GIFT_MQ box position: OCR read `Number of records 1` cleanly (the
+  `en-US` pass), yet `ConvertFrom-MqPageText`'s strict 9-field-per-line regex
+  never matched the record line itself (mangled by OCR spacing/noise), so
+  `ConvertTo-MarkMqRowInfo` returned `$null` for every one of 4 correls in a
+  workbook -- all four were genuine 1-record correls, so the box should have
+  shifted up one row (`(1-2) * 63.8 = -63.8`) but instead silently kept the
+  row-2 baseline, landing on the wrong spot.
+- `ConvertFrom-MqPageText` already extracts this same header into
+  `$parsed.NumRecords` (`Number of records\s+(\d+)`), it just was never
+  consulted as a fallback. `ConvertTo-MarkMqRowInfo` now falls back to it
+  whenever the per-record row match comes up empty: individual records can't
+  be told apart without a parsed row, so this assumes the target -- always
+  the LAST/newest one per this project's convention -- is the final row
+  (`NumRecords`). `NumRecords = 1` is the common, fully unambiguous case:
+  there is only one row to point at, no assumption needed. Source is tagged
+  `<tier>-header` (e.g. `ocr-header`) so it's visible in `[ROW ]`/`[rowinfo]`
+  output that this came from the header count rather than a matched record.
+- This applies to both the `.txt` and `ocr` tiers (they share this parsing
+  tail); the `.mqrow.json` sidecar tier is unaffected (already exact, since
+  it is computed live at snap time).
+
 ## 2026-07-06 - GIFT_MQ OCR tier: dump reconstructed rows for debugging (v2.10.3)
 
 ### Added
