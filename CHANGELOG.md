@@ -1,3 +1,24 @@
+## 2026-07-06 - GIFT_MQ OCR tier: dump reconstructed rows for debugging (v2.10.3)
+
+### Added
+- `Get-MarkMqRowInfoFromOcr` now writes every reconstructed row from both
+  `en-US` and `ja` to `<WorkDir>\snap\GIFT_MQ\<correl>.ocr.txt` (labeled per
+  language, including a `FAILED` marker if a language's OCR call threw), and
+  prints a `[rowinfo] ocr: dumped reconstructed rows to ...` line pointing at
+  it. Same idea as SendVsGift Stage 2's per-correl `_ocr.txt` dump.
+
+### Notes
+- First real-world OCR run (v2.10.2) showed OCR genuinely reading
+  substantial text (`en-US`: 17 rows/506 chars, `ja`: 16 rows/593 chars) yet
+  matching 0 MQ records -- with counts alone there was no way to tell whether
+  that's mostly non-table page furniture (title/buttons/column headers)
+  crowding out the ~4 real record lines, a single OCR misread breaking
+  `ConvertFrom-MqPageText`'s strict anchored regex (it has no fuzzy-match
+  tolerance, unlike `Compare-SendRecordCheck`), or a row-reconstruction
+  tolerance issue splitting one real record line into several fragments.
+  This dump makes that diagnosable directly from the actual text instead of
+  guessing further regex/tolerance changes blind.
+
 ## 2026-07-06 - GIFT_MQ row-info fallback chain: diagnostics on every failure path (v2.10.2)
 
 ### Fixed
