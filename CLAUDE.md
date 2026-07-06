@@ -340,7 +340,21 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-06 v2.10.1)
+## Current state (last bump: 2026-07-06 v2.10.2)
+
+v2.10.2 (GIFT_MQ row-info fallback chain: diagnostics on every failure path):
+**Fixed** -- all three row-position fallback tiers (sidecar / archived `.txt`
+/ OCR, `Mark.ps1`) used to fail completely silently (bare `catch {}`, no
+output), so a `[WARN] ... row info unavailable` line gave no clue which tier
+was tried or why it came up empty -- confirmed by a real run where all 4
+correls in a workbook hit the WARN with zero visibility. Every failure path
+now prints a `[rowinfo]` line: sidecar/txt report the exact path checked and
+why it failed (missing / unreadable / no matching row); the OCR tier also
+reports the actual recognizer language used and characters extracted, so a
+silently-wrong-language fallback (e.g. `Get-WinOcrEngine` picking the
+Japanese user-profile recognizer because no English pack is installed) or a
+garbled/empty OCR read is now visible instead of invisible. No behavior
+change to box placement, console output only.
 
 v2.10.1 (GIFT_MQ RowHeight calibrated from a real evidence workbook):
 **Changed** -- `Mark.Boxes.GIFT_MQ.RowHeight` moved from `0` (disabled) to

@@ -325,13 +325,20 @@ function Find-MarkBoxByImage {
 function Get-MarkMqRowInfoFromSidecar {
     param([string]$WorkDir, [string]$Folder, [string]$Cid)
     $sidecarPath = Join-Path $WorkDir ("snap\{0}\{1}.mqrow.json" -f $Folder, $Cid)
-    if (-not (Test-Path -LiteralPath $sidecarPath)) { return $null }
+    if (-not (Test-Path -LiteralPath $sidecarPath)) {
+        Write-Host ("    [rowinfo] sidecar: not found ({0})" -f $sidecarPath) -ForegroundColor DarkGray
+        return $null
+    }
     try {
         $data = Get-Content -LiteralPath $sidecarPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $rowIndex = [int]$data.rowIndex
-        if ($rowIndex -lt 1) { return $null }
+        if ($rowIndex -lt 1) {
+            Write-Host ("    [rowinfo] sidecar: no valid rowIndex in {0}" -f $sidecarPath) -ForegroundColor DarkGray
+            return $null
+        }
         return [PSCustomObject]@{ RowIndex = $rowIndex; NumRecords = [int]$data.numRecords; Source = 'sidecar' }
     } catch {
+        Write-Host ("    [rowinfo] sidecar: unreadable ({0}: {1})" -f $sidecarPath, $_.Exception.Message) -ForegroundColor DarkGray
         return $null
     }
 }
@@ -342,39 +349,61 @@ function Get-MarkMqRowInfoFromSidecar {
 # default, so this reproduces the snap-time pick in the common case; under a
 # time-windowed run this fallback-of-a-fallback may pick a slightly different
 # row than the sidecar would have -- acceptable since it only ever fires when
-# the sidecar is already missing.
+# the sidecar is already missing. Prints a [rowinfo] diagnostic line on every
+# failure path so an all-tiers-failed WARN is actually debuggable afterward.
 function ConvertTo-MarkMqRowInfo {
     param([string]$Text, [string]$Cid, [string]$Source)
-    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
-    if (-not (Get-Command -Name 'ConvertFrom-MqPageText' -ErrorAction SilentlyContinue)) { return $null }
-    if (-not (Get-Command -Name 'Get-MatchedRowIndex' -ErrorAction SilentlyContinue)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        Write-Host ("    [rowinfo] {0}: page text is empty" -f $Source) -ForegroundColor DarkGray
+        return $null
+    }
+    if (-not (Get-Command -Name 'ConvertFrom-MqPageText' -ErrorAction SilentlyContinue) -or
+        -not (Get-Command -Name 'Get-MatchedRowIndex' -ErrorAction SilentlyContinue)) {
+        Write-Host ("    [rowinfo] {0}: SnapVerify.ps1 not loaded (ConvertFrom-MqPageText/Get-MatchedRowIndex missing)" -f $Source) -ForegroundColor DarkGray
+        return $null
+    }
     $parsed = ConvertFrom-MqPageText $Text
     $rowIndex = Get-MatchedRowIndex -Rows $parsed.Rows -CorrelId $Cid -DateProperty 'RecvDate' -Expected $null
-    if ($rowIndex -lt 1) { return $null }
+    if ($rowIndex -lt 1) {
+        Write-Host ("    [rowinfo] {0}: parsed {1} MQ row(s), none matched correl {2}" -f $Source, @($parsed.Rows).Count, $Cid) -ForegroundColor DarkGray
+        return $null
+    }
     return [PSCustomObject]@{ RowIndex = $rowIndex; NumRecords = @($parsed.Rows).Count; Source = $Source }
 }
 
 function Get-MarkMqRowInfoFromArchivedText {
     param([string]$WorkDir, [string]$Folder, [string]$Cid)
     $txtPath = Join-Path $WorkDir ("snap\{0}\{1}.txt" -f $Folder, $Cid)
-    if (-not (Test-Path -LiteralPath $txtPath)) { return $null }
+    if (-not (Test-Path -LiteralPath $txtPath)) {
+        Write-Host ("    [rowinfo] txt: not found ({0})" -f $txtPath) -ForegroundColor DarkGray
+        return $null
+    }
     try {
         $text = Get-Content -LiteralPath $txtPath -Raw -Encoding UTF8
         return ConvertTo-MarkMqRowInfo -Text $text -Cid $Cid -Source 'txt'
     } catch {
+        Write-Host ("    [rowinfo] txt: read failed ({0}: {1})" -f $txtPath, $_.Exception.Message) -ForegroundColor DarkGray
         return $null
     }
 }
 
 function Get-MarkMqRowInfoFromOcr {
     param([string]$WorkDir, [string]$Folder, [string]$Cid)
-    if (-not (Get-Command -Name 'Invoke-WinOcrFile' -ErrorAction SilentlyContinue)) { return $null }
+    if (-not (Get-Command -Name 'Invoke-WinOcrFile' -ErrorAction SilentlyContinue)) {
+        Write-Host '    [rowinfo] ocr: OcrWindows.ps1 not loaded (Invoke-WinOcrFile missing)' -ForegroundColor DarkGray
+        return $null
+    }
     $pngPath = Join-Path $WorkDir ("snap\{0}\{1}.png" -f $Folder, $Cid)
-    if (-not (Test-Path -LiteralPath $pngPath)) { return $null }
+    if (-not (Test-Path -LiteralPath $pngPath)) {
+        Write-Host ("    [rowinfo] ocr: source PNG not found ({0})" -f $pngPath) -ForegroundColor DarkGray
+        return $null
+    }
     try {
         $ocr = Invoke-WinOcrFile -Path $pngPath -LanguageTag 'en'
+        Write-Host ("    [rowinfo] ocr: engine={0} strategy={1} chars={2}" -f $ocr.LanguageTag, $ocr.TextStrategy, ([string]$ocr.Text).Length) -ForegroundColor DarkGray
         return ConvertTo-MarkMqRowInfo -Text ([string]$ocr.Text) -Cid $Cid -Source 'ocr'
     } catch {
+        Write-Host ("    [rowinfo] ocr: failed ({0})" -f $_.Exception.Message) -ForegroundColor DarkGray
         return $null
     }
 }

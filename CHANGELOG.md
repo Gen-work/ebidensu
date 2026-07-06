@@ -1,4 +1,24 @@
-## 2026-07-06 - GIFT_MQ RowHeight calibrated from a real evidence workbook (v2.10.1)
+## 2026-07-06 - GIFT_MQ row-info fallback chain: diagnostics on every failure path (v2.10.2)
+
+### Fixed
+- All three GIFT_MQ row-position fallback tiers (`Get-MarkMqRowInfoFromSidecar`
+  / `-FromArchivedText` / `-FromOcr`, `Mark.ps1`) failed completely silently:
+  a missing sidecar/`.txt`/PNG, a read/parse error, or an OCR engine failure
+  each just returned `$null` with a bare `catch {}`, so an operator seeing the
+  `[WARN] ... row info unavailable` line had no way to tell which of the 3
+  tiers were tried or why each one came up empty (first real-world report:
+  all 4 correls in a workbook hit the WARN with zero visibility into whether
+  it was a missing sidecar, a missing archive, or a failed OCR call).
+- Every failure path now prints a `[rowinfo]` diagnostic line before falling
+  through to the next tier: sidecar/txt report the exact path checked and
+  whether it was missing/unreadable/had no matching row; the OCR tier
+  additionally reports the PNG path, and on a successful OCR call, the actual
+  recognizer language used, its text-read strategy, and the character count
+  it extracted -- so it's visible when the English pack isn't installed and
+  `Get-WinOcrEngine` silently fell back to the user-profile (e.g. Japanese)
+  recognizer, or when OCR ran but read too little/garbled text to match any
+  MQ record row.
+- No behavior change to box placement -- purely additive console output.
 
 ### Changed
 - `Mark.Boxes.GIFT_MQ.RowHeight` changed from `0` (disabled) to `63.8`, so the
