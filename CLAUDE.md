@@ -17,6 +17,8 @@ Remote: `gen-work/ebidensu`
 Branch convention: `claude/<slug>`
 Local clone: configure per environment (do not commit personal paths).
 
+Versioning: use `MAJOR.MINOR.PATCH`; release headings in `CHANGELOG.md` carry the current `vX.Y.Z`. See `docs/Versioning.md` for bump rules and release automation guidance.
+
 ## File map
 
 ```
@@ -328,9 +330,9 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-06 v2.9.30)
+## Current state (last bump: 2026-07-06 v2.9.31)
 
-v2.9.30 (Mark image-match: anchor-only sizing + snap-time template-hit
+v2.9.31 (Mark image-match: anchor-only sizing + snap-time template-hit
 sidecar; DfSnap default to window capture; FillCheckSheet write verification):
 **Fixed** -- (1) a `Mark.Boxes` entry with a `Template` match used to size
 the drawn red box from the TEMPLATE CROP'S OWN pixel dimensions (scaled +
