@@ -340,7 +340,26 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-06 v2.10.0)
+## Current state (last bump: 2026-07-06 v2.10.1)
+
+v2.10.1 (GIFT_MQ RowHeight calibrated from a real evidence workbook):
+**Changed** -- `Mark.Boxes.GIFT_MQ.RowHeight` moved from `0` (disabled) to
+`63.8`, measured via `Probe-Shapes.ps1` against a real J4 evidence workbook:
+two hand-verified 2-record correls (`JIDSM01S`, `JIGPM01S`) sat at `OffsetY`
+177.0/176.9 (matching `BaseRow=2`'s existing default almost exactly), while a
+1-record correl (`JIGPMA1S`) sat at `OffsetY` 113.2 -- one row up, delta
+63.75, essentially equal to the box's own `Height` (63). `BaseRow` stays 2.
+**Important** -- a per-work-folder `verify_config.json` that already has a
+`Mark.Boxes.GIFT_MQ` entry (from any earlier `-Phase InitConfig` run) will
+NOT pick this up automatically: `Mark.Boxes.<folder>` is an array, and
+`Merge-ConfigHashtable` replaces arrays wholesale rather than merging their
+fields; `InitConfig` repair also treats a whole array as one atomic schema
+field, so it will not backfill just the new `BaseRow`/`RowHeight` keys into
+an already-known `GIFT_MQ` entry either. Existing work folders need
+`BaseRow`/`RowHeight` added to their own `verify_config.json` by hand (or the
+`GIFT_MQ` key deleted from that file's `Boxes` object to fall through to this
+default). Still static-checked only -- confirm on an office PC, ideally with
+a 3+-record sample to validate the linear RowHeight assumption further.
 
 v2.10.0 (GIFT_MQ Mark: row-position aware red-box placement for correls with
 more than one MQ record): **Added** -- `Mark.Boxes` entries can now carry

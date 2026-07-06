@@ -161,9 +161,14 @@
             'GIFT_HM'         = @( @{ OffsetX = 395.3; OffsetY = 189.2; Width = 62.2; Height = 16.5 } )
             # BaseRow/RowHeight: see the row-position doc above. This box's
             # OffsetY (176.9) is calibrated for BaseRow=2 (the common
-            # 2-record case); RowHeight stays 0 (disabled) until a real
-            # row-to-row point spacing is measured on an office PC.
-            'GIFT_MQ'         = @( @{ OffsetX = 167.9; OffsetY = 176.9; Width = 528.8; Height = 63; BaseRow = 2; RowHeight = 0 } )
+            # 2-record case). RowHeight=63.8 measured 2026-07-06 from a real
+            # J4 evidence workbook via Probe-Shapes.ps1: two 2-record correls
+            # (JIDSM01S, JIGPM01S) landed at OffsetY 177.0/176.9, and a
+            # 1-record correl (JIGPMA1S) landed at 113.2 -- one row up, delta
+            # 63.75 ~= this box's own Height (63), i.e. records are packed
+            # back-to-back with no gap. Re-measure (Probe-Shapes.ps1 against a
+            # 3+-record sample) if boxes still look off after enabling.
+            'GIFT_MQ'         = @( @{ OffsetX = 167.9; OffsetY = 176.9; Width = 528.8; Height = 63; BaseRow = 2; RowHeight = 63.8 } )
             'GIFT_Jenkins'    = @( @{ OffsetX = 301.5; OffsetY = 282.0; Width = 288.8; Height = 18.8 } )
             # Image-recognition-only stamp: when the NoGfixHit.png pattern (a
             # crop of what a past-data "hit" looks like on the Jenkins list

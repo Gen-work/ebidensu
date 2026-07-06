@@ -61,7 +61,7 @@
     "LineWeight": 1.5,
     "Boxes": {
       "GIFT_HM":      [ { "OffsetX": 395.3, "OffsetY": 189.2, "Width": 62.2,  "Height": 16.5 } ],
-      "GIFT_MQ":      [ { "OffsetX": 167.9, "OffsetY": 176.9, "Width": 528.8, "Height": 63, "BaseRow": 2, "RowHeight": 0 } ],
+      "GIFT_MQ":      [ { "OffsetX": 167.9, "OffsetY": 176.9, "Width": 528.8, "Height": 63, "BaseRow": 2, "RowHeight": 63.8 } ],
       "GIFT_Jenkins": [ { "OffsetX": 301.5, "OffsetY": 282.0, "Width": 288.8, "Height": 18.8 } ],
       "GIFT_noGfixfile": [ { "Template": "NoGfixHit.png", "StampImage": "already_exists.png" } ],
       "GFIX_HM":      [ { "OffsetX": 395.3, "OffsetY": 189.2, "Width": 62.2,  "Height": 16.5 } ],
@@ -70,7 +70,7 @@
     },
     "_TemplateExample": "Add \"Template\": \"gift_hm_status.png\" (+ optional Tolerance/PadX/PadY) to a Boxes entry to try image-recognition placement first, falling back to OffsetX/OffsetY/Width/Height above when no match is found. If the entry ALSO has its own Width/Height (like GIFT_Jenkins/GFIX_Jenkins above), Template only supplies the anchor point and that configured size is kept as-is; without Width/Height the box is sized to the matched crop itself. See mark_templates/README.txt.",
     "_StampImageExample": "Add \"StampImage\": \"already_exists.png\" alongside \"Template\" on a Boxes entry to insert that image (native size) at the Template match location instead of a rectangle. No match = no stamp, no fixed-offset fallback -- used for GIFT_noGfixfile above so already_exists.png only appears when NoGfixHit.png is actually found. See mark_templates/README.txt.",
-    "_RowHeightExample": "GIFT_MQ's OffsetY (176.9) is calibrated for BaseRow=2 (the common 2-record case). Some correls show 1, 3, or more MQ records, and the box must always land on the LAST/newest one. Set RowHeight (points, >0) to have Mark.ps1 add (actualRow - BaseRow) * RowHeight to OffsetY; actualRow/recordCount come from snap\\GIFT_MQ\\<correl>.mqrow.json (written at snap time), else a re-parse of <correl>.txt, else English OCR of <correl>.png. RowHeight=0 (default) disables the shift -- needs a real row-to-row point spacing measured on an office PC before enabling.",
+    "_RowHeightExample": "GIFT_MQ's OffsetY (176.9) is calibrated for BaseRow=2 (the common 2-record case). Some correls show 1, 3, or more MQ records, and the box must always land on the LAST/newest one. RowHeight (points, >0) has Mark.ps1 add (actualRow - BaseRow) * RowHeight to OffsetY; actualRow/recordCount come from snap\\GIFT_MQ\\<correl>.mqrow.json (written at snap time), else a re-parse of <correl>.txt, else English OCR of <correl>.png. RowHeight=63.8 was measured from a real J4 evidence workbook (Probe-Shapes.ps1); RowHeight=0 disables the shift and keeps the legacy fixed offset if it needs to be turned back off.",
     "TemplateDir": "",
     "ImageMatch": { "Tolerance": 15 },
     "NoteStamps": {

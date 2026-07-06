@@ -1,3 +1,32 @@
+## 2026-07-06 - GIFT_MQ RowHeight calibrated from a real evidence workbook (v2.10.1)
+
+### Changed
+- `Mark.Boxes.GIFT_MQ.RowHeight` changed from `0` (disabled) to `63.8`, so the
+  v2.10.0 row-position feature is now active by default instead of needing a
+  manual opt-in. Measured via `Probe-Shapes.ps1` against a real J4 evidence
+  workbook: two 2-record correls (`JIDSM01S`, `JIGPM01S`) had their
+  hand-verified mark box at `OffsetY` 177.0 / 176.9 (matching the existing
+  `BaseRow=2` default almost exactly), while a 1-record correl (`JIGPMA1S`)
+  landed at `OffsetY` 113.2 -- one row up, a delta of 63.75, essentially
+  identical to the box's own `Height` (63). `BaseRow` stays `2`.
+- `verify_config.example.json` updated to match.
+
+### Notes
+- **Per-work-folder `verify_config.json` overlays do NOT auto-pick this up.**
+  `Mark.Boxes.<folder>` is an array; `Merge-ConfigHashtable`
+  (`ConfigOverlay.ps1`) replaces arrays wholesale rather than merging their
+  contents, and `-Phase InitConfig` repair treats a whole array as one atomic
+  schema field -- so a `verify_config.json` that already has a `GIFT_MQ`
+  entry (from any earlier `InitConfig` run) keeps overriding this default,
+  `BaseRow`/`RowHeight` included, until the operator adds those two keys to
+  that JSON entry by hand (or deletes the `GIFT_MQ` key from their overlay's
+  `Boxes` object to fall through to this default).
+- Still static-checked only in this dev environment -- confirm the box lands
+  correctly on a real 1-record and 3+-record correl on an office PC, and
+  re-measure via `Probe-Shapes.ps1` if it looks off (a 3+-record sample would
+  further validate the linear `RowHeight` assumption beyond the 1-vs-2-record
+  data point above).
+
 ## 2026-07-06 - GIFT_MQ Mark: row-position aware red-box placement (v2.10.0)
 
 ### Added
