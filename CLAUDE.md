@@ -103,6 +103,12 @@ Mark.ps1                Phase MarkGift / MarkGfix / MarkDf. Each Mark.Boxes
                         placement (Locate-ByImage.ps1 LockBits match against
                         the source snap PNG) before falling back to the fixed
                         OffsetX/OffsetY box -- see mark_templates/README.txt.
+                        A box may also add BaseRow/RowHeight (GIFT_MQ) to
+                        shift OffsetY for correls whose page shows a
+                        different record count than the calibrated baseline
+                        row; the target row/count come from a snap-time
+                        <correl>.mqrow.json sidecar, else a re-parse of
+                        <correl>.txt, else English OCR of <correl>.png.
                         -Mode Gfix also highlights the GFIX log Command: row,
                         auto-sized to the row's actual text width (GfixLog.
                         AutoHighlightWidth, capped at HighlightColEnd).
@@ -156,6 +162,10 @@ HmSnap.ps1              Phase GiftHmSnap / GfixHmSnap. MappingStore + ProgressLo
 MqSnap.ps1              Phase GiftMqSnap. MappingStore + ProgressLog + SnapVerify
                         F2 detection (page-text poll, page-kind sentinel, MQ
                         record verdict ok=1/ng=2, batch Expected_Time prompt).
+                        Also writes <correl>.mqrow.json (the verdict's target
+                        row index + record count, via Get-MatchedRowIndex)
+                        so Mark.ps1 can shift the GIFT_MQ red box when a
+                        correl shows other than the usual 2 records.
 ExcelSnap.ps1           Phase ExcelSnap                 (legacy, kept as-is)
 Common.ps1              shared WinAPI/screenshot/SendKeys helpers (dot-sourceable)
 Generate-HostOpenMapping.ps1  generates mapping CSV from wipGFIX一覧.xlsx.
@@ -330,7 +340,39 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-06 v2.9.31)
+## Current state (last bump: 2026-07-06 v2.10.0)
+
+v2.10.0 (GIFT_MQ Mark: row-position aware red-box placement for correls with
+more than one MQ record): **Added** -- `Mark.Boxes` entries can now carry
+`BaseRow` / `RowHeight` keys so the fixed OffsetY box tracks a variable
+number of on-page MQ records instead of always assuming the common 2-record
+case. Some correls show only 1 record, others 3 or more; the box must always
+land on the LAST/newest record (the same one `Test-MqRecord`'s newest-wins
+verdict already selects), which is not always the row the box's `OffsetY`
+was originally calibrated against (`BaseRow`, default 2). When `RowHeight`
+(points, > 0) is set, `Mark.ps1` adds `(actualRow - BaseRow) * RowHeight` to
+`OffsetY`. The actual row index + total record count are resolved through a
+3-tier fallback, all sourced from files already sitting in
+`WorkDir\snap\<folder>\<correl>.*` (no extra Excel open, never blocks Mark):
+(1) a new `<correl>.mqrow.json` sidecar written by `MqSnap.ps1` right after
+the F2 verdict (`Get-MatchedRowIndex` -- the exact same pure logic/row that
+already drives the M5/F5 `.loc.json` pixel-localisation sidecar, just
+decoupled from that feature's pixel-geometry calibration requirement); (2) a
+re-parse of the archived Ctrl+A page capture `<correl>.txt` with the same
+pure `SnapVerify.ps1` helpers (`ConvertFrom-MqPageText` +
+`Get-MatchedRowIndex`, `Expected=$null` = newest-overall, matching the
+common `SnapVerify.TimeCheck=$false` default); (3) last resort, English
+Windows OCR (`OcrWindows.ps1`) of the source PNG, parsed the same way (MQ
+records are ASCII/numeric -- a reasonable OCR target). New `Mark.ps1`
+functions: `Get-MarkMqRowInfoFromSidecar` / `-FromArchivedText` / `-FromOcr`
+/ `Get-MarkMqRowInfo` (dispatcher) + shared `ConvertTo-MarkMqRowInfo`. Ships
+with `RowHeight = 0` on `GIFT_MQ` (disabled, legacy fixed-offset behavior
+unchanged) -- turning it on needs a real row-to-row point spacing measured
+on an office PC (e.g. via `Probe-Shapes.ps1` against a sample with 1 or 3+
+records), since this dev environment has no Windows/Excel/MQ page access to
+measure it. Static-checked only -- confirm the sidecar write, the `.txt`/OCR
+fallback parsing, and the computed box position on an office PC once
+`RowHeight` is set.
 
 v2.9.31 (Mark image-match: anchor-only sizing + snap-time template-hit
 sidecar; DfSnap default to window capture; FillCheckSheet write verification):

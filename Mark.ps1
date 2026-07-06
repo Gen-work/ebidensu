@@ -125,6 +125,17 @@ try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch {
 $locateByImagePath = Join-Path $PSScriptRoot 'Locate-ByImage.ps1'
 if (-not (Test-Path -LiteralPath $locateByImagePath)) { $locateByImagePath = '' }
 
+# -- Row-position fallback chain for boxes with a 'RowHeight' key (GIFT_MQ) --
+# SnapVerify.ps1 (pure MQ page-text parser + Get-MatchedRowIndex) and
+# OcrWindows.ps1 (Windows built-in OCR) are both no-param() dot-source-safe
+# per CLAUDE.md. Both are optional here -- a missing file only disables that
+# one fallback tier (Get-Command guards in Get-MarkMqRowInfo* below), it
+# never blocks Mark.
+$snapVerifyPath = Join-Path $PSScriptRoot 'SnapVerify.ps1'
+if (Test-Path -LiteralPath $snapVerifyPath) { . $snapVerifyPath }
+$ocrWindowsPath = Join-Path $PSScriptRoot 'OcrWindows.ps1'
+if (Test-Path -LiteralPath $ocrWindowsPath) { . $ocrWindowsPath }
+
 function Resolve-MarkTemplatePath {
     <#
     Resolves a Mark.Boxes 'Template' value to a real file path. Tries the
@@ -297,6 +308,84 @@ function Find-MarkBoxByImage {
         Write-Host ("  [WARN] image-match failed for {0}\{1}: {2}" -f $Folder, $Cid, $_.Exception.Message) -ForegroundColor Yellow
         return $null
     }
+}
+
+# -- Row-position fallback chain (opt-in via a box's 'RowHeight' key) -------
+#
+# Some snap pages (GIFT_MQ) repeat a variable number of records for one
+# correl (usually 2, sometimes 1 or 3+), and the box must always land on the
+# LAST/newest one -- not always the 'BaseRow' the fixed OffsetY was
+# calibrated against. Three tiers, each returning @{ RowIndex; NumRecords;
+# Source } or $null (never throws):
+#   1. sidecar   <correl>.mqrow.json written at snap time by MqSnap.ps1
+#      (fastest + most accurate: computed while the live page was open).
+#   2. txt       re-parse the archived Ctrl+A page capture <correl>.txt.
+#   3. ocr       English-OCR the source PNG and parse that text the same way
+#      (MQ records are ASCII/numeric -- a reasonable OCR candidate).
+function Get-MarkMqRowInfoFromSidecar {
+    param([string]$WorkDir, [string]$Folder, [string]$Cid)
+    $sidecarPath = Join-Path $WorkDir ("snap\{0}\{1}.mqrow.json" -f $Folder, $Cid)
+    if (-not (Test-Path -LiteralPath $sidecarPath)) { return $null }
+    try {
+        $data = Get-Content -LiteralPath $sidecarPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $rowIndex = [int]$data.rowIndex
+        if ($rowIndex -lt 1) { return $null }
+        return [PSCustomObject]@{ RowIndex = $rowIndex; NumRecords = [int]$data.numRecords; Source = 'sidecar' }
+    } catch {
+        return $null
+    }
+}
+
+# Shared tail for the txt / ocr tiers: parse page text with SnapVerify.ps1's
+# pure MQ helpers and pick the target row with NO time window (Expected =
+# $null -> newest overall / first matched). SnapVerify.TimeCheck is off by
+# default, so this reproduces the snap-time pick in the common case; under a
+# time-windowed run this fallback-of-a-fallback may pick a slightly different
+# row than the sidecar would have -- acceptable since it only ever fires when
+# the sidecar is already missing.
+function ConvertTo-MarkMqRowInfo {
+    param([string]$Text, [string]$Cid, [string]$Source)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    if (-not (Get-Command -Name 'ConvertFrom-MqPageText' -ErrorAction SilentlyContinue)) { return $null }
+    if (-not (Get-Command -Name 'Get-MatchedRowIndex' -ErrorAction SilentlyContinue)) { return $null }
+    $parsed = ConvertFrom-MqPageText $Text
+    $rowIndex = Get-MatchedRowIndex -Rows $parsed.Rows -CorrelId $Cid -DateProperty 'RecvDate' -Expected $null
+    if ($rowIndex -lt 1) { return $null }
+    return [PSCustomObject]@{ RowIndex = $rowIndex; NumRecords = @($parsed.Rows).Count; Source = $Source }
+}
+
+function Get-MarkMqRowInfoFromArchivedText {
+    param([string]$WorkDir, [string]$Folder, [string]$Cid)
+    $txtPath = Join-Path $WorkDir ("snap\{0}\{1}.txt" -f $Folder, $Cid)
+    if (-not (Test-Path -LiteralPath $txtPath)) { return $null }
+    try {
+        $text = Get-Content -LiteralPath $txtPath -Raw -Encoding UTF8
+        return ConvertTo-MarkMqRowInfo -Text $text -Cid $Cid -Source 'txt'
+    } catch {
+        return $null
+    }
+}
+
+function Get-MarkMqRowInfoFromOcr {
+    param([string]$WorkDir, [string]$Folder, [string]$Cid)
+    if (-not (Get-Command -Name 'Invoke-WinOcrFile' -ErrorAction SilentlyContinue)) { return $null }
+    $pngPath = Join-Path $WorkDir ("snap\{0}\{1}.png" -f $Folder, $Cid)
+    if (-not (Test-Path -LiteralPath $pngPath)) { return $null }
+    try {
+        $ocr = Invoke-WinOcrFile -Path $pngPath -LanguageTag 'en'
+        return ConvertTo-MarkMqRowInfo -Text ([string]$ocr.Text) -Cid $Cid -Source 'ocr'
+    } catch {
+        return $null
+    }
+}
+
+function Get-MarkMqRowInfo {
+    param([string]$WorkDir, [string]$Folder, [string]$Cid)
+    $info = Get-MarkMqRowInfoFromSidecar -WorkDir $WorkDir -Folder $Folder -Cid $Cid
+    if ($null -ne $info) { return $info }
+    $info = Get-MarkMqRowInfoFromArchivedText -WorkDir $WorkDir -Folder $Folder -Cid $Cid
+    if ($null -ne $info) { return $info }
+    return Get-MarkMqRowInfoFromOcr -WorkDir $WorkDir -Folder $Folder -Cid $Cid
 }
 
 # -- Target filter -------------------------------------------
@@ -655,6 +744,30 @@ try {
                                 try { $oy = [double]$b.OffsetY } catch {}
                                 try { $bw = [double]$b.Width } catch {}
                                 try { $bh = [double]$b.Height } catch {}
+
+                                # Row-position adjustment (opt-in via 'RowHeight' > 0):
+                                # some pages (GIFT_MQ) repeat a variable number of
+                                # records and the target is always the LAST/newest
+                                # one for this correl, which is not always the box's
+                                # calibrated 'BaseRow' (default 2, the common
+                                # 2-record case). Shift OffsetY by the row delta;
+                                # RowHeight = 0 (default) keeps the legacy fixed
+                                # offset untouched.
+                                $rowHeight = 0.0
+                                try { $rowHeight = [double]$b.RowHeight } catch {}
+                                if ($rowHeight -gt 0) {
+                                    $baseRow = 2
+                                    if ($b.ContainsKey('BaseRow')) { try { $baseRow = [int]$b.BaseRow } catch {} }
+                                    $rowInfo = Get-MarkMqRowInfo -WorkDir $WorkDir -Folder $folder -Cid $cid
+                                    if ($null -ne $rowInfo) {
+                                        $dY = ($rowInfo.RowIndex - $baseRow) * $rowHeight
+                                        $oy += $dY
+                                        Write-Host ("  [ROW ] {0,-16} {1,-12} [{2,3}] row {3}/{4} ({5}) dY={6:0.0}" -f $folder, $cid, $idx, $rowInfo.RowIndex, $rowInfo.NumRecords, $rowInfo.Source, $dY) -ForegroundColor DarkCyan
+                                    } else {
+                                        Write-Host ("  [WARN] {0,-16} {1,-12} [{2,3}] row info unavailable; using BaseRow {3} offset as-is" -f $folder, $cid, $idx, $baseRow) -ForegroundColor Yellow
+                                    }
+                                }
+
                                 $left = $picLeft + $ox
                                 $top  = $picTop  + $oy
                             }

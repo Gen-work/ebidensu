@@ -1,3 +1,55 @@
+## 2026-07-06 - GIFT_MQ Mark: row-position aware red-box placement (v2.10.0)
+
+### Added
+- `Mark.Boxes.GIFT_MQ` (and any other box, opt-in) can now carry `BaseRow` /
+  `RowHeight` keys. Some correls show only 1 MQ record on the transfer-status
+  page, most show 2, and some show 3 or more retries; the red box must always
+  land on the LAST/newest record for that correl (the same row
+  `Test-MqRecord`'s newest-wins verdict already picked), not always the row
+  the box's fixed `OffsetY` was originally calibrated against (`BaseRow`,
+  default 2 = the common 2-record case). When `RowHeight` (points, > 0) is
+  set, `Mark.ps1` adds `(actualRow - BaseRow) * RowHeight` to `OffsetY`
+  before drawing.
+- The actual row index + total record count are resolved through a 3-tier
+  fallback chain, every tier reading only files already saved under
+  `WorkDir\snap\<folder>\<correl>.*` (no Excel/Edge involved, never blocks
+  Mark):
+  1. `<correl>.mqrow.json` -- a new sidecar `MqSnap.ps1` writes right after
+     the F2 verdict, using the exact same pure `Get-MatchedRowIndex`
+     (`SnapVerify.ps1`) that already backs the M5/F5 `.loc.json`
+     pixel-localisation sidecar, but decoupled from that feature's pixel
+     geometry calibration (`SnapVerify.Localize.MqRow1Top/RowHeight/...`) --
+     this path only needs the row's parse-order position, not its pixel
+     rect, so it works with zero extra config.
+  2. A re-parse of the archived Ctrl+A page capture `<correl>.txt` (already
+     saved whenever `SnapVerify.SaveText` is on) via the same pure
+     `ConvertFrom-MqPageText` + `Get-MatchedRowIndex` (`Expected = $null` ->
+     newest-overall, matching the common `SnapVerify.TimeCheck = $false`
+     default), for evidence snapped before this feature existed or where the
+     sidecar is otherwise missing.
+  3. Last resort: English Windows OCR (`OcrWindows.ps1`) of the source PNG,
+     parsed the same way -- MQ records are ASCII/numeric, a reasonable OCR
+     target. Only reached when both the sidecar and the archived `.txt` are
+     missing.
+- New `Mark.ps1` functions: `Get-MarkMqRowInfoFromSidecar`,
+  `Get-MarkMqRowInfoFromArchivedText`, `Get-MarkMqRowInfoFromOcr`, the
+  dispatcher `Get-MarkMqRowInfo`, and shared parser `ConvertTo-MarkMqRowInfo`.
+  `Mark.ps1` now dot-sources `SnapVerify.ps1` and `OcrWindows.ps1` (both
+  already no-`param()` dot-source-safe) for this chain; either file being
+  missing only disables its own fallback tier and never blocks marking.
+
+### Notes
+- Ships with `RowHeight = 0` on `GIFT_MQ` in both `VerifyConfig.psd1` and
+  `verify_config.example.json`, which keeps the legacy fixed-offset behavior
+  byte-for-byte unchanged until an operator sets a real value. The actual
+  row-to-row point spacing (and whether `BaseRow = 2` needs adjusting) must
+  be measured on an office PC -- e.g. via `Probe-Shapes.ps1` against a sample
+  evidence workbook with a 1-record or 3-record correl -- since this dev
+  environment has no Windows/Excel/MQ page access to derive it. Static-
+  checked only: confirm the `.mqrow.json` write, the `.txt`/OCR fallback
+  parsing, and the resulting box position on an office PC once `RowHeight`
+  is set.
+
 ## 2026-07-06 - Mark image-match anchor-only sizing + snap-time template-hit sidecar; DfSnap window default; FillCheckSheet write verification (v2.9.31)
 
 ### Fixed

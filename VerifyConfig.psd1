@@ -138,10 +138,32 @@
         # 何もしない＝通常の「該当ファイルなし」ケース）。
         #   StampImage : 貼り付ける画像ファイル名 (TemplateDir または
         #                <repo>\mark_templates を検索)
+        #
+        # 行位置補正方式（任意、GIFT_MQ等）：1つの correl に対して複数レコード
+        # （通常2件、時には1件や3件以上）が並ぶページでは、実際の対象（常に
+        # そのcorrelの最新＝最後のレコード）が、OffsetY算出の基準にした行
+        # （BaseRow、既定2＝一般的な2件ケース）と異なる行に来ることがある。
+        # RowHeight（pt、既定0=無効）を設定すると、Mark.ps1 が
+        # OffsetY += (実際の対象行 - BaseRow) * RowHeight で補正する。
+        # 対象行/レコード総数の取得は次の順で試みる（すべて WorkDir\snap\
+        # <folder>\<correl>.* を参照、Excel を再度開かない）：
+        #   1. <correl>.mqrow.json  -- MqSnap.ps1 がスナップ時に書き出す
+        #      サイドカー（Get-MatchedRowIndex の結果。最速・最も正確）。
+        #   2. <correl>.txt         -- 保存済みの Ctrl+A ページテキストを
+        #      再パース（SnapVerify.ps1 の同じ純粋ロジックを再利用）。
+        #   3. <correl>.png         -- 上記どちらも無い場合の最終手段として
+        #      英語 OCR でページを読み取り、同じロジックでパース。
+        # RowHeight=0（既定）なら従来通り固定オフセットのまま。BaseRow/
+        # RowHeight は実機（Excel）で Probe-Shapes.ps1 等により測定/確認
+        # が必要 -- 未確認のためこのリポジトリでは既定 0 のまま出荷する。
         Boxes = @{
             'excel'           = @()
             'GIFT_HM'         = @( @{ OffsetX = 395.3; OffsetY = 189.2; Width = 62.2; Height = 16.5 } )
-            'GIFT_MQ'         = @( @{ OffsetX = 167.9; OffsetY = 176.9; Width = 528.8; Height = 63 } )
+            # BaseRow/RowHeight: see the row-position doc above. This box's
+            # OffsetY (176.9) is calibrated for BaseRow=2 (the common
+            # 2-record case); RowHeight stays 0 (disabled) until a real
+            # row-to-row point spacing is measured on an office PC.
+            'GIFT_MQ'         = @( @{ OffsetX = 167.9; OffsetY = 176.9; Width = 528.8; Height = 63; BaseRow = 2; RowHeight = 0 } )
             'GIFT_Jenkins'    = @( @{ OffsetX = 301.5; OffsetY = 282.0; Width = 288.8; Height = 18.8 } )
             # Image-recognition-only stamp: when the NoGfixHit.png pattern (a
             # crop of what a past-data "hit" looks like on the Jenkins list

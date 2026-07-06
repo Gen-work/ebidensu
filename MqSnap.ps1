@@ -585,6 +585,32 @@ foreach ($item in $pendingItems) {
             if ($locPath) { Write-Host ("    loc: snap\GIFT_MQ\{0}.loc.json" -f $correl) -ForegroundColor DarkGray }
         }
 
+        # Row-position sidecar (<correl>.mqrow.json): which on-page row is the
+        # verdict's target record (newest RecvDate -- the same row Test-
+        # MqRecord already picked) and how many records the page showed, so
+        # Mark.ps1 can shift the GIFT_MQ red box off its calibrated baseline
+        # row when a correl was retried (1, 3, or more records instead of the
+        # common 2). Decoupled from the M5/F5 pixel-localisation feature above
+        # -- no Localize/geometry calibration needed, just the same pure
+        # Get-MatchedRowIndex Write-SnapLocalize already uses.
+        if (Get-Command -Name 'Get-MatchedRowIndex' -ErrorAction SilentlyContinue) {
+            try {
+                $mqRowIndex = Get-MatchedRowIndex -Rows $parsed.Rows -CorrelId $correl `
+                    -DateProperty 'RecvDate' -Expected $rowExpected -ToleranceMin $runTolerance
+                if ($mqRowIndex -ge 1) {
+                    $mqRowInfo = [ordered]@{
+                        correl     = $correl
+                        rowIndex   = $mqRowIndex
+                        numRecords = @($parsed.Rows).Count
+                        created    = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                    }
+                    $rowInfoPath = Join-Path $snapDir ("{0}.mqrow.json" -f $correl)
+                    Save-SnapLocSidecar -Loc $mqRowInfo -Path $rowInfoPath | Out-Null
+                    Write-Host ("    row: snap\GIFT_MQ\{0}.mqrow.json (row {1}/{2})" -f $correl, $mqRowIndex, $mqRowInfo.numRecords) -ForegroundColor DarkGray
+                }
+            } catch {}
+        }
+
         if ($verdict.Verdict -eq 'ok') {
             $item.$snapField = '1'
             Write-Host ("    -> OK: {0}" -f $verdict.Reason) -ForegroundColor Green
