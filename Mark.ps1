@@ -126,15 +126,19 @@ $locateByImagePath = Join-Path $PSScriptRoot 'Locate-ByImage.ps1'
 if (-not (Test-Path -LiteralPath $locateByImagePath)) { $locateByImagePath = '' }
 
 # -- Row-position fallback chain for boxes with a 'RowHeight' key (GIFT_MQ) --
-# SnapVerify.ps1 (pure MQ page-text parser + Get-MatchedRowIndex) and
-# OcrWindows.ps1 (Windows built-in OCR) are both no-param() dot-source-safe
-# per CLAUDE.md. Both are optional here -- a missing file only disables that
+# SnapVerify.ps1 (pure MQ page-text parser + Get-MatchedRowIndex), OcrWindows.
+# ps1 (Windows built-in OCR), and SendMetadata.ps1 (ConvertTo-SendRowLines --
+# reused here for its word-box row reconstruction, proven by the SendVsGift
+# OCR debugging in docs/SendVsGift.md) are all no-param() dot-source-safe per
+# CLAUDE.md. All three are optional here -- a missing file only disables that
 # one fallback tier (Get-Command guards in Get-MarkMqRowInfo* below), it
 # never blocks Mark.
 $snapVerifyPath = Join-Path $PSScriptRoot 'SnapVerify.ps1'
 if (Test-Path -LiteralPath $snapVerifyPath) { . $snapVerifyPath }
 $ocrWindowsPath = Join-Path $PSScriptRoot 'OcrWindows.ps1'
 if (Test-Path -LiteralPath $ocrWindowsPath) { . $ocrWindowsPath }
+$sendMetadataPath = Join-Path $PSScriptRoot 'SendMetadata.ps1'
+if (Test-Path -LiteralPath $sendMetadataPath) { . $sendMetadataPath }
 
 function Resolve-MarkTemplatePath {
     <#
@@ -320,18 +324,28 @@ function Find-MarkBoxByImage {
 #   1. sidecar   <correl>.mqrow.json written at snap time by MqSnap.ps1
 #      (fastest + most accurate: computed while the live page was open).
 #   2. txt       re-parse the archived Ctrl+A page capture <correl>.txt.
-#   3. ocr       English-OCR the source PNG and parse that text the same way
-#      (MQ records are ASCII/numeric -- a reasonable OCR candidate).
+#   3. ocr       OCR the source PNG with en-US + ja (whichever reads the
+#      ASCII/digit fields cleanly), reconstruct true rows from the word
+#      boxes (SendMetadata.ps1's ConvertTo-SendRowLines, not the engine's
+#      own line breaks -- see docs/SendVsGift.md), and parse that the same
+#      way.
 function Get-MarkMqRowInfoFromSidecar {
     param([string]$WorkDir, [string]$Folder, [string]$Cid)
     $sidecarPath = Join-Path $WorkDir ("snap\{0}\{1}.mqrow.json" -f $Folder, $Cid)
-    if (-not (Test-Path -LiteralPath $sidecarPath)) { return $null }
+    if (-not (Test-Path -LiteralPath $sidecarPath)) {
+        Write-Host ("    [rowinfo] sidecar: not found ({0})" -f $sidecarPath) -ForegroundColor DarkGray
+        return $null
+    }
     try {
         $data = Get-Content -LiteralPath $sidecarPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $rowIndex = [int]$data.rowIndex
-        if ($rowIndex -lt 1) { return $null }
+        if ($rowIndex -lt 1) {
+            Write-Host ("    [rowinfo] sidecar: no valid rowIndex in {0}" -f $sidecarPath) -ForegroundColor DarkGray
+            return $null
+        }
         return [PSCustomObject]@{ RowIndex = $rowIndex; NumRecords = [int]$data.numRecords; Source = 'sidecar' }
     } catch {
+        Write-Host ("    [rowinfo] sidecar: unreadable ({0}: {1})" -f $sidecarPath, $_.Exception.Message) -ForegroundColor DarkGray
         return $null
     }
 }
@@ -342,41 +356,88 @@ function Get-MarkMqRowInfoFromSidecar {
 # default, so this reproduces the snap-time pick in the common case; under a
 # time-windowed run this fallback-of-a-fallback may pick a slightly different
 # row than the sidecar would have -- acceptable since it only ever fires when
-# the sidecar is already missing.
+# the sidecar is already missing. Prints a [rowinfo] diagnostic line on every
+# failure path so an all-tiers-failed WARN is actually debuggable afterward.
 function ConvertTo-MarkMqRowInfo {
     param([string]$Text, [string]$Cid, [string]$Source)
-    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
-    if (-not (Get-Command -Name 'ConvertFrom-MqPageText' -ErrorAction SilentlyContinue)) { return $null }
-    if (-not (Get-Command -Name 'Get-MatchedRowIndex' -ErrorAction SilentlyContinue)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        Write-Host ("    [rowinfo] {0}: page text is empty" -f $Source) -ForegroundColor DarkGray
+        return $null
+    }
+    if (-not (Get-Command -Name 'ConvertFrom-MqPageText' -ErrorAction SilentlyContinue) -or
+        -not (Get-Command -Name 'Get-MatchedRowIndex' -ErrorAction SilentlyContinue)) {
+        Write-Host ("    [rowinfo] {0}: SnapVerify.ps1 not loaded (ConvertFrom-MqPageText/Get-MatchedRowIndex missing)" -f $Source) -ForegroundColor DarkGray
+        return $null
+    }
     $parsed = ConvertFrom-MqPageText $Text
     $rowIndex = Get-MatchedRowIndex -Rows $parsed.Rows -CorrelId $Cid -DateProperty 'RecvDate' -Expected $null
-    if ($rowIndex -lt 1) { return $null }
+    if ($rowIndex -lt 1) {
+        Write-Host ("    [rowinfo] {0}: parsed {1} MQ row(s), none matched correl {2}" -f $Source, @($parsed.Rows).Count, $Cid) -ForegroundColor DarkGray
+        return $null
+    }
     return [PSCustomObject]@{ RowIndex = $rowIndex; NumRecords = @($parsed.Rows).Count; Source = $Source }
 }
 
 function Get-MarkMqRowInfoFromArchivedText {
     param([string]$WorkDir, [string]$Folder, [string]$Cid)
     $txtPath = Join-Path $WorkDir ("snap\{0}\{1}.txt" -f $Folder, $Cid)
-    if (-not (Test-Path -LiteralPath $txtPath)) { return $null }
+    if (-not (Test-Path -LiteralPath $txtPath)) {
+        Write-Host ("    [rowinfo] txt: not found ({0})" -f $txtPath) -ForegroundColor DarkGray
+        return $null
+    }
     try {
         $text = Get-Content -LiteralPath $txtPath -Raw -Encoding UTF8
         return ConvertTo-MarkMqRowInfo -Text $text -Cid $Cid -Source 'txt'
     } catch {
+        Write-Host ("    [rowinfo] txt: read failed ({0}: {1})" -f $txtPath, $_.Exception.Message) -ForegroundColor DarkGray
         return $null
     }
 }
 
 function Get-MarkMqRowInfoFromOcr {
+    <#
+    Applies the two lessons from the SendVsGift Stage-2 OCR debugging
+    (docs/SendVsGift.md "Troubleshooting: OCR reads nothing") to this same
+    fallback problem, since MQ's raw page text is the same shape (9 TAB-
+    separated fields per record):
+      1. The recognizer can fragment ONE wide, TAB-separated row into SEVERAL
+         OCR "lines" (field: ~187 OCR lines for a ~40-row screen), so a
+         strict per-physical-line regex parser sees nothing whole. Reuse
+         SendMetadata.ps1's ConvertTo-SendRowLines: it re-clusters ALL word
+         boxes by vertical center (ignoring the engine's own line breaks) and
+         rebuilds true rows left-to-right with spacing restored.
+      2. The 'ja' recognizer garbles ASCII digit runs on this font family
+         while 'en-US' reads the same digits cleanly (and vice versa can
+         catch what the other misses) -- OCR with BOTH and pool every
+         reconstructed row from both languages before parsing. A garbled
+         read from one language just fails ConvertFrom-MqPageText's regex
+         and is ignored; a clean read from the other produces the match.
+    #>
     param([string]$WorkDir, [string]$Folder, [string]$Cid)
-    if (-not (Get-Command -Name 'Invoke-WinOcrFile' -ErrorAction SilentlyContinue)) { return $null }
-    $pngPath = Join-Path $WorkDir ("snap\{0}\{1}.png" -f $Folder, $Cid)
-    if (-not (Test-Path -LiteralPath $pngPath)) { return $null }
-    try {
-        $ocr = Invoke-WinOcrFile -Path $pngPath -LanguageTag 'en'
-        return ConvertTo-MarkMqRowInfo -Text ([string]$ocr.Text) -Cid $Cid -Source 'ocr'
-    } catch {
+    if (-not (Get-Command -Name 'Invoke-WinOcrFile' -ErrorAction SilentlyContinue)) {
+        Write-Host '    [rowinfo] ocr: OcrWindows.ps1 not loaded (Invoke-WinOcrFile missing)' -ForegroundColor DarkGray
         return $null
     }
+    $pngPath = Join-Path $WorkDir ("snap\{0}\{1}.png" -f $Folder, $Cid)
+    if (-not (Test-Path -LiteralPath $pngPath)) {
+        Write-Host ("    [rowinfo] ocr: source PNG not found ({0})" -f $pngPath) -ForegroundColor DarkGray
+        return $null
+    }
+    $canRowCluster = [bool](Get-Command -Name 'ConvertTo-SendRowLines' -ErrorAction SilentlyContinue)
+
+    $pooledLines = New-Object System.Collections.Generic.List[string]
+    foreach ($lang in @('en-US', 'ja')) {
+        try {
+            $ocr = Invoke-WinOcrFile -Path $pngPath -LanguageTag $lang
+            $rowLines = if ($canRowCluster) { @(ConvertTo-SendRowLines $ocr.Lines) } else { @($ocr.Lines | ForEach-Object { [string]$_.Text }) }
+            Write-Host ("    [rowinfo] ocr({0}): engine={1} strategy={2} rows={3} chars={4}" -f $lang, $ocr.LanguageTag, $ocr.TextStrategy, @($rowLines).Count, ([string]$ocr.Text).Length) -ForegroundColor DarkGray
+            foreach ($l in @($rowLines)) { $pooledLines.Add([string]$l) }
+        } catch {
+            Write-Host ("    [rowinfo] ocr({0}): failed ({1})" -f $lang, $_.Exception.Message) -ForegroundColor DarkGray
+        }
+    }
+    if ($pooledLines.Count -eq 0) { return $null }
+    return ConvertTo-MarkMqRowInfo -Text ($pooledLines -join "`r`n") -Cid $Cid -Source 'ocr'
 }
 
 function Get-MarkMqRowInfo {
