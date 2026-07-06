@@ -371,11 +371,27 @@ function ConvertTo-MarkMqRowInfo {
     }
     $parsed = ConvertFrom-MqPageText $Text
     $rowIndex = Get-MatchedRowIndex -Rows $parsed.Rows -CorrelId $Cid -DateProperty 'RecvDate' -Expected $null
-    if ($rowIndex -lt 1) {
-        Write-Host ("    [rowinfo] {0}: parsed {1} MQ row(s), none matched correl {2}" -f $Source, @($parsed.Rows).Count, $Cid) -ForegroundColor DarkGray
-        return $null
+    if ($rowIndex -ge 1) {
+        return [PSCustomObject]@{ RowIndex = $rowIndex; NumRecords = @($parsed.Rows).Count; Source = $Source }
     }
-    return [PSCustomObject]@{ RowIndex = $rowIndex; NumRecords = @($parsed.Rows).Count; Source = $Source }
+
+    # Fallback when the strict 9-field-per-line regex matched no row (common
+    # under OCR noise -- confirmed by a real run: OCR read "Number of
+    # records 1" cleanly yet the record line itself didn't parse) but the
+    # page's own "Number of records N" header is still readable.
+    # ConvertFrom-MqPageText already extracts this into $parsed.NumRecords;
+    # it was just never consulted here before. Individual rows can't be told
+    # apart without a parsed record, so this assumes the target -- always the
+    # LAST/newest one -- is the final row (N), matching this project's own
+    # on-page ordering convention. N=1 is the common, fully unambiguous case:
+    # there is only one row to point at.
+    if ([int]$parsed.NumRecords -ge 1) {
+        Write-Host ("    [rowinfo] {0}: 9-field row match failed, using header 'Number of records {1}' (row assumed = last)" -f $Source, $parsed.NumRecords) -ForegroundColor DarkGray
+        return [PSCustomObject]@{ RowIndex = [int]$parsed.NumRecords; NumRecords = [int]$parsed.NumRecords; Source = ("{0}-header" -f $Source) }
+    }
+
+    Write-Host ("    [rowinfo] {0}: parsed {1} MQ row(s), none matched correl {2}, and no 'Number of records' header found" -f $Source, @($parsed.Rows).Count, $Cid) -ForegroundColor DarkGray
+    return $null
 }
 
 function Get-MarkMqRowInfoFromArchivedText {

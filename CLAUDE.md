@@ -340,7 +340,25 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-06 v2.10.3)
+## Current state (last bump: 2026-07-06 v2.10.4)
+
+v2.10.4 (GIFT_MQ row-info fallback chain: fix wrong box position via "Number
+of records" header fallback): **Fixed** -- real `.ocr.txt` dumps (v2.10.3)
+showed the actual bug: OCR read `Number of records 1` cleanly (`en-US`) yet
+the strict 9-field-per-line regex never matched the record line itself, so
+`ConvertTo-MarkMqRowInfo` returned `$null` for 4 real 1-record correls in a
+workbook -- each should have shifted the box up one row
+(`(1-2) * 63.8 = -63.8`) but silently kept the row-2 baseline instead,
+landing on the wrong spot. `ConvertFrom-MqPageText` already extracts this
+same header into `$parsed.NumRecords`; it just was never consulted as a
+fallback. `ConvertTo-MarkMqRowInfo` now falls back to it when the per-record
+match is empty, assuming the target is the final row (`NumRecords`) per this
+project's own "last/newest wins" convention -- `NumRecords = 1` needs no
+assumption at all, since there is only one row to point at. Tagged
+`<tier>-header` (e.g. `ocr-header`) in `[ROW ]`/`[rowinfo]` output so it's
+visible this came from the header count, not a matched record. Applies to
+both the `.txt` and `ocr` tiers (shared parsing tail); the sidecar tier is
+unaffected.
 
 v2.10.3 (GIFT_MQ OCR tier: dump reconstructed rows for debugging):
 **Added** -- `Get-MarkMqRowInfoFromOcr` now writes every reconstructed row
