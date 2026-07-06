@@ -1,3 +1,56 @@
+## 2026-07-06 - Mark image-match anchor-only sizing + snap-time template-hit sidecar; DfSnap window default; FillCheckSheet write verification (v2.9.31)
+
+### Fixed
+- **A `Mark.Boxes` entry with `Template` sized the drawn red box from the
+  template crop's own pixel dimensions whenever a match was found, ignoring
+  the box's own `Width`/`Height`.** This was fine for a box whose whole point
+  IS the crop (`GIFT_noGfixfile`'s `StampImage`), but broke as soon as
+  `Template` was added to an existing fixed-size box (`GIFT_Jenkins`/
+  `GFIX_Jenkins`, previously `Width=288.8`/`Height=18.8` via
+  `OffsetX`/`OffsetY`): the box shrank to the anchor crop's own size instead
+  of staying `288.8x18.8`. `Find-MarkBoxByImage` (`Mark.ps1`) now checks for
+  `Width`/`Height` on the box first -- when either is present, `Template`
+  only supplies the anchor (top-left corner, still shiftable via
+  `PadX`/`PadY`) and the configured `Width`/`Height` are used as-is; a box
+  with neither keeps the old crop-derived-size behavior.
+- **`FillCheckSheet.ps1`'s cell writes could fail silently.** Each of the 6
+  written columns (date + 5 others) was a bare `try { ... } catch {}` around
+  `.Value2 = ...` with no readback, so an exception or a silent no-op write
+  was swallowed with zero diagnostic and the run still printed `[OK] wrote N
+  row(s)` even when column B (date) came back blank. New `Set-CellChecked`
+  writes then reads back every cell and compares; a mismatch/exception is now
+  logged (`[WARN] <label> write failed/did not verify (row N)`) and the final
+  `[OK]` summary + `status\progress.jsonl` event reflect actual outcomes.
+
+### Added
+- **Snap-time template-hit sidecar.** `JenkinsSnap.ps1` (GiftJenkins /
+  GfixJenkins / GiftJenkinsNoFile) accepts `-MarkBoxes`
+  (`Config.Mark.Boxes[<folder>]`, threaded from `VerifyTool.ps1`) and, right
+  after each screenshot is saved, runs the same `Locate-ByImage.ps1` match
+  for every box carrying a `Template` key against the page as just captured,
+  caching hits to `snap\<folder>\<correl>.tplhit.json`
+  (`SnapLocalize.ps1`'s new `Write-MarkTemplateHits`). `Mark.ps1` reads this
+  sidecar first (`Get-MarkTemplateHitFromSidecar`) instead of re-scanning the
+  archived PNG, falling back to a live match when the sidecar is missing, has
+  no entry for that box, names a different Template, or was recorded against
+  a different-sized PNG. Zero new config fields -- reuses the existing
+  `Mark.Boxes[<folder>].Template` opt-in key. Console output now tags which
+  anchor source fired: `[MARK-IMG]`/`[STAMP-IMG]` each print `(sidecar)` or
+  `(live)`.
+- `Df.CaptureMode` default changed from `'region'` to `'window'`: DF snap now
+  auto-fits the actual df.exe window size instead of assuming a fixed
+  `1250x657` rectangle. The existing fallback to `region` on an invalid
+  handle/rect is unchanged and is now the safety net rather than the
+  default.
+
+### Notes
+- Static-checked only (no Windows/Excel/Edge in this dev environment):
+  confirm the anchor-only sizing once real `GIFT_Jenkins`/`GFIX_Jenkins`
+  `Template` crops are added, confirm the `.tplhit.json` sidecar is written
+  and actually consumed (not silently falling back to live every run),
+  confirm `window` capture mode against a real df.exe window, and confirm
+  `FillCheckSheet`'s verified writes on the real check-sheet workbook.
+
 ## 2026-07-03 - Document versioning policy and automation guidance (v2.9.30)
 
 ### Added

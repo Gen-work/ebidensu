@@ -24,6 +24,14 @@
 #      writes a .note.json sidecar when localisation is available.
 #    - SnapEnabled=$false reverts all modes to pure screenshot.
 #
+#  Mark.Boxes template-hit sidecar (opt-in via -MarkBoxes, from
+#  Config.Mark.Boxes[<folder>]): right after the screenshot is saved, any box
+#  carrying a 'Template' key is matched against the just-captured PNG and the
+#  hit cached to <correl>.tplhit.json (SnapLocalize.ps1's Write-MarkTemplateHits).
+#  Mark.ps1 reads this sidecar first instead of re-matching the archived PNG
+#  later, falling back to a live match when it is missing/stale. Empty
+#  -MarkBoxes = feature inert, byte-for-byte the old screenshot-only behavior.
+#
 #  Conventions:
 #    - All mapping I/O goes through MappingStore (atomic writes); progress
 #      events go to status\progress.jsonl via ProgressLog.
@@ -63,7 +71,14 @@ param(
     [string]$RunTolerance   = '',   # non-interactive tolerance override
 
     # ---- M5/F5 pixel localisation (Config.SnapVerify.Localize); off by default ----
-    [hashtable]$Localize    = @{}
+    [hashtable]$Localize    = @{},
+
+    # ---- Snap-time template-hit sidecar (Config.Mark.Boxes[<folder>]) ----
+    # Opt-in per box via a 'Template' key, same as Mark.ps1; boxes without one
+    # are ignored here. Empty array = feature inert (no sidecar attempted).
+    [object[]]$MarkBoxes             = @(),
+    [string]$MarkTemplateDir         = '',
+    [int]$MarkImageMatchTolerance    = 15
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -92,6 +107,9 @@ if (Test-Path -LiteralPath $jkFindHighlight) { . $jkFindHighlight }
 $jkSnapLocalize = Join-Path $scriptDir 'SnapLocalize.ps1'
 if (Test-Path -LiteralPath $jkSnapLocalize) { . $jkSnapLocalize }
 . (Join-Path $scriptDir 'JenkinsDownload.ps1')
+
+$jkLocateByImage = Join-Path $scriptDir 'Locate-ByImage.ps1'
+if (-not (Test-Path -LiteralPath $jkLocateByImage)) { $jkLocateByImage = '' }
 
 $pageTextScript = Join-Path $scriptDir 'Read-PageText.ps1'
 
@@ -494,6 +512,18 @@ foreach ($toCode in $groupOrder) {
                 # Dismiss find bar now that the screenshot is captured.
                 Send-Key '{ESC}' 200
                 Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green
+
+                # Opt-in per Mark.Boxes[$snapFolder] entry ('Template' key):
+                # run the same image-match now, against the page as just
+                # captured, and cache the hit so Mark.ps1 does not need to
+                # re-scan the archived PNG later. Best-effort -- never blocks
+                # the snap on failure (see Write-MarkTemplateHits).
+                if ($MarkBoxes.Count -gt 0 -and (Get-Command -Name 'Write-MarkTemplateHits' -ErrorAction SilentlyContinue)) {
+                    $tplHitPath = Write-MarkTemplateHits -SnapDir $snapDir -Correl $correl -PngPath $snapPath `
+                        -Boxes $MarkBoxes -TemplateDir $MarkTemplateDir -Tolerance $MarkImageMatchTolerance `
+                        -LocateScript $jkLocateByImage
+                    if ($tplHitPath) { Write-Host ("    tplhit: snap\{0}\{1}.tplhit.json" -f $snapFolder, $correl) -ForegroundColor DarkGray }
+                }
             } catch {
                 Write-Host ("    [FAIL] screenshot: {0}" -f $_.Exception.Message) -ForegroundColor Red
                 Write-ProgressEvent -WorkDir $WorkDir -Phase "Jenkins:$Mode" -CorrelIdS $correl `
