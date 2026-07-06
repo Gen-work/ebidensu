@@ -340,7 +340,19 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-06 v2.10.2)
+## Current state (last bump: 2026-07-06 v2.10.3)
+
+v2.10.3 (GIFT_MQ OCR tier: dump reconstructed rows for debugging):
+**Added** -- `Get-MarkMqRowInfoFromOcr` now writes every reconstructed row
+from both `en-US` and `ja` to `<WorkDir>\snap\GIFT_MQ\<correl>.ocr.txt`
+(same idea as SendVsGift Stage 2's per-correl `_ocr.txt` dump), since the
+first real-world OCR run (v2.10.2) showed OCR genuinely reading substantial
+text (17 rows/506 chars en-US, 16 rows/593 chars ja) yet matching 0 MQ
+records, with no way to tell from counts alone whether that's mostly
+non-table page furniture, a single OCR misread breaking the strict anchored
+regex (`ConvertFrom-MqPageText` has no fuzzy tolerance, unlike
+`Compare-SendRecordCheck`), or a row-reconstruction tolerance issue. This
+dump makes it diagnosable from the actual text instead of guessing further.
 
 v2.10.2 (GIFT_MQ row-info fallback chain: diagnostics on every failure path):
 **Fixed** -- all three row-position fallback tiers (sidecar / archived `.txt`

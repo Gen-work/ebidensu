@@ -426,16 +426,30 @@ function Get-MarkMqRowInfoFromOcr {
     $canRowCluster = [bool](Get-Command -Name 'ConvertTo-SendRowLines' -ErrorAction SilentlyContinue)
 
     $pooledLines = New-Object System.Collections.Generic.List[string]
+    $dumpLines   = New-Object System.Collections.Generic.List[string]
     foreach ($lang in @('en-US', 'ja')) {
         try {
             $ocr = Invoke-WinOcrFile -Path $pngPath -LanguageTag $lang
             $rowLines = if ($canRowCluster) { @(ConvertTo-SendRowLines $ocr.Lines) } else { @($ocr.Lines | ForEach-Object { [string]$_.Text }) }
             Write-Host ("    [rowinfo] ocr({0}): engine={1} strategy={2} rows={3} chars={4}" -f $lang, $ocr.LanguageTag, $ocr.TextStrategy, @($rowLines).Count, ([string]$ocr.Text).Length) -ForegroundColor DarkGray
             foreach ($l in @($rowLines)) { $pooledLines.Add([string]$l) }
+            $dumpLines.Add(("== {0} (engine={1} strategy={2}, {3} row(s)) ==" -f $lang, $ocr.LanguageTag, $ocr.TextStrategy, @($rowLines).Count))
+            foreach ($l in @($rowLines)) { $dumpLines.Add([string]$l) }
         } catch {
             Write-Host ("    [rowinfo] ocr({0}): failed ({1})" -f $lang, $_.Exception.Message) -ForegroundColor DarkGray
+            $dumpLines.Add(("== {0}: FAILED ({1}) ==" -f $lang, $_.Exception.Message))
         }
     }
+    # Best-effort debug dump of exactly what was reconstructed, so a "0 rows
+    # matched" result is diagnosable from the actual text instead of guessed
+    # at from counts alone (same idea as SendVsGift's per-correl _ocr.txt).
+    try {
+        $dumpPath = Join-Path $WorkDir ("snap\{0}\{1}.ocr.txt" -f $Folder, $Cid)
+        $enc = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($dumpPath, ($dumpLines -join "`r`n"), $enc)
+        Write-Host ("    [rowinfo] ocr: dumped reconstructed rows to {0}" -f $dumpPath) -ForegroundColor DarkGray
+    } catch {}
+
     if ($pooledLines.Count -eq 0) { return $null }
     return ConvertTo-MarkMqRowInfo -Text ($pooledLines -join "`r`n") -Cid $Cid -Source 'ocr'
 }
