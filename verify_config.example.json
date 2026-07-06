@@ -43,7 +43,7 @@
   "Df": {
     "ExePath": "",
     "DefaultExePath": "C:\\tools\\DF\\DF.exe",
-    "CaptureMode": "region",
+    "CaptureMode": "window",
     "LoadWaitSec": 8,
     "RegionX": 120, "RegionY": 280, "RegionWidth": 1250, "RegionHeight": 657,
     "CropLeft": 0, "CropTop": 0, "CropRight": 0, "CropBottom": 0
@@ -68,7 +68,7 @@
       "GFIX_Jenkins": [ { "OffsetX": 301.5, "OffsetY": 282.0, "Width": 288.8, "Height": 18.8 } ],
       "DF":           [ { "CellCols": "AW:BC", "RowsFromBottom": 2 } ]
     },
-    "_TemplateExample": "Add \"Template\": \"gift_hm_status.png\" (+ optional Tolerance/PadX/PadY) to a Boxes entry to try image-recognition placement first, falling back to OffsetX/OffsetY/Width/Height above when no match is found. See mark_templates/README.txt.",
+    "_TemplateExample": "Add \"Template\": \"gift_hm_status.png\" (+ optional Tolerance/PadX/PadY) to a Boxes entry to try image-recognition placement first, falling back to OffsetX/OffsetY/Width/Height above when no match is found. If the entry ALSO has its own Width/Height (like GIFT_Jenkins/GFIX_Jenkins above), Template only supplies the anchor point and that configured size is kept as-is; without Width/Height the box is sized to the matched crop itself. See mark_templates/README.txt.",
     "_StampImageExample": "Add \"StampImage\": \"already_exists.png\" alongside \"Template\" on a Boxes entry to insert that image (native size) at the Template match location instead of a rectangle. No match = no stamp, no fixed-offset fallback -- used for GIFT_noGfixfile above so already_exists.png only appears when NoGfixHit.png is actually found. See mark_templates/README.txt.",
     "TemplateDir": "",
     "ImageMatch": { "Tolerance": 15 },

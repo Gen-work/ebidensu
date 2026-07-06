@@ -1434,6 +1434,14 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             'GfixJenkins'       { 'GfixRecv' }
             'GiftJenkinsNoFile' { 'NoGfix' }
         }
+        # Same folder names as JenkinsSnap.ps1's own $modeCfg, needed only to
+        # pick this phase's slice of Config.Mark.Boxes for the template-hit
+        # sidecar below.
+        $jkFolder = switch ($PhaseKey) {
+            'GiftJenkins'       { 'GIFT_Jenkins' }
+            'GfixJenkins'       { 'GFIX_Jenkins' }
+            'GiftJenkinsNoFile' { 'GIFT_noGfixfile' }
+        }
         $args = $base.Clone()
         $args['Mode'] = $mode
         $args['CropPx'] = $State.CropPx
@@ -1456,6 +1464,14 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($Config.ContainsKey('ExpectedTime')) {
             $args['TimeColumn'] = [string]$Config.ExpectedTime.TimeColumn
             $args['TimeFormat'] = [string]$Config.ExpectedTime.TimeFormat
+        }
+        # Snap-time template-hit sidecar: only this phase's folder slice of
+        # Mark.Boxes is relevant. Boxes without a 'Template' key are ignored
+        # by Write-MarkTemplateHits, so this is safe to pass unconditionally.
+        if ($Config.Mark -and $Config.Mark.Boxes -and $Config.Mark.Boxes[$jkFolder]) {
+            $args['MarkBoxes'] = @($Config.Mark.Boxes[$jkFolder])
+            if (-not [string]::IsNullOrWhiteSpace([string]$Config.Mark.TemplateDir)) { $args['MarkTemplateDir'] = [string]$Config.Mark.TemplateDir }
+            if ($Config.Mark.ImageMatch -and $Config.Mark.ImageMatch.Tolerance) { $args['MarkImageMatchTolerance'] = [int]$Config.Mark.ImageMatch.Tolerance }
         }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force) { $args['Force'] = $true }

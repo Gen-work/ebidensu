@@ -94,6 +94,33 @@ function Get-CellText($ws, [int]$row, [int]$col) {
     return ([string]$v).Trim()
 }
 
+# Writes one cell and reads it back to confirm the value actually stuck --
+# a bare try{}catch{} around Value2 assignment swallows both real COM
+# exceptions AND silent no-ops (e.g. a locked/merged cell that accepts the
+# assignment but doesn't change), either of which used to leave column B
+# blank while the run still reported "[OK] wrote N row(s)". Appends a
+# message to $Warnings and returns $false on any mismatch/exception instead
+# of failing silently.
+function Set-CellChecked($ws, [int]$row, [int]$col, $value, [string]$label, [System.Collections.Generic.List[string]]$Warnings) {
+    try {
+        $cell = $ws.Cells.Item($row, $col)
+        $cell.Value2 = $value
+        $after = $cell.Value2
+        $ok = if ($value -is [double] -or $value -is [int]) {
+            [double]$after -eq [double]$value
+        } else {
+            ([string]$after).Trim() -eq ([string]$value).Trim()
+        }
+        if (-not $ok) {
+            $Warnings.Add(("{0} did not verify after write (row {1})" -f $label, $row))
+        }
+        return $ok
+    } catch {
+        $Warnings.Add(("{0} write failed (row {1}): {2}" -f $label, $row, $_.Exception.Message))
+        return $false
+    }
+}
+
 # Computes and (optionally) writes the new rows on $ws. Returns an array of
 # summary objects { Row; No; Target; Action }. Re-running computes identical
 # results on the original as on the temp copy (same content), so the preview
@@ -157,20 +184,21 @@ function Apply-CheckSheetRows($ws, [object[]]$Candidates, [bool]$WriteCells) {
             if ([int]::TryParse($noText, [ref]$parsed) -and $parsed -ge $nextNo) { $nextNo = $parsed + 1 }
         }
 
+        $rowOk = $true
         if ($WriteCells) {
-            try {
-                $bCell = $ws.Cells.Item($row, $ColDate)
-                $bCell.Value2 = $todaySer
-                try { $bCell.NumberFormat = $dateFmt } catch {}
-            } catch {}
-            try { $ws.Cells.Item($row, $ColLang).Value2   = $Language } catch {}
-            try { $ws.Cells.Item($row, $ColPhase).Value2  = $Phase } catch {}
-            try { $ws.Cells.Item($row, $ColTarget).Value2 = $target } catch {}
-            try { $ws.Cells.Item($row, $ColOwner).Value2  = $Owner } catch {}
-            try { $ws.Cells.Item($row, $ColViewer).Value2 = $Viewer } catch {}
+            $warnings = New-Object System.Collections.Generic.List[string]
+            $dateOk = Set-CellChecked $ws $row $ColDate $todaySer 'date' $warnings
+            if ($dateOk) { try { $ws.Cells.Item($row, $ColDate).NumberFormat = $dateFmt } catch {} }
+            $langOk   = Set-CellChecked $ws $row $ColLang   $Language 'language' $warnings
+            $phaseOk  = Set-CellChecked $ws $row $ColPhase  $Phase    'phase'    $warnings
+            $targetOk = Set-CellChecked $ws $row $ColTarget $target   'target'   $warnings
+            $ownerOk  = Set-CellChecked $ws $row $ColOwner  $Owner    'owner'    $warnings
+            $viewerOk = Set-CellChecked $ws $row $ColViewer $Viewer   'viewer'   $warnings
+            $rowOk = $dateOk -and $langOk -and $phaseOk -and $targetOk -and $ownerOk -and $viewerOk
+            foreach ($w in $warnings) { Write-Host ("    [WARN] row {0}: {1}" -f $row, $w) -ForegroundColor Yellow }
         }
 
-        $summary.Add([pscustomobject]@{ Row = $row; No = $thisNo; Date = $todayText; Target = $target; Action = 'add' })
+        $summary.Add([pscustomobject]@{ Row = $row; No = $thisNo; Date = $todayText; Target = $target; Action = 'add'; Ok = $rowOk })
         $row++
     }
 
@@ -357,10 +385,16 @@ try {
     $added2 = @($plan2 | Where-Object { $_.Action -eq 'add' })
     $wbCs.Save()
 
-    $okAdded = $added2.Count
-    Write-Host ("  [OK] wrote {0} row(s) to {1}" -f $okAdded, $CheckSheetPath) -ForegroundColor Green
+    $okRows     = @($added2 | Where-Object { $_.Ok })
+    $failedRows = @($added2 | Where-Object { -not $_.Ok })
+    Write-Host ("  [OK] wrote {0} row(s) to {1}" -f $okRows.Count, $CheckSheetPath) -ForegroundColor Green
+    if ($failedRows.Count -gt 0) {
+        Write-Host ("  [WARN] {0} row(s) had a write that failed to verify -- open the workbook and check before trusting this run:" -f $failedRows.Count) -ForegroundColor Yellow
+        foreach ($p in $failedRows) { Write-Host ("    row {0} ({1})" -f $p.Row, $p.Target) -ForegroundColor Yellow }
+    }
     foreach ($p in $added2) {
-        Write-ProgressEvent -WorkDir $WorkDir -Phase 'CheckSheet' -JobName $p.Target -Action 'commit' -Status 'ok' -Message ("No.{0}" -f $p.No)
+        $status = if ($p.Ok) { 'ok' } else { 'warn' }
+        Write-ProgressEvent -WorkDir $WorkDir -Phase 'CheckSheet' -JobName $p.Target -Action 'commit' -Status $status -Message ("No.{0}" -f $p.No)
     }
 
 } catch {

@@ -154,21 +154,77 @@ function Get-ImagePixelSize {
     }
 }
 
+function Get-MarkTemplateHitFromSidecar {
+    <#
+    Reads <WorkDir>\snap\<Folder>\<Cid>.tplhit.json (written at snap time by
+    JenkinsSnap.ps1 + SnapLocalize.ps1's Write-MarkTemplateHits, opt-in via
+    the same 'Template' key Mark.Boxes already uses) and returns the entry
+    for ($BoxIndex, $Template) as @{ X; Y; Width; Height } in source-PNG
+    pixel units -- the same shape Locate-ByImage.ps1 returns, so callers can
+    treat it identically. Returns $null on anything short of an exact match
+    (file missing/unreadable, no entry for this box index, Template name
+    differs from what is configured now, or the PNG the sidecar was recorded
+    against is a different size than the current one) so a stale or absent
+    sidecar always falls back to a live re-match rather than risk a wrong box.
+    #>
+    param(
+        [string]$WorkDir,
+        [string]$Folder,
+        [string]$Cid,
+        [int]$BoxIndex,
+        [string]$Template,
+        [int]$ExpectedSourceWidth,
+        [int]$ExpectedSourceHeight
+    )
+    $sidecarPath = Join-Path $WorkDir ("snap\{0}\{1}.tplhit.json" -f $Folder, $Cid)
+    if (-not (Test-Path -LiteralPath $sidecarPath)) { return $null }
+    try {
+        $data = Get-Content -LiteralPath $sidecarPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([int]$data.SourceWidth -ne $ExpectedSourceWidth -or [int]$data.SourceHeight -ne $ExpectedSourceHeight) { return $null }
+        $entry = @($data.Boxes) | Where-Object { [int]$_.Index -eq $BoxIndex -and [string]$_.Template -eq $Template } | Select-Object -First 1
+        if ($null -eq $entry) { return $null }
+        return [PSCustomObject]@{
+            X      = [double]$entry.X
+            Y      = [double]$entry.Y
+            Width  = [double]$entry.Width
+            Height = [double]$entry.Height
+        }
+    } catch {
+        return $null
+    }
+}
+
 function Find-MarkBoxByImage {
     <#
     Attempts template-match placement for one Mark.Boxes entry against the
     original snap PNG for ($Folder, $Cid) (<WorkDir>\snap\<Folder>\<Cid>.png
     -- the same file ReplaceEvidence pasted into the picture, per
     EvidencePlan.ps1's Get-SnapPath). Returns @{ Left; Top; Width; Height }
-    in points (already scaled to the inserted picture's on-sheet size and
-    padded), or $null when the box has no Template / files are missing / no
+    in points, or $null when the box has no Template / files are missing / no
     match is found / anything errors -- caller falls back to the fixed
     OffsetX/OffsetY/Width/Height box in that case, so this never blocks Mark.
+
+    Sizing: when the box ALSO configures its own 'Width'/'Height' (the same
+    fields the fixed-offset fallback box uses), those are used as-is and the
+    match only supplies the anchor (top-left corner) -- Template finds WHERE
+    to draw, config says HOW BIG, so a small/unique anchor crop (e.g. a
+    stable icon or label near the real target) does not force the drawn box
+    to that crop's own dimensions. Without Width/Height, the box keeps the
+    legacy behavior: sized to the matched crop's own pixel size, scaled to
+    sheet points and padded by PadX/PadY on each side.
+
+    Anchor source: a snap-time <correl>.tplhit.json sidecar (written by
+    JenkinsSnap.ps1 when it was given this same box's Template, right after
+    the screenshot was captured) is preferred over a fresh Locate-ByImage
+    scan when present and not stale -- see Get-MarkTemplateHitFromSidecar for
+    what counts as stale. Falls back to a live match (the original behavior)
+    whenever the sidecar is missing.
     #>
     param(
         [hashtable]$Box,
         [string]$Folder,
         [string]$Cid,
+        [int]$BoxIndex,
         [string]$WorkDir,
         [string]$TemplateDir,
         [int]$DefaultTolerance,
@@ -178,27 +234,34 @@ function Find-MarkBoxByImage {
     if (-not $Box.ContainsKey('Template')) { return $null }
     $tplName = [string]$Box.Template
     if ([string]::IsNullOrWhiteSpace($tplName)) { return $null }
-    if ([string]::IsNullOrWhiteSpace($LocateScript)) { return $null }
 
-    $tplPath = Resolve-MarkTemplatePath -Template $tplName -TemplateDir $TemplateDir
-    if ($null -eq $tplPath) {
-        Write-Host ("  [WARN] image-match template not found: {0}" -f $tplName) -ForegroundColor Yellow
-        return $null
-    }
     $srcPath = Join-Path $WorkDir ("snap\{0}\{1}.png" -f $Folder, $Cid)
     if (-not (Test-Path -LiteralPath $srcPath)) { return $null }
 
-    $tol = $DefaultTolerance
-    if ($Box.ContainsKey('Tolerance')) { try { $tol = [int]$Box.Tolerance } catch {} }
-
     try {
-        $hit = & $LocateScript -SourcePath $srcPath -TemplatePath $tplPath -Tolerance $tol -Quiet
-        if ($null -eq $hit) { return $null }
-
         $dim = Get-ImagePixelSize -Path $srcPath
         if ($dim.Width -le 0 -or $dim.Height -le 0) { return $null }
         $scaleX = ([double]$Shape.Width)  / $dim.Width
         $scaleY = ([double]$Shape.Height) / $dim.Height
+
+        $hit = Get-MarkTemplateHitFromSidecar -WorkDir $WorkDir -Folder $Folder -Cid $Cid `
+            -BoxIndex $BoxIndex -Template $tplName `
+            -ExpectedSourceWidth ([int]$dim.Width) -ExpectedSourceHeight ([int]$dim.Height)
+        $hitSource = 'sidecar'
+
+        if ($null -eq $hit) {
+            $hitSource = 'live'
+            if ([string]::IsNullOrWhiteSpace($LocateScript)) { return $null }
+            $tplPath = Resolve-MarkTemplatePath -Template $tplName -TemplateDir $TemplateDir
+            if ($null -eq $tplPath) {
+                Write-Host ("  [WARN] image-match template not found: {0}" -f $tplName) -ForegroundColor Yellow
+                return $null
+            }
+            $tol = $DefaultTolerance
+            if ($Box.ContainsKey('Tolerance')) { try { $tol = [int]$Box.Tolerance } catch {} }
+            $hit = & $LocateScript -SourcePath $srcPath -TemplatePath $tplPath -Tolerance $tol -Quiet
+            if ($null -eq $hit) { return $null }
+        }
 
         $padX = 0.0; $padY = 0.0
         if ($Box.ContainsKey('PadX')) { try { $padX = [double]$Box.PadX } catch {} }
@@ -206,6 +269,20 @@ function Find-MarkBoxByImage {
 
         $px = [double]$hit.X - $padX
         $py = [double]$hit.Y - $padY
+
+        if ($Box.ContainsKey('Width') -or $Box.ContainsKey('Height')) {
+            $fw = 100.0; $fh = 20.0
+            try { $fw = [double]$Box.Width }  catch {}
+            try { $fh = [double]$Box.Height } catch {}
+            return @{
+                Left   = ([double]$Shape.Left) + ($px * $scaleX)
+                Top    = ([double]$Shape.Top)  + ($py * $scaleY)
+                Width  = $fw
+                Height = $fh
+                Source = $hitSource
+            }
+        }
+
         $pw = [double]$hit.Width  + (2 * $padX)
         $ph = [double]$hit.Height + (2 * $padY)
 
@@ -214,6 +291,7 @@ function Find-MarkBoxByImage {
             Top    = ([double]$Shape.Top)  + ($py * $scaleY)
             Width  = $pw * $scaleX
             Height = $ph * $scaleY
+            Source = $hitSource
         }
     } catch {
         Write-Host ("  [WARN] image-match failed for {0}\{1}: {2}" -f $Folder, $Cid, $_.Exception.Message) -ForegroundColor Yellow
@@ -515,7 +593,7 @@ try {
                         # OffsetX/OffsetY fallback here.
                         if ($b.ContainsKey('StampImage')) {
                             $stampImageName = [string]$b.StampImage
-                            $imgHit = Find-MarkBoxByImage -Box $b -Folder $folder -Cid $cid -WorkDir $WorkDir `
+                            $imgHit = Find-MarkBoxByImage -Box $b -Folder $folder -Cid $cid -BoxIndex $idx -WorkDir $WorkDir `
                                 -TemplateDir $TemplateDir -DefaultTolerance $ImageMatchTolerance `
                                 -LocateScript $locateByImagePath -Shape $s
                             if ($null -eq $imgHit) {
@@ -534,7 +612,7 @@ try {
                                 $stampPic = Insert-PictureAtPointBringToFront $ws $imgHit.Left $imgHit.Top $stampPath
                                 try { $stampPic.Name = $name } catch {}
                                 $marksDrawn++
-                                Write-Host ("  [STAMP-IMG] {0,-16} {1,-12} [{2,3}] L={3,6:0.0} T={4,6:0.0}" -f $folder, $cid, $idx, $imgHit.Left, $imgHit.Top) -ForegroundColor Green
+                                Write-Host ("  [STAMP-IMG] {0,-16} {1,-12} [{2,3}] L={3,6:0.0} T={4,6:0.0} ({5})" -f $folder, $cid, $idx, $imgHit.Left, $imgHit.Top, $imgHit.Source) -ForegroundColor Green
                             } catch {
                                 Write-Host ("  [FAIL] StampImage {0}: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
                                 $allOk = $false
@@ -566,7 +644,7 @@ try {
                             # offset. Falls back to OffsetX/OffsetY/Width/Height
                             # below when no Template is configured or no match
                             # is found, so this degrades gracefully.
-                            $imgHit = Find-MarkBoxByImage -Box $b -Folder $folder -Cid $cid -WorkDir $WorkDir `
+                            $imgHit = Find-MarkBoxByImage -Box $b -Folder $folder -Cid $cid -BoxIndex $idx -WorkDir $WorkDir `
                                 -TemplateDir $TemplateDir -DefaultTolerance $ImageMatchTolerance `
                                 -LocateScript $locateByImagePath -Shape $s
                             if ($null -ne $imgHit) {
@@ -584,11 +662,12 @@ try {
 
                         $name = ("{0}{1}_{2}_{3}" -f $NamePrefix, $folder, $cid, $idx)
                         $tag  = if ($null -ne $imgHit) { 'MARK-IMG' } else { 'MARK' }
+                        $tagSuffix = if ($null -ne $imgHit) { " ({0})" -f $imgHit.Source } else { '' }
 
                         try {
                             Add-RedRectangle $ws $left $top $bw $bh $name $lw | Out-Null
                             $marksDrawn++
-                            Write-Host ("  [{0}] {1,-16} {2,-12} [{3,3}] L={4,6:0.0} T={5,6:0.0} W={6,5:0.0} H={7,5:0.0}" -f $tag, $folder, $cid, $idx, $left, $top, $bw, $bh) -ForegroundColor Green
+                            Write-Host ("  [{0}] {1,-16} {2,-12} [{3,3}] L={4,6:0.0} T={5,6:0.0} W={6,5:0.0} H={7,5:0.0}{8}" -f $tag, $folder, $cid, $idx, $left, $top, $bw, $bh, $tagSuffix) -ForegroundColor Green
                         } catch {
                             Write-Host ("  [FAIL] AddShape {0}: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
                             $allOk = $false

@@ -14,6 +14,12 @@
 #  Add-Type System.Drawing. Write-SnapLocalize NEVER throws into the caller:
 #  any failure (disabled, uncalibrated geometry, no matched row, no highlight,
 #  GDI error) returns $null so the screenshot workflow is never blocked.
+#
+#  Also holds Write-MarkTemplateHits: an unrelated-but-similar snap-time
+#  helper that runs Mark.ps1's 'Template' image-match boxes right after a
+#  screenshot is captured and persists any hits to <correl>.tplhit.json, so
+#  Mark.ps1 can reuse that anchor later instead of re-scanning the archived
+#  PNG. Same never-blocks-the-caller contract as Write-SnapLocalize.
 # ============================================================
 
 # ---------------------------------------------------------------------------
@@ -105,6 +111,110 @@ function Write-SnapLocalize {
         return (Save-SnapLocSidecar -Loc $loc -Path $sidecar)
     } catch {
         # Localisation is best-effort -- never break snapping. Swallow + skip.
+        return $null
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Resolve-SnapTemplatePath -- snap-time counterpart of Mark.ps1's
+# Resolve-MarkTemplatePath (duplicated rather than shared: Mark.ps1 has a
+# param() block, so per CLAUDE.md's dot-source rule it can only ever be
+# invoked via '&', never dot-sourced, and its copy is not reachable here).
+# ---------------------------------------------------------------------------
+function Resolve-SnapTemplatePath {
+    param([string]$Template, [string]$TemplateDir)
+    if ([string]::IsNullOrWhiteSpace($Template)) { return $null }
+    if (Test-Path -LiteralPath $Template) { return (Resolve-Path -LiteralPath $Template).ProviderPath }
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($TemplateDir)) { $candidates += (Join-Path $TemplateDir $Template) }
+    $candidates += (Join-Path (Join-Path $PSScriptRoot 'mark_templates') $Template)
+    foreach ($c in $candidates) {
+        if (Test-Path -LiteralPath $c) { return (Resolve-Path -LiteralPath $c).ProviderPath }
+    }
+    return $null
+}
+
+# ---------------------------------------------------------------------------
+# Write-MarkTemplateHits
+#   Snap-time counterpart of Mark.ps1's image-match boxes: runs the same
+#   Locate-ByImage match for every Mark.Boxes[<folder>] entry that carries a
+#   'Template' key, against the screenshot JUST captured (while the page is
+#   known-good), and persists any hits to <correl>.tplhit.json next to the
+#   PNG. Mark.ps1 reads this sidecar first (Get-MarkTemplateHitFromSidecar)
+#   instead of re-running the match against the archived PNG later, and
+#   silently falls back to a live match when the sidecar is absent, stale,
+#   or has no entry for a given box -- so a missing/failed sidecar never
+#   blocks Mark. This function itself never throws into the caller: any
+#   failure (no boxes configured, Locate-ByImage missing, no match found for
+#   any box) returns $null so the snap workflow is never blocked.
+#
+#   Parameters:
+#     SnapDir      folder containing the PNG (sidecar written here)
+#     Correl       Correl_ID_S (sidecar basename)
+#     PngPath      full path to the saved (already cropped) PNG
+#     Boxes        Mark.Boxes[<folder>] array of box hashtables
+#     TemplateDir  Mark.TemplateDir (falls back to <repo>\mark_templates)
+#     Tolerance    default LockBits tolerance (a box's own 'Tolerance' wins)
+#     LocateScript full path to Locate-ByImage.ps1
+# ---------------------------------------------------------------------------
+function Write-MarkTemplateHits {
+    param(
+        [string]$SnapDir,
+        [string]$Correl,
+        [string]$PngPath,
+        [object[]]$Boxes      = @(),
+        [string]$TemplateDir  = '',
+        [int]$Tolerance       = 15,
+        [string]$LocateScript = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PngPath) -or -not (Test-Path -LiteralPath $PngPath)) { return $null }
+    if ($null -eq $Boxes -or @($Boxes).Count -eq 0) { return $null }
+    if ([string]::IsNullOrWhiteSpace($LocateScript) -or -not (Test-Path -LiteralPath $LocateScript)) { return $null }
+
+    try {
+        $size = Get-PngSize -Path $PngPath
+        $hits = New-Object System.Collections.Generic.List[object]
+        $idx = 0
+        foreach ($b in @($Boxes)) {
+            if ($b -is [hashtable] -and $b.ContainsKey('Template') -and -not [string]::IsNullOrWhiteSpace([string]$b.Template)) {
+                $tplName = [string]$b.Template
+                $tplPath = Resolve-SnapTemplatePath -Template $tplName -TemplateDir $TemplateDir
+                if ($null -ne $tplPath) {
+                    $tol = $Tolerance
+                    if ($b.ContainsKey('Tolerance')) { try { $tol = [int]$b.Tolerance } catch {} }
+                    try {
+                        $hit = & $LocateScript -SourcePath $PngPath -TemplatePath $tplPath -Tolerance $tol -Quiet
+                        if ($null -ne $hit) {
+                            $hits.Add([ordered]@{
+                                Index    = $idx
+                                Template = $tplName
+                                X        = [int]$hit.X
+                                Y        = [int]$hit.Y
+                                Width    = [int]$hit.Width
+                                Height   = [int]$hit.Height
+                            })
+                        }
+                    } catch {}
+                }
+            }
+            $idx++
+        }
+        if ($hits.Count -eq 0) { return $null }
+
+        $payload = [ordered]@{
+            Correl       = $Correl
+            SourceWidth  = [int]$size.Width
+            SourceHeight = [int]$size.Height
+            CapturedAt   = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            Boxes        = $hits
+        }
+        Ensure-Dir $SnapDir
+        $sidecar = Join-Path $SnapDir ("{0}.tplhit.json" -f $Correl)
+        $enc = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($sidecar, ($payload | ConvertTo-Json -Depth 6), $enc)
+        return $sidecar
+    } catch {
         return $null
     }
 }

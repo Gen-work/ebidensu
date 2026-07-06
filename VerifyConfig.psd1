@@ -321,9 +321,12 @@
         DefaultExePath = 'C:\tools\DF\DF.exe'
         # Seconds to wait after the df.exe window appears before capturing.
         LoadWaitSec  = 8
-        # 'region' (recommended; df.exe window handle is flaky), 'window', 'fullscreen'.
-        CaptureMode  = 'region'
-        # Fixed capture rectangle for 'region' mode (target screen ~1980x1020).
+        # 'window' (default; auto-fits the df.exe window, falls back to
+        # 'region' if the window handle/rect looks bad), 'region', 'fullscreen'.
+        CaptureMode  = 'window'
+        # Fixed capture rectangle for 'region' mode (target screen ~1980x1020)
+        # -- also used as the fallback rectangle when 'window' mode's handle
+        # or rect comes back invalid.
         RegionX      = 120
         RegionY      = 280
         RegionWidth  = 1250

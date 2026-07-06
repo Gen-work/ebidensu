@@ -15,12 +15,17 @@
 #    5. Close df.exe, continue to the next row.
 #    6. Only on a real capture: DF_snap = 1 (atomic mapping write).
 #
-#  Capture strategy (-CaptureMode):
-#    region     : grab a fixed screen rectangle (RECOMMENDED). df.exe is a
-#                 legacy tool whose MainWindowHandle / PrintWindow are
-#                 unreliable, so a fixed region is the most stable.
-#    window     : capture df.exe's window rect via CopyFromScreen. If the
-#                 rect looks wrong, fall back to REGION (never fullscreen).
+#  Capture strategy (-CaptureMode, default 'window'):
+#    window     : capture df.exe's actual window rect via CopyFromScreen, so
+#                 the shot auto-fits however big/small the operator sized the
+#                 window instead of assuming a fixed rectangle. If the handle
+#                 is missing or the rect looks wrong, falls back to REGION
+#                 (never fullscreen) -- df.exe is a legacy tool whose
+#                 MainWindowHandle / PrintWindow are not always reliable, so
+#                 this fallback is the safety net, not the default anymore.
+#    region     : grab a fixed screen rectangle. Use this (or let the
+#                 fallback kick in) if 'window' proves unreliable for a
+#                 given machine/df.exe build.
 #    fullscreen : whole primary screen.
 #
 #  The window shadow is not symmetric, so crop is per-direction
@@ -43,7 +48,7 @@ param(
     [int]$WindowWaitSec = 15,            # how long to wait for MainWindowHandle
 
     [ValidateSet('region','window','fullscreen')]
-    [string]$CaptureMode = 'region',
+    [string]$CaptureMode = 'window',
 
     # Fixed region (recommended on the ~1980x1020 target).
     [int]$RegionX = 120,

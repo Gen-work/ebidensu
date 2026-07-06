@@ -328,7 +328,67 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-03 v2.9.29)
+## Current state (last bump: 2026-07-06 v2.9.30)
+
+v2.9.30 (Mark image-match: anchor-only sizing + snap-time template-hit
+sidecar; DfSnap default to window capture; FillCheckSheet write verification):
+**Fixed** -- (1) a `Mark.Boxes` entry with a `Template` match used to size
+the drawn red box from the TEMPLATE CROP'S OWN pixel dimensions (scaled +
+padded) whenever a match was found, ignoring the box's configured
+`Width`/`Height`. This was fine for a box whose whole point was the crop
+(`GIFT_noGfixfile`'s `StampImage`), but broke as soon as `Template` was added
+to an existing fixed-size box (`GIFT_Jenkins`/`GFIX_Jenkins`, previously
+`OffsetX/OffsetY/Width=288.8/Height=18.8`): the drawn box shrank to match the
+anchor crop's own size instead of staying `288.8x18.8`. `Find-MarkBoxByImage`
+now checks for `Width`/`Height` on the box FIRST -- when either is present,
+Template only supplies the anchor (top-left corner, still shiftable via
+`PadX`/`PadY`) and the configured `Width`/`Height` are used as-is; a box with
+neither keeps the old crop-derived-size behavior. This lets an anchor crop be
+a small, stable, unique landmark (e.g. a fixed label near the real target)
+without forcing the box to that crop's own dimensions -- expand out from the
+matched top-left corner with `Width`/`Height`/`PadX`/`PadY` instead of only
+`PadX`/`PadY` growing the crop's own size. (2) `FillCheckSheet.ps1`'s cell
+writes (date + 5 other columns) were each a bare `try { ... } catch {}`
+around `.Value2 = ...` with no readback -- any exception, or any silent no-op
+(e.g. a write that doesn't error but doesn't stick), was swallowed with zero
+diagnostic, and the run still printed `[OK] wrote N row(s)` even when column
+B (date) came back blank. New `Set-CellChecked` writes then reads back every
+cell and compares; a mismatch or exception is now logged (`[WARN] <label>
+write failed/did not verify (row N)`) and the row is flagged not-OK, so the
+final `[OK] wrote N row(s)` line and the `status\progress.jsonl` event now
+reflect what the workbook actually contains instead of what the code
+attempted.
+**Added** -- (1) snap-time template-hit sidecar: `JenkinsSnap.ps1` (GiftJenkins
+/ GfixJenkins / GiftJenkinsNoFile) accepts `-MarkBoxes` (`Config.Mark.Boxes[
+<folder>]`, threaded from `VerifyTool.ps1`) and, right after each screenshot
+is saved, runs the same `Locate-ByImage.ps1` match for every box carrying a
+`Template` key -- against the page as JUST captured, while it's known-good --
+and caches any hits to `snap\<folder>\<correl>.tplhit.json`
+(`SnapLocalize.ps1`'s new `Write-MarkTemplateHits`, same
+never-blocks-the-caller contract as the existing `Write-SnapLocalize`).
+`Mark.ps1`'s `Find-MarkBoxByImage` now reads this sidecar first
+(`Get-MarkTemplateHitFromSidecar`) instead of re-scanning the archived PNG,
+falling back to a live match whenever the sidecar is missing, has no entry
+for that box, names a different Template (stale after a config edit), or was
+recorded against a different-sized PNG -- so Mark never depends on the
+sidecar existing. Zero new config fields: this reuses the same `Mark.Boxes[
+<folder>].Template` key that already opts a box into image-match, so a
+folder with no Template-carrying boxes is entirely unaffected. Console lines
+now show which anchor source fired: `[MARK-IMG] ... (sidecar)` /
+`(live)` / `[STAMP-IMG] ... (sidecar)` / `(live)`. (2) `Df.CaptureMode`
+default changed from `'region'` to `'window'`: DF snap now auto-fits
+whatever size the operator actually sized the df.exe window to, instead of
+assuming a fixed `1250x657` rectangle. The existing invalid-handle/invalid-
+rect fallback to `region` is unchanged and is now the safety net rather than
+the default; set `Df.CaptureMode = 'region'` to restore the old behavior on
+a machine where `window` proves unreliable.
+**Notes** -- Static-checked only (no Windows/Excel/Edge in this dev
+environment): confirm the anchor-only sizing on `GIFT_Jenkins`/`GFIX_Jenkins`
+once real `Template` crops are added, confirm the `.tplhit.json` sidecar is
+written at snap time and actually read (not silently falling back to live
+every time) on an office PC, confirm `window` capture mode against a real
+df.exe window, and confirm `FillCheckSheet`'s verified writes on the real
+check-sheet workbook.
 
 v2.9.29 (FillCheckSheet: on-disk prefix fallback + CheckSheetPath remembered):
 **Fixed** -- (1) check-sheet column F (review target) could list a filename
