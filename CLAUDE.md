@@ -340,7 +340,35 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-06 v2.10.4)
+## Current state (last bump: 2026-07-07 v2.10.5)
+
+v2.10.5 (MarkGfix log highlight: fix auto-width measurement -- DPI + GDI/GDI+
+mismatch -- plus per-row diagnostics): **Fixed** -- the auto-width yellow
+highlight (`GfixLog.AutoHighlightWidth`) still computed a wrong width after
+v2.9.24, for two independent reasons: (1) `Get-AutoHighlightColEnd` converted
+measured pixels to points with a hardcoded `* 0.75` (96 DPI), but
+`Get-TextPixelWidth`'s scratch bitmap inherits the process's SCREEN DPI and
+powershell.exe is DPI-aware -- on a 125%/150%-scaled office laptop the width
+came back 1.25x/1.5x too LONG. The bitmap is now pinned to 96 DPI
+(`SetResolution`) so `x 0.75` is exact everywhere. (2) Excel renders cells
+with GDI, whose hinted MS-Gothic advances run wider than GDI+
+GenericTypographic's ideal advance (8 vs 7.33 px per half-width char at
+11pt/96dpi), so the old GDI+-only measurement undershot ~8% and the
+highlight ended before the text -- new `Get-TextPointWidthInfo` measures via
+GDI (`System.Windows.Forms.TextRenderer`, NoPadding, real-DPI conversion)
+first, GDI+ as fallback, and floors the result at the ideal fixed-pitch
+character-cell width (new pure, unit-tested `Get-TextCellUnits`: half-width
+0.5 em / full-width 1.0 em, x font size) so the highlight always covers at
+least the text's nominal advance; the `HighlightColEnd` cap still bounds it
+above. **Added** -- `Invoke-GfixLogHighlight` returns a `Diag` array (one
+line per row: chars, font/size, points, source gdi/gdiplus/floor, dpi, px,
+floor, final columns) printed by Mark.ps1 (`[GfixLog width]`) and
+MarkGfixLog.ps1 (`[width]`); previously every fallback silently returned the
+fixed `HighlightColEnd`, indistinguishable from AutoWidth=off. Both scripts
+now also Add-Type System.Windows.Forms (warn-only). No new config fields.
+Pure logic green under portable pwsh 7; GDI/COM paths static-checked only --
+confirm on an office PC (the diag line's `Source`/`dpi` now show exactly
+which renderer answered and the display scale).
 
 v2.10.4 (GIFT_MQ row-info fallback chain: fix wrong box position via "Number
 of records" header fallback): **Fixed** -- real `.ocr.txt` dumps (v2.10.3)
