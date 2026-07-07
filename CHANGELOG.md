@@ -1,4 +1,4 @@
-## 2026-07-08 - Repo hygiene: untrack IDE workspace + session state; generalization roadmap (v2.10.5)
+## 2026-07-08 - Repo hygiene: untrack IDE workspace + session state; generalization roadmap + sanitization audit (v2.10.6)
 
 ### Changed
 - Stopped tracking `.metadata/` (a whole committed Eclipse/RAD workspace: IDE
@@ -21,9 +21,84 @@
   generic, profile-driven "evidence workbench" -- branch strategy
   (`spec/gift-gfix` snapshot + progressively sanitized `main`, fresh-history
   repo for any public release since git history is not sanitizable in place),
-  tip-sanitization checklist S1-S9 from the 2026-07 repo audit, target
+  tip-sanitization checklist S1-S10 from the 2026-07 repo audit, target
   core/engine/adapters/profiles layering with a file-by-file map, AI
   onboarding (`Describe` phase) design, and milestones M0-M6.
+- `docs/Sanitization-Audit.md`: the full audit report (masked literals):
+  repo-visibility headline + flip-private recommendation, tip findings
+  mapped to S-items, why git history can never be published, module
+  coupling classification for all files, split-now vs defer-to-M6
+  strategy analysis.
+
+## 2026-07-07 - MarkGfix log highlight: fix auto-width measurement (DPI + GDI/GDI+ mismatch) + per-row diagnostics (v2.10.5)
+
+### Fixed
+- The MarkGfix / MarkGfixLog auto-width yellow highlight
+  (`GfixLog.AutoHighlightWidth`) kept computing a wrong width on the office
+  PC even after the v2.9.24 GenericTypographic fix. Two independent math
+  defects in the measurement chain:
+  1. **Hardcoded 96-DPI conversion (highlight too LONG on scaled
+     displays).** `Get-AutoHighlightColEnd` converted the measured pixel
+     width to points with a fixed `* 0.75`, but `Get-TextPixelWidth`
+     measures on a `Graphics` from a fresh `Bitmap(1,1)`, which inherits the
+     PROCESS'S SCREEN DPI -- and powershell.exe is DPI-aware, so on a
+     125%/150%-scaled laptop (the common office setup) the pixels came back
+     at 120/144 DPI and the fixed conversion inflated the width by
+     1.25x/1.5x. `Get-TextPixelWidth` now pins its bitmap to 96 DPI
+     (`SetResolution`), making the documented px->points contract (x 0.75)
+     exact on every display scale.
+  2. **GDI+ vs GDI renderer mismatch (highlight too SHORT).** Excel renders
+     cell text with GDI, whose hinted/bitmap advance widths for classic
+     Japanese fonts like MS Gothic run wider than the ideal typographic
+     advance (8 px vs 7.33 px per half-width char at 11pt/96dpi -- MS Gothic
+     carries embedded bitmap strikes at these sizes). Measuring with GDI+
+     `GenericTypographic` (the only path until now) therefore undershot ~8%
+     on a long `Command:` line, ending the highlight before the text does.
+     New `Get-TextPointWidthInfo` (`ExcelHelpers.ps1`) measures with GDI
+     first (`System.Windows.Forms.TextRenderer`, `NoPadding|SingleLine`,
+     converted with the REAL screen DPI), falling back to the 96-DPI-pinned
+     GDI+ path when WinForms is unavailable.
+- Whichever tier measured, the result is now floored at the ideal
+  fixed-pitch character-cell width -- new pure `Get-TextCellUnits`
+  (half-width chars incl. halfwidth katakana = 0.5 em, full-width = 1.0 em)
+  times the font size in points -- so the highlight can never end short of
+  the text's nominal advance ("mark enough cells"); the `HighlightColEnd`
+  cap still bounds it above, exactly as before. A total measurement failure
+  still falls back to the fixed `HighlightColEnd` (legacy full width).
+- The COM column-width read's fallback default was corrected from 59.0 to
+  48.0 points (the real width of Excel's standard 8.43-char column at
+  96 DPI: 64 px x 0.75); it is only used when the per-column `.Width` read
+  throws.
+
+### Added
+- Per-row width diagnostics: every `Get-AutoHighlightColEnd` decision or
+  fallback (no text in the cell, measurement failure, and the full success
+  breakdown: char count, font/size/bold, points, measurement source
+  `gdi`/`gdiplus`/`floor` (+`+floor` when the char-cell floor won), DPI,
+  pixels, floor points, final column range/pad/cap, any failed column-width
+  reads) is returned in a new `Diag` array from `Invoke-GfixLogHighlight`
+  and printed by both callers (`[GfixLog width]` in Mark.ps1, `[width]` in
+  MarkGfixLog.ps1). Previously every failure path silently returned the
+  fixed `HighlightColEnd`, which is indistinguishable from AutoWidth being
+  off -- same lesson as the v2.10.2 `[rowinfo]` diagnostics.
+- `Mark.ps1` / `MarkGfixLog.ps1` now `Add-Type System.Windows.Forms`
+  (try/catch, warn-only) for the TextRenderer tier; a failed load just
+  drops that tier.
+- `Tests\Test-ExcelHelpers.ps1`: unit tests for `Get-TextCellUnits`
+  (empty/null, ASCII, trailing space, full-width A/katakana/kanji,
+  halfwidth katakana, mixed, ASCII Command: line = len/2 units).
+
+### Notes
+- No new config fields; `GfixLog.AutoHighlightWidth` / `HighlightPadCols` /
+  `Replace.GfixLogFontName/Size` drive it exactly as before.
+- Pure logic verified under portable pwsh 7 in this dev env
+  (`Tests\Test-ExcelHelpers.ps1` 19/19 green; full `Run-Tests.ps1` parse
+  check clean -- the 2 EvidencePlan failures are pre-existing Linux
+  path-separator artifacts, confirmed identical on the unmodified tree).
+  The GDI/GDI+/COM paths are static-checked only -- confirm the measured
+  width on an office PC and read the new `[GfixLog width]` line: `Source`
+  says which renderer answered and `dpi` exposes the display scale that
+  used to corrupt the math.
 
 ## 2026-07-06 - GIFT_MQ row-info: fall back to the "Number of records" header when the per-record regex misses (v2.10.4)
 

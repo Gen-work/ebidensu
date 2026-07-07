@@ -445,6 +445,14 @@ function Get-TextPixelWidth {
     try {
         $font = New-Object System.Drawing.Font($FontName, [float]$FontSize, $style)
         $bmp  = New-Object System.Drawing.Bitmap(1, 1)
+        # A fresh Bitmap inherits the PROCESS'S SCREEN DPI (e.g. 120/144 on a
+        # 125%/150%-scaled laptop; powershell.exe is DPI-aware), which used to
+        # inflate the measured pixel width by that scale factor while callers
+        # converted with a fixed 96-DPI assumption (px * 0.75) -- the GFIX
+        # highlight ran 25-50% too long on scaled displays. Pin the bitmap to
+        # 96 DPI so the returned pixels are always 96-DPI-based and the
+        # documented px->points conversion (x 0.75) is exact everywhere.
+        try { $bmp.SetResolution(96, 96) } catch {}
         $gfx  = [System.Drawing.Graphics]::FromImage($bmp)
         # Plain MeasureString pads the result with layout margins (roughly an
         # em of slack), which made the auto-sized GFIX highlight run several
@@ -461,6 +469,136 @@ function Get-TextPixelWidth {
         if ($null -ne $bmp)  { $bmp.Dispose() }
         if ($null -ne $font) { $font.Dispose() }
     }
+}
+
+function Get-TextCellUnits {
+    <#
+    PURE (no COM/GDI): counts the text's width in character-cell units the
+    way fixed-pitch CJK fonts (MS Gothic etc.) lay glyphs out -- a half-width
+    character (ASCII, halfwidth katakana) advances 0.5 em, a full-width one
+    advances 1.0 em. Multiplying by the font size in points gives the ideal
+    (unhinted) rendered width in points, which is used as a LOWER BOUND for
+    the GFIX highlight so a failed or undershooting pixel measurement can
+    never leave the highlight shorter than the text. Unit-tested in
+    Tests\Test-ExcelHelpers.ps1.
+    #>
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return 0.0 }
+    $units = 0.0
+    foreach ($ch in $Text.ToCharArray()) {
+        $cp = [int]$ch
+        if ($cp -le 0xFF -or ($cp -ge 0xFF61 -and $cp -le 0xFF9F)) { $units += 0.5 }
+        else { $units += 1.0 }
+    }
+    return $units
+}
+
+function Get-TextGdiWidthSample {
+    <#
+    GDI measurement of $Text's rendered width via System.Windows.Forms.
+    TextRenderer (NoPadding|SingleLine) -- the same renderer Excel draws cell
+    text with, so hinted/bitmap advance widths (MS Gothic etc.) are included.
+    Returns @{ Pixels; Dpi } (pixels are at the process's screen DPI; convert
+    with 72/Dpi). Throws when System.Drawing / System.Windows.Forms are not
+    usable -- deliberately kept as a SEPARATE function because PowerShell
+    resolves the [System.Drawing.*]/[System.Windows.Forms.*] type literals
+    when it COMPILES the containing function, so keeping them out of
+    Get-TextPointWidthInfo lets that orchestrator (and its char-cell floor
+    tier) still run on a host where GDI is unavailable; the call site's
+    try/catch turns this function's compile/run failure into a tier skip.
+    #>
+    param(
+        [string]$Text,
+        [string]$FontName,
+        [double]$FontSize,
+        [bool]$Bold = $false
+    )
+    $style = if ($Bold) { [System.Drawing.FontStyle]::Bold } else { [System.Drawing.FontStyle]::Regular }
+    $dpi = 96.0
+    $g = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
+    try { $dpi = [double]$g.DpiX } finally { $g.Dispose() }
+    if ($dpi -le 0) { $dpi = 96.0 }
+    $font = New-Object System.Drawing.Font($FontName, [float]$FontSize, $style)
+    try {
+        $flags = [System.Windows.Forms.TextFormatFlags]::NoPadding -bor [System.Windows.Forms.TextFormatFlags]::SingleLine
+        $proposed = New-Object System.Drawing.Size([int]::MaxValue, [int]::MaxValue)
+        $sz = [System.Windows.Forms.TextRenderer]::MeasureText($Text, $font, $proposed, $flags)
+        return @{ Pixels = [double]$sz.Width; Dpi = $dpi }
+    } finally { $font.Dispose() }
+}
+
+function Get-TextPointWidthInfo {
+    <#
+    Measures $Text's rendered width in POINTS for the given font, trying the
+    renderer that matches how Excel actually draws cell text first:
+
+      1. GDI (Get-TextGdiWidthSample: System.Windows.Forms.TextRenderer,
+         NoPadding) -- Excel renders cells with GDI, whose hinted/bitmap
+         advance widths for classic Japanese fonts like MS Gothic run WIDER
+         than the ideal typographic advance (e.g. 8 px vs 7.33 px per
+         half-width char at 11pt/96dpi). Measuring with GDI+
+         GenericTypographic (the old only path) therefore undershot ~8% on a
+         long Command: line and the highlight ended before the text did.
+         Pixels are converted with the REAL screen DPI, not a hardcoded 96.
+      2. GDI+ (Get-TextPixelWidth, 96-DPI-pinned) when System.Windows.Forms
+         is not loaded / GDI measurement fails.
+
+    Whatever tier answered, the result is floored at the ideal fixed-pitch
+    character-cell width (Get-TextCellUnits x $FontSize) so the highlight
+    always covers AT LEAST the text's nominal advance -- "mark enough cells";
+    the caller's HighlightColEnd cap still bounds it above. When both
+    measurement tiers fail (no GDI at all), the floor alone answers. Returns
+    a hashtable with the chosen width plus every intermediate value so
+    callers can print a diagnostic line:
+      @{ Points; Source ('gdi'/'gdiplus'/'floor'/'none', '+floor' suffix when
+         the floor won); Dpi; Pixels; FloorPoints; CellUnits }
+    This function contains no System.Drawing/System.Windows.Forms type
+    literals itself (see Get-TextGdiWidthSample's note), so it is safe to
+    call -- and its floor tier keeps working -- even where GDI is missing.
+    #>
+    param(
+        [string]$Text,
+        [string]$FontName = 'Calibri',
+        [double]$FontSize = 11,
+        [bool]$Bold = $false
+    )
+    if ([string]::IsNullOrWhiteSpace($FontName)) { $FontName = 'Calibri' }
+    if ($FontSize -le 0) { $FontSize = 11 }
+    $units = [double](Get-TextCellUnits -Text $Text)
+    $floorPoints = $units * $FontSize
+    $info = @{ Points = 0.0; Source = 'none'; Dpi = 96.0; Pixels = 0.0; FloorPoints = $floorPoints; CellUnits = $units }
+    if ([string]::IsNullOrEmpty($Text)) { return $info }
+
+    # Tier 1: GDI (matches Excel's renderer). MeasureText pixels are at the
+    # process's screen DPI, so convert with that same DPI.
+    try {
+        $s = Get-TextGdiWidthSample -Text $Text -FontName $FontName -FontSize $FontSize -Bold $Bold
+        if ($null -ne $s -and $s.Pixels -gt 0) {
+            $info.Pixels = [double]$s.Pixels
+            $info.Dpi    = [double]$s.Dpi
+            $info.Points = [double]$s.Pixels * 72.0 / [double]$s.Dpi
+            $info.Source = 'gdi'
+        }
+    } catch {}
+
+    # Tier 2: GDI+ (96-DPI-pinned by Get-TextPixelWidth, so x 0.75 is exact).
+    if ($info.Points -le 0) {
+        try {
+            $px = Get-TextPixelWidth -Text $Text -FontName $FontName -FontSize $FontSize -Bold $Bold
+            if ($px -gt 0) {
+                $info.Pixels = [double]$px
+                $info.Points = [double]$px * 0.75
+                $info.Source = 'gdiplus'
+            }
+        } catch {}
+    }
+
+    # Floor: never narrower than the ideal fixed-pitch character-cell width.
+    if ($floorPoints -gt 0 -and $floorPoints -gt $info.Points) {
+        if ($info.Points -gt 0) { $info.Source = $info.Source + '+floor' } else { $info.Source = 'floor' }
+        $info.Points = $floorPoints
+    }
+    return $info
 }
 
 function Get-ColumnsForWidth {
@@ -502,6 +640,9 @@ function Get-AutoHighlightColEnd {
     (Replace.GfixLogFontName/GfixLogFontSize) so the measured width always
     matches the pasted font even when the cell read fails or the log was
     pasted before the font forcing existed.
+    $DiagList (optional, List[string]): every decision/fallback appends a
+    human-readable line so a wrong width on an office PC is diagnosable from
+    the console instead of silently indistinguishable from AutoWidth=off.
     #>
     param(
         $ws,
@@ -510,12 +651,16 @@ function Get-AutoHighlightColEnd {
         [int]$MaxColEnd,
         [int]$PadCols = 1,
         [string]$FontName = '',
-        [double]$FontSize = 0
+        [double]$FontSize = 0,
+        [System.Collections.Generic.List[string]]$DiagList = $null
     )
     if ($MaxColEnd -lt $ColStart) { return $MaxColEnd }
     $text = $null
     try { $text = [string]$ws.Cells.Item($Row, $ColStart).Value2 } catch {}
-    if ([string]::IsNullOrEmpty($text)) { return $MaxColEnd }
+    if ([string]::IsNullOrEmpty($text)) {
+        if ($null -ne $DiagList) { $DiagList.Add(("row {0}: no text in col {1} cell; using fixed ColEnd {2}" -f $Row, $ColStart, $MaxColEnd)) }
+        return $MaxColEnd
+    }
 
     # NOTE: locals deliberately NOT named $fontName/$fontSize -- PowerShell
     # variables are case-insensitive, so those would collide with the
@@ -530,24 +675,30 @@ function Get-AutoHighlightColEnd {
     if (-not [string]::IsNullOrWhiteSpace($FontName)) { $measureFont = $FontName }
     if ($FontSize -gt 0) { $measureSize = $FontSize }
 
-    $pxWidth = 0.0
-    try { $pxWidth = Get-TextPixelWidth -Text $text -FontName $measureFont -FontSize $measureSize -Bold $measureBold } catch {}
-    if ($pxWidth -le 0) { return $MaxColEnd }
-
-    # 96 DPI screen assumption (matches Excel's on-screen point<->pixel basis):
-    # 1 point = 1/72 inch, 1 pixel = 1/96 inch at 96 DPI -> points = pixels * 0.75.
-    $neededPoints = $pxWidth * 0.75
+    $mi = $null
+    try { $mi = Get-TextPointWidthInfo -Text $text -FontName $measureFont -FontSize $measureSize -Bold $measureBold } catch {}
+    if ($null -eq $mi -or $mi.Points -le 0) {
+        if ($null -ne $DiagList) { $DiagList.Add(("row {0}: width measurement failed ({1} chars, font '{2}' {3}pt); using fixed ColEnd {4}" -f $Row, $text.Length, $measureFont, $measureSize, $MaxColEnd)) }
+        return $MaxColEnd
+    }
+    $neededPoints = [double]$mi.Points
 
     $widths = New-Object System.Collections.Generic.List[double]
+    $comMiss = 0
     for ($c = $ColStart; $c -le $MaxColEnd; $c++) {
-        $w = 59.0   # ~8.43-char default column width in points, used only if the COM read below fails
-        try { $w = [double]$ws.Columns.Item($c).Width } catch {}
+        $w = 48.0   # ~8.43-char default column width in points, used only if the COM read below fails
+        try { $w = [double]$ws.Columns.Item($c).Width } catch { $comMiss++ }
         $widths.Add($w)
     }
     $offset = Get-ColumnsForWidth -ColumnWidths $widths.ToArray() -NeededPoints $neededPoints
     $colEnd = $ColStart + $offset + [Math]::Max(0, $PadCols)
     if ($colEnd -gt $MaxColEnd) { $colEnd = $MaxColEnd }
     if ($colEnd -lt $ColStart)  { $colEnd = $ColStart }
+    if ($null -ne $DiagList) {
+        $miss = if ($comMiss -gt 0) { (" ({0} column-width reads failed, default 48pt used)" -f $comMiss) } else { '' }
+        $DiagList.Add(("row {0}: {1} chars, font '{2}' {3}pt bold={4} -> {5:0.0}pt via {6} (dpi={7}, px={8:0.0}, cell-floor={9:0.0}pt) -> cols {10}..{11} (+{12} pad, cap {13}){14}" -f `
+            $Row, $text.Length, $measureFont, $measureSize, $measureBold, $neededPoints, $mi.Source, $mi.Dpi, $mi.Pixels, $mi.FloorPoints, $ColStart, $colEnd, [Math]::Max(0, $PadCols), $MaxColEnd, $miss))
+    }
     return $colEnd
 }
 
@@ -566,7 +717,9 @@ function Invoke-GfixLogHighlight {
     (Replace.GfixLogFontName/GfixLogFontSize); when set, the AutoWidth
     measurement uses them instead of trusting the cell-font read.
 
-    Returns a hashtable: @{ Applied=<int>; Anchors=<int>; Ok=<bool>; Warnings=<string[]> }
+    Returns a hashtable: @{ Applied=<int>; Anchors=<int>; Ok=<bool>; Warnings=<string[]>; Diag=<string[]> }
+    (Diag: one AutoWidth measurement/fallback line per highlighted row --
+    callers print them so a wrong width is diagnosable from the console.)
     COM-only; the caller supplies an already-open worksheet.
     #>
     param(
@@ -582,8 +735,9 @@ function Invoke-GfixLogHighlight {
         [double]$FontSize = 0
     )
     $warnings = New-Object System.Collections.Generic.List[string]
+    $diag     = New-Object System.Collections.Generic.List[string]
     $applied  = 0
-    if ($null -eq $ws) { return @{ Applied = 0; Anchors = 0; Ok = $false; Warnings = @('worksheet is null') } }
+    if ($null -eq $ws) { return @{ Applied = 0; Anchors = 0; Ok = $false; Warnings = @('worksheet is null'); Diag = @() } }
 
     $xlUp = -4162
     $lastRow = 0
@@ -600,7 +754,7 @@ function Invoke-GfixLogHighlight {
     }
     if ($anchorRows.Count -eq 0) {
         $warnings.Add(("no '{0}' anchors found in sheet" -f $LogAnchor))
-        return @{ Applied = 0; Anchors = 0; Ok = $false; Warnings = $warnings.ToArray() }
+        return @{ Applied = 0; Anchors = 0; Ok = $false; Warnings = $warnings.ToArray(); Diag = @() }
     }
 
     $ok = $true
@@ -635,12 +789,12 @@ function Invoke-GfixLogHighlight {
         }
         $rowColEnd = $ColEnd
         if ($AutoWidth) {
-            try { $rowColEnd = Get-AutoHighlightColEnd -ws $ws -Row $targetRow -ColStart $ColStart -MaxColEnd $ColEnd -PadCols $PadCols -FontName $FontName -FontSize $FontSize }
-            catch { $rowColEnd = $ColEnd }
+            try { $rowColEnd = Get-AutoHighlightColEnd -ws $ws -Row $targetRow -ColStart $ColStart -MaxColEnd $ColEnd -PadCols $PadCols -FontName $FontName -FontSize $FontSize -DiagList $diag }
+            catch { $rowColEnd = $ColEnd; $diag.Add(("row {0}: Get-AutoHighlightColEnd threw ({1}); using fixed ColEnd {2}" -f $targetRow, $_.Exception.Message, $ColEnd)) }
         }
         Set-CellRangeFill $ws $targetRow $ColStart $rowColEnd $HighlightColor
         $applied++
     }
 
-    return @{ Applied = $applied; Anchors = $anchorRows.Count; Ok = ($ok -and $applied -gt 0); Warnings = $warnings.ToArray() }
+    return @{ Applied = $applied; Anchors = $anchorRows.Count; Ok = ($ok -and $applied -gt 0); Warnings = $warnings.ToArray(); Diag = $diag.ToArray() }
 }
