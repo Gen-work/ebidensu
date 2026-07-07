@@ -122,6 +122,13 @@ if (-not (Get-Command -Name 'Add-RedRectangle' -ErrorAction SilentlyContinue)) {
 try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch {
     Write-Host ("[WARN] System.Drawing unavailable ({0}); image-match boxes will fall back to fixed offsets." -f $_.Exception.Message) -ForegroundColor Yellow
 }
+# System.Windows.Forms provides TextRenderer, the GDI measurement tier of the
+# GFIX-log AutoWidth highlight (Get-TextPointWidthInfo). GDI matches how Excel
+# actually renders cell text (hinted MS Gothic advances), so it is preferred;
+# a failed load only drops that tier (GDI+ + the char-cell floor remain).
+try { Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop } catch {
+    Write-Host ("[WARN] System.Windows.Forms unavailable ({0}); GFIX highlight AutoWidth will measure via GDI+ only." -f $_.Exception.Message) -ForegroundColor Yellow
+}
 $locateByImagePath = Join-Path $PSScriptRoot 'Locate-ByImage.ps1'
 if (-not (Test-Path -LiteralPath $locateByImagePath)) { $locateByImagePath = '' }
 
@@ -890,6 +897,7 @@ try {
                         -AutoWidth $GfixLogAutoWidth -PadCols $GfixLogPadCols `
                         -FontName $GfixLogFontName -FontSize $GfixLogFontSize
                     foreach ($w in @($hl.Warnings)) { Write-Host ("  [GfixLog WARN] {0}" -f $w) -ForegroundColor Yellow }
+                    foreach ($d in @($hl.Diag))     { Write-Host ("  [GfixLog width] {0}" -f $d) -ForegroundColor DarkGray }
                     Write-Host ("  [GfixLog] highlights applied: {0} (anchors: {1}, AutoWidth={2})" -f $hl.Applied, $hl.Anchors, $GfixLogAutoWidth) -ForegroundColor DarkGray
                 }
             }

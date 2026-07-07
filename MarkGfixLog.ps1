@@ -107,6 +107,13 @@ if (-not (Get-Command -Name 'Set-CellRangeFill' -ErrorAction SilentlyContinue)) 
 try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch {
     Write-Host ("[WARN] System.Drawing unavailable ({0}); AutoWidth will fall back to the fixed HighlightColEnd." -f $_.Exception.Message) -ForegroundColor Yellow
 }
+# System.Windows.Forms provides TextRenderer, the GDI measurement tier of the
+# AutoWidth highlight (Get-TextPointWidthInfo). GDI matches how Excel actually
+# renders cell text (hinted MS Gothic advances), so it is preferred; a failed
+# load only drops that tier (GDI+ + the char-cell floor remain).
+try { Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop } catch {
+    Write-Host ("[WARN] System.Windows.Forms unavailable ({0}); AutoWidth will measure via GDI+ only." -f $_.Exception.Message) -ForegroundColor Yellow
+}
 
 # -- Sheet name -----------------------------------------------
 $sheetGfixRecv = "GFIX" + [char]0x53D7 + [char]0x4FE1 + [char]0x7D50 + [char]0x679C  # GFIX受信結果
@@ -213,6 +220,7 @@ try {
                     -AutoWidth $AutoWidth -PadCols $PadCols `
                     -FontName $FontName -FontSize $FontSize
                 foreach ($w in @($hl.Warnings)) { Write-Host ("  [WARN] {0}" -f $w) -ForegroundColor Yellow }
+                foreach ($d in @($hl.Diag))     { Write-Host ("  [width] {0}" -f $d) -ForegroundColor DarkGray }
                 Write-Host ("  highlights applied: {0} (anchors: {1})" -f $hl.Applied, $hl.Anchors) -ForegroundColor DarkGray
                 $wb.Save()
             }
