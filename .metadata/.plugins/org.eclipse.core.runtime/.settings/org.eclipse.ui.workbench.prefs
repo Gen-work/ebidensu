@@ -1,9 +1,0 @@
-//org.eclipse.ui.commands/state/org.eclipse.ui.navigator.resources.nested.changeProjectPresentation/org.eclipse.ui.commands.radioState=false
-PLUGINS_NOT_ACTIVATED_ON_STARTUP=org.eclipse.epp.mpc.ui;org.eclipse.m2e.discovery;
-UIActivities.com.ibm.rational.rad.WebDevelopment=true
-UIActivities.com.ibm.rational.rad.XMLDevelopment=true
-UIActivities.com.ibm.wtp.ejb.development=true
-UIActivities.com.ibm.wtp.j2ee.base=true
-UIActivities.com.ibm.wtp.services=true
-UIActivities.com.ibm.wtp.webservices=true
-eclipse.preferences.version=1
