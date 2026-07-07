@@ -30,11 +30,11 @@ lands.
 
 ### Audit facts (2026-07 repo audit)
 
-Completed legs: docs/meta files, committed config + core libs, git history,
-whole-tree mechanical regex sweep. A deeper judgment pass over the large phase
-scripts (`VerifyTool.ps1`, `Mark.ps1`, snap scripts) and `Tests/` fixtures hit
-the session quota and is rescheduled into M1 -- the regex sweep already covered
-those files mechanically, so only judgment-call findings can still be missing.
+Full findings, masked excerpts, and the module-coupling classification live in
+`docs/Sanitization-Audit.md`. Headline addition after the first pass: the
+GitHub repo itself was **public** at audit time while the GitLab mirror is
+private -- see that report's section 0 for the flip-private recommendation and
+why it does not affect the mirror or the office-PC sync.
 
 - **Git history is not sanitizable in place.** Most early commits are authored
   with a real name + employee-ID corporate e-mail; blobs before commit
@@ -93,6 +93,7 @@ Severity from the audit: **high** = identifies a person/company/host; **medium**
 | S7 | Client-order terms across CHANGELOG/CLAUDE prose (J4, GIFT廃止対応 mentions) | `CHANGELOG.md`, `CLAUDE.md` | medium | accept while private; the M6 export ships fresh docs, not this changelog |
 | S8 | Git history (author identities, pre-9aa5886 blobs, colleague names) | all history + GitLab mirror | high | unfixable in place -- covered by the M6 fresh-repo rule; repo stays private until then |
 | S9 | Regression guard: nothing re-introduces person/host/company identifiers | CI / Tests | -- | M1 -- `Check-Sensitive.ps1` scanner + test hook |
+| S10 | Colleague given name hardcoded in comments / LLM header / CLI example | `FillCheckSheet.ps1`, `DeliverMail.ps1`, `ReviewEvidence.ps1`, `Pack-LlmContext.ps1`, `README.md` | high | M1 -- replace with neutral wording |
 
 `Check-Sensitive.ps1` (M1) scans tracked files for: employee-id patterns
 (`JP\d{6}`), corporate mail domains, UNC server shares (`\\Fs-*` and general
