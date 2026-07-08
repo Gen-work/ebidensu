@@ -149,13 +149,23 @@ non-deferrable action is the visibility flip in section 0.
 
 ## 5. Coverage and residual items
 
-- Completed legs (6 of 7): docs/meta, config + core libs, domain libs + snap
+- Completed legs (7 of 7): docs/meta, config + core libs, domain libs + snap
   phases, main phase scripts + tests, git history (run twice), whole-tree regex
   sweep (employee-ID patterns, e-mails, hosts/URLs, UNC, IPs, user-profile
   paths, reviewer/mail values). All deltas are folded into sections 1-3.
-- The automated completeness-critic leg stayed quota-blocked across both runs;
-  its role is covered by the second-pass re-runs (which did surface new items,
-  e.g. the colleague-name comments) and by the manual list below.
+- Completeness-critic checks (run 2026-07-08 after the M0 untracking):
+  - **no binary files remain tracked** (png/xlsx/zip/jar/db sweep of
+    `git ls-files` is empty -- all previous hits were under `.metadata/`);
+  - **`ProjectLabels.ps1` [char] labels decode clean**: all eleven labels are
+    domain sheet/marker names (GIFT/GFIX receive-result sheets, send arrows,
+    past-data note) -- no person/company/host content hidden in codepoints;
+  - **window-activation titles are generic** (`Microsoft Edge`, `Excel`,
+    process id) -- no internal application titles anywhere in `AppActivate`
+    calls;
+  - spot-verified that S3 (client name, `CLAUDE.md:7`) and S10 (colleague
+    given name, 9 occurrences) are still present at tip -- both remain M1
+    scope, nothing regressed;
+  - `.github/workflows/` contains only the mirror workflow (section 1.3).
 - Manual items no audit can close:
   - rotate nothing: no credentials/tokens were found in tree or history (the
     GitLab token lives in Actions secrets);
