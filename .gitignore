@@ -1,0 +1,24 @@
+# --- Per-operator runtime state (VerifyTool creates/updates these at run time; never commit) ---
+verify_session.json
+verify_config.json
+status/
+snap/
+bk/
+mapping_*.csv
+*.bak
+
+# --- IDE / workspace state (Eclipse-family workspaces carry logs with hostnames and user paths) ---
+.metadata/
+.project
+.vscode/
+.idea/
+
+# --- Claude Code local state (worktrees, per-user settings) ---
+.claude/
+
+# --- Captured evidence / templates: screenshots and workbooks may show client pages ---
+mark_templates/*.png
+*.xlsx
+*.xlsm
+*.zip
+*.log

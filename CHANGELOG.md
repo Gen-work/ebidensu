@@ -1,3 +1,35 @@
+## 2026-07-08 - Repo hygiene: untrack IDE workspace + session state; generalization roadmap + sanitization audit (v2.10.6)
+
+### Changed
+- Stopped tracking `.metadata/` (a whole committed Eclipse/RAD workspace: IDE
+  logs carrying the corporate proxy hostname and `C:\Users\<employee-id>`
+  paths, server configs, caches), `.project`, and `verify_session.json` (live
+  per-operator session state with real work paths / owner name / internal UNC
+  share). Files stay on disk; a new `.gitignore` keeps them and other runtime
+  or evidence artifacts (`snap/`, `status/`, `bk/`, `mapping_*.csv`,
+  workbooks, screenshots, `mark_templates/*.png`) from ever being committed
+  again. First step (M0) of the main-branch sanitization plan.
+- **Pull caveat for existing clones**: pulling this change tries to DELETE the
+  now-untracked files where they are unmodified and raises modify/delete
+  conflicts where they are modified. `verify_session.json` is safe to lose
+  (regenerated; re-asks WorkDir/Owner once). Close Eclipse/RAD first and copy
+  `.metadata` aside if its workspace state matters; being gitignored, a
+  restored copy is not re-tracked.
+
+### Added
+- `docs/Generalization-Roadmap.md`: staged plan for evolving the tool into a
+  generic, profile-driven "evidence workbench" -- branch strategy
+  (`spec/gift-gfix` snapshot + progressively sanitized `main`, fresh-history
+  repo for any public release since git history is not sanitizable in place),
+  tip-sanitization checklist S1-S10 from the 2026-07 repo audit, target
+  core/engine/adapters/profiles layering with a file-by-file map, AI
+  onboarding (`Describe` phase) design, and milestones M0-M6.
+- `docs/Sanitization-Audit.md`: the full audit report (masked literals):
+  repo-visibility headline + flip-private recommendation, tip findings
+  mapped to S-items, why git history can never be published, module
+  coupling classification for all files, split-now vs defer-to-M6
+  strategy analysis.
+
 ## 2026-07-07 - MarkGfix log highlight: fix auto-width measurement (DPI + GDI/GDI+ mismatch) + per-row diagnostics (v2.10.5)
 
 ### Fixed
