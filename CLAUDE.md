@@ -340,7 +340,32 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-09 v2.10.7)
+## Current state (last bump: 2026-07-09 v2.10.8)
+
+v2.10.8 (CheckSheet date root cause fixed + DeliverMail filename prefix
+fallback): **Fixed** -- (1) the office-PC log identified the real date-write
+failure: `$cell.Value2 = <OADate double>` threw a managed
+InvalidCastException (Double->String) from PS 5.1's COM binder (cached
+setter conversion rule from a previous string binding), while the string
+columns wrote fine. New `Set-RangeValue2` (FillCheckSheet.ps1) retries any
+failed `Value2` assignment once via IDispatch `InvokeMember` (bypasses the
+binder + its cache; a genuinely bad cell still surfaces the ORIGINAL
+error), plus a date-only last-resort tier that writes the date as TEXT into
+the already-date-formatted cell (verify accepts the parsed serial via the
+new `AcceptSerial` arg of `Set-CellChecked`; recovered dates print INFO,
+tier-1 warnings only surface if both tiers fail; warnings now say `via
+assign|invokemember`). (2) DeliverMail's body `{3}` filename was bare (e.g.
+`KJODWWB5.xlsx`) when neither the legacy mapping `Excel_Prefix` nor
+`Workbook.ExcelPrefix` was set: the v2.9.29 on-disk prefix fallback was
+CheckSheet-only. Now shared as `Resolve-ExcelPrefixWithDisk`
+(WorkbookResolver.ps1, unit-tested, non-interactive): row column ->
+`Workbook.ExcelPrefix` -> prefix recovered from the real evidence file on
+disk; used by FillCheckSheet (replacing its inline copy) and DeliverMail.
+**Notes** -- the primary source should still be `Workbook.ExcelPrefix` in
+the work folder's `verify_config.json`; the mapping `Excel_Prefix` column is
+no longer generated anywhere and may be deleted from existing CSVs (still
+honored as a per-row override when present). COM paths static-checked only
+-- confirm column-B date + prefixed mail filename on an office PC.
 
 v2.10.7 (CheckSheet date-write hardening + config layering consolidation):
 **Fixed** -- FillCheckSheet column-B date: (1) NumberFormat is applied

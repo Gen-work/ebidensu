@@ -49,7 +49,7 @@ session file on purpose (machine-scoped).
 |---------|----------------|-------------------|-------|
 | `WorkDir` | session (it IS the pointer to the work folder) | — | prompted when absent |
 | `Owner` | session | — | mapping file suffix |
-| `Workbook.ExcelPrefix` | work JSON | no | CLI `-ExcelPrefix` wins; legacy per-row mapping `Excel_Prefix` still overrides per row |
+| `Workbook.ExcelPrefix` | work JSON | no | CLI `-ExcelPrefix` wins; legacy per-row mapping `Excel_Prefix` still overrides per row (no longer generated anywhere -- safe to delete the column from mapping CSVs). When BOTH are blank, phases that publish a filename (CheckSheet column F, the DeliverMail body) recover the prefix from the real evidence file on disk (`Resolve-ExcelPrefixWithDisk`) -- a safety net, not the primary source: set this field. |
 | `CheckSheet.Path` | work JSON | legacy read fallback | first-run prompt now writes it here (v2.10.7) |
 | `J4EvidenceDir` (top-level) | work JSON | no | read via `Get-ConfigJ4EvidenceDir`; legacy `DeliverFiles.J4EvidenceDir` / `Mail.EvidenceFolder` still win when non-empty |
 | `Address` (top-level, reviewer To) | work JSON | no | legacy `Reviewer.Address` still wins when non-empty |

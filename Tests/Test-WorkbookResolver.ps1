@@ -42,6 +42,22 @@ try {
     $rowOverride = [pscustomobject]@{ Excel_NAME = 'CJRVWD50'; Excel_Prefix = 'RowPrefix' }
     Assert-Equal 'ProjectPrefix' (Resolve-ExcelPrefix -Row $rowNoPrefix -DefaultPrefix 'ProjectPrefix') 'uses project-level default prefix'
     Assert-Equal 'RowPrefix' (Resolve-ExcelPrefix -Row $rowOverride -DefaultPrefix 'ProjectPrefix') 'legacy row Excel_Prefix overrides default'
+
+    # Resolve-ExcelPrefixWithDisk: on-disk recovery only when row + default
+    # are both blank; config always wins over the disk name.
+    $evDir = Join-Path $root 'evidence'
+    New-Item -ItemType Directory -Path $evDir -Force | Out-Null
+    $evPrefixed = Join-Path $evDir ((Get-ExcelFullStem -Prefix 'J4disk(REQ-000xxxxx)' -Name 'KJODWWB5') + '.xlsx')
+    Set-Content -LiteralPath $evPrefixed -Value 'ev' -Encoding UTF8
+    $rowBare = [pscustomobject]@{ Excel_NAME = 'KJODWWB5' }
+    Assert-Equal 'J4disk(REQ-000xxxxx)' (Resolve-ExcelPrefixWithDisk -Row $rowBare -ExcelName 'KJODWWB5' -EvidenceDir $evDir) 'recovers prefix from the on-disk evidence filename'
+    Assert-Equal 'ProjectPrefix' (Resolve-ExcelPrefixWithDisk -Row $rowBare -DefaultPrefix 'ProjectPrefix' -ExcelName 'KJODWWB5' -EvidenceDir $evDir) 'configured prefix wins over the on-disk name'
+    Assert-Equal '' ([string](Resolve-ExcelPrefixWithDisk -Row $rowBare -ExcelName 'KJODWWB5' -EvidenceDir '')) 'no EvidenceDir -> empty prefix, no throw'
+    Assert-Equal '' ([string](Resolve-ExcelPrefixWithDisk -Row $rowBare -ExcelName 'NOSUCH99' -EvidenceDir $evDir)) 'no on-disk file -> empty prefix'
+    Remove-Item -LiteralPath $evPrefixed -Force
+    $evBare = Join-Path $evDir 'KJODWWB5.xlsx'
+    Set-Content -LiteralPath $evBare -Value 'ev' -Encoding UTF8
+    Assert-Equal '' ([string](Resolve-ExcelPrefixWithDisk -Row $rowBare -ExcelName 'KJODWWB5' -EvidenceDir $evDir)) 'bare on-disk filename -> empty prefix'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }

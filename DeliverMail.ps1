@@ -154,7 +154,19 @@ foreach ($r in $allRows) {
     if ([string]::IsNullOrWhiteSpace($name)) { continue }
     if (-not $names.Contains($name)) {
         $names.Add($name)
-        $prefixByName[$name] = Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix
+        $prefix = Resolve-ExcelPrefix -Row $r -DefaultPrefix $ExcelPrefix
+        if ([string]::IsNullOrWhiteSpace($prefix)) {
+            # No mapping-row legacy Excel_Prefix and no Workbook.ExcelPrefix:
+            # recover the prefix from the real evidence file on disk (shared
+            # WorkbookResolver helper, same as FillCheckSheet's column F) so
+            # the mail body never lists a bare filename (e.g. KJODWWB5.xlsx)
+            # that doesn't match the delivered J4 workbook.
+            $prefix = Resolve-ExcelPrefixWithDisk -Row $r -DefaultPrefix $ExcelPrefix -ExcelName $name -EvidenceDir $EvidenceDir
+            if (-not [string]::IsNullOrWhiteSpace($prefix)) {
+                Write-Host ("  [INFO] no configured prefix for {0}; using prefix found on disk: {1}" -f $name, $prefix) -ForegroundColor DarkGray
+            }
+        }
+        $prefixByName[$name] = $prefix
     }
 }
 
