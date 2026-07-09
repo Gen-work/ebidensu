@@ -809,8 +809,25 @@ try {
                         }
 
                         $left = 0.0; $top = 0.0; $bw = 100.0; $bh = 20.0
-                        $imgHit = $null
-                        if ($b.ContainsKey('CellCols')) {
+                        # Image-recognition placement (opt-in via the box's
+                        # 'Template' key): locate the actual mark target on the
+                        # source snap PNG instead of trusting a fixed position.
+                        # Tried FIRST for BOTH box kinds -- fixed-offset boxes
+                        # AND cell-range (CellCols) boxes like DF: the df.exe
+                        # same-content button moves with the captured window
+                        # size (Df.CaptureMode 'window'), so a cell-anchored
+                        # rectangle cannot track it, only the template can.
+                        # (Until v2.10.8 a CellCols box silently IGNORED its
+                        # Template key -- the match only lived in the non-cell
+                        # branch.) Returns $null when the box has no Template /
+                        # no match / any error, so both legacy placements below
+                        # remain the unchanged fallback.
+                        $imgHit = Find-MarkBoxByImage -Box $b -Folder $folder -Cid $cid -BoxIndex $idx -WorkDir $WorkDir `
+                            -TemplateDir $TemplateDir -DefaultTolerance $ImageMatchTolerance `
+                            -LocateScript $locateByImagePath -Shape $s
+                        if ($null -ne $imgHit) {
+                            $left = $imgHit.Left; $top = $imgHit.Top; $bw = $imgHit.Width; $bh = $imgHit.Height
+                        } elseif ($b.ContainsKey('CellCols')) {
                             # Cell-range positioning: place rect relative to sheet
                             # columns/rows rather than the picture's pixel corner.
                             $rowsFromBot = 2
@@ -825,50 +842,37 @@ try {
                             $bw   = $rect.Width
                             $bh   = $rect.Height
                         } else {
-                            # Image-recognition placement (opt-in via the box's
-                            # 'Template' key): locate the actual mark target on
-                            # the source snap PNG instead of trusting a fixed
-                            # offset. Falls back to OffsetX/OffsetY/Width/Height
-                            # below when no Template is configured or no match
-                            # is found, so this degrades gracefully.
-                            $imgHit = Find-MarkBoxByImage -Box $b -Folder $folder -Cid $cid -BoxIndex $idx -WorkDir $WorkDir `
-                                -TemplateDir $TemplateDir -DefaultTolerance $ImageMatchTolerance `
-                                -LocateScript $locateByImagePath -Shape $s
-                            if ($null -ne $imgHit) {
-                                $left = $imgHit.Left; $top = $imgHit.Top; $bw = $imgHit.Width; $bh = $imgHit.Height
-                            } else {
-                                $ox = 0.0; $oy = 0.0
-                                try { $ox = [double]$b.OffsetX } catch {}
-                                try { $oy = [double]$b.OffsetY } catch {}
-                                try { $bw = [double]$b.Width } catch {}
-                                try { $bh = [double]$b.Height } catch {}
+                            $ox = 0.0; $oy = 0.0
+                            try { $ox = [double]$b.OffsetX } catch {}
+                            try { $oy = [double]$b.OffsetY } catch {}
+                            try { $bw = [double]$b.Width } catch {}
+                            try { $bh = [double]$b.Height } catch {}
 
-                                # Row-position adjustment (opt-in via 'RowHeight' > 0):
-                                # some pages (GIFT_MQ) repeat a variable number of
-                                # records and the target is always the LAST/newest
-                                # one for this correl, which is not always the box's
-                                # calibrated 'BaseRow' (default 2, the common
-                                # 2-record case). Shift OffsetY by the row delta;
-                                # RowHeight = 0 (default) keeps the legacy fixed
-                                # offset untouched.
-                                $rowHeight = 0.0
-                                try { $rowHeight = [double]$b.RowHeight } catch {}
-                                if ($rowHeight -gt 0) {
-                                    $baseRow = 2
-                                    if ($b.ContainsKey('BaseRow')) { try { $baseRow = [int]$b.BaseRow } catch {} }
-                                    $rowInfo = Get-MarkMqRowInfo -WorkDir $WorkDir -Folder $folder -Cid $cid
-                                    if ($null -ne $rowInfo) {
-                                        $dY = ($rowInfo.RowIndex - $baseRow) * $rowHeight
-                                        $oy += $dY
-                                        Write-Host ("  [ROW ] {0,-16} {1,-12} [{2,3}] row {3}/{4} ({5}) dY={6:0.0}" -f $folder, $cid, $idx, $rowInfo.RowIndex, $rowInfo.NumRecords, $rowInfo.Source, $dY) -ForegroundColor DarkCyan
-                                    } else {
-                                        Write-Host ("  [WARN] {0,-16} {1,-12} [{2,3}] row info unavailable; using BaseRow {3} offset as-is" -f $folder, $cid, $idx, $baseRow) -ForegroundColor Yellow
-                                    }
+                            # Row-position adjustment (opt-in via 'RowHeight' > 0):
+                            # some pages (GIFT_MQ) repeat a variable number of
+                            # records and the target is always the LAST/newest
+                            # one for this correl, which is not always the box's
+                            # calibrated 'BaseRow' (default 2, the common
+                            # 2-record case). Shift OffsetY by the row delta;
+                            # RowHeight = 0 (default) keeps the legacy fixed
+                            # offset untouched.
+                            $rowHeight = 0.0
+                            try { $rowHeight = [double]$b.RowHeight } catch {}
+                            if ($rowHeight -gt 0) {
+                                $baseRow = 2
+                                if ($b.ContainsKey('BaseRow')) { try { $baseRow = [int]$b.BaseRow } catch {} }
+                                $rowInfo = Get-MarkMqRowInfo -WorkDir $WorkDir -Folder $folder -Cid $cid
+                                if ($null -ne $rowInfo) {
+                                    $dY = ($rowInfo.RowIndex - $baseRow) * $rowHeight
+                                    $oy += $dY
+                                    Write-Host ("  [ROW ] {0,-16} {1,-12} [{2,3}] row {3}/{4} ({5}) dY={6:0.0}" -f $folder, $cid, $idx, $rowInfo.RowIndex, $rowInfo.NumRecords, $rowInfo.Source, $dY) -ForegroundColor DarkCyan
+                                } else {
+                                    Write-Host ("  [WARN] {0,-16} {1,-12} [{2,3}] row info unavailable; using BaseRow {3} offset as-is" -f $folder, $cid, $idx, $baseRow) -ForegroundColor Yellow
                                 }
-
-                                $left = $picLeft + $ox
-                                $top  = $picTop  + $oy
                             }
+
+                            $left = $picLeft + $ox
+                            $top  = $picTop  + $oy
                         }
 
                         $name = ("{0}{1}_{2}_{3}" -f $NamePrefix, $folder, $cid, $idx)

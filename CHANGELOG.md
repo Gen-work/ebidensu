@@ -1,3 +1,35 @@
+## 2026-07-09 - MarkDf: Template image-match now works on cell-range (CellCols) boxes (v2.10.9)
+
+### Fixed
+- **A `Mark.Boxes` entry with BOTH `CellCols` and `Template` silently ignored
+  the `Template`**: the box-placement loop in `Mark.ps1` branched on
+  `CellCols` FIRST and only ran the image-recognition path
+  (`Find-MarkBoxByImage`, v2.9.23) in the non-cell branch, so a cell-range
+  box could never opt into template matching -- the operator's DF config
+  (`CellCols='AW:BC'; RowsFromBottom=2; Template='DfSame.png'`) kept
+  producing plain `[MARK]` lines at the fixed cell position. This matters
+  for DF specifically: since v2.9.31 `Df.CaptureMode` defaults to `window`,
+  so the df.exe same-content button's on-image position moves with however
+  the operator sized the window -- a cell-anchored rectangle cannot track
+  it (confirmed on a real workbook: marks landed off the button). The
+  template match is now tried FIRST for both box kinds; a cell-range box
+  falls back to its legacy cell placement (and an offset box to its fixed
+  offset) when there is no `Template`, the file is missing, or no match --
+  behavior for boxes without `Template` is unchanged. `[MARK-IMG] ...
+  (live)` in the console confirms the match fired; `Find-MarkBoxByImage`
+  itself is untouched (DF snap PNGs already live at `snap\DF\<correl>.png`,
+  so the source-image lookup just works).
+- `mark_templates/README.txt` documents the cell-range case + the DF
+  example.
+
+### Notes
+- Sizing on a match keeps the v2.9.31 rules: this DF box has no
+  `Width`/`Height`, so the drawn rectangle takes the template crop's own
+  size (scaled to sheet points; add `PadX`/`PadY` for margin). Add
+  `Width`/`Height` to the box to force a fixed size with the match as
+  anchor. Static-checked only -- confirm `[MARK-IMG]` placement on the DF
+  sheet on an office PC.
+
 ## 2026-07-09 - CheckSheet date root cause fixed (PS COM binder cast) + DeliverMail filename prefix fallback (v2.10.8)
 
 ### Fixed

@@ -340,7 +340,21 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-09 v2.10.8)
+## Current state (last bump: 2026-07-09 v2.10.9)
+
+v2.10.9 (MarkDf: Template image-match on cell-range boxes): **Fixed** -- a
+`Mark.Boxes` entry carrying BOTH `CellCols` and `Template` silently ignored
+the `Template`: `Mark.ps1`'s placement loop branched on `CellCols` first and
+only ran `Find-MarkBoxByImage` in the non-cell branch. The operator's DF box
+(`CellCols='AW:BC'; RowsFromBottom=2; Template='DfSame.png'`) therefore kept
+drawing at the fixed cell position -- wrong whenever the df.exe window size
+differs between captures, which is now the norm (`Df.CaptureMode='window'`
+since v2.9.31; confirmed off-target on a real workbook). The template match
+is now tried FIRST for both box kinds; no-Template / no-match falls back to
+the legacy cell-range or fixed-offset placement unchanged. Console shows
+`[MARK-IMG] ... (live)` when the match fired. Sizing keeps v2.9.31 rules
+(no Width/Height on the box = crop-derived size). Static-checked only --
+confirm on the office PC.
 
 v2.10.8 (CheckSheet date root cause fixed + DeliverMail filename prefix
 fallback): **Fixed** -- (1) the office-PC log identified the real date-write
