@@ -94,29 +94,65 @@ function Get-CellText($ws, [int]$row, [int]$col) {
     return ([string]$v).Trim()
 }
 
+# Cell/sheet context appended to a write-verify warning so the office-PC
+# console log alone can tell apart the known ways a Value2 write comes back
+# different from what was written: a protected sheet, a merged cell, and a
+# text-formatted ('@') column. Every probe is individually guarded -- a
+# diagnostics read must never turn a warning into a new exception.
+function Get-CellDiagSuffix($ws, $cell) {
+    $parts = @()
+    try { if ($null -ne $cell) { $parts += ('addr=' + [string]$cell.Address($false, $false)) } } catch {}
+    try { if ($null -ne $cell) { $parts += ('fmt=' + [string]$cell.NumberFormat) } } catch {}
+    try { if ($null -ne $cell -and [bool]$cell.MergeCells) { $parts += 'merged=True' } } catch {}
+    try { if ([bool]$ws.ProtectContents) { $parts += 'sheetProtected=True' } } catch {}
+    if ($parts.Count -eq 0) { return '' }
+    return (' [{0}]' -f ($parts -join ', '))
+}
+
+function Format-CellReadback($v) {
+    if ($null -eq $v) { return '(null)' }
+    return ('{0} ({1})' -f $v, $v.GetType().Name)
+}
+
 # Writes one cell and reads it back to confirm the value actually stuck --
 # a bare try{}catch{} around Value2 assignment swallows both real COM
 # exceptions AND silent no-ops (e.g. a locked/merged cell that accepts the
 # assignment but doesn't change), either of which used to leave column B
 # blank while the run still reported "[OK] wrote N row(s)". Appends a
 # message to $Warnings and returns $false on any mismatch/exception instead
-# of failing silently.
+# of failing silently. The warning carries the written value, the raw
+# readback (value + type) and the cell context (address / NumberFormat /
+# merged / sheet protection), so a failure is diagnosable from the console
+# log alone. A numeric write whose readback comes back as TEXT (e.g. the
+# cell is formatted '@') is compared by parsed value, not by a blind
+# [double] cast that would itself throw and mask the real mismatch.
 function Set-CellChecked($ws, [int]$row, [int]$col, $value, [string]$label, [System.Collections.Generic.List[string]]$Warnings) {
+    $cell = $null
     try {
         $cell = $ws.Cells.Item($row, $col)
         $cell.Value2 = $value
         $after = $cell.Value2
-        $ok = if ($value -is [double] -or $value -is [int]) {
-            [double]$after -eq [double]$value
+        $ok = $false
+        if ($value -is [double] -or $value -is [int]) {
+            if ($after -is [double] -or $after -is [int]) {
+                $ok = ([double]$after) -eq ([double]$value)
+            } elseif ($null -ne $after) {
+                $afterNum = 0.0
+                if ([double]::TryParse(([string]$after).Trim(), [ref]$afterNum)) {
+                    $ok = $afterNum -eq [double]$value
+                }
+            }
         } else {
-            ([string]$after).Trim() -eq ([string]$value).Trim()
+            $ok = ([string]$after).Trim() -eq ([string]$value).Trim()
         }
         if (-not $ok) {
-            $Warnings.Add(("{0} did not verify after write (row {1})" -f $label, $row))
+            $Warnings.Add(("{0} did not verify after write (row {1}): wrote <{2}>, read back <{3}>{4}" -f `
+                $label, $row, $value, (Format-CellReadback $after), (Get-CellDiagSuffix $ws $cell)))
         }
         return $ok
     } catch {
-        $Warnings.Add(("{0} write failed (row {1}): {2}" -f $label, $row, $_.Exception.Message))
+        $Warnings.Add(("{0} write failed (row {1}): {2}{3}" -f `
+            $label, $row, $_.Exception.Message, (Get-CellDiagSuffix $ws $cell)))
         return $false
     }
 }
@@ -150,12 +186,15 @@ function Apply-CheckSheetRows($ws, [object[]]$Candidates, [bool]$WriteCells) {
         if ([int]::TryParse($a, [ref]$n)) { $lastNo = $n; break }
     }
 
-    # Date format to mirror from the last filled B cell.
+    # Date format to mirror from the last filled B cell. '@' (text) and
+    # 'General' are never mirrored: writing the OADate serial into either
+    # renders as a bare number (or stores text), which is exactly the
+    # blank/garbled column-B symptom -- fall back to $DateFormat instead.
     $dateFmt = $DateFormat
     if ($lastB -ge 1) {
         try {
             $f = [string]$ws.Cells.Item($lastB, $ColDate).NumberFormat
-            if (-not [string]::IsNullOrWhiteSpace($f)) { $dateFmt = $f }
+            if (-not [string]::IsNullOrWhiteSpace($f) -and $f -ne '@' -and $f -ne 'General') { $dateFmt = $f }
         } catch {}
     }
 
@@ -187,8 +226,15 @@ function Apply-CheckSheetRows($ws, [object[]]$Candidates, [bool]$WriteCells) {
         $rowOk = $true
         if ($WriteCells) {
             $warnings = New-Object System.Collections.Generic.List[string]
+            # Set the date NumberFormat BEFORE writing the value: writing the
+            # OADate serial into a cell still formatted '@' (text) stores the
+            # digits as text, and re-formatting afterwards does NOT convert it
+            # back -- the cell keeps showing "46212"-style text. Format-first
+            # makes the serial land as a real date in one pass.
+            try { $ws.Cells.Item($row, $ColDate).NumberFormat = $dateFmt } catch {
+                Write-Host ("    [WARN] row {0}: date NumberFormat set failed: {1}" -f $row, $_.Exception.Message) -ForegroundColor Yellow
+            }
             $dateOk = Set-CellChecked $ws $row $ColDate $todaySer 'date' $warnings
-            if ($dateOk) { try { $ws.Cells.Item($row, $ColDate).NumberFormat = $dateFmt } catch {} }
             $langOk   = Set-CellChecked $ws $row $ColLang   $Language 'language' $warnings
             $phaseOk  = Set-CellChecked $ws $row $ColPhase  $Phase    'phase'    $warnings
             $targetOk = Set-CellChecked $ws $row $ColTarget $target   'target'   $warnings

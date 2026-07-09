@@ -1,3 +1,67 @@
+## 2026-07-09 - CheckSheet date-write hardening + config layering consolidation (v2.10.7)
+
+### Fixed
+- **FillCheckSheet column-B (date) write**: two robustness fixes for the
+  operator-reported "date write failed" WARN (office-PC log still pending;
+  these address the two failure modes reproducible from the code alone):
+  1. The date NumberFormat is now applied BEFORE the value is written.
+     Writing the OADate serial into a cell still formatted `@` (text)
+     stores the digits as text, and re-formatting afterwards does not
+     convert it back -- the cell keeps showing `46212`-style text.
+     Format-first makes the serial land as a real date in one pass. A
+     failed format-set is now itself a visible `[WARN]` instead of a bare
+     `catch {}`.
+  2. The date format mirrored from the row above is no longer trusted
+     blindly: `@` (text) and `General` are rejected (either one renders
+     the serial as a bare number / text -- the exact blank/garbled column-B
+     symptom) and the configured `CheckSheet.DateFormat` fallback is used
+     instead.
+- **FillCheckSheet write-verify diagnostics**: `Set-CellChecked`'s WARN
+  line now reports the written value, the raw readback (value + .NET type),
+  and the cell context -- address, NumberFormat, merged-cell flag, sheet
+  `ProtectContents` -- so the next failure log pinpoints WHICH of the known
+  causes (protected sheet / merged cell / text format / silent no-op) fired,
+  instead of only "did not verify". The numeric verify no longer does a
+  blind `[double]` cast on the readback (a text readback used to throw
+  inside the check and surface as a misleading "write failed" exception);
+  it parses and compares, so number-stored-as-text is reported as a
+  mismatch with the actual readback shown.
+
+### Changed
+- **CheckSheet path now persists to the WORK FOLDER, not the global session
+  file**: the first-run prompt's answer is written into this work folder's
+  `verify_config.json` as `CheckSheet.Path` via the new
+  `Save-ConfigOverlayValue` (ConfigOverlay.ps1) -- the check sheet is
+  project-scoped, and remembering it in `verify_session.json` (old
+  behavior) leaked one project's path into every other work folder that had
+  no explicit config. The session file remains a legacy read fallback and
+  the fallback store when the JSON cannot be written (locked/open file).
+  `verify_session.json` is now reserved for machine/operator state
+  (WorkDir pointer, Owner, window size, DfExePath -- df.exe location is a
+  property of the PC, so it deliberately stays session-first).
+
+### Added
+- `Save-ConfigOverlayValue` (ConfigOverlay.ps1): persist ONE dotted-path
+  value into a sparse `verify_config.json`, creating the file when absent,
+  preserving every operator value and the `_README`/`_SCHEMA` metadata
+  keys, and refusing to touch an unparseable file or overwrite through a
+  non-object ancestor. Unit-tested in `Tests\Test-ConfigOverlay.ps1`.
+- `docs/Configuration.md`: the config layering reference -- the three
+  files (`VerifyConfig.psd1` = shipped defaults only / `verify_config.json`
+  in WorkDir = single source of truth for everything project-scoped /
+  `verify_session.json` = machine+operator ephemera), runtime precedence,
+  the travels-with-the-work-folder rule of thumb, a field-by-field
+  inventory of paths/prefixes, and the known sharp edges (array-wholesale
+  overlay merge, global-session leaks, editor-group drift guard).
+
+### Notes
+- Static-checked only (no Windows/Excel in this dev environment). Confirm
+  on an office PC: the CheckSheet first-run prompt writing
+  `CheckSheet.Path` into `verify_config.json`, and column B landing as a
+  real date on the shared check sheet. If the date WARN fires again, the
+  new diagnostic suffix (`addr=... fmt=... merged/sheetProtected`) in the
+  console log identifies the cause -- send that log.
+
 ## 2026-07-08 - Repo hygiene: untrack IDE workspace + session state; generalization roadmap + sanitization audit (v2.10.6)
 
 ### Changed

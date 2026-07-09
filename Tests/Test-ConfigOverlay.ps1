@@ -259,4 +259,39 @@ $secondPass = Update-ConfigOverlayData -Existing $realRepair.Data -Defaults $rea
 Assert-Equal 0 (@($secondPass.Added).Count) 'repairing twice in a row against real defaults is idempotent'
 Assert-Equal 'op-set-value' $secondPass.Data['DefaultOwner'] 'second repair pass still keeps the operator value'
 
+# --- Save-ConfigOverlayValue : single-field persist into a sparse overlay
+#     file -- creates the file when absent, preserves operator values AND
+#     metadata keys (_README/_SCHEMA), refuses to touch an unparseable file
+#     or overwrite through a non-object ancestor.
+$saveDir  = Join-Path ([System.IO.Path]::GetTempPath()) ("verifytool_savecfg_{0}" -f [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $saveDir | Out-Null
+try {
+    $ovPath = Join-Path $saveDir 'verify_config.json'
+
+    Assert-True (Save-ConfigOverlayValue -OverlayPath $ovPath -Path 'CheckSheet.Path' -Value '\\srv\share\check.xlsx') 'save creates a missing overlay file'
+    $roundtrip = ConvertTo-ConfigHashtable ((Get-Content -LiteralPath $ovPath -Raw -Encoding UTF8) | ConvertFrom-Json)
+    Assert-Equal '\\srv\share\check.xlsx' $roundtrip['CheckSheet']['Path'] 'created file carries the dotted-path value'
+
+    $seed = @{ _README = @('keep me'); DefaultOwner = '0602'; CheckSheet = @{ SheetName = 'CS' } }
+    [System.IO.File]::WriteAllText($ovPath, (Get-ConfigOverlayJson $seed), (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True (Save-ConfigOverlayValue -OverlayPath $ovPath -Path 'CheckSheet.Path' -Value 'p2.xlsx') 'save into an existing overlay succeeds'
+    $roundtrip = ConvertTo-ConfigHashtable ((Get-Content -LiteralPath $ovPath -Raw -Encoding UTF8) | ConvertFrom-Json)
+    Assert-Equal 'p2.xlsx' $roundtrip['CheckSheet']['Path']      'value written into existing section'
+    Assert-Equal 'CS'      $roundtrip['CheckSheet']['SheetName'] 'sibling operator value preserved'
+    Assert-Equal '0602'    $roundtrip['DefaultOwner']            'unrelated operator value preserved'
+    Assert-True  ($roundtrip.ContainsKey('_README'))             'metadata _README key survives the rewrite'
+
+    [System.IO.File]::WriteAllText($ovPath, '{ not valid json', (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True (-not (Save-ConfigOverlayValue -OverlayPath $ovPath -Path 'CheckSheet.Path' -Value 'x')) 'unparseable file -> $false'
+    Assert-Equal '{ not valid json' (Get-Content -LiteralPath $ovPath -Raw -Encoding UTF8) 'unparseable file left untouched'
+
+    [System.IO.File]::WriteAllText($ovPath, '{"CheckSheet":"a plain string"}', (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True (-not (Save-ConfigOverlayValue -OverlayPath $ovPath -Path 'CheckSheet.Path' -Value 'x')) 'non-object ancestor -> $false (operator value kept)'
+
+    Assert-True (-not (Save-ConfigOverlayValue -OverlayPath '' -Path 'A.B' -Value 'x'))    'blank overlay path -> $false'
+    Assert-True (-not (Save-ConfigOverlayValue -OverlayPath $ovPath -Path '' -Value 'x'))  'blank dotted path -> $false'
+} finally {
+    Remove-Item -LiteralPath $saveDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 exit (Complete-Tests)

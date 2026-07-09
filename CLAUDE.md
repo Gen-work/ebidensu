@@ -340,7 +340,32 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-07 v2.10.5)
+## Current state (last bump: 2026-07-09 v2.10.7)
+
+v2.10.7 (CheckSheet date-write hardening + config layering consolidation):
+**Fixed** -- FillCheckSheet column-B date: (1) NumberFormat is applied
+BEFORE the value (a `@`-formatted cell used to store the OADate serial as
+text, and re-formatting afterwards never converts it back); (2) the format
+mirrored from the row above rejects `@`/`General` and falls back to
+`CheckSheet.DateFormat`; (3) `Set-CellChecked` WARN lines now carry written
+value, raw readback (value+type) and cell context (address / NumberFormat /
+merged / sheet ProtectContents), and the numeric verify parses a text
+readback instead of a blind `[double]` cast that itself threw. Office-PC
+failure log still pending -- the new diagnostics identify the cause if it
+recurs. **Changed** -- the CheckSheet first-run path prompt now persists
+its answer to THIS work folder's `verify_config.json` (`CheckSheet.Path`)
+via the new unit-tested `Save-ConfigOverlayValue` (ConfigOverlay.ps1;
+preserves operator values + `_README`/`_SCHEMA`; refuses unparseable files
+/ non-object ancestors), instead of the global `verify_session.json` where
+it leaked across work folders; session stays as legacy read fallback and
+locked-file fallback store. `DfExePath` deliberately stays session-first
+(machine-scoped). **Added** -- `docs/Configuration.md`: the config layering
+reference (psd1 = shipped defaults only / work-folder JSON = single source
+of truth for project-scoped values / session = machine+operator ephemera,
+plus precedence, field inventory, sharp edges). Static-checked only --
+confirm the prompt persist + a real date in column B on an office PC.
+
+(v2.10.5 history below.)
 
 v2.10.5 (MarkGfix log highlight: fix auto-width measurement -- DPI + GDI/GDI+
 mismatch -- plus per-row diagnostics): **Fixed** -- the auto-width yellow
@@ -1409,6 +1434,12 @@ today diff →  Export-DailyPatch.ps1 → clipboard → git push from home
 3. Markdown fences around either format are stripped automatically.
 
 ## Session config (verify_session.json)
+
+Machine/operator state ONLY -- see `docs/Configuration.md` for the full
+layering rule (psd1 = shipped defaults, work-folder `verify_config.json` =
+everything project-scoped, session = machine ephemera). Project-scoped
+first-run prompt answers (e.g. `CheckSheet.Path`) persist to the work
+folder's `verify_config.json` since v2.10.7, not here.
 
 Remembered between runs:
 - `WorkDir` — last work folder path
