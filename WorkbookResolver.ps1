@@ -70,6 +70,33 @@ function Get-PrefixFromFilename {
     return ''
 }
 
+# Resolve-ExcelPrefix plus on-disk recovery: when neither the legacy per-row
+# Excel_Prefix nor the project Workbook.ExcelPrefix (DefaultPrefix) yields a
+# prefix, look the real evidence workbook up on disk (Find-WorkbookByExcelName)
+# and recover the prefix it already carries (Get-PrefixFromFilename). This is
+# the shared version of the fallback FillCheckSheet introduced in v2.9.29 --
+# any phase that PUBLISHES a workbook filename (check sheet column F, the
+# DeliverMail body) must never list a bare name that doesn't match the file
+# actually on disk. Non-interactive by design (FullWidthFallback Reject);
+# returns '' when nothing yields a prefix.
+function Resolve-ExcelPrefixWithDisk {
+    param(
+        [object]$Row,
+        [string]$DefaultPrefix = '',
+        [string]$ExcelName = '',
+        [string]$EvidenceDir = ''
+    )
+    $prefix = Resolve-ExcelPrefix -Row $Row -DefaultPrefix $DefaultPrefix
+    if (-not [string]::IsNullOrWhiteSpace($prefix)) { return $prefix }
+    if ([string]::IsNullOrWhiteSpace($ExcelName) -or [string]::IsNullOrWhiteSpace($EvidenceDir)) { return $prefix }
+    $onDisk = Find-WorkbookByExcelName -Dir $EvidenceDir -ExcelName $ExcelName -FullWidthFallback Reject
+    if ($null -ne $onDisk) {
+        $found = Get-PrefixFromFilename -FileName (Split-Path $onDisk -Leaf) -Name $ExcelName
+        if (-not [string]::IsNullOrWhiteSpace($found)) { return $found }
+    }
+    return $prefix
+}
+
 function Resolve-WorkbookProviderPath([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $Path }
     $resolved = Resolve-Path -LiteralPath $Path -ErrorAction Stop

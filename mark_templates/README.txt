@@ -19,6 +19,15 @@ template matching), and only falls back to the fixed offset when no
 template is configured, the template file is missing, or no match is found.
 This degrades gracefully -- Mark never blocks on a missing/failed template.
 
+Template works on BOTH box kinds (since v2.10.8): fixed-offset boxes
+(OffsetX/OffsetY) fall back to the offset, and cell-range boxes
+(CellCols/RowsFromBottom, e.g. the DF folder) fall back to the cell-range
+placement. The DF same-content button is the motivating case: df.exe is
+captured in 'window' mode, so the button's position moves with however the
+operator sized the window -- only a template match can track it. Example:
+
+     Mark.Boxes.DF = @( @{ CellCols = 'AW:BC'; RowsFromBottom = 2; Template = 'DfSame.png' } )
+
 How to create a template
 -------------------------
 1. Open one representative screenshot from the folder you want to calibrate,

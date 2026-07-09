@@ -94,29 +94,113 @@ function Get-CellText($ws, [int]$row, [int]$col) {
     return ([string]$v).Trim()
 }
 
+# Cell/sheet context appended to a write-verify warning so the office-PC
+# console log alone can tell apart the known ways a Value2 write comes back
+# different from what was written: a protected sheet, a merged cell, and a
+# text-formatted ('@') column. Every probe is individually guarded -- a
+# diagnostics read must never turn a warning into a new exception.
+function Get-CellDiagSuffix($ws, $cell) {
+    $parts = @()
+    try { if ($null -ne $cell) { $parts += ('addr=' + [string]$cell.Address($false, $false)) } } catch {}
+    try { if ($null -ne $cell) { $parts += ('fmt=' + [string]$cell.NumberFormat) } } catch {}
+    try { if ($null -ne $cell -and [bool]$cell.MergeCells) { $parts += 'merged=True' } } catch {}
+    try { if ([bool]$ws.ProtectContents) { $parts += 'sheetProtected=True' } } catch {}
+    if ($parts.Count -eq 0) { return '' }
+    return (' [{0}]' -f ($parts -join ', '))
+}
+
+function Format-CellReadback($v) {
+    if ($null -eq $v) { return '(null)' }
+    return ('{0} ({1})' -f $v, $v.GetType().Name)
+}
+
+# Office-PC log 2026-07-09: the date write threw a managed InvalidCastException
+# ("Unable to cast object of type 'System.Double' to type 'System.String'")
+# out of `$cell.Value2 = <double>` while the five STRING columns wrote fine.
+# That cast never happens inside Excel -- it is PowerShell 5.1's COM binder:
+# the dynamic call site for the Value2 setter caches a conversion rule from a
+# previous binding (string) and then force-casts the next value (double)
+# through it. Route every cell write through this helper: normal assignment
+# first, and on ANY exception retry once via IDispatch InvokeMember, which
+# bypasses the PS binder (and its cached rule) entirely. A genuinely failing
+# cell (protected sheet etc.) fails the retry too and that exception
+# propagates to Set-CellChecked's catch as before. Returns which path wrote:
+# 'assign' or 'invokemember'.
+function Set-RangeValue2($cell, $value) {
+    try {
+        $cell.Value2 = $value
+        return 'assign'
+    } catch {
+        $first = $_
+        try {
+            [void]$cell.GetType().InvokeMember('Value2', [System.Reflection.BindingFlags]::SetProperty, $null, $cell, @($value))
+            return 'invokemember'
+        } catch {
+            # Re-throw the ORIGINAL assignment error -- for a genuinely bad
+            # cell (protected sheet etc.) it carries the meaningful COM
+            # message, while the retry failure is usually a generic
+            # TargetInvocationException wrapper around the same error.
+            throw $first.Exception
+        }
+    }
+}
+
 # Writes one cell and reads it back to confirm the value actually stuck --
 # a bare try{}catch{} around Value2 assignment swallows both real COM
 # exceptions AND silent no-ops (e.g. a locked/merged cell that accepts the
 # assignment but doesn't change), either of which used to leave column B
 # blank while the run still reported "[OK] wrote N row(s)". Appends a
 # message to $Warnings and returns $false on any mismatch/exception instead
-# of failing silently.
-function Set-CellChecked($ws, [int]$row, [int]$col, $value, [string]$label, [System.Collections.Generic.List[string]]$Warnings) {
+# of failing silently. The warning carries the written value, the raw
+# readback (value + type) and the cell context (address / NumberFormat /
+# merged / sheet protection), so a failure is diagnosable from the console
+# log alone. A numeric write whose readback comes back as TEXT (e.g. the
+# cell is formatted '@') is compared by parsed value, not by a blind
+# [double] cast that would itself throw and mask the real mismatch.
+# $AcceptSerial (optional): a date serial the readback may ALSO verify
+# against -- used when the date is written as TEXT and Excel parses it into
+# the real date value, so Value2 reads back the serial, not the text.
+function Set-CellChecked($ws, [int]$row, [int]$col, $value, [string]$label, [System.Collections.Generic.List[string]]$Warnings, $AcceptSerial = $null) {
+    $cell = $null
+    $via  = ''
     try {
         $cell = $ws.Cells.Item($row, $col)
-        $cell.Value2 = $value
+        $via  = Set-RangeValue2 $cell $value
         $after = $cell.Value2
-        $ok = if ($value -is [double] -or $value -is [int]) {
-            [double]$after -eq [double]$value
+        $ok = $false
+        if ($value -is [double] -or $value -is [int]) {
+            if ($after -is [double] -or $after -is [int]) {
+                $ok = ([double]$after) -eq ([double]$value)
+            } elseif ($null -ne $after) {
+                $afterNum = 0.0
+                if ([double]::TryParse(([string]$after).Trim(), [ref]$afterNum)) {
+                    $ok = $afterNum -eq [double]$value
+                }
+            }
         } else {
-            ([string]$after).Trim() -eq ([string]$value).Trim()
+            $ok = ([string]$after).Trim() -eq ([string]$value).Trim()
+        }
+        if (-not $ok -and $null -ne $AcceptSerial) {
+            $acceptNum = [double]$AcceptSerial
+            if ($after -is [double] -or $after -is [int]) {
+                $ok = ([double]$after) -eq $acceptNum
+            } elseif ($null -ne $after) {
+                $afterNum = 0.0
+                if ([double]::TryParse(([string]$after).Trim(), [ref]$afterNum)) {
+                    $ok = $afterNum -eq $acceptNum
+                }
+            }
         }
         if (-not $ok) {
-            $Warnings.Add(("{0} did not verify after write (row {1})" -f $label, $row))
+            $Warnings.Add(("{0} did not verify after write (row {1}): wrote <{2}> via {3}, read back <{4}>{5}" -f `
+                $label, $row, $value, $via, (Format-CellReadback $after), (Get-CellDiagSuffix $ws $cell)))
         }
         return $ok
     } catch {
-        $Warnings.Add(("{0} write failed (row {1}): {2}" -f $label, $row, $_.Exception.Message))
+        $viaNote = ''
+        if (-not [string]::IsNullOrEmpty($via)) { $viaNote = (' (via {0})' -f $via) }
+        $Warnings.Add(("{0} write failed (row {1}): {2}{3}{4}" -f `
+            $label, $row, $_.Exception.Message, $viaNote, (Get-CellDiagSuffix $ws $cell)))
         return $false
     }
 }
@@ -150,12 +234,15 @@ function Apply-CheckSheetRows($ws, [object[]]$Candidates, [bool]$WriteCells) {
         if ([int]::TryParse($a, [ref]$n)) { $lastNo = $n; break }
     }
 
-    # Date format to mirror from the last filled B cell.
+    # Date format to mirror from the last filled B cell. '@' (text) and
+    # 'General' are never mirrored: writing the OADate serial into either
+    # renders as a bare number (or stores text), which is exactly the
+    # blank/garbled column-B symptom -- fall back to $DateFormat instead.
     $dateFmt = $DateFormat
     if ($lastB -ge 1) {
         try {
             $f = [string]$ws.Cells.Item($lastB, $ColDate).NumberFormat
-            if (-not [string]::IsNullOrWhiteSpace($f)) { $dateFmt = $f }
+            if (-not [string]::IsNullOrWhiteSpace($f) -and $f -ne '@' -and $f -ne 'General') { $dateFmt = $f }
         } catch {}
     }
 
@@ -187,8 +274,33 @@ function Apply-CheckSheetRows($ws, [object[]]$Candidates, [bool]$WriteCells) {
         $rowOk = $true
         if ($WriteCells) {
             $warnings = New-Object System.Collections.Generic.List[string]
-            $dateOk = Set-CellChecked $ws $row $ColDate $todaySer 'date' $warnings
-            if ($dateOk) { try { $ws.Cells.Item($row, $ColDate).NumberFormat = $dateFmt } catch {} }
+            # Set the date NumberFormat BEFORE writing the value: writing the
+            # OADate serial into a cell still formatted '@' (text) stores the
+            # digits as text, and re-formatting afterwards does NOT convert it
+            # back -- the cell keeps showing "46212"-style text. Format-first
+            # makes the serial land as a real date in one pass.
+            try { $ws.Cells.Item($row, $ColDate).NumberFormat = $dateFmt } catch {
+                Write-Host ("    [WARN] row {0}: date NumberFormat set failed: {1}" -f $row, $_.Exception.Message) -ForegroundColor Yellow
+            }
+            # Date write, two tiers. Tier 1: the OADate serial as a Double
+            # (Set-RangeValue2 already retries the PS-COM-binder
+            # InvalidCastException via InvokeMember). Tier 2, last resort:
+            # write the date as TEXT -- the cell already carries the date
+            # NumberFormat, so Excel parses it into a real date value;
+            # AcceptSerial lets the verify pass on the parsed serial. Tier
+            # 1's warning is only surfaced when tier 2 also fails, so a
+            # recovered date doesn't leave a scary-but-stale WARN behind.
+            $dateTier1 = New-Object System.Collections.Generic.List[string]
+            $dateOk = Set-CellChecked $ws $row $ColDate $todaySer 'date' $dateTier1
+            if (-not $dateOk) {
+                $dateOk = Set-CellChecked $ws $row $ColDate $todayText 'date-as-text' $warnings $todaySer
+                if ($dateOk) {
+                    Write-Host ("    [INFO] row {0}: serial date write failed ({1}); recovered by writing the date as text." -f `
+                        $row, ($dateTier1 -join ' / ')) -ForegroundColor DarkGray
+                } else {
+                    foreach ($w in $dateTier1) { $warnings.Add($w) }
+                }
+            }
             $langOk   = Set-CellChecked $ws $row $ColLang   $Language 'language' $warnings
             $phaseOk  = Set-CellChecked $ws $row $ColPhase  $Phase    'phase'    $warnings
             $targetOk = Set-CellChecked $ws $row $ColTarget $target   'target'   $warnings
@@ -262,17 +374,12 @@ foreach ($r in $allRows) {
     if ([string]::IsNullOrWhiteSpace($prefix)) {
         # Neither the mapping row (legacy Excel_Prefix) nor Workbook.ExcelPrefix
         # gave a prefix. Before listing a bare, unprefixed name on the shared
-        # check sheet, check whether the real evidence file already carries
-        # one on disk (e.g. this row predates Workbook.ExcelPrefix being set,
-        # or the config simply isn't configured for this run) -- same
-        # bare-name lookup DeliverFiles already uses, just read the other way.
-        $onDisk = Find-WorkbookByExcelName -Dir $EvidenceDir -ExcelName $name
-        if ($null -ne $onDisk) {
-            $foundPrefix = Get-PrefixFromFilename -FileName (Split-Path $onDisk -Leaf) -Name $name
-            if (-not [string]::IsNullOrWhiteSpace($foundPrefix)) {
-                Write-Host ("  [INFO] no configured prefix for {0}; using prefix found on disk: {1}" -f $name, $foundPrefix) -ForegroundColor DarkGray
-                $prefix = $foundPrefix
-            }
+        # check sheet, recover the prefix the real evidence file already
+        # carries on disk (shared WorkbookResolver helper; DeliverMail uses
+        # the same one for the mail-body filename).
+        $prefix = Resolve-ExcelPrefixWithDisk -Row $r -DefaultPrefix $ExcelPrefix -ExcelName $name -EvidenceDir $EvidenceDir
+        if (-not [string]::IsNullOrWhiteSpace($prefix)) {
+            Write-Host ("  [INFO] no configured prefix for {0}; using prefix found on disk: {1}" -f $name, $prefix) -ForegroundColor DarkGray
         }
     }
     $fullStem = Get-ExcelFullStem -Prefix $prefix -Name $name

@@ -538,9 +538,9 @@ function Show-PhaseNotes([string]$PhaseKey) {
         '^CheckSheet$' { @(
             '  Phase params:',
             '    k=CheckSheetPath -> review check sheet .xlsx (prompts once if config path is',
-            '                        missing, then remembered in verify_session.json; set',
-            '                        CheckSheet.Path in verify_config.json to skip the prompt',
-            '                        permanently -- run -Phase InitConfig)',
+            '                        missing; the answer is saved as CheckSheet.Path in THIS',
+            '                        work folder''s verify_config.json, so it travels with the',
+            '                        work folder -- edit it there or via -Phase InitConfig)',
             '    t=TargetIds      -> limit to specific Excel_NAME / Correl_ID / JOB_NAME',
             '    f=Force          -> add a row even if the Excel is already listed',
             '  NOTE: edits are previewed in a TEMP copy first; you press Enter to commit.',
@@ -1803,9 +1803,13 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args['EvidenceDir'] = $State.EvidenceDir
         # Resolve the check-sheet path: State (CLI/session/menu 'k') wins, then
         # config CheckSheet.Path. If still empty this is effectively a first
-        # run: prompt once here (not inside FillCheckSheet.ps1) and remember
-        # the answer in the session, same as DfExePath, so later runs don't
-        # ask again.
+        # run: prompt once here (not inside FillCheckSheet.ps1) and persist
+        # the answer to THIS WORK FOLDER's verify_config.json (CheckSheet.Path)
+        # -- the check sheet is project-scoped, so remembering it in the
+        # global verify_session.json (the old behavior) leaked one project's
+        # path into every other work folder. Session stays as a legacy
+        # fallback for reads and as the fallback store when the overlay file
+        # cannot be written (locked/open in an editor).
         if ([string]::IsNullOrWhiteSpace($State.CheckSheetPath) -and $Config.CheckSheet `
                 -and -not [string]::IsNullOrWhiteSpace([string]$Config.CheckSheet.Path)) {
             $State.CheckSheetPath = [string]$Config.CheckSheet.Path
@@ -1814,10 +1818,17 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             Write-Host '[CheckSheet] review check sheet path not set (first run).' -ForegroundColor Yellow
             $State.CheckSheetPath = (Read-Host '  Review check sheet (.xlsx) full path').Trim()
             if (-not [string]::IsNullOrWhiteSpace($State.CheckSheetPath)) {
-                $session['CheckSheetPath'] = $State.CheckSheetPath
-                Save-Session $sessionPath $session
-                Write-Host ("  [NOTE] remembered in {0}" -f $sessionPath) -ForegroundColor DarkGray
-                Write-Host '  [TIP] set CheckSheet.Path in this work folder''s verify_config.json (-Phase InitConfig) to make this permanent across work folders.' -ForegroundColor DarkGray
+                $overlayName = [string]$Config.Paths.OverlayName
+                if ([string]::IsNullOrWhiteSpace($overlayName)) { $overlayName = 'verify_config.json' }
+                $overlayPath = Join-Path $State.WorkDir $overlayName
+                if (Save-ConfigOverlayValue -OverlayPath $overlayPath -Path 'CheckSheet.Path' -Value $State.CheckSheetPath) {
+                    Write-Host ("  [NOTE] saved as CheckSheet.Path in {0}" -f $overlayPath) -ForegroundColor DarkGray
+                } else {
+                    $session['CheckSheetPath'] = $State.CheckSheetPath
+                    Save-Session $sessionPath $session
+                    Write-Host ("  [WARN] could not update {0} (locked or unparseable) -- remembered in {1} instead." -f $overlayPath, $sessionPath) -ForegroundColor Yellow
+                    Write-Host '  [TIP] set CheckSheet.Path in this work folder''s verify_config.json (-Phase InitConfig) so the path travels with the work folder.' -ForegroundColor DarkGray
+                }
             }
         }
         if (-not [string]::IsNullOrWhiteSpace($State.CheckSheetPath)) { $args['CheckSheetPath'] = $State.CheckSheetPath }

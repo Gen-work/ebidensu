@@ -340,7 +340,71 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-07 v2.10.5)
+## Current state (last bump: 2026-07-09 v2.10.9)
+
+v2.10.9 (MarkDf: Template image-match on cell-range boxes): **Fixed** -- a
+`Mark.Boxes` entry carrying BOTH `CellCols` and `Template` silently ignored
+the `Template`: `Mark.ps1`'s placement loop branched on `CellCols` first and
+only ran `Find-MarkBoxByImage` in the non-cell branch. The operator's DF box
+(`CellCols='AW:BC'; RowsFromBottom=2; Template='DfSame.png'`) therefore kept
+drawing at the fixed cell position -- wrong whenever the df.exe window size
+differs between captures, which is now the norm (`Df.CaptureMode='window'`
+since v2.9.31; confirmed off-target on a real workbook). The template match
+is now tried FIRST for both box kinds; no-Template / no-match falls back to
+the legacy cell-range or fixed-offset placement unchanged. Console shows
+`[MARK-IMG] ... (live)` when the match fired. Sizing keeps v2.9.31 rules
+(no Width/Height on the box = crop-derived size). Static-checked only --
+confirm on the office PC.
+
+v2.10.8 (CheckSheet date root cause fixed + DeliverMail filename prefix
+fallback): **Fixed** -- (1) the office-PC log identified the real date-write
+failure: `$cell.Value2 = <OADate double>` threw a managed
+InvalidCastException (Double->String) from PS 5.1's COM binder (cached
+setter conversion rule from a previous string binding), while the string
+columns wrote fine. New `Set-RangeValue2` (FillCheckSheet.ps1) retries any
+failed `Value2` assignment once via IDispatch `InvokeMember` (bypasses the
+binder + its cache; a genuinely bad cell still surfaces the ORIGINAL
+error), plus a date-only last-resort tier that writes the date as TEXT into
+the already-date-formatted cell (verify accepts the parsed serial via the
+new `AcceptSerial` arg of `Set-CellChecked`; recovered dates print INFO,
+tier-1 warnings only surface if both tiers fail; warnings now say `via
+assign|invokemember`). (2) DeliverMail's body `{3}` filename was bare (e.g.
+`KJODWWB5.xlsx`) when neither the legacy mapping `Excel_Prefix` nor
+`Workbook.ExcelPrefix` was set: the v2.9.29 on-disk prefix fallback was
+CheckSheet-only. Now shared as `Resolve-ExcelPrefixWithDisk`
+(WorkbookResolver.ps1, unit-tested, non-interactive): row column ->
+`Workbook.ExcelPrefix` -> prefix recovered from the real evidence file on
+disk; used by FillCheckSheet (replacing its inline copy) and DeliverMail.
+**Notes** -- the primary source should still be `Workbook.ExcelPrefix` in
+the work folder's `verify_config.json`; the mapping `Excel_Prefix` column is
+no longer generated anywhere and may be deleted from existing CSVs (still
+honored as a per-row override when present). COM paths static-checked only
+-- confirm column-B date + prefixed mail filename on an office PC.
+
+v2.10.7 (CheckSheet date-write hardening + config layering consolidation):
+**Fixed** -- FillCheckSheet column-B date: (1) NumberFormat is applied
+BEFORE the value (a `@`-formatted cell used to store the OADate serial as
+text, and re-formatting afterwards never converts it back); (2) the format
+mirrored from the row above rejects `@`/`General` and falls back to
+`CheckSheet.DateFormat`; (3) `Set-CellChecked` WARN lines now carry written
+value, raw readback (value+type) and cell context (address / NumberFormat /
+merged / sheet ProtectContents), and the numeric verify parses a text
+readback instead of a blind `[double]` cast that itself threw. Office-PC
+failure log still pending -- the new diagnostics identify the cause if it
+recurs. **Changed** -- the CheckSheet first-run path prompt now persists
+its answer to THIS work folder's `verify_config.json` (`CheckSheet.Path`)
+via the new unit-tested `Save-ConfigOverlayValue` (ConfigOverlay.ps1;
+preserves operator values + `_README`/`_SCHEMA`; refuses unparseable files
+/ non-object ancestors), instead of the global `verify_session.json` where
+it leaked across work folders; session stays as legacy read fallback and
+locked-file fallback store. `DfExePath` deliberately stays session-first
+(machine-scoped). **Added** -- `docs/Configuration.md`: the config layering
+reference (psd1 = shipped defaults only / work-folder JSON = single source
+of truth for project-scoped values / session = machine+operator ephemera,
+plus precedence, field inventory, sharp edges). Static-checked only --
+confirm the prompt persist + a real date in column B on an office PC.
+
+(v2.10.5 history below.)
 
 v2.10.5 (MarkGfix log highlight: fix auto-width measurement -- DPI + GDI/GDI+
 mismatch -- plus per-row diagnostics): **Fixed** -- the auto-width yellow
@@ -1409,6 +1473,12 @@ today diff →  Export-DailyPatch.ps1 → clipboard → git push from home
 3. Markdown fences around either format are stripped automatically.
 
 ## Session config (verify_session.json)
+
+Machine/operator state ONLY -- see `docs/Configuration.md` for the full
+layering rule (psd1 = shipped defaults, work-folder `verify_config.json` =
+everything project-scoped, session = machine ephemera). Project-scoped
+first-run prompt answers (e.g. `CheckSheet.Path`) persist to the work
+folder's `verify_config.json` since v2.10.7, not here.
 
 Remembered between runs:
 - `WorkDir` — last work folder path

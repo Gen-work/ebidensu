@@ -216,6 +216,43 @@ function Set-ConfigOverlayPathValue {
     return $true
 }
 
+function Save-ConfigOverlayValue {
+    # Persist ONE dotted-path value into a work folder's sparse
+    # verify_config.json, creating the file when absent. Everything else in
+    # the file -- operator values, metadata keys (_README/_SCHEMA/...) -- is
+    # preserved byte-for-byte at the data level (re-serialised, not re-typed).
+    # Used by VerifyTool's first-run prompts so a project-scoped answer (e.g.
+    # CheckSheet.Path) lands in the WORK FOLDER config instead of the global
+    # verify_session.json, where it would leak into unrelated work folders.
+    # Returns $true on success; $false (file untouched) when the existing
+    # file cannot be parsed, an ancestor of Path is a non-object, or the
+    # write itself fails (e.g. file open/locked in an editor).
+    param([string]$OverlayPath, [string]$Path, [object]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($OverlayPath) -or [string]::IsNullOrWhiteSpace($Path)) { return $false }
+
+    $data = @{}
+    if (Test-Path -LiteralPath $OverlayPath) {
+        try {
+            $raw = Get-Content -LiteralPath $OverlayPath -Raw -Encoding UTF8
+            if (-not [string]::IsNullOrWhiteSpace($raw)) {
+                # Deliberately NOT ConvertFrom-ConfigJson: that strips the
+                # _README/_SCHEMA metadata keys, which must survive a rewrite.
+                $parsed = ConvertTo-ConfigHashtable ($raw | ConvertFrom-Json)
+                if ($parsed -is [hashtable]) { $data = $parsed } else { return $false }
+            }
+        } catch { return $false }
+    }
+
+    if (-not (Set-ConfigOverlayPathValue $data $Path $Value)) { return $false }
+
+    try {
+        $json = Get-ConfigOverlayJson $data
+        [System.IO.File]::WriteAllText($OverlayPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+        return $true
+    } catch { return $false }
+}
+
 function Get-ConfigFirstNonBlank {
     # First non-blank string value among the dotted paths, else ''.
     param([hashtable]$Config, [string[]]$Paths)

@@ -1,3 +1,146 @@
+## 2026-07-09 - MarkDf: Template image-match now works on cell-range (CellCols) boxes (v2.10.9)
+
+### Fixed
+- **A `Mark.Boxes` entry with BOTH `CellCols` and `Template` silently ignored
+  the `Template`**: the box-placement loop in `Mark.ps1` branched on
+  `CellCols` FIRST and only ran the image-recognition path
+  (`Find-MarkBoxByImage`, v2.9.23) in the non-cell branch, so a cell-range
+  box could never opt into template matching -- the operator's DF config
+  (`CellCols='AW:BC'; RowsFromBottom=2; Template='DfSame.png'`) kept
+  producing plain `[MARK]` lines at the fixed cell position. This matters
+  for DF specifically: since v2.9.31 `Df.CaptureMode` defaults to `window`,
+  so the df.exe same-content button's on-image position moves with however
+  the operator sized the window -- a cell-anchored rectangle cannot track
+  it (confirmed on a real workbook: marks landed off the button). The
+  template match is now tried FIRST for both box kinds; a cell-range box
+  falls back to its legacy cell placement (and an offset box to its fixed
+  offset) when there is no `Template`, the file is missing, or no match --
+  behavior for boxes without `Template` is unchanged. `[MARK-IMG] ...
+  (live)` in the console confirms the match fired; `Find-MarkBoxByImage`
+  itself is untouched (DF snap PNGs already live at `snap\DF\<correl>.png`,
+  so the source-image lookup just works).
+- `mark_templates/README.txt` documents the cell-range case + the DF
+  example.
+
+### Notes
+- Sizing on a match keeps the v2.9.31 rules: this DF box has no
+  `Width`/`Height`, so the drawn rectangle takes the template crop's own
+  size (scaled to sheet points; add `PadX`/`PadY` for margin). Add
+  `Width`/`Height` to the box to force a fixed size with the match as
+  anchor. Static-checked only -- confirm `[MARK-IMG]` placement on the DF
+  sheet on an office PC.
+
+## 2026-07-09 - CheckSheet date root cause fixed (PS COM binder cast) + DeliverMail filename prefix fallback (v2.10.8)
+
+### Fixed
+- **FillCheckSheet column-B date -- actual root cause identified from the
+  office-PC log**: the write threw a managed InvalidCastException ("Unable
+  to cast object of type 'System.Double' to type 'System.String'", Japanese
+  .NET message in the log) out of `$cell.Value2 = <OADate double>` while the
+  five STRING columns in the same rows wrote fine. That cast never happens
+  inside Excel -- it is PowerShell 5.1's COM binder: the dynamic call site
+  for the `Value2` setter caches a conversion rule from a previous (string)
+  binding and force-casts the next value through it. Fixes, layered:
+  1. New `Set-RangeValue2` helper routes every cell write: normal assignment
+     first, and on any exception one retry via IDispatch `InvokeMember`
+     (`SetProperty`), which bypasses the PS binder and its cached rule
+     entirely. A genuinely bad cell (protected sheet etc.) fails the retry
+     too and the ORIGINAL error message propagates.
+  2. Last-resort tier for the date only: write it as TEXT (`yyyy/MM/dd`) --
+     the cell already carries the date NumberFormat (v2.10.7 sets it before
+     the value), so Excel parses the text into a real date; the verify
+     accepts the parsed serial via the new `AcceptSerial` argument. Tier-1's
+     warning is only surfaced when this tier also fails, and a recovered
+     date prints an `[INFO] ... recovered by writing the date as text` line.
+  3. Verify warnings now also report which write path ran (`via assign` /
+     `via invokemember`).
+- **DeliverMail body listed a bare workbook filename** (e.g. `KJODWWB5.xlsx`
+  instead of `J4検証資料(...)_KJODWWB5.xlsx`) whenever neither the mapping
+  row's legacy `Excel_Prefix` nor `Workbook.ExcelPrefix` was set -- the
+  on-disk prefix fallback FillCheckSheet gained in v2.9.29 was never applied
+  to the mail body. The fallback is now a shared
+  `Resolve-ExcelPrefixWithDisk` (WorkbookResolver.ps1, unit-tested,
+  non-interactive `FullWidthFallback Reject`): legacy row column ->
+  `Workbook.ExcelPrefix` -> the prefix the real evidence file already
+  carries on disk. FillCheckSheet's inline copy was replaced by the shared
+  helper; DeliverMail now uses it for the `{3}` body filename, with the same
+  `[INFO] ... using prefix found on disk` console note.
+
+### Notes
+- The proper per-project fix remains setting `Workbook.ExcelPrefix` in the
+  work folder's `verify_config.json` -- the on-disk fallback is a safety
+  net, not the primary source. The legacy mapping `Excel_Prefix` column is
+  no longer generated anywhere and is safe to delete from existing mapping
+  CSVs; it is still honored as a per-row override when present.
+- Pure logic (prefix recovery) is unit-tested; the COM write paths are
+  static-checked only. Confirm on an office PC: a real date in column B
+  (watch for `via invokemember` / the text-fallback INFO in the console),
+  and the DeliverMail body now carrying the full prefixed filename.
+
+## 2026-07-09 - CheckSheet date-write hardening + config layering consolidation (v2.10.7)
+
+### Fixed
+- **FillCheckSheet column-B (date) write**: two robustness fixes for the
+  operator-reported "date write failed" WARN (office-PC log still pending;
+  these address the two failure modes reproducible from the code alone):
+  1. The date NumberFormat is now applied BEFORE the value is written.
+     Writing the OADate serial into a cell still formatted `@` (text)
+     stores the digits as text, and re-formatting afterwards does not
+     convert it back -- the cell keeps showing `46212`-style text.
+     Format-first makes the serial land as a real date in one pass. A
+     failed format-set is now itself a visible `[WARN]` instead of a bare
+     `catch {}`.
+  2. The date format mirrored from the row above is no longer trusted
+     blindly: `@` (text) and `General` are rejected (either one renders
+     the serial as a bare number / text -- the exact blank/garbled column-B
+     symptom) and the configured `CheckSheet.DateFormat` fallback is used
+     instead.
+- **FillCheckSheet write-verify diagnostics**: `Set-CellChecked`'s WARN
+  line now reports the written value, the raw readback (value + .NET type),
+  and the cell context -- address, NumberFormat, merged-cell flag, sheet
+  `ProtectContents` -- so the next failure log pinpoints WHICH of the known
+  causes (protected sheet / merged cell / text format / silent no-op) fired,
+  instead of only "did not verify". The numeric verify no longer does a
+  blind `[double]` cast on the readback (a text readback used to throw
+  inside the check and surface as a misleading "write failed" exception);
+  it parses and compares, so number-stored-as-text is reported as a
+  mismatch with the actual readback shown.
+
+### Changed
+- **CheckSheet path now persists to the WORK FOLDER, not the global session
+  file**: the first-run prompt's answer is written into this work folder's
+  `verify_config.json` as `CheckSheet.Path` via the new
+  `Save-ConfigOverlayValue` (ConfigOverlay.ps1) -- the check sheet is
+  project-scoped, and remembering it in `verify_session.json` (old
+  behavior) leaked one project's path into every other work folder that had
+  no explicit config. The session file remains a legacy read fallback and
+  the fallback store when the JSON cannot be written (locked/open file).
+  `verify_session.json` is now reserved for machine/operator state
+  (WorkDir pointer, Owner, window size, DfExePath -- df.exe location is a
+  property of the PC, so it deliberately stays session-first).
+
+### Added
+- `Save-ConfigOverlayValue` (ConfigOverlay.ps1): persist ONE dotted-path
+  value into a sparse `verify_config.json`, creating the file when absent,
+  preserving every operator value and the `_README`/`_SCHEMA` metadata
+  keys, and refusing to touch an unparseable file or overwrite through a
+  non-object ancestor. Unit-tested in `Tests\Test-ConfigOverlay.ps1`.
+- `docs/Configuration.md`: the config layering reference -- the three
+  files (`VerifyConfig.psd1` = shipped defaults only / `verify_config.json`
+  in WorkDir = single source of truth for everything project-scoped /
+  `verify_session.json` = machine+operator ephemera), runtime precedence,
+  the travels-with-the-work-folder rule of thumb, a field-by-field
+  inventory of paths/prefixes, and the known sharp edges (array-wholesale
+  overlay merge, global-session leaks, editor-group drift guard).
+
+### Notes
+- Static-checked only (no Windows/Excel in this dev environment). Confirm
+  on an office PC: the CheckSheet first-run prompt writing
+  `CheckSheet.Path` into `verify_config.json`, and column B landing as a
+  real date on the shared check sheet. If the date WARN fires again, the
+  new diagnostic suffix (`addr=... fmt=... merged/sheetProtected`) in the
+  console log identifies the cause -- send that log.
+
 ## 2026-07-08 - Repo hygiene: untrack IDE workspace + session state; generalization roadmap + sanitization audit (v2.10.6)
 
 ### Changed
