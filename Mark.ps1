@@ -235,6 +235,15 @@ function Find-MarkBoxByImage {
     legacy behavior: sized to the matched crop's own pixel size, scaled to
     sheet points and padded by PadX/PadY on each side.
 
+    PadWidth/PadHeight (optional): a constant extra amount added on top of
+    the resolved Width/Height (in the fixed-size branch) or on top of the
+    matched crop's own pixel size before scaling (in the crop-sized branch).
+    This is a fixed-per-box safety margin, not a per-correl auto-size -- it
+    does not track how long the actual on-page content (e.g. a Jenkins
+    file-list entry's filename) is for a given correl. A true per-correl
+    auto-size needs a measured source (e.g. SnapVerify's M5 loc.json pixel
+    rect) and is not wired here yet.
+
     Anchor source: a snap-time <correl>.tplhit.json sidecar (written by
     JenkinsSnap.ps1 when it was given this same box's Template, right after
     the screenshot was captured) is preferred over a fresh Locate-ByImage
@@ -288,6 +297,17 @@ function Find-MarkBoxByImage {
         $padX = 0.0; $padY = 0.0
         if ($Box.ContainsKey('PadX')) { try { $padX = [double]$Box.PadX } catch {} }
         if ($Box.ContainsKey('PadY')) { try { $padY = [double]$Box.PadY } catch {} }
+        # PadWidth/PadHeight: constant extra size added on top of the box's
+        # own Width/Height (or, in the crop-sized branch below, on top of the
+        # matched crop's pixel size before scaling) -- same fixed-per-box
+        # knob as PadX/PadY, just for size instead of position. This does NOT
+        # make the box adapt to each correl's actual on-page text length (a
+        # constant added to every correl); it only widens/heightens the
+        # drawn box by a fixed margin. A real per-correl auto-size still
+        # needs a measured source (e.g. the M5 loc.json highlight rect).
+        $padWidth = 0.0; $padHeight = 0.0
+        if ($Box.ContainsKey('PadWidth'))  { try { $padWidth  = [double]$Box.PadWidth }  catch {} }
+        if ($Box.ContainsKey('PadHeight')) { try { $padHeight = [double]$Box.PadHeight } catch {} }
 
         $px = [double]$hit.X - $padX
         $py = [double]$hit.Y - $padY
@@ -299,14 +319,14 @@ function Find-MarkBoxByImage {
             return @{
                 Left   = ([double]$Shape.Left) + ($px * $scaleX)
                 Top    = ([double]$Shape.Top)  + ($py * $scaleY)
-                Width  = $fw
-                Height = $fh
+                Width  = $fw + $padWidth
+                Height = $fh + $padHeight
                 Source = $hitSource
             }
         }
 
-        $pw = [double]$hit.Width  + (2 * $padX)
-        $ph = [double]$hit.Height + (2 * $padY)
+        $pw = [double]$hit.Width  + (2 * $padX) + $padWidth
+        $ph = [double]$hit.Height + (2 * $padY) + $padHeight
 
         return @{
             Left   = ([double]$Shape.Left) + ($px * $scaleX)

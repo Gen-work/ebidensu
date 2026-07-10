@@ -47,8 +47,20 @@ How to create a template
    Width/Height/OffsetX/OffsetY on the same entry are the FALLBACK box used
    only when the template match fails -- keep them as a safety net.
 4. Optional per-box overrides:
-     Tolerance : LockBits color tolerance for this box only (default: Mark.ImageMatch.Tolerance, 15)
-     PadX/PadY : pixels added around the matched region on each axis (default: 0)
+     Tolerance         : LockBits color tolerance for this box only (default: Mark.ImageMatch.Tolerance, 15)
+     PadX/PadY         : shifts the matched anchor point on each axis (default: 0)
+     PadWidth/PadHeight: constant extra size added on top of Width/Height (or,
+                         when the box has no Width/Height, on top of the
+                         matched crop's own size) (default: 0)
+
+   PadWidth/PadHeight are a FIXED number added to every correl in the folder
+   -- they do NOT make the box track each correl's actual on-page content
+   length (e.g. a Jenkins file-list entry whose filename is longer some runs
+   than others). Use them only to add a constant safety margin. A real
+   per-correl auto-size needs a measured source (SnapVerify's M5 pixel
+   localisation loc.json, or an OCR-based text-width measurement like
+   GfixLog.AutoHighlightWidth uses for the GFIX log highlight) -- not yet
+   wired into plain Template boxes.
 5. Run `.\VerifyTool.ps1 -Phase MarkGift` (or MarkGfix/MarkDf) and check the
    console: a line tagged [MARK-IMG] means the template matched; [MARK] means
    it fell back to the fixed offset (check the [WARN] line above it for why).
