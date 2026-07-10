@@ -1,3 +1,31 @@
+## 2026-07-10 - Mark image-match: PadWidth/PadHeight box-size margin (v2.10.10)
+
+### Added
+- `Find-MarkBoxByImage` (`Mark.ps1`) now accepts optional `PadWidth`/
+  `PadHeight` keys on a `Mark.Boxes` entry, alongside the existing `PadX`/
+  `PadY`: a constant amount added to the drawn box's `Width`/`Height` (fixed-
+  size branch) or to the matched crop's own pixel size before scaling
+  (crop-sized branch, same as `PadX`/`PadY`'s existing `2 * pad` treatment).
+  Motivating case: `GFIX_Jenkins` marks a Jenkins file-list entry whose on-
+  page position differs from `GIFT_Jenkins` (confirmed via `Probe-Shapes.ps1`
+  -- their `Template` anchor position genuinely differs, `PadX`/`PadY` fixes
+  that), and the entry's filename length varies per correl, so a single
+  fixed `Width` sometimes falls short.
+
+### Notes
+- `PadWidth`/`PadHeight` are a FIXED number applied to every correl in the
+  folder -- they widen/heighten the box by a constant margin, they do NOT
+  make it track each correl's actual on-page content length. This is step
+  one of an iterative fix (operator explicitly asked for the constant-pad
+  knob first); a true per-correl auto-size still needs a measured source
+  (e.g. SnapVerify's M5 `loc.json` pixel-localisation rect, or an OCR-based
+  text-width measurement like `GfixLog.AutoHighlightWidth` uses for the GFIX
+  log highlight) and is not wired into plain `Template` boxes yet -- tracked
+  as a follow-up. Documented in `mark_templates/README.txt`'s per-box
+  overrides list and `verify_config.example.json`'s `_TemplateExample`.
+  Static-checked only (no Windows/Excel in this dev environment) -- confirm
+  on an office PC.
+
 ## 2026-07-09 - MarkDf: Template image-match now works on cell-range (CellCols) boxes (v2.10.9)
 
 ### Fixed

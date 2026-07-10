@@ -340,7 +340,26 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-09 v2.10.9)
+## Current state (last bump: 2026-07-10 v2.10.10)
+
+v2.10.10 (Mark image-match: PadWidth/PadHeight box-size margin): **Added** --
+`Find-MarkBoxByImage` (`Mark.ps1`) gained optional `PadWidth`/`PadHeight` keys
+on a `Mark.Boxes` entry, alongside the existing `PadX`/`PadY`: a constant
+amount added to the drawn box's `Width`/`Height` (fixed-size branch) or to the
+matched crop's own pixel size before scaling (crop-sized branch). Motivating
+case: `GFIX_Jenkins` -- confirmed via `Probe-Shapes.ps1` that its `Template`
+anchor position genuinely differs from `GIFT_Jenkins` (fixed with `PadX`/
+`PadY`), and the marked Jenkins file-list entry's filename length varies per
+correl, so a single fixed `Width` sometimes falls short. **Notes** --
+`PadWidth`/`PadHeight` are a FIXED number applied to every correl in the
+folder; they widen/heighten the box by a constant margin but do NOT track
+each correl's actual on-page content length. This is step one of an
+iterative fix (operator explicitly asked for the constant-pad knob first); a
+true per-correl auto-size still needs a measured source (e.g. SnapVerify's
+M5 `loc.json` pixel rect, or an OCR-based text-width measurement like
+`GfixLog.AutoHighlightWidth`) and is not wired into plain `Template` boxes
+yet -- tracked as a follow-up. Documented in `mark_templates/README.txt` and
+`verify_config.example.json`. Static-checked only -- confirm on an office PC.
 
 v2.10.9 (MarkDf: Template image-match on cell-range boxes): **Fixed** -- a
 `Mark.Boxes` entry carrying BOTH `CellCols` and `Template` silently ignored
