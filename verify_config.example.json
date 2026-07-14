@@ -21,7 +21,15 @@
   "J4EvidenceDir": "",
   "Address": "",
 
-  "Window":     { "Width": 1050, "Height": 761, "CropPx": 6, "NoResize": false },
+  "Window": {
+    "Width": 1050, "Height": 761, "CropPx": 6, "NoResize": false,
+    "CropLeft": -1, "CropTop": -1, "CropRight": -1, "CropBottom": -1,
+    "CropByFolder": {
+      "GIFT_HM": { "Top": 10 },
+      "GIFT_Jenkins": { "Left": 4, "Right": 4 }
+    },
+    "_CropByFolderExample": "CropLeft/CropTop/CropRight/CropBottom above are per-side overrides applied globally to every HM/MQ/Jenkins snapshot (-1 = inherit CropPx for that side). CropByFolder narrows this further to one snap folder (GIFT_HM/GFIX_HM/GIFT_MQ/GIFT_Jenkins/GFIX_Jenkins/GIFT_noGfixfile): each entry may set any of Left/Top/Right/Bottom (px), and a side left out falls back to the resolved global Crop<Side>/CropPx value. Delete the two example CropByFolder entries above if you don't need per-folder overrides -- an empty CropByFolder ({}) is the shipped default and changes nothing."
+  },
   "Timing":     { "ActionWaitMs": 500, "ResultWaitSec": 2, "ResultWaitMs": 500 },
   "Review":     { "CursorCell": "A3", "EvidenceDir": "evidence", "SaveWaitMs": 5000, "Maximize": true },
 

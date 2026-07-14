@@ -54,6 +54,12 @@ param(
     [int]$WindowWidth       = 1050,
     [int]$WindowHeight      = 761,
     [int]$CropPx            = 6,
+    # Per-side overrides in px. -1 (default) = inherit CropPx for that side
+    # (uniform crop; existing -CropPx-only usage is unchanged).
+    [int]$CropLeft          = -1,
+    [int]$CropTop           = -1,
+    [int]$CropRight         = -1,
+    [int]$CropBottom        = -1,
     [int]$ActionWaitMs      = 500,
     [int]$ResultWaitMs      = 500,
     [string]$CommonScript   = '',
@@ -221,16 +227,24 @@ if (Test-Path $urlCacheFile) {
 $urlDirty = $false
 
 # -- inline helpers ------------------------------------------------------------
-function Invoke-CropPng([string]$path, [int]$crop) {
-    if ($crop -le 0 -or -not (Test-Path -LiteralPath $path)) { return }
+function Invoke-CropPng(
+    [string]$path, [int]$crop,
+    # -1 (default) = inherit crop for that side (uniform crop).
+    [int]$cropLeft = -1, [int]$cropTop = -1, [int]$cropRight = -1, [int]$cropBottom = -1
+) {
+    if ($cropLeft   -lt 0) { $cropLeft   = $crop }
+    if ($cropTop    -lt 0) { $cropTop    = $crop }
+    if ($cropRight  -lt 0) { $cropRight  = $crop }
+    if ($cropBottom -lt 0) { $cropBottom = $crop }
+    if (($cropLeft -le 0 -and $cropTop -le 0 -and $cropRight -le 0 -and $cropBottom -le 0) -or -not (Test-Path -LiteralPath $path)) { return }
     try {
         $orig = [System.Drawing.Image]::FromFile($path)
-        $w = $orig.Width  - $crop * 2
-        $h = $orig.Height - $crop * 2
+        $w = $orig.Width  - $cropLeft - $cropRight
+        $h = $orig.Height - $cropTop  - $cropBottom
         if ($w -le 0 -or $h -le 0) { $orig.Dispose(); return }
         $bmp = New-Object System.Drawing.Bitmap($w, $h)
         $g   = [System.Drawing.Graphics]::FromImage($bmp)
-        $g.DrawImage($orig, -$crop, -$crop)
+        $g.DrawImage($orig, -$cropLeft, -$cropTop)
         $g.Dispose()
         $orig.Dispose()
         $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
@@ -508,7 +522,7 @@ foreach ($toCode in $groupOrder) {
 
             try {
                 Take-WindowScreenshot $edgeHwnd $snapPath
-                if ($CropPx -gt 0) { Invoke-CropPng $snapPath $CropPx }
+                Invoke-CropPng $snapPath $CropPx -cropLeft $CropLeft -cropTop $CropTop -cropRight $CropRight -cropBottom $CropBottom
                 # Dismiss find bar now that the screenshot is captured.
                 Send-Key '{ESC}' 200
                 Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green

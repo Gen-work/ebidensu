@@ -28,6 +28,25 @@
         Height   = 761
         CropPx   = 6
         NoResize = $false
+        # Per-side crop overrides in px, applied globally to every HM/MQ/
+        # Jenkins snap screenshot. -1 (default) = inherit CropPx for that
+        # side, i.e. uniform crop -- unchanged behavior. Set any of these to
+        # crop that side by a different amount than the others.
+        CropLeft   = -1
+        CropTop    = -1
+        CropRight  = -1
+        CropBottom = -1
+        # Per-snap-folder crop override, keyed by folder name (GIFT_HM,
+        # GFIX_HM, GIFT_MQ, GIFT_Jenkins, GFIX_Jenkins, GIFT_noGfixfile).
+        # Each entry may set any of Left/Top/Right/Bottom (px); a side left
+        # out of the entry falls back to the resolved global Crop<Side>/
+        # CropPx value above. Empty by default -- no behavior change for
+        # existing work folders. Example:
+        #   CropByFolder = @{
+        #       'GIFT_HM'      = @{ Top = 10 }
+        #       'GIFT_Jenkins' = @{ Left = 4; Right = 4 }
+        #   }
+        CropByFolder = @{}
     }
 
     Timing = @{

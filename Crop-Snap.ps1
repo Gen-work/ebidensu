@@ -27,6 +27,12 @@ param(
     [string]$Path    = "",
     [string]$Dir     = "",
     [int]$CropPx     = 15,
+    # Per-side overrides in px. -1 (default) = inherit CropPx for that side
+    # (uniform crop; existing -CropPx-only usage is unchanged).
+    [int]$CropLeft   = -1,
+    [int]$CropTop    = -1,
+    [int]$CropRight  = -1,
+    [int]$CropBottom = -1,
     [switch]$Force,
     [switch]$Recurse
 )
@@ -41,8 +47,18 @@ Add-Type -AssemblyName System.Drawing
 function Invoke-CropPng {
     param(
         [Parameter(Mandatory=$true)][string]$path,
-        [int]$cropPx = 15
+        [int]$cropPx     = 15,
+        # -1 (default) = inherit cropPx for that side (uniform crop).
+        [int]$cropLeft   = -1,
+        [int]$cropTop    = -1,
+        [int]$cropRight  = -1,
+        [int]$cropBottom = -1
     )
+
+    if ($cropLeft   -lt 0) { $cropLeft   = $cropPx }
+    if ($cropTop    -lt 0) { $cropTop    = $cropPx }
+    if ($cropRight  -lt 0) { $cropRight  = $cropPx }
+    if ($cropBottom -lt 0) { $cropBottom = $cropPx }
 
     if (-not (Test-Path -LiteralPath $path)) {
         throw "File not found: $path"
@@ -56,17 +72,17 @@ function Invoke-CropPng {
     try {
         $orig = [System.Drawing.Image]::FromStream($ms)
         try {
-            $newW = $orig.Width  - 2 * $cropPx
-            $newH = $orig.Height - 2 * $cropPx
+            $newW = $orig.Width  - $cropLeft - $cropRight
+            $newH = $orig.Height - $cropTop  - $cropBottom
             if ($newW -le 0 -or $newH -le 0) {
-                throw ("Image too small ({0}x{1}) to crop {2} px per side" -f $orig.Width, $orig.Height, $cropPx)
+                throw ("Image too small ({0}x{1}) to crop L{2}/T{3}/R{4}/B{5} px" -f $orig.Width, $orig.Height, $cropLeft, $cropTop, $cropRight, $cropBottom)
             }
 
             $bmp = New-Object System.Drawing.Bitmap($newW, $newH)
             try {
                 $gfx = [System.Drawing.Graphics]::FromImage($bmp)
                 try {
-                    $srcRect = New-Object System.Drawing.Rectangle($cropPx, $cropPx, $newW, $newH)
+                    $srcRect = New-Object System.Drawing.Rectangle($cropLeft, $cropTop, $newW, $newH)
                     $dstRect = New-Object System.Drawing.Rectangle(0, 0, $newW, $newH)
                     $gfx.DrawImage($orig, $dstRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
                 } finally {
@@ -94,6 +110,11 @@ function Invoke-CropDir {
     param(
         [Parameter(Mandatory=$true)][string]$dir,
         [int]$cropPx     = 15,
+        # -1 (default) = inherit cropPx for that side (uniform crop).
+        [int]$cropLeft   = -1,
+        [int]$cropTop    = -1,
+        [int]$cropRight  = -1,
+        [int]$cropBottom = -1,
         [switch]$Recurse,
         [switch]$Force
     )
@@ -116,7 +137,8 @@ function Invoke-CropDir {
             continue
         }
         try {
-            Invoke-CropPng -path $f.FullName -cropPx $cropPx
+            Invoke-CropPng -path $f.FullName -cropPx $cropPx `
+                -cropLeft $cropLeft -cropTop $cropTop -cropRight $cropRight -cropBottom $cropBottom
             # Create hidden marker
             "" | Out-File -LiteralPath $marker -Encoding ASCII -NoNewline
             try {
@@ -139,9 +161,12 @@ function Invoke-CropDir {
 # ============================================================
 if (-not [string]::IsNullOrWhiteSpace($Path)) {
     Write-Host ("Cropping (single): {0}  [{1} px]" -f $Path, $CropPx)
-    Invoke-CropPng -path $Path -cropPx $CropPx
+    Invoke-CropPng -path $Path -cropPx $CropPx `
+        -cropLeft $CropLeft -cropTop $CropTop -cropRight $CropRight -cropBottom $CropBottom
     Write-Host "[OK] done." -ForegroundColor Green
 } elseif (-not [string]::IsNullOrWhiteSpace($Dir)) {
     Write-Host ("Cropping (batch): {0}  [{1} px]" -f $Dir, $CropPx)
-    Invoke-CropDir -dir $Dir -cropPx $CropPx -Recurse:$Recurse -Force:$Force
+    Invoke-CropDir -dir $Dir -cropPx $CropPx `
+        -cropLeft $CropLeft -cropTop $CropTop -cropRight $CropRight -cropBottom $CropBottom `
+        -Recurse:$Recurse -Force:$Force
 }
