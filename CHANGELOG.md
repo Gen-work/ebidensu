@@ -1,3 +1,48 @@
+## 2026-07-14 - Four-direction snap crop, per-side + per-snap-folder (v2.11.0)
+
+### Added
+- Snap screenshot cropping (HM/MQ/Jenkins) is now directionally controllable
+  instead of a single uniform `Window.CropPx` trimmed off all four sides.
+  New `Window.CropLeft`/`CropTop`/`CropRight`/`CropBottom` (default `-1` =
+  inherit `CropPx` for that side) let an operator crop one edge by a
+  different amount than the others. New `Window.CropByFolder` (empty `@{}`
+  by default) narrows this further to one snap folder (`GIFT_HM`, `GFIX_HM`,
+  `GIFT_MQ`, `GIFT_Jenkins`, `GFIX_Jenkins`, `GIFT_noGfixfile`): each entry
+  may set any of `Left`/`Top`/`Right`/`Bottom` (px), falling back to the
+  resolved global `Crop<Side>`/`CropPx` value for any side left out --
+  mirrors the existing `Df.CropLeft/Top/Right/Bottom` pattern, applied
+  per-folder.
+- New pure `Resolve-DirectionalCrop` (`ScreenRegion.ps1`, unit-tested)
+  resolves `CropPx` + global per-side overrides + a per-folder override into
+  four concrete non-negative ints. `VerifyTool.ps1`'s new `Resolve-FolderCrop`
+  wraps it per phase dispatch and threads the result as new
+  `-CropLeft`/`-CropTop`/`-CropRight`/`-CropBottom` params to
+  `HmSnap.ps1`/`MqSnap.ps1`/`JenkinsSnap.ps1`/`Crop-Snap.ps1` (each script's
+  own `Invoke-CropPng`/`Invoke-CropDir` extended in place with the same
+  `-1`-sentinel-inherits-`cropPx` fallback, so a bare `-CropPx`-only
+  invocation is unchanged).
+- The interactive menu's `c` option now accepts a plain number (uniform,
+  unchanged) or `L,T,R,B` (e.g. `6,8,6,10`) to set the four sides
+  individually; the status display shows `CropPx : 6` when uniform or
+  `CropPx : 6 (L6/T8/R6/B10)` once any side diverges. New CLI params
+  `-CropLeft`/`-CropTop`/`-CropRight`/`-CropBottom` (default `-1`) mirror
+  `-CropPx`'s CLI > config precedence and are remembered in
+  `verify_session.json`.
+
+### Notes
+- Every new field defaults to inherit-CropPx / empty-CropByFolder, so no
+  existing work folder's crop behavior changes until an operator opts in.
+  Documented in `ConfigOverlay.ps1`'s InitConfig readme text,
+  `verify_config.example.json`, and `README.md`. `Window` was already a
+  named `snap` group in `Get-ConfigOverlayGroups`, so `CropByFolder`'s
+  nested per-folder hashtables walk/edit generically in the
+  `-Phase InitConfig -Interactive` field walker with no further code change
+  (confirmed by reading `Expand-ConfigWalkPath`'s generic hashtable
+  recursion). No PowerShell/Excel in this dev environment -- static-checked
+  only (parse review + hand-traced logic); confirm the resolved crop math
+  against a real HM/MQ/Jenkins screenshot and the `-Phase InitConfig` walker
+  on an office PC.
+
 ## 2026-07-10 - Mark image-match: PadWidth/PadHeight box-size margin (v2.10.10)
 
 ### Added

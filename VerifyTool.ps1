@@ -26,6 +26,12 @@ param(
     [int]$WindowWidth  = 0,
     [int]$WindowHeight = 0,
     [int]$CropPx       = -1,
+    # Per-side crop overrides (px). -1 (default) = inherit CropPx for that
+    # side (uniform crop; existing -CropPx-only usage is unchanged).
+    [int]$CropLeft     = -1,
+    [int]$CropTop      = -1,
+    [int]$CropRight    = -1,
+    [int]$CropBottom   = -1,
 
     [string[]]$TargetIds = @(),
     [string]$EvidenceDir = '',
@@ -75,6 +81,24 @@ try {
 
 # Per-work-folder JSON config overlay helpers (pure; unit-tested). No param().
 . (Join-Path $PSScriptRoot 'ConfigOverlay.ps1')
+# Pure screen-region / crop math (Resolve-ScreenRegion, Resolve-DirectionalCrop).
+# No param().
+. (Join-Path $PSScriptRoot 'ScreenRegion.ps1')
+
+# Resolve the four concrete (non-negative) per-side crop amounts for one snap
+# folder: Resolve-DirectionalCrop (ScreenRegion.ps1) applied to $State's
+# global CropPx/CropLeft/CropTop/CropRight/CropBottom, then overridden per
+# side by Config.Window.CropByFolder[$Folder] when present (empty/unknown
+# $Folder -> global values only, e.g. for the whole-snap-dir Crop phase).
+function Resolve-FolderCrop([hashtable]$State, [hashtable]$Config, [string]$Folder) {
+    $folderOverride = $null
+    if ($Config.Window -and $Config.Window.ContainsKey('CropByFolder') -and $Config.Window.CropByFolder `
+            -and -not [string]::IsNullOrWhiteSpace($Folder) -and $Config.Window.CropByFolder.ContainsKey($Folder)) {
+        $folderOverride = $Config.Window.CropByFolder[$Folder]
+    }
+    return Resolve-DirectionalCrop -CropPx $State.CropPx -CropLeft $State.CropLeft -CropTop $State.CropTop `
+        -CropRight $State.CropRight -CropBottom $State.CropBottom -FolderOverride $folderOverride
+}
 
 function Read-Choice([string]$Prompt, [string]$Default = '') {
     if ([string]::IsNullOrWhiteSpace($Default)) { return (Read-Host $Prompt) }
@@ -172,6 +196,8 @@ function Show-VerifyHelp([hashtable]$Config) {
     Write-Host '  Mapping options      owner/-Owner, from/-FromBizCode, range, cm/-CorrelIdsM, jobs/-JobNames, temp.'
     Write-Host '  -Interactive          Ask before each row in supported stages.'
     Write-Host '  -WindowWidth 1050 -WindowHeight 761 -CropPx 6'
+    Write-Host '  -CropLeft/-CropTop/-CropRight/-CropBottom <px>  Per-side crop override (-1 = inherit CropPx).'
+    Write-Host '                        Per-snap-folder overrides: Window.CropByFolder in verify_config.json.'
     Write-Host '  -NoResize             Do not resize Edge window.'
     Write-Host '  -RefreshUrls          Re-capture Jenkins folder URLs.'
     Write-Host '  -DryRun               Print arguments instead of invoking child scripts.'
@@ -491,7 +517,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    f=Force        -> re-capture already-done rows',
             '    n=NoResize     -> do not resize Edge window',
             '    w=Window       -> Edge window size',
-            '    c=CropPx       -> crop captured PNG edges',
+            '    c=CropPx       -> crop captured PNG edges (uniform px, or L,T,R,B per side)',
             '    r=RefreshUrls  -> re-fetch Jenkins folder URLs (use when URLs changed)',
             '    tc=TimeCheck   -> toggle the run-time window check (default: config SnapVerify.TimeCheck, usually off)'
         ) }
@@ -502,7 +528,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '    f=Force        -> re-capture already-done rows',
             '    n=NoResize     -> do not resize Edge window',
             '    w=Window       -> Edge window size',
-            '    c=CropPx       -> crop captured PNG edges',
+            '    c=CropPx       -> crop captured PNG edges (uniform px, or L,T,R,B per side)',
             '    tc=TimeCheck   -> toggle the run-time window check (default: config SnapVerify.TimeCheck, usually off)'
         ) }
         '^GfixLogDownload$' { @(
@@ -532,7 +558,7 @@ function Show-PhaseNotes([string]$PhaseKey) {
         ) }
         '^Crop$' { @(
             '  Phase params:',
-            '    c=CropPx       -> crop existing PNG edges',
+            '    c=CropPx       -> crop existing PNG edges (uniform px, or L,T,R,B per side)',
             '    f=Force        -> re-crop directories already marked cropped'
         ) }
         '^CheckSheet$' { @(
@@ -674,7 +700,14 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'n') { Write-Host ("  NoResize       : {0}" -f (To-BoolText $State.NoResize)) }
     if (Test-PhaseOption $allowed 'r') { Write-Host ("  RefreshUrls    : {0}" -f (To-BoolText $State.RefreshUrls)) }
     if (Test-PhaseOption $allowed 'w') { Write-Host ("  Window         : {0}x{1}" -f $State.WindowWidth, $State.WindowHeight) }
-    if (Test-PhaseOption $allowed 'c') { Write-Host ("  CropPx         : {0}" -f $State.CropPx) }
+    if (Test-PhaseOption $allowed 'c') {
+        if ($State.CropLeft -lt 0 -and $State.CropTop -lt 0 -and $State.CropRight -lt 0 -and $State.CropBottom -lt 0) {
+            Write-Host ("  CropPx         : {0}" -f $State.CropPx)
+        } else {
+            $cropDisp = Resolve-DirectionalCrop -CropPx $State.CropPx -CropLeft $State.CropLeft -CropTop $State.CropTop -CropRight $State.CropRight -CropBottom $State.CropBottom
+            Write-Host ("  CropPx         : {0} (L{1}/T{2}/R{3}/B{4})" -f $State.CropPx, $cropDisp.Left, $cropDisp.Top, $cropDisp.Right, $cropDisp.Bottom)
+        }
+    }
     if (Test-PhaseOption $allowed 'a') { Write-Host ("  CursorCell     : {0}" -f $State.CursorCell) }
     if (Test-PhaseOption $allowed 'j4') { Write-Host ("  ReviewJ4       : {0}  (open the delivered J4 copy)" -f (To-BoolText $State.ReviewJ4)) }
     if (Test-PhaseOption $allowed 'o') { Write-Host ("  Ocr            : {0}" -f (To-BoolText $State.Ocr)) }
@@ -779,9 +812,21 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
             '^c$' {
                 if (-not (Test-PhaseOption $allowed 'c')) { Write-UnusedOption $PhaseKey 'c' }
                 else {
-                    $v = Read-Choice 'CropPx' ([string]$State.CropPx)
-                    if ($v -match '^\d+$') { $State.CropPx = [int]$v }
-                    else { Write-Host '  invalid crop px' -ForegroundColor Yellow }
+                    $curCrop = if ($State.CropLeft -lt 0 -and $State.CropTop -lt 0 -and $State.CropRight -lt 0 -and $State.CropBottom -lt 0) {
+                        [string]$State.CropPx
+                    } else {
+                        "{0},{1},{2},{3}" -f $State.CropLeft, $State.CropTop, $State.CropRight, $State.CropBottom
+                    }
+                    $v = Read-Choice 'CropPx (uniform px) or L,T,R,B (e.g. 6,8,6,10)' $curCrop
+                    if ($v -match '^\d+$') {
+                        $State.CropPx = [int]$v
+                        $State.CropLeft = -1; $State.CropTop = -1; $State.CropRight = -1; $State.CropBottom = -1
+                    } elseif ($v -match '^\s*(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(\d+)\s*$') {
+                        $State.CropLeft   = [int]$Matches[1]
+                        $State.CropTop    = [int]$Matches[2]
+                        $State.CropRight  = [int]$Matches[3]
+                        $State.CropBottom = [int]$Matches[4]
+                    } else { Write-Host '  invalid crop value (expected a number, or L,T,R,B)' -ForegroundColor Yellow }
                 }
             }
             '^a$' {
@@ -1358,6 +1403,11 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args = $base.Clone()
         $args['Stage'] = $stage
         $args['CropPx'] = $State.CropPx
+        $hmCrop = Resolve-FolderCrop $State $Config ("${stage}_HM")
+        $args['CropLeft'] = $hmCrop.Left
+        $args['CropTop'] = $hmCrop.Top
+        $args['CropRight'] = $hmCrop.Right
+        $args['CropBottom'] = $hmCrop.Bottom
         $args['WindowWidth'] = $State.WindowWidth
         $args['WindowHeight'] = $State.WindowHeight
         $args['ActionWaitMs'] = $Config.Timing.ActionWaitMs
@@ -1395,6 +1445,11 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $p = Resolve-ToolPath $Config 'Mq'
         $args = $base.Clone()
         $args['CropPx'] = $State.CropPx
+        $mqCrop = Resolve-FolderCrop $State $Config 'GIFT_MQ'
+        $args['CropLeft'] = $mqCrop.Left
+        $args['CropTop'] = $mqCrop.Top
+        $args['CropRight'] = $mqCrop.Right
+        $args['CropBottom'] = $mqCrop.Bottom
         $args['WindowWidth'] = $State.WindowWidth
         $args['WindowHeight'] = $State.WindowHeight
         $args['ActionWaitMs'] = $Config.Timing.ActionWaitMs
@@ -1445,6 +1500,11 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         $args = $base.Clone()
         $args['Mode'] = $mode
         $args['CropPx'] = $State.CropPx
+        $jkCrop = Resolve-FolderCrop $State $Config $jkFolder
+        $args['CropLeft'] = $jkCrop.Left
+        $args['CropTop'] = $jkCrop.Top
+        $args['CropRight'] = $jkCrop.Right
+        $args['CropBottom'] = $jkCrop.Bottom
         $args['WindowWidth'] = $State.WindowWidth
         $args['WindowHeight'] = $State.WindowHeight
         $args['ActionWaitMs'] = $Config.Timing.ActionWaitMs
@@ -1487,7 +1547,15 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
     if ($PhaseKey -eq 'Crop') {
         $p = Resolve-ToolPath $Config 'Crop'
         $dir = Join-Path $State.WorkDir $Config.Paths.SnapDir
-        $args = @{ Dir = $dir; CropPx = $State.CropPx; Recurse = $true }
+        # Whole-snap-dir batch crop: global Crop*/CropPx only (no single
+        # folder in scope here, so no CropByFolder override applies).
+        $cropGlobal = Resolve-FolderCrop $State $Config ''
+        $args = @{
+            Dir = $dir; CropPx = $State.CropPx
+            CropLeft = $cropGlobal.Left; CropTop = $cropGlobal.Top
+            CropRight = $cropGlobal.Right; CropBottom = $cropGlobal.Bottom
+            Recurse = $true
+        }
         if ($State.Force) { $args['Force'] = $true }
         Write-Host ("[RUN] Crop-Snap {0}" -f $dir) -ForegroundColor Green
         if ($State.DryRun) { $args; return }
@@ -2150,6 +2218,13 @@ if ([string]::IsNullOrWhiteSpace($Owner)) {
 if ($WindowWidth -le 0)  { $WindowWidth  = [int]$Config.Window.Width }
 if ($WindowHeight -le 0) { $WindowHeight = [int]$Config.Window.Height }
 if ($CropPx -lt 0)       { $CropPx       = [int]$Config.Window.CropPx }
+# Per-side crop overrides: CLI (-1 = not given) > config Window.Crop<Side>
+# (itself -1 by default = inherit CropPx, resolved later per snap folder by
+# Resolve-FolderCrop).
+if ($CropLeft   -lt 0 -and $Config.Window.ContainsKey('CropLeft'))   { $CropLeft   = [int]$Config.Window.CropLeft }
+if ($CropTop    -lt 0 -and $Config.Window.ContainsKey('CropTop'))    { $CropTop    = [int]$Config.Window.CropTop }
+if ($CropRight  -lt 0 -and $Config.Window.ContainsKey('CropRight'))  { $CropRight  = [int]$Config.Window.CropRight }
+if ($CropBottom -lt 0 -and $Config.Window.ContainsKey('CropBottom')) { $CropBottom = [int]$Config.Window.CropBottom }
 if ([string]::IsNullOrWhiteSpace($CursorCell)) { $CursorCell = [string]$Config.Review.CursorCell }
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir ([string]$Config.Review.EvidenceDir) }
 elseif (-not [System.IO.Path]::IsPathRooted($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir $EvidenceDir }
@@ -2241,6 +2316,10 @@ $state = @{
     WindowWidth     = $WindowWidth
     WindowHeight    = $WindowHeight
     CropPx          = $CropPx
+    CropLeft        = $CropLeft
+    CropTop         = $CropTop
+    CropRight       = $CropRight
+    CropBottom      = $CropBottom
     EvidenceDir     = $EvidenceDir
     CursorCell      = $CursorCell
     TargetIds       = $TargetIds
@@ -2285,6 +2364,10 @@ $session['Owner'] = $Owner
 $session['WindowWidth'] = $WindowWidth
 $session['WindowHeight'] = $WindowHeight
 $session['CropPx'] = $CropPx
+$session['CropLeft'] = $CropLeft
+$session['CropTop'] = $CropTop
+$session['CropRight'] = $CropRight
+$session['CropBottom'] = $CropBottom
 $session['EvidenceDir'] = $EvidenceDir
 $session['CursorCell'] = $CursorCell
 $session['CloneSourceDir'] = $CloneSourceDir
@@ -2310,7 +2393,13 @@ Write-Host ("  Owner          : {0}" -f $Owner)
 Write-Host ("  Mapping        : {0}" -f $mappingPath)
 Write-Host ("  EvidenceDir    : {0}" -f $EvidenceDir)
 if ($overlayInfo.Loaded) { Write-Host ("  Config overlay : {0}" -f $overlayInfo.Path) -ForegroundColor DarkGray }
-Write-Host ("  Window         : {0}x{1}, CropPx={2}" -f $WindowWidth, $WindowHeight, $CropPx)
+$cropDisplayLine = if ($CropLeft -lt 0 -and $CropTop -lt 0 -and $CropRight -lt 0 -and $CropBottom -lt 0) {
+    [string]$CropPx
+} else {
+    $cropStartup = Resolve-DirectionalCrop -CropPx $CropPx -CropLeft $CropLeft -CropTop $CropTop -CropRight $CropRight -CropBottom $CropBottom
+    ("{0} (L{1}/T{2}/R{3}/B{4})" -f $CropPx, $cropStartup.Left, $cropStartup.Top, $cropStartup.Right, $cropStartup.Bottom)
+}
+Write-Host ("  Window         : {0}x{1}, CropPx={2}" -f $WindowWidth, $WindowHeight, $cropDisplayLine)
 if (-not [string]::IsNullOrWhiteSpace($CloneSourceDir)) {
     Write-Host ("  CloneSourceDir : {0}" -f $CloneSourceDir)
 }
@@ -2368,6 +2457,10 @@ while ($true) {
     $session['WindowWidth'] = $state.WindowWidth
     $session['WindowHeight'] = $state.WindowHeight
     $session['CropPx'] = $state.CropPx
+    $session['CropLeft'] = $state.CropLeft
+    $session['CropTop'] = $state.CropTop
+    $session['CropRight'] = $state.CropRight
+    $session['CropBottom'] = $state.CropBottom
     $session['EvidenceDir'] = $state.EvidenceDir
     $session['CursorCell'] = $state.CursorCell
     $session['CloneSourceDir'] = $state.CloneSourceDir

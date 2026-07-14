@@ -57,6 +57,12 @@ param(
     [int]$ActionWaitMs           = 500,
     [int]$ResultWaitSec          = 2,
     [int]$CropPx                 = 6,
+    # Per-side overrides in px. -1 (default) = inherit CropPx for that side
+    # (uniform crop; existing -CropPx-only usage is unchanged).
+    [int]$CropLeft                = -1,
+    [int]$CropTop                 = -1,
+    [int]$CropRight               = -1,
+    [int]$CropBottom              = -1,
 
     [int]$WindowWidth            = 1050,
     [int]$WindowHeight           = 761,
@@ -114,7 +120,11 @@ Write-Host ("  Stage       : {0}" -f $Stage)
 Write-Host ("  WorkDir     : {0}" -f $WorkDir)
 Write-Host ("  Owner       : {0}" -f $Owner)
 Write-Host ("  Window      : {0}" -f $(if ($noResizeFlag) { "no resize" } else { "${WindowWidth}x${WindowHeight}" }))
-Write-Host ("  CropPx      : {0}" -f $CropPx)
+$rCropLeft   = if ($CropLeft   -ge 0) { $CropLeft }   else { $CropPx }
+$rCropTop    = if ($CropTop    -ge 0) { $CropTop }    else { $CropPx }
+$rCropRight  = if ($CropRight  -ge 0) { $CropRight }  else { $CropPx }
+$rCropBottom = if ($CropBottom -ge 0) { $CropBottom } else { $CropPx }
+Write-Host ("  CropPx      : {0}  (L{1}/T{2}/R{3}/B{4})" -f $CropPx, $rCropLeft, $rCropTop, $rCropRight, $rCropBottom)
 Write-Host ("  Force       : {0}, Interactive : {1}" -f $forceFlag, $interactiveFlag)
 Write-Host ("  Detection   : {0} (tol +-{1} min)" -f $snapVerifyOn, $ToleranceMinutes)
 if (@($TargetIds).Count -gt 0) { Write-Host ("  TargetIds   : {0}" -f ((@($TargetIds)) -join ", ")) }
@@ -193,10 +203,19 @@ Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
 function Invoke-CropPng {
     param(
         [Parameter(Mandatory=$true)][string]$path,
-        [int]$cropPx = 6
+        [int]$cropPx     = 6,
+        # -1 (default) = inherit cropPx for that side (uniform crop).
+        [int]$cropLeft   = -1,
+        [int]$cropTop    = -1,
+        [int]$cropRight  = -1,
+        [int]$cropBottom = -1
     )
 
-    if ($cropPx -le 0) { return }
+    if ($cropLeft   -lt 0) { $cropLeft   = $cropPx }
+    if ($cropTop    -lt 0) { $cropTop    = $cropPx }
+    if ($cropRight  -lt 0) { $cropRight  = $cropPx }
+    if ($cropBottom -lt 0) { $cropBottom = $cropPx }
+    if ($cropLeft -le 0 -and $cropTop -le 0 -and $cropRight -le 0 -and $cropBottom -le 0) { return }
     if (-not (Test-Path -LiteralPath $path)) { throw "File not found: $path" }
 
     $bytes   = [System.IO.File]::ReadAllBytes($path)
@@ -206,17 +225,17 @@ function Invoke-CropPng {
     try {
         $orig = [System.Drawing.Image]::FromStream($ms)
         try {
-            $newW = $orig.Width  - 2 * $cropPx
-            $newH = $orig.Height - 2 * $cropPx
+            $newW = $orig.Width  - $cropLeft - $cropRight
+            $newH = $orig.Height - $cropTop  - $cropBottom
             if ($newW -le 0 -or $newH -le 0) {
-                throw ("Image too small ({0}x{1}) to crop {2} px per side" -f $orig.Width, $orig.Height, $cropPx)
+                throw ("Image too small ({0}x{1}) to crop L{2}/T{3}/R{4}/B{5} px" -f $orig.Width, $orig.Height, $cropLeft, $cropTop, $cropRight, $cropBottom)
             }
 
             $bmp = New-Object System.Drawing.Bitmap($newW, $newH)
             try {
                 $gfx = [System.Drawing.Graphics]::FromImage($bmp)
                 try {
-                    $srcRect = New-Object System.Drawing.Rectangle($cropPx, $cropPx, $newW, $newH)
+                    $srcRect = New-Object System.Drawing.Rectangle($cropLeft, $cropTop, $newW, $newH)
                     $dstRect = New-Object System.Drawing.Rectangle(0, 0, $newW, $newH)
                     $gfx.DrawImage($orig, $dstRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
                 } finally {
@@ -512,7 +531,8 @@ foreach ($g in $grouped) {
             if ($snapVerifyOn) { Click-PageBody }
             Save-EdgeMainScreenshot $outPath
             try {
-                Invoke-CropPng -path $outPath -cropPx $CropPx
+                Invoke-CropPng -path $outPath -cropPx $CropPx `
+                    -cropLeft $CropLeft -cropTop $CropTop -cropRight $CropRight -cropBottom $CropBottom
             } catch {
                 Write-Host ("    [WARN] Crop failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
             }

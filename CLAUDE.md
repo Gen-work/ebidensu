@@ -53,7 +53,10 @@ EvidenceExecutor.ps1    walks an EvidencePlan and performs the Excel inserts.
 ProjectLabels.ps1       Japanese sheet/label names from [char] (keeps consumers ASCII /
                         codepage-agnostic). Get-AlignSendSheets / Get-AlignRecvSheets.
 ProgressLog.ps1         append-only status\progress.jsonl events (UTF-8 no BOM).
-ScreenRegion.ps1        pure screen-region clamp math. Unit-tested.
+ScreenRegion.ps1        pure screen-region clamp math + Resolve-DirectionalCrop
+                        (four-side snap crop resolution: CropPx + per-side +
+                        per-folder overrides). Unit-tested. Dot-sourced by
+                        VerifyTool.ps1.
 AlignCompare.ps1        pure sheet-compare + migration-type logic. Unit-tested.
 ConfigOverlay.ps1       pure per-work-folder JSON overlay: deep-merge + JSON<->hashtable
                         + InitConfig snapshot/generator helpers. Unit-tested.
@@ -340,7 +343,49 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-10 v2.10.10)
+## Current state (last bump: 2026-07-14 v2.11.0)
+
+v2.11.0 (four-direction snap crop, per-side + per-snap-folder): **Added** --
+the HM/MQ/Jenkins snap screenshot crop (`Window.CropPx`, previously a single
+uniform px trimmed off all four sides) is now directionally controllable.
+New `Window.CropLeft`/`CropTop`/`CropRight`/`CropBottom` (default `-1` =
+inherit `CropPx` for that side, i.e. unchanged uniform-crop behavior) let an
+operator crop one side by a different amount than the others (e.g. a wider
+shadow on the left edge of the captured window). New `Window.CropByFolder`
+(empty `@{}` by default) narrows this further to one snap folder (`GIFT_HM`,
+`GFIX_HM`, `GIFT_MQ`, `GIFT_Jenkins`, `GFIX_Jenkins`, `GIFT_noGfixfile`):
+each entry may set any of `Left`/`Top`/`Right`/`Bottom` (px), and a side left
+out falls back to the resolved global `Crop<Side>`/`CropPx` value -- the same
+override shape as the existing `Df.CropLeft/Top/Right/Bottom` pattern, just
+per-folder instead of single-purpose. New pure `Resolve-DirectionalCrop`
+(`ScreenRegion.ps1`, unit-tested in `Tests\Test-ScreenRegion.ps1`) resolves
+CropPx + global per-side + per-folder overrides into four concrete
+non-negative ints; `VerifyTool.ps1`'s new `Resolve-FolderCrop` wraps it per
+dispatch (`GiftHmSnap`/`GfixHmSnap` -> `<Stage>_HM`, `GiftMqSnap` ->
+`GIFT_MQ`, `GiftJenkins`/`GfixJenkins`/`GiftJenkinsNoFile` -> their existing
+`$jkFolder`, `Crop` phase -> global values only, no single folder in scope)
+and threads the four resolved values as new `-CropLeft`/`-CropTop`/
+`-CropRight`/`-CropBottom` params to `HmSnap.ps1`/`MqSnap.ps1`/
+`JenkinsSnap.ps1`/`Crop-Snap.ps1` (each script's own `Invoke-CropPng`/
+`Invoke-CropDir` extended in place, same `-1`-sentinel-inherits-CropPx
+fallback, so direct standalone invocation with only `-CropPx` is unchanged).
+The interactive menu's `c` option now accepts either a plain number (uniform,
+same as before) or `L,T,R,B` (e.g. `6,8,6,10`) to set the four sides
+individually; the status display shows `CropPx : 6` when uniform or
+`CropPx : 6 (L6/T8/R6/B10)` once any side diverges. New CLI params
+`-CropLeft`/`-CropTop`/`-CropRight`/`-CropBottom` (default `-1`) mirror
+`-CropPx`'s CLI > config precedence and are remembered in
+`verify_session.json` alongside it. **Notes** -- ships with every new field
+at its inherit-CropPx/empty-CropByFolder default, so no existing work folder
+changes crop behavior until an operator opts in. Documented in
+`ConfigOverlay.ps1`'s InitConfig readme text, `verify_config.example.json`,
+and `README.md`; `Window` was already a named `snap` group in
+`Get-ConfigOverlayGroups` so `CropByFolder`'s nested per-folder hashtables
+walk/edit generically in the `-Phase InitConfig -Interactive` field walker
+with no further code change (verified by reading `Expand-ConfigWalkPath`).
+No PowerShell/Excel in this dev environment -- static-checked only (parse
+review + hand-traced logic); confirm the resolved crop math against a real
+HM/MQ/Jenkins screenshot and the `-Phase InitConfig` walker on an office PC.
 
 v2.10.10 (Mark image-match: PadWidth/PadHeight box-size margin): **Added** --
 `Find-MarkBoxByImage` (`Mark.ps1`) gained optional `PadWidth`/`PadHeight` keys

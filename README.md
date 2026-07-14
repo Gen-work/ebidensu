@@ -373,6 +373,9 @@ Delivery (final hand-off):
 -Force                    # redo rows that are already marked done.
 -Interactive              # ask before each row where supported.
 -WindowWidth 1050 -WindowHeight 761 -CropPx 6
+-CropLeft/-CropTop/-CropRight/-CropBottom <px>   # per-side crop override (-1 = inherit CropPx).
+                          # Per-snap-folder overrides (GIFT_HM/GFIX_HM/GIFT_MQ/GIFT_Jenkins/
+                          # GFIX_Jenkins/GIFT_noGfixfile): Window.CropByFolder in verify_config.json.
 -NoResize                 # do not resize Edge.
 -RefreshUrls              # recapture Jenkins folder URLs.
 -DryRun                   # print child-script arguments instead of running.

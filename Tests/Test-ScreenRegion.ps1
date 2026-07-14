@@ -33,4 +33,52 @@ Assert-Equal 0 $rn.X 'negative X clamped to 0'
 Assert-Equal 0 $rn.Y 'negative Y clamped to 0'
 Assert-True ($rn.Warn -match 'x' -and $rn.Warn -match 'y') 'negative origin: warns x and y'
 
+
+# ---- Resolve-DirectionalCrop ----
+
+# All sentinels (-1) -> uniform CropPx on every side (legacy behavior).
+$dcUniform = Resolve-DirectionalCrop -CropPx 6
+Assert-Equal 6 $dcUniform.Left   'uniform: Left = CropPx'
+Assert-Equal 6 $dcUniform.Top    'uniform: Top = CropPx'
+Assert-Equal 6 $dcUniform.Right  'uniform: Right = CropPx'
+Assert-Equal 6 $dcUniform.Bottom 'uniform: Bottom = CropPx'
+
+# CropPx = 0, all sides sentinel -> no-op crop (all sides 0).
+$dcZero = Resolve-DirectionalCrop -CropPx 0
+Assert-Equal 0 $dcZero.Left   'CropPx=0: Left = 0'
+Assert-Equal 0 $dcZero.Bottom 'CropPx=0: Bottom = 0'
+
+# Global per-side override wins over CropPx for that side only.
+$dcGlobal = Resolve-DirectionalCrop -CropPx 6 -CropTop 10
+Assert-Equal 6  $dcGlobal.Left   'global override: Left still CropPx'
+Assert-Equal 10 $dcGlobal.Top    'global override: Top uses CropTop'
+Assert-Equal 6  $dcGlobal.Right  'global override: Right still CropPx'
+Assert-Equal 6  $dcGlobal.Bottom 'global override: Bottom still CropPx'
+
+# All four global sides set explicitly.
+$dcAllGlobal = Resolve-DirectionalCrop -CropPx 6 -CropLeft 1 -CropTop 2 -CropRight 3 -CropBottom 4
+Assert-Equal 1 $dcAllGlobal.Left   'all-global: Left'
+Assert-Equal 2 $dcAllGlobal.Top    'all-global: Top'
+Assert-Equal 3 $dcAllGlobal.Right  'all-global: Right'
+Assert-Equal 4 $dcAllGlobal.Bottom 'all-global: Bottom'
+
+# Per-folder override wins over the global value, only for the keys it sets.
+$dcFolder = Resolve-DirectionalCrop -CropPx 6 -CropLeft 1 -CropTop 2 -CropRight 3 -CropBottom 4 `
+    -FolderOverride @{ Top = 20 }
+Assert-Equal 1  $dcFolder.Left   'folder override: Left untouched (global)'
+Assert-Equal 20 $dcFolder.Top    'folder override: Top from folder'
+Assert-Equal 3  $dcFolder.Right  'folder override: Right untouched (global)'
+Assert-Equal 4  $dcFolder.Bottom 'folder override: Bottom untouched (global)'
+
+# Per-folder override can set all four sides, ignoring CropPx/global entirely.
+$dcFolderAll = Resolve-DirectionalCrop -CropPx 6 -FolderOverride @{ Left = 1; Top = 2; Right = 3; Bottom = 4 }
+Assert-Equal 1 $dcFolderAll.Left   'folder-all: Left'
+Assert-Equal 2 $dcFolderAll.Top    'folder-all: Top'
+Assert-Equal 3 $dcFolderAll.Right  'folder-all: Right'
+Assert-Equal 4 $dcFolderAll.Bottom 'folder-all: Bottom'
+
+# Negative CropPx floors at 0 (defensive; should never happen via VerifyTool).
+$dcNeg = Resolve-DirectionalCrop -CropPx -5
+Assert-Equal 0 $dcNeg.Left 'negative CropPx floors at 0'
+
 exit (Complete-Tests)
