@@ -59,7 +59,7 @@ param(
     [string]$OutputSheetName = '',
 
     # Secondary OCR language pooled alongside 'en-US' for the OCR tier.
-    [string]$OcrLanguage = 'ja',
+    [string]$OcrLanguage = '',
     # Picture export upscale (matches EvidenceImageExport.ps1's own default).
     [double]$ExportScale = 3.0,
 
@@ -166,7 +166,18 @@ function Export-CorrelPicture {
     $bounds = Get-ProcessTimeSectionBounds $ws $labelCell $AnchorCol
     $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $OutDir $CorrelId $bounds.Top $bounds.Bottom $Scale |
         Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-    if ($pngs.Count -eq 0) { return $null }
+    if ($pngs.Count -eq 0 -and $bounds.Bottom -ge 0) {
+        Write-Host ("       [DIAG] no picture in bounded section for {0}; retrying from label to sheet end" -f $CorrelId) -ForegroundColor Yellow
+        $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $OutDir $CorrelId $bounds.Top -1 $Scale |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    }
+    if ($pngs.Count -eq 0) {
+        Write-Host ("       [MISS] no exportable HM picture for {0} on sheet '{1}'" -f $CorrelId, $SheetName) -ForegroundColor Yellow
+        return $null
+    }
+    if ($pngs.Count -gt 1) {
+        Write-Host ("       [DIAG] exported {0} candidate picture(s) for {1}; OCR uses first HM candidate" -f $pngs.Count, $CorrelId) -ForegroundColor DarkGray
+    }
     return $pngs[0]
 }
 
@@ -205,11 +216,19 @@ function Resolve-ProcessTimeSide {
     $pooled = New-Object System.Collections.Generic.List[string]
     foreach ($lang in $langs) {
         try {
+            Write-Host ("       [OCR] {0} lang={1}" -f (Split-Path $png -Leaf), $lang) -ForegroundColor DarkGray
             $ocr = Invoke-WinOcrFile -Path $png -LanguageTag $lang
             foreach ($ln in @(ConvertTo-SendRowLines $ocr.Lines)) { $pooled.Add($ln) }
         } catch {
             Write-Host ("       [WARN] OCR failed ({0}, {1}): {2}" -f (Split-Path $png -Leaf), $lang, $_.Exception.Message) -ForegroundColor Yellow
         }
+    }
+    try {
+        $dumpPath = Join-Path $OutDir (([System.IO.Path]::GetFileNameWithoutExtension($png)) + '.ocr.txt')
+        [System.IO.File]::WriteAllText($dumpPath, (($pooled.ToArray()) -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false))
+        Write-Host ("       [OCR] wrote {0} line(s) -> {1}" -f $pooled.Count, $dumpPath) -ForegroundColor DarkGray
+    } catch {
+        Write-Host ("       [WARN] OCR dump write failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
     $ocrRows = @(ConvertFrom-ProcessTimeOcrLines -Lines $pooled.ToArray())
     $best = Get-NewestProcessTimeRow -Rows $ocrRows
@@ -333,7 +352,7 @@ Write-Host ("  WorkDir      : {0}" -f $WorkDir)
 Write-Host ("  EvidenceDir  : {0}" -f $EvidenceDir)
 Write-Host ("  OutputPath   : {0}" -f $OutputPath)
 Write-Host ("  AnchorCol    : {0}" -f $AnchorCol)
-Write-Host ("  OcrLanguage  : en-US + {0}" -f $OcrLanguage)
+Write-Host ("  OcrLanguage  : {0}" -f $(if ([string]::IsNullOrWhiteSpace($OcrLanguage)) { 'en-US' } else { 'en-US + ' + $OcrLanguage }))
 Write-Host ("  Pending      : {0}" -f $pending.Count)
 Write-Host ("  Force        : {0}   DryRun : {1}" -f $forceFlag, $dryRunFlag)
 
