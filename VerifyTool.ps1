@@ -547,6 +547,17 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '        DATA\GFIX\unzip first and df.exe compares the UNZIPPED files',
             '        (never the two zip binaries).'
         ) }
+        '^ProcessTime$' { @(
+            '  Phase params:',
+            '    t=TargetIds    -> limit rows',
+            '    f=Force        -> re-extract rows already inserted into the ProcessTime workbook',
+            '  NOTE: extracts each correl''s HM batch processing start/end time (GIFT and GFIX)',
+            '        from the already-inserted receive-result evidence screenshot -- archived',
+            '        snap\GIFT_HM|GFIX_HM\<correl>.txt first, else OCR of the evidence picture --',
+            '        and appends one summary row per correl to ProcessTime_<Owner>.xlsx (config',
+            '        ProcessTime.OutputPath). Run this AFTER ReplaceGift/ReplaceGfix (the HM',
+            '        picture must already be in the evidence workbook).'
+        ) }
         '^Validate$' { @(
             '  Phase params:',
             '    t=TargetIds    -> limit rows  (read-only, no mapping changes)'
@@ -656,6 +667,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { return @('t','i','f','n','w','c','tc') }
         '^GfixLogDownload$' { return @('t','f') }
         '^DfSnap$' { return @('t','f','e') }
+        '^ProcessTime$' { return @('t','f') }
         '^Validate$' { return @('t') }
         '^ProbeShapes$' { return @('p','s') }
         '^Crop$' { return @('c','f') }
@@ -1737,6 +1749,30 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
         if ($State.Force)  { $args['Force']  = $true }
         if ($State.DryRun) { $args['DryRun'] = $true }
         Write-Host '[RUN] DfSnap' -ForegroundColor Green
+        if ($State.DryRun) { $args; return }
+        & $p @args
+        return
+    }
+
+    if ($PhaseKey -eq 'ProcessTime') {
+        $p  = Resolve-ToolPath $Config 'ProcessTime'
+        $eh = Resolve-ToolPath $Config 'ExcelHelpers'
+        $args = $base.Clone()
+        $args['ExcelHelpersScript'] = $eh
+        if (-not [string]::IsNullOrWhiteSpace($State.EvidenceDir)) { $args['EvidenceDir'] = $State.EvidenceDir }
+        if (-not [string]::IsNullOrWhiteSpace($State.ExcelPrefix)) { $args['ExcelPrefix'] = $State.ExcelPrefix }
+        if ($Config.ProcessTime) {
+            $pt = $Config.ProcessTime
+            if ($pt.ContainsKey('AnchorCol') -and $null -ne $pt.AnchorCol) { $args['AnchorCol'] = [int]$pt.AnchorCol }
+            if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputPath))       { $args['OutputPath']      = [string]$pt.OutputPath }
+            if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputSheetName))  { $args['OutputSheetName'] = [string]$pt.OutputSheetName }
+            if (-not [string]::IsNullOrWhiteSpace([string]$pt.OcrLanguage))      { $args['OcrLanguage']     = [string]$pt.OcrLanguage }
+            if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
+        }
+        if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
+        if ($State.Force)  { $args['Force']  = $true }
+        if ($State.DryRun) { $args['DryRun'] = $true }
+        Write-Host '[RUN] ProcessTime' -ForegroundColor Green
         if ($State.DryRun) { $args; return }
         & $p @args
         return

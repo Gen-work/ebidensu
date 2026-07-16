@@ -1,3 +1,45 @@
+## 2026-07-16 - ProcessTime phase: HM processing start/end/duration extraction (v2.12.0)
+
+### Added
+- New `ProcessTime` phase (`ProcessTime.ps1`) extracts each correl's HM
+  batch processing start time / end time (and derives the duration) for
+  both the GIFT and GFIX sides, then appends one summary row per correl to
+  a standalone evidence workbook (`ProcessTime_<Owner>.xlsx` by default).
+- Two-tier source per side, cheapest/most-accurate first: (1) the archived
+  Ctrl+A page text `HmSnap.ps1` already saved at snap time
+  (`snap\GIFT_HM\<correl>.txt` / `GFIX_HM`, when `SnapVerify.SaveText` was
+  on), re-parsed with the existing `SnapVerify.ps1` `ConvertFrom-HmPageText`;
+  (2) OCR of the HM screenshot already inserted into the evidence workbook
+  by ReplaceGift/ReplaceGfix (new `Export-CorrelPicture`, which locates the
+  correl's `Correl_ID_S` label in column `Replace.ColAnchor` on the
+  GIFT/GFIX jushin-kekka sheet and exports the first picture in that
+  section -- always the HM screenshot, even on the GFIX sheet where a log
+  block follows in the same section), read via `OcrWindows.ps1`'s
+  `Invoke-WinOcrFile` in both en-US and a configured secondary language.
+- New pure library `ProcessTimeParse.ps1` (unit-tested in
+  `Tests\Test-ProcessTimeParse.ps1`): `Get-ProcessDurationText`,
+  `ConvertFrom-ProcessTimeOcrLines` (anchors on two datetime tokens + a
+  status literal per OCR'd row instead of trusting column position), and
+  `Get-NewestProcessTimeRow` (newest-by-StartTime).
+- Three new mapping columns (`MappingStore.ps1`): `GIFT_ProcessTime` /
+  `GFIX_ProcessTime` (informational per-side result) and
+  `ProcessTime_Inserted` (this phase's plain 0/1 `Get-PendingRows` field).
+- New `ProcessTime` config block in `VerifyConfig.psd1`, `Scripts.ProcessTime`,
+  a `PhaseOrder` entry (after `ReplaceDf`, before `MarkGift`), and `Aliases`
+  (`ProcessTime`/`Pt`/`ProcTime`). Wired into `VerifyTool.ps1`
+  (`-Phase ProcessTime`, respects `-Force`/`-DryRun`). `ProcessTime` added to
+  `ConfigOverlay.ps1`'s `excel` editor group per this repo's schema-drift
+  convention. New `ProjectLabels.ps1` `SheetProcessTime` label.
+
+### Notes
+- No Windows/Excel/OCR in this dev environment: `ProcessTimeParse.ps1`'s
+  pure logic is unit-tested, but the Excel COM (label-cell find,
+  section-bounds, picture export, workbook create/append) and the real HM
+  screenshot OCR quality are static-checked only -- confirm on an office PC
+  against a real evidence workbook, including a correl whose archived
+  `snap\GIFT_HM\<correl>.txt` is missing (forces the OCR tier), before
+  trusting this in production.
+
 ## 2026-07-14 - Four-direction snap crop, per-side + per-snap-folder (v2.11.0)
 
 ### Added
