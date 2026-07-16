@@ -97,10 +97,27 @@ OwnerFilter.ps1         pure WBS owner-cell matching (Test-OwnerMatch: exact /
                         + Select-JobsByOwner (filter explicit -Add JOB_NAMEs by
                         WBS owner; jobs absent from WBS kept as temp). No Excel.
                         Unit-tested (Tests\Test-OwnerFilter.ps1).
+ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
+                        ProcessTime phase: Get-ProcessDurationText (HH:mm:ss,
+                        not clamped to 24h), ConvertFrom-ProcessTimeOcrLines
+                        (anchors on two datetime tokens + a normal-end/abend
+                        literal per OCR'd row instead of column position),
+                        Get-NewestProcessTimeRow (newest-by-StartTime). No
+                        Excel/OCR. Unit-tested (Tests\Test-ProcessTimeParse.ps1).
 
 Clone.ps1               Phase Clone
 Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
 ReplaceEvidence.ps1     Phase ReplaceGift / ReplaceGfix / ReplaceDf (plan-driven)
+ProcessTime.ps1         Phase ProcessTime: extracts each correl's HM batch
+                        processing start/end time (GIFT + GFIX) and derives
+                        the duration -- archived snap\GIFT_HM|GFIX_HM\
+                        <correl>.txt first (ConvertFrom-HmPageText), else OCR
+                        of the HM screenshot already inserted into the
+                        evidence workbook (Export-CorrelPicture + Invoke-
+                        WinOcrFile + ConvertFrom-ProcessTimeOcrLines). Appends
+                        one summary row per correl to a standalone
+                        ProcessTime_<Owner>.xlsx evidence workbook. Run after
+                        ReplaceGift/ReplaceGfix. Sets ProcessTime_Inserted.
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf. Each Mark.Boxes
                         entry may add a 'Template' key to try image-recognition
                         placement (Locate-ByImage.ps1 LockBits match against
@@ -209,8 +226,9 @@ Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
 `EvidenceExecutor.ps1`, `ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`,
 `AlignCompare.ps1`, `ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`,
 `SendMetadata.ps1`, `OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`,
-`SnapLocalize.ps1`, `OwnerFilter.ps1`, `Find-ActiveHighlightRow.ps1`. All phase
-scripts have `param()` and are called via `& $path @args`.
+`SnapLocalize.ps1`, `OwnerFilter.ps1`, `Find-ActiveHighlightRow.ps1`,
+`ProcessTimeParse.ps1`. All phase scripts have `param()` and are called via
+`& $path @args`.
 
 The critical pattern before any dot-source:
 ```powershell
@@ -289,6 +307,15 @@ field so it is auto-added on startup and shown in Status. The `CheckSheet` phase
 writes only to the external review check sheet workbook — it does not touch the
 mapping.
 
+`GIFT_ProcessTime` / `GFIX_ProcessTime` are plain, informational per-side
+value columns (NOT a bitmask, NOT this phase's `Get-PendingRows` field):
+`0` not yet attempted, `1` start/end extracted, `2` not found. The
+`ProcessTime` phase gates its own reprocessing on `ProcessTime_Inserted`
+instead (a plain `0/1` flag like `isDelivered`): `1` once the correl's row
+has been written into the generated `ProcessTime_<Owner>.xlsx` evidence
+workbook, whether or not either side was actually detected. `-Force` redoes
+already-inserted rows.
+
 `PhaseOrder` in `VerifyConfig.psd1` has a `BitValue` key for each bitmask phase.
 
 ### Excel COM rules
@@ -343,7 +370,53 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-14 v2.11.0)
+## Current state (last bump: 2026-07-16 v2.12.0)
+
+v2.12.0 (new ProcessTime phase: HM processing start/end/duration extraction
++ evidence workbook): **Added** -- a new `ProcessTime` phase (`ProcessTime.ps1`)
+extracts each correl's HM batch processing start time / end time (and derives
+the duration) for both the GIFT and GFIX sides, then appends one summary row
+per correl to a standalone evidence workbook (`ProcessTime_<Owner>.xlsx` by
+default). Two-tier source per side, cheapest/most-accurate first: (1) the
+archived Ctrl+A page text `HmSnap.ps1` already saved at snap time
+(`snap\GIFT_HM\<correl>.txt` / `GFIX_HM`, when `SnapVerify.SaveText` was on),
+re-parsed with the existing `SnapVerify.ps1` `ConvertFrom-HmPageText`; (2) OCR
+of the HM screenshot picture already inserted into the evidence workbook by
+ReplaceGift/ReplaceGfix (new `Export-CorrelPicture`, finds the correl's
+`Correl_ID_S` label in column `Replace.ColAnchor` on the GIFT/GFIX
+jushin-kekka sheet and exports the first picture in that section -- always
+the HM screenshot, even on the GFIX sheet where a log block follows in the
+same section), read via `OcrWindows.ps1`'s `Invoke-WinOcrFile` in both en-US
+and a configured secondary language (pooled, same lesson as the GIFT_MQ OCR
+tier). New pure library `ProcessTimeParse.ps1` (dot-source only, unit-tested
+in `Tests\Test-ProcessTimeParse.ps1`): `Get-ProcessDurationText` (HH:mm:ss,
+not clamped to 24h, empty on a null/negative span), `ConvertFrom-ProcessTimeOcrLines`
+(anchors on two datetime tokens + a normal-end/abend literal per OCR'd row
+instead of trusting column position, since OCR never preserves real TABs),
+and `Get-NewestProcessTimeRow` (newest-by-StartTime, matching this project's
+established newest-wins convention). Three new mapping columns
+(`MappingStore.ps1`): `GIFT_ProcessTime` / `GFIX_ProcessTime` (informational
+per-side result: `0` not attempted, `1` extracted, `2` not found) and
+`ProcessTime_Inserted` (this phase's plain 0/1 `Get-PendingRows` field --
+`1` once the correl's row has been written into the evidence workbook,
+whether or not either side was actually detected; `-Force` to redo). New
+`ProcessTime` config block in `VerifyConfig.psd1` (`AnchorCol`, `OutputPath`,
+`OutputSheetName`, `OcrLanguage`, `ExportScale`), `Scripts.ProcessTime`,
+`PhaseOrder` entry (right after `ReplaceDf`, before `MarkGift`, so OCR reads
+a clean screenshot before any red-box marks), and `Aliases` (`ProcessTime`/
+`Pt`/`ProcTime`). Wired into `VerifyTool.ps1` (`-Phase ProcessTime`, respects
+`-Force`/`-DryRun` -- DryRun previews archived-text-tier-only, since it opens
+no Excel/OCR). `ProcessTime` added to `ConfigOverlay.ps1`'s `excel` editor
+group (+ README "Common fields" entry) per this file's own schema-drift
+lesson. New `ProjectLabels.ps1` `SheetProcessTime` label for the generated
+workbook's sheet name. **Notes** -- no Windows/Excel/OCR in this dev
+environment: `ProcessTimeParse.ps1`'s pure logic is unit-tested, but the
+Excel COM (label-cell find, section-bounds, picture export, workbook
+create/append) and the real HM screenshot OCR quality are static-checked
+only -- confirm on an office PC against a real evidence workbook with both
+1-run and multi-run (retry) HM pages, and against a correl whose archived
+`snap\GIFT_HM\<correl>.txt` is missing (forces the OCR tier) before trusting
+this in production.
 
 v2.11.0 (four-direction snap crop, per-side + per-snap-folder): **Added** --
 the HM/MQ/Jenkins snap screenshot crop (`Window.CropPx`, previously a single

@@ -35,6 +35,9 @@ function Get-ProjectLabels {
     # 'GIFT de-ta vs GFIX de-ta' : GIFT + de(-)ta + 'vs' + GFIX + de(-)ta
     $dchars = [char]0x30C7 + [char]0x30FC + [char]0x30BF   # katakana 'de-ta'
     $L['SheetDfCompare']   = 'GIFT' + $dchars + 'vs' + 'GFIX' + $dchars
+    # 'shori-jikan' (processing time) : U+51E6 U+7406 U+6642 U+9593 -- sheet
+    # name for the ProcessTime phase's generated evidence workbook.
+    $L['SheetProcessTime'] = [char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593
 
     # ---- inline labels ----
     # bold header above the pasted GFIX log: U+25BC (black down triangle) +

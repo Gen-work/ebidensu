@@ -245,6 +245,7 @@
         Probe           = 'Probe-Shapes.ps1'
         GfixLogDownload = 'GfixLogDownload.ps1'
         DfSnap          = 'DfSnap.ps1'
+        ProcessTime     = 'ProcessTime.ps1'
         Align           = 'Align.ps1'
         WatchProgress   = 'Watch-MappingProgress.ps1'
         DeliverMail     = 'DeliverMail.ps1'
@@ -390,6 +391,29 @@
         FilePattern  = '{0}*'
     }
 
+    # ProcessTime phase: extracts each correl's HM batch processing
+    # start/end time (and derives the duration) from the GIFT/GFIX
+    # receive-result evidence screenshot already inserted by ReplaceGift/
+    # ReplaceGfix, then writes one summary row per correl into a
+    # standalone evidence workbook (ProcessTime.ps1).
+    ProcessTime = @{
+        # Column (1-indexed) the correl-id label sits in on the recv
+        # sheets. Matches Replace.ColAnchor (2 = column B) -- override
+        # only if Replace.ColAnchor itself is changed.
+        AnchorCol       = 2
+        # Destination for the generated evidence workbook. Blank ->
+        # <WorkDir>\ProcessTime_<Owner>.xlsx.
+        OutputPath      = ''
+        # Sheet name in the generated workbook. Blank -> [char] label
+        # (ProjectLabels.ps1 SheetProcessTime).
+        OutputSheetName = ''
+        # Secondary Windows OCR language pooled alongside 'en-US' when no
+        # archived snap text is available (HmSnap.ps1's SnapVerify.SaveText).
+        OcrLanguage     = 'ja'
+        # Picture export upscale (matches EvidenceImageExport.ps1's own default).
+        ExportScale     = 3.0
+    }
+
     # Align / Precheck configuration (compare work evidence vs J4 baseline)
     Align = @{
         # Root folder holding the J4 baseline workbooks (searched recursively
@@ -514,6 +538,7 @@
         @{ Key='ReplaceGift';        Field='isReplaced'; BitValue=1; Label='GIFT 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceGfix';        Field='isReplaced'; BitValue=2; Label='GFIX 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceDf';          Field='isReplaced'; BitValue=4; Label='DF 証跡置換';                     Status='implemented' }
+        @{ Key='ProcessTime';        Field='ProcessTime_Inserted'; Label='処理時間 抽出 (証跡 Excel 生成)';  Status='implemented' }
         @{ Key='MarkGift';           Field='isMarked';   BitValue=1; Label='GIFT 赤枠 mark';                  Status='implemented' }
         @{ Key='MarkGfix';           Field='isMarked';   BitValue=2; Label='GFIX 赤枠 mark';                  Status='implemented' }
         @{ Key='MarkDf';             Field='isMarked';   BitValue=4; Label='DF 赤枠 mark';                    Status='implemented' }
@@ -560,6 +585,9 @@
         GfixLogDownload   = 'GfixLogDownload'
         Df                = 'DfSnap'
         DfSnap            = 'DfSnap'
+        ProcessTime       = 'ProcessTime'
+        Pt                = 'ProcessTime'
+        ProcTime          = 'ProcessTime'
         # MarkGfixLog is folded into MarkGfix; these keep the standalone
         # re-highlight utility reachable by name.
         MarkGfixLog       = 'MarkGfixLog'

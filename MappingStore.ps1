@@ -42,6 +42,9 @@ function Get-MappingStatusColumns {
         @{ Name = 'isMarked';             Default = '0' },
         @{ Name = 'isReviewed';           Default = '0' },
         @{ Name = 'ReviewComment';        Default = '' },
+        @{ Name = 'GIFT_ProcessTime';     Default = '0' },
+        @{ Name = 'GFIX_ProcessTime';     Default = '0' },
+        @{ Name = 'ProcessTime_Inserted'; Default = '0' },
         @{ Name = 'isDelivered';          Default = '0' },
         @{ Name = 'DeliverComment';       Default = '' },
         @{ Name = 'isFilesDelivered';     Default = '0' }

@@ -57,6 +57,14 @@
     "CropLeft": 0, "CropTop": 0, "CropRight": 0, "CropBottom": 0
   },
 
+  "ProcessTime": {
+    "AnchorCol": 2,
+    "OutputPath": "",
+    "OutputSheetName": "",
+    "OcrLanguage": "ja",
+    "ExportScale": 3.0
+  },
+
   "ExpectedTime": {
     "TimeColumn": "Expected_Time",
     "IdColumn": "Correl_ID_S",
