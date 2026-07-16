@@ -216,10 +216,15 @@ function Export-ShapeToPng {
 # OutDir. Returns the array of created file paths (empty when the sheet
 # is missing or carries no pictures). Optional TopMin/TopMax (sheet
 # points, -1 = unbounded) limit the export to one vertical section, e.g.
-# the pictures between two correl-id labels in column A.
+# the pictures between two correl-id labels in column A. Optional
+# MaxPictures (0 = unlimited) stops after that many pictures have been
+# exported -- a caller that only needs the first picture in a section
+# (e.g. ProcessTime's HM screenshot) passes 1 so a wide/unbounded section
+# does not fire slow Excel chart-exports for every picture it contains.
 function Export-SheetPicturesToPng {
     param($Workbook, [string]$SheetName, [string]$OutDir, [string]$BaseName,
-          [double]$TopMin = -1.0, [double]$TopMax = -1.0, [double]$Scale = 3.0)
+          [double]$TopMin = -1.0, [double]$TopMax = -1.0, [double]$Scale = 3.0,
+          [int]$MaxPictures = 0)
     $ws = $null
     foreach ($s in $Workbook.Worksheets) {
         if ([string]$s.Name -eq $SheetName) { $ws = $s; break }
@@ -288,6 +293,7 @@ function Export-SheetPicturesToPng {
         } else {
             Write-Host ("  [WARN] picture {0} on sheet '{1}' was not exported." -f $i, $SheetName) -ForegroundColor Yellow
         }
+        if ($MaxPictures -gt 0 -and $paths.Count -ge $MaxPictures) { break }
     }
     return $paths
 }

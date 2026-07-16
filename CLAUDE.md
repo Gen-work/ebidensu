@@ -370,7 +370,29 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-16 v2.12.0)
+## Current state (last bump: 2026-07-16 v2.12.1)
+
+v2.12.1 (ProcessTime OCR robustness + workbook loose-match -- synthesis of the
+open follow-up PRs #111/#112/#113): **Fixed** -- the `ProcessTime` OCR tier now
+actually surfaces what it does. `Export-CorrelPicture` (`ProcessTime.ps1`)
+prints `[DIAG]`/`[MISS]` instead of silently returning `$null`, and when the
+strict correl-section bounds find no picture it retries once from the correl
+label down to the sheet end (capped at the first picture via a new
+`MaxPictures` cap on `Export-SheetPicturesToPng`). `Resolve-ProcessTimeSide`
+logs each `[OCR] ... lang=...` call and writes the pooled OCR lines to a
+`<base>_NN.ocr.txt` sidecar next to the exported PNG, so a zero-match run is
+diagnosable from the recognized text. `-OcrLanguage` now defaults to `''`
+(en-US only; set `ja` to also pool the Japanese recognizer). The two sides of
+one correl no longer collide on the same PNG/dump: `Export-CorrelPicture`
+takes a `BaseName` and the caller threads `GIFT_<correl>`/`GFIX_<correl>`,
+clearing stale `<base>_*.png`/`<base>_*.txt` before export. `WorkbookResolver.ps1`
+gained a last-resort loose match (`Convert-WorkbookNameForLooseMatch` /
+`Find-LooseWorkbookCandidates`, used by `Find-WorkbookByExcelName` after exact/
+wildcard/full-width all miss) tolerating transposed J/W prefixes and full-width
+variants with a `[WARN]`. `Tests\Test-ProcessTimeParse.ps1` compares datetimes
+via `.ToString('yyyy/MM/dd HH:mm:ss')` (culture-independent, PR #111). **Notes**
+-- static-checked only (no Windows/Excel/OCR here); confirm the retry export,
+`.ocr.txt` dumps, per-side base names, and loose workbook match on an office PC.
 
 v2.12.0 (new ProcessTime phase: HM processing start/end/duration extraction
 + evidence workbook): **Added** -- a new `ProcessTime` phase (`ProcessTime.ps1`)

@@ -59,7 +59,9 @@ param(
     [string]$OutputSheetName = '',
 
     # Secondary OCR language pooled alongside 'en-US' for the OCR tier.
-    [string]$OcrLanguage = 'ja',
+    # Empty (default) means en-US only; set e.g. 'ja' to also pool the
+    # Japanese recognizer's reading of the same picture.
+    [string]$OcrLanguage = '',
     # Picture export upscale (matches EvidenceImageExport.ps1's own default).
     [double]$ExportScale = 3.0,
 
@@ -158,15 +160,40 @@ function Get-ProcessTimeSectionBounds {
 # see the file header note) to a PNG. Returns the path, or $null when the
 # sheet/label/picture is not found.
 function Export-CorrelPicture {
-    param($Workbook, [string]$SheetName, [string]$CorrelId, [string]$OutDir, [int]$AnchorCol, [double]$Scale)
+    param($Workbook, [string]$SheetName, [string]$CorrelId, [string]$OutDir, [int]$AnchorCol, [double]$Scale,
+          [string]$BaseName = '')
     $ws = Get-SheetByName $Workbook $SheetName
     if ($null -eq $ws) { return $null }
     $labelCell = Find-ProcessTimeCorrelCell $ws $CorrelId $AnchorCol
     if ($null -eq $labelCell) { return $null }
+
+    # Deterministic per-side base name (GIFT_/GFIX_) so the two sides of one
+    # correl don't collide on the same <correl>_NN.png / .ocr.txt in the
+    # shared per-correl export dir. Clear stale artifacts from a previous run
+    # so a MISS this run can't be masked by last run's leftover PNG/dump.
+    $base = if ([string]::IsNullOrWhiteSpace($BaseName)) { $CorrelId } else { $BaseName }
+    if (Test-Path -LiteralPath $OutDir) {
+        foreach ($pat in @(('{0}_*.png' -f $base), ('{0}_*.txt' -f $base))) {
+            Get-ChildItem -LiteralPath $OutDir -Filter $pat -File -ErrorAction SilentlyContinue |
+                ForEach-Object { try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {} }
+        }
+    }
+
     $bounds = Get-ProcessTimeSectionBounds $ws $labelCell $AnchorCol
-    $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $OutDir $CorrelId $bounds.Top $bounds.Bottom $Scale |
+    # Only the first picture in the section is the HM screenshot, so cap the
+    # export at 1 -- keeps the retry below from chart-exporting every picture
+    # from the label to the sheet end on a busy sheet.
+    $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $OutDir $base $bounds.Top $bounds.Bottom $Scale 1 |
         Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-    if ($pngs.Count -eq 0) { return $null }
+    if ($pngs.Count -eq 0 -and $bounds.Bottom -ge 0) {
+        Write-Host ("       [DIAG] no picture in bounded section for {0}; retrying from label to sheet end" -f $CorrelId) -ForegroundColor Yellow
+        $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $OutDir $base $bounds.Top -1 $Scale 1 |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    }
+    if ($pngs.Count -eq 0) {
+        Write-Host ("       [MISS] no exportable HM picture for {0} on sheet '{1}'" -f $CorrelId, $SheetName) -ForegroundColor Yellow
+        return $null
+    }
     return $pngs[0]
 }
 
@@ -174,7 +201,8 @@ function Export-CorrelPicture {
 # correl. Returns @{ Matched; Source='archived'|'ocr'|'none'; StartTime; EndTime; Duration }.
 function Resolve-ProcessTimeSide {
     param($Workbook, [string]$SheetName, [string]$CorrelId, [string]$SnapTextPath,
-          [string]$OutDir, [int]$AnchorCol, [string]$SecondaryLanguage, [double]$Scale)
+          [string]$OutDir, [int]$AnchorCol, [string]$SecondaryLanguage, [double]$Scale,
+          [string]$ExportBaseName = '')
 
     $none = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = '' }
 
@@ -198,18 +226,28 @@ function Resolve-ProcessTimeSide {
 
     # Tier 2: OCR of the HM screenshot already inserted into the evidence workbook.
     $png = Export-CorrelPicture -Workbook $Workbook -SheetName $SheetName -CorrelId $CorrelId `
-        -OutDir $OutDir -AnchorCol $AnchorCol -Scale $Scale
+        -OutDir $OutDir -AnchorCol $AnchorCol -Scale $Scale -BaseName $ExportBaseName
     if ($null -eq $png) { return $none }
 
     $langs = @('en-US', $SecondaryLanguage) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
     $pooled = New-Object System.Collections.Generic.List[string]
     foreach ($lang in $langs) {
         try {
+            Write-Host ("       [OCR] {0} lang={1}" -f (Split-Path $png -Leaf), $lang) -ForegroundColor DarkGray
             $ocr = Invoke-WinOcrFile -Path $png -LanguageTag $lang
             foreach ($ln in @(ConvertTo-SendRowLines $ocr.Lines)) { $pooled.Add($ln) }
         } catch {
             Write-Host ("       [WARN] OCR failed ({0}, {1}): {2}" -f (Split-Path $png -Leaf), $lang, $_.Exception.Message) -ForegroundColor Yellow
         }
+    }
+    # Sidecar dump of the pooled OCR lines next to the PNG, so a run that
+    # matched nothing can be diagnosed from the actual recognized text.
+    try {
+        $dumpPath = Join-Path $OutDir (([System.IO.Path]::GetFileNameWithoutExtension($png)) + '.ocr.txt')
+        [System.IO.File]::WriteAllText($dumpPath, (($pooled.ToArray()) -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false))
+        Write-Host ("       [OCR] wrote {0} line(s) -> {1}" -f $pooled.Count, $dumpPath) -ForegroundColor DarkGray
+    } catch {
+        Write-Host ("       [WARN] OCR dump write failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
     $ocrRows = @(ConvertFrom-ProcessTimeOcrLines -Lines $pooled.ToArray())
     $best = Get-NewestProcessTimeRow -Rows $ocrRows
@@ -333,7 +371,7 @@ Write-Host ("  WorkDir      : {0}" -f $WorkDir)
 Write-Host ("  EvidenceDir  : {0}" -f $EvidenceDir)
 Write-Host ("  OutputPath   : {0}" -f $OutputPath)
 Write-Host ("  AnchorCol    : {0}" -f $AnchorCol)
-Write-Host ("  OcrLanguage  : en-US + {0}" -f $OcrLanguage)
+Write-Host ("  OcrLanguage  : {0}" -f $(if ([string]::IsNullOrWhiteSpace($OcrLanguage)) { 'en-US' } else { 'en-US + ' + $OcrLanguage }))
 Write-Host ("  Pending      : {0}" -f $pending.Count)
 Write-Host ("  Force        : {0}   DryRun : {1}" -f $forceFlag, $dryRunFlag)
 
@@ -415,9 +453,11 @@ try {
                 $exportDir = Join-Path $exportRoot $correlId
 
                 $giftResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGiftRecv -CorrelId $correlId `
-                    -SnapTextPath $giftTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale
+                    -SnapTextPath $giftTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
+                    -ExportBaseName ("GIFT_{0}" -f $correlId)
                 $gfixResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGfixRecv -CorrelId $correlId `
-                    -SnapTextPath $gfixTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale
+                    -SnapTextPath $gfixTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
+                    -ExportBaseName ("GFIX_{0}" -f $correlId)
 
                 $row.GIFT_ProcessTime = if ($giftResult.Matched) { '1' } else { '2' }
                 $row.GFIX_ProcessTime = if ($gfixResult.Matched) { '1' } else { '2' }

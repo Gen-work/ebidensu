@@ -1,3 +1,49 @@
+## 2026-07-16 - ProcessTime OCR robustness + workbook loose-match (v2.12.1)
+
+Synthesis of the open ProcessTime follow-up PRs (#111, #112, #113); PR #112
+was closed with no committed diff, so its intent is folded in here.
+
+### Fixed
+- `ProcessTime.ps1` OCR tier ran too rarely and left nothing to debug when it
+  did. `Export-CorrelPicture` now prints `[DIAG]`/`[MISS]` instead of silently
+  returning `$null`, and when the strict correl-section bounds find no picture
+  it retries once from the correl label down to the sheet end (still capped at
+  the first picture). `Resolve-ProcessTimeSide` logs each `[OCR] ... lang=...`
+  invocation and writes the pooled OCR lines to a `<base>_NN.ocr.txt` sidecar
+  next to the exported PNG so a zero-match run is diagnosable from the actual
+  recognized text.
+- `ProcessTime.ps1` `-OcrLanguage` now defaults to `''` (en-US only); set it
+  to e.g. `ja` to also pool the Japanese recognizer. The startup banner and
+  per-image dumps make the effective language explicit.
+- The two sides of one correl no longer collide on the same
+  `<correl>_NN.png` / `.ocr.txt` in the shared per-correl export dir:
+  `Export-CorrelPicture` takes a `BaseName` and `Resolve-ProcessTimeSide`
+  threads `GIFT_<correl>` / `GFIX_<correl>`. Stale `<base>_*.png` / `<base>_*.txt`
+  from a previous run are cleared before export so a fresh MISS can't be
+  masked by last run's leftovers.
+- `Tests\Test-ProcessTimeParse.ps1` compares parsed datetimes via
+  `.ToString('yyyy/MM/dd HH:mm:ss')` instead of the culture-dependent
+  `[string]$dt` cast, so the assertions pass on a JP-locale host (PR #111).
+
+### Added
+- `Export-SheetPicturesToPng` (`EvidenceImageExport.ps1`) gained an optional
+  `MaxPictures` cap (0 = unlimited, existing callers unchanged) so
+  ProcessTime's "label to sheet end" retry exports only the one HM screenshot
+  it needs instead of chart-exporting every picture on a busy sheet
+  (PR #112 intent).
+- `WorkbookResolver.ps1` gained `Convert-WorkbookNameForLooseMatch` /
+  `Find-LooseWorkbookCandidates`, used as a last-resort fallback in
+  `Find-WorkbookByExcelName` (after exact / wildcard / full-width all miss) to
+  tolerate transposed J/W prefixes and full-width/half-width variants, emitting
+  a `[WARN]` when the loose match is used (PR #113).
+
+### Notes
+- No Windows/Excel/OCR in this dev environment: `ProcessTimeParse.ps1` pure
+  logic is unit-tested; the Excel COM / picture-export / real OCR paths are
+  static-checked only. Confirm on an office PC that the retry export, the
+  `.ocr.txt` dumps, the per-side base names, and the loose workbook match
+  behave against a real evidence workbook.
+
 ## 2026-07-16 - ProcessTime phase: HM processing start/end/duration extraction (v2.12.0)
 
 ### Added
