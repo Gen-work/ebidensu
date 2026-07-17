@@ -35,8 +35,8 @@ $rows = @(ConvertFrom-ProcessTimeOcrLines @(
     "2026/07/16   09:10:00    2026/07/16   09:12:45   JIDSM01S   $abend"
 ))
 Assert-Equal 2 $rows.Count 'two rows carry two datetime tokens each'
-Assert-Equal '2026/07/16 09:00:00' ([string]$rows[0].StartTime) 'first row start time parsed'
-Assert-Equal '2026/07/16 09:01:23' ([string]$rows[0].EndTime) 'first row end time parsed'
+Assert-Equal '2026/07/16 09:00:00' $rows[0].StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'first row start time parsed'
+Assert-Equal '2026/07/16 09:01:23' $rows[0].EndTime.ToString('yyyy/MM/dd HH:mm:ss') 'first row end time parsed'
 Assert-Equal $normal $rows[0].Status 'first row status literal found'
 Assert-Equal $abend  $rows[1].Status 'second row (extra internal whitespace) status literal found'
 
@@ -52,7 +52,7 @@ Assert-Equal 0 $badDate.Count 'an unparseable datetime token drops the row inste
 $older = [PSCustomObject]@{ StartTime = [datetime]'2026/07/16 08:00:00'; EndTime = [datetime]'2026/07/16 08:05:00' }
 $newer = [PSCustomObject]@{ StartTime = [datetime]'2026/07/16 09:00:00'; EndTime = [datetime]'2026/07/16 09:05:00' }
 $picked = Get-NewestProcessTimeRow -Rows @($older, $newer)
-Assert-Equal ([string]$newer.StartTime) ([string]$picked.StartTime) 'newest-by-StartTime wins among multiple rows'
+Assert-Equal $newer.StartTime.ToString('yyyy/MM/dd HH:mm:ss') $picked.StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'newest-by-StartTime wins among multiple rows'
 
 Assert-True ($null -eq (Get-NewestProcessTimeRow -Rows @())) 'empty input returns null'
 Assert-True ($null -eq (Get-NewestProcessTimeRow -Rows @($null))) 'array of only nulls returns null'

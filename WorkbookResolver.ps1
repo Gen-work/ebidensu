@@ -237,6 +237,39 @@ function Confirm-FullWidthWorkbookCandidate {
     return Confirm-FullWidthFilenameCandidate -RequestedPath $RequestedPath -Candidate $Candidate -ItemKind 'workbook'
 }
 
+# Normalizes a workbook name for a LAST-RESORT loose match: strips the
+# extension, folds full-width ASCII to half-width, lowercases, and collapses
+# the easily-transposed J/W prefix letters to a single wildcard. Only used
+# after exact / wildcard / full-width resolution have all failed.
+function Convert-WorkbookNameForLooseMatch {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($Value)
+    $stem = Convert-FullWidthAsciiToHalfWidth $stem
+    # Operational typo tolerance: J/W (including full-width forms after the
+    # conversion above) are easy to transpose in workbook prefixes. Treat them
+    # as equivalent only after exact/wildcard matching failed.
+    $stem = $stem.ToLowerInvariant() -replace '[jw]', '#'
+    return $stem
+}
+
+function Find-LooseWorkbookCandidates {
+    param([string]$Dir, [string]$ExcelName, [switch]$Recurse)
+    if ([string]::IsNullOrWhiteSpace($Dir) -or [string]::IsNullOrWhiteSpace($ExcelName)) { return @() }
+    try { $Dir = Resolve-WorkbookProviderPath $Dir } catch { return @() }
+    $requested = Convert-WorkbookNameForLooseMatch $ExcelName
+    if ([string]::IsNullOrWhiteSpace($requested)) { return @() }
+    $items = if ($Recurse.IsPresent) {
+        @(Get-ChildItem -LiteralPath $Dir -Filter '*.xlsx' -File -Recurse -ErrorAction SilentlyContinue)
+    } else {
+        @(Get-ChildItem -LiteralPath $Dir -Filter '*.xlsx' -File -ErrorAction SilentlyContinue)
+    }
+    return @($items | Where-Object {
+        $cand = Convert-WorkbookNameForLooseMatch $_.Name
+        ($cand -eq $requested) -or $cand.EndsWith('_' + $requested) -or $cand.EndsWith($requested)
+    } | Sort-Object @{Expression='LastWriteTime';Descending=$true}, FullName)
+}
+
 # Finds the evidence/J4 workbook file for a given stem (full or short).
 # Search order:
 #   1. Exact match: <Dir>\<FullStem>.xlsx
@@ -272,5 +305,17 @@ function Find-WorkbookByExcelName {
     $hits = @($hits | Sort-Object FullName -Unique)
     if ($hits.Count -gt 0) { return ($hits | Sort-Object @{Expression='LastWriteTime';Descending=$true}, FullName | Select-Object -First 1).FullName }
 
-    return (Resolve-FullWidthFileName -Dir $Dir -Name $leaf -Filter '*.xlsx' -Recurse:$Recurse.IsPresent -AllowSuffixMatch -RequestedPath $exact -ItemKind 'workbook' -FullWidthFallback $FullWidthFallback)
+    $fullWidth = Resolve-FullWidthFileName -Dir $Dir -Name $leaf -Filter '*.xlsx' -Recurse:$Recurse.IsPresent -AllowSuffixMatch -RequestedPath $exact -ItemKind 'workbook' -FullWidthFallback $FullWidthFallback
+    if ($null -ne $fullWidth) { return $fullWidth }
+
+    # Last resort: J/W-transpose + full-width tolerant match. Announced with a
+    # warning because it is a fuzzy fallback, not an exact hit.
+    $looseHits = @(Find-LooseWorkbookCandidates -Dir $Dir -ExcelName $leaf -Recurse:$Recurse.IsPresent)
+    if ($looseHits.Count -gt 0) {
+        $chosen = $looseHits[0].FullName
+        Write-Host ("[WARN] workbook resolved by loose J/W/full-width tolerant match: {0}" -f $chosen) -ForegroundColor Yellow
+        return $chosen
+    }
+
+    return $null
 }
