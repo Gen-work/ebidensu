@@ -392,7 +392,10 @@ function Get-ArchivedProcessTimePreview {
 
 # Appends $Rows to $OutputPath (creating it, with a header row, if it does
 # not exist yet), so an incremental (non -Force) run accumulates instead
-# of clobbering earlier runs' extracted rows.
+# of clobbering earlier runs' extracted rows. A row whose
+# (Excel_NAME, Correl_ID_S) pair is being rewritten this run REPLACES the
+# old one (deleted first), so a -Force redo keeps ONE row per correl
+# instead of stacking a fresh 43 rows on top of the previous run's 43.
 function Write-ProcessTimeWorkbook {
     param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows)
 
@@ -423,6 +426,29 @@ function Write-ProcessTimeWorkbook {
                 try { $cell.Font.Bold = $true } catch {}
             }
             $lastRow = 1
+        }
+
+        # Replace-in-place: delete existing rows for the correls being
+        # rewritten (bottom-up so row indices stay valid). Keys are plain
+        # string compares -- Excel_NAME/Correl_ID_S are always alphanumeric.
+        if ($lastRow -gt 1) {
+            $keys = @{}
+            foreach ($r in @($Rows)) {
+                $keys[('{0}|{1}' -f [string]$r.ExcelName, [string]$r.CorrelId)] = $true
+            }
+            $deleted = 0
+            for ($rr = $lastRow; $rr -ge 2; $rr--) {
+                $k = ('{0}|{1}' -f [string]$ws.Cells.Item($rr, 1).Value2, [string]$ws.Cells.Item($rr, 3).Value2)
+                if ($keys.ContainsKey($k)) {
+                    $ws.Rows.Item($rr).Delete() | Out-Null
+                    $deleted++
+                }
+            }
+            if ($deleted -gt 0) {
+                Write-Host ("  [DIAG] replaced {0} existing row(s) in the ProcessTime workbook" -f $deleted) -ForegroundColor DarkGray
+                try { $lastRow = [int]$ws.Cells.Item($ws.Rows.Count, 1).End($xlUp).Row } catch { $lastRow = 1 }
+                if ($lastRow -lt 1) { $lastRow = 1 }
+            }
         }
 
         $row = $lastRow + 1
@@ -530,6 +556,7 @@ foreach ($row in $pending) {
 $excel = $null
 $results       = New-Object System.Collections.Generic.List[object]
 $processedRows = New-Object System.Collections.Generic.List[object]
+$seenThisRun   = @{}   # 'Excel_NAME|Correl_ID_S' -> per-side flags of the first occurrence
 $exportRoot    = Join-Path $WorkDir 'snap\ProcessTime'
 
 try {
@@ -563,6 +590,21 @@ try {
                 $jobName = [string]$row.JOB_NAME
                 Write-Host ("    {0}" -f $correlId) -ForegroundColor White
 
+                # The mapping can carry the same correl twice (observed:
+                # JIDSCS4S / JIDSQS4S in a real run). Extract once per
+                # (Excel_NAME, correl); later duplicates mirror the first
+                # occurrence's flags instead of redoing export+OCR and
+                # writing a second identical workbook row.
+                $dupKey = ('{0}|{1}' -f $name, $correlId)
+                if ($seenThisRun.ContainsKey($dupKey)) {
+                    Write-Host '      [DIAG] duplicate mapping row for this correl; reusing this run''s result (check the mapping for unintended duplicates)' -ForegroundColor Yellow
+                    $flags = $seenThisRun[$dupKey]
+                    $row.GIFT_ProcessTime = $flags.Gift
+                    $row.GFIX_ProcessTime = $flags.Gfix
+                    $processedRows.Add($row)
+                    continue
+                }
+
                 $giftTxt   = Join-Path (Join-Path $WorkDir 'snap\GIFT_HM') ("{0}.txt" -f $correlId)
                 $gfixTxt   = Join-Path (Join-Path $WorkDir 'snap\GFIX_HM') ("{0}.txt" -f $correlId)
                 $exportDir = Join-Path $exportRoot $correlId
@@ -576,6 +618,7 @@ try {
 
                 $row.GIFT_ProcessTime = if ($giftResult.Matched) { '1' } else { '2' }
                 $row.GFIX_ProcessTime = if ($gfixResult.Matched) { '1' } else { '2' }
+                $seenThisRun[$dupKey] = @{ Gift = $row.GIFT_ProcessTime; Gfix = $row.GFIX_ProcessTime }
 
                 Write-Host ("      GIFT: {0} [{1}]" -f (Format-ProcessTimeResult $giftResult), $giftResult.Source) -ForegroundColor DarkGray
                 if (-not [string]::IsNullOrWhiteSpace([string]$giftResult.Note)) {

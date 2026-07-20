@@ -412,9 +412,12 @@ when the section had no picture; second needs `CorrelSeen`) -> up to 3 ABOVE
 the label nearest-first (`CorrelSeen` required -- covers the hand-made
 `*JDLW*` workbooks whose HM picture sits above the found label).
 `Export-SheetPicturesToPng` gained `FromBottom` (existing callers unchanged).
-Real office-PC OCR lines are now unit-test fixtures (46 assertions, green
-under portable pwsh 7 here; Run-Tests shows only the 2 pre-existing Linux
-path-separator failures in Test-EvidencePlan). **Notes** -- COM/OCR candidate
+`-Force` reruns REPLACE a correl's existing row in the output workbook
+instead of appending a duplicate, and duplicate mapping rows for one correl
+are extracted once per run (later duplicates mirror the first row's flags
+with a `[DIAG]`). Real office-PC OCR lines are now unit-test fixtures (46
+assertions, green under portable pwsh 7 here; Run-Tests shows only the 2
+pre-existing Linux path-separator failures in Test-EvidencePlan). **Notes** -- COM/OCR candidate
 loop is static-checked only: confirm on an office PC that a standard workbook
 still resolves from its section picture in one OCR pass, a `*JDLW*` workbook
 finds its above-label picture, and the `*JDLW*` GIFT side now explains itself

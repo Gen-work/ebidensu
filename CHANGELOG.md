@@ -73,6 +73,17 @@ export folders were created.
   spaced-time + garbled-literal rows, en-US date-only row) are now
   fixtures; 46 assertions cover normalization, fuzzy status, partial
   rows, PageDuration capture, rank/selection, and the miss notes.
+- `-Force` reruns no longer stack duplicate rows in the output workbook:
+  `Write-ProcessTimeWorkbook` deletes any existing row whose
+  (Excel_NAME, Correl_ID_S) pair is being rewritten this run before
+  appending, so the workbook keeps ONE row per correl (the first
+  office-PC run already wrote 43 all-blank rows; the redo replaces them
+  instead of appending 43 more).
+- Duplicate mapping rows for one correl (observed: `JIDSCS4S` /
+  `JIDSQS4S` each mapped twice) are extracted ONCE per run; later
+  duplicates mirror the first occurrence's per-side flags with a
+  `[DIAG]` pointing at the mapping instead of redoing export+OCR and
+  writing a second identical workbook row.
 
 ### Notes
 - The 43-rows-vs-32-folders question from the run log: 32 rows exported at
