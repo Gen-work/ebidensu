@@ -309,7 +309,11 @@ function Find-WorkbookByExcelName {
     if ($null -ne $fullWidth) { return $fullWidth }
 
     # Last resort: J/W-transpose + full-width tolerant match. Announced with a
-    # warning because it is a fuzzy fallback, not an exact hit.
+    # warning because it is a fuzzy fallback, not an exact hit. This is an even
+    # looser tier than the full-width fallback above, so a caller that asked to
+    # Reject fuzzy matching (tests / non-interactive strict lookups) must skip it
+    # too -- otherwise Reject would still resolve a full-width-only variant here.
+    if ($FullWidthFallback -eq 'Reject') { return $null }
     $looseHits = @(Find-LooseWorkbookCandidates -Dir $Dir -ExcelName $leaf -Recurse:$Recurse.IsPresent)
     if ($looseHits.Count -gt 0) {
         $chosen = $looseHits[0].FullName

@@ -1,3 +1,105 @@
+## 2026-07-20 - ProcessTime: parse the OCR the recognizers ACTUALLY produce + content-validated picture candidates (v2.12.2)
+
+Driven by the first full office-PC run (43 rows, ALL `not detected [none]`,
+32 export folders): the real `.ocr.txt` dumps showed the ja recognizer reads
+the HM rows COMPLETELY but injects spaces inside every time token
+(`10 :58 :20`, `00 :00 : 0 1`) and garbles the status literal
+(sei-TEI-shuuryo for normal-end), while the en-US recognizer reads the date
+columns but drops the time-of-day entirely -- so the strict
+`\d{2}:\d{2}:\d{2}` datetime anchor matched zero lines on every one of the
+43 rows. Separately, 11 of the 43 rows (the hand-made `*JDLW*` workbooks;
+9 unique correls -- `JIDSCS4S` / `JIDSQS4S` are each mapped twice) hit
+`[MISS] no exportable HM picture`: their HM picture sits ABOVE the found
+correl label (picture Tops 29-688 vs label Tops 886-1469) where neither
+search tier ever looked, which is also why only 32 (not 43) per-correl
+export folders were created.
+
+### Fixed
+- `ConvertFrom-ProcessTimeOcrLines` (`ProcessTimeParse.ps1`) now repairs
+  OCR-injected whitespace inside time tokens before anchoring: new pure
+  `ConvertTo-ProcessTimeNormalizedLine` rewrites every loose H:M:S cluster
+  (spaces around the colons and even between the two digits of one field)
+  to canonical zero-padded `HH:mm:ss`, leaving 14-digit datetime columns
+  and `1 ,036` record counts untouched. The date-to-time gap in the
+  datetime anchor is capped at 5 spaces so a date whose own time was
+  dropped by OCR can never pair with a time from a later column (the
+  en-US date-only rows now correctly yield NO row instead of a potential
+  invented-midnight row).
+- Status literal matching is fuzzy: after the exact normal-end/abend
+  literals miss, a `...shuuryo` match classifies by the preceding
+  characters (sei -> normal-end, i -> abend) and reports the CANONICAL
+  literal, so the observed sei-TEI-shuuryo garble still counts.
+
+### Added
+- Cross-check mechanism: every parsed row now also carries
+  `PageDuration` (the page's own proc-time column, first standalone
+  `HH:mm:ss` after the datetimes) and `CorrelSeen` (whether the target
+  correl id appears verbatim in the OCR line). `Resolve-ProcessTimeSide`
+  compares the derived end-start duration against `PageDuration` and
+  prints a `note:` on mismatch (derived wins); a row picked from a
+  relaxed picture candidate without `CorrelSeen` is flagged.
+- Partial extraction instead of blanket misses: a line with ONE readable
+  datetime plus a status-ish literal becomes a `Partial` row (start
+  kept, end `$null`); the phase reports `start <t>; end NOT read`, fills
+  the duration from `PageDuration` when available (real on-page
+  evidence, tagged in the note), writes the partial row into the
+  ProcessTime workbook with source `ocr-partial[:<tier>]`, and keeps the
+  per-side mapping flag at `2` (only a full start+end read sets `1`).
+  New pure `Select-ProcessTimeRow` / `Get-ProcessTimeRowRank` implement
+  the preference order (full beats partial, correl-seen beats unseen,
+  newest StartTime among equals -- the established newest-wins rule).
+- Detailed miss reporting: new pure `Get-ProcessTimeOcrMissNote`
+  summarizes WHY a pooled OCR read yielded nothing ("N with a date but
+  no readable time-of-day", "no date/time tokens recognized"), printed
+  per candidate and folded into the final `not detected` note; a missing
+  recv sheet or unfound correl label now also says so explicitly
+  (previously silent `[none]`).
+- Non-standard workbook layouts: `Resolve-ProcessTimeSide` now tries
+  CONTENT-VALIDATED picture candidates in confidence order -- (1) the
+  correl's section picture (position trusted, as before); (2) up to 2
+  pictures below the label (the first is position-trusted only when the
+  section itself had no picture, i.e. the old v2.12.1 retry target; the
+  second must show the correl id in its OCR text); (3) up to 3 pictures
+  ABOVE the label, nearest first, accepted ONLY when the correl id is
+  seen (position proves nothing up there). This reaches the `*JDLW*`
+  hand-made workbooks whose HM picture sits above the label / whose
+  label column collapses the section to one row.
+  `Export-SheetPicturesToPng` (`EvidenceImageExport.ps1`) gained an
+  optional `FromBottom` flag (existing callers unchanged) for the
+  nearest-above-first order. Candidate PNGs/dumps are name-tagged
+  (`<side>_<correl>_belowlabel_01.png` etc.); the trusted section tier
+  keeps the v2.12.1 names.
+- `Tests\Test-ProcessTimeParse.ps1`: the REAL office-PC OCR lines (ja
+  spaced-time + garbled-literal rows, en-US date-only row) are now
+  fixtures; 46 assertions cover normalization, fuzzy status, partial
+  rows, PageDuration capture, rank/selection, and the miss notes.
+- `-Force` reruns no longer stack duplicate rows in the output workbook:
+  `Write-ProcessTimeWorkbook` deletes any existing row whose
+  (Excel_NAME, Correl_ID_S) pair is being rewritten this run before
+  appending, so the workbook keeps ONE row per correl (the first
+  office-PC run already wrote 43 all-blank rows; the redo replaces them
+  instead of appending 43 more).
+- Duplicate mapping rows for one correl (observed: `JIDSCS4S` /
+  `JIDSQS4S` each mapped twice) are extracted ONCE per run; later
+  duplicates mirror the first occurrence's per-side flags with a
+  `[DIAG]` pointing at the mapping instead of redoing export+OCR and
+  writing a second identical workbook row.
+
+### Notes
+- The 43-rows-vs-32-folders question from the run log: 32 rows exported at
+  least one PNG (32 unique correls -> 32 folders under `snap\ProcessTime`);
+  the 11 `[MISS]` rows never created a folder. Two of those correls are
+  duplicated mapping rows (`JIDSCS4S`, `JIDSQS4S`) -- worth checking whether
+  the duplication is intended.
+- Pure logic green under portable pwsh 7 in this dev env
+  (`Tests\Test-ProcessTimeParse.ps1` 46/46; full `Run-Tests.ps1` has only
+  the 2 pre-existing Linux path-separator failures in Test-EvidencePlan,
+  which pass on Windows). The COM/OCR candidate loop is static-checked
+  only -- confirm on the office PC, especially: a standard workbook still
+  resolves from the section picture in one OCR pass; a `*JDLW*` workbook
+  now finds its above-label picture; and the GIFT side of the `*JDLW*`
+  workbooks now explains itself (missing sheet vs missing label).
+
 ## 2026-07-16 - ProcessTime OCR robustness + workbook loose-match (v2.12.1)
 
 Synthesis of the open ProcessTime follow-up PRs (#111, #112, #113); PR #112

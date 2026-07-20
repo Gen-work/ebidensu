@@ -99,9 +99,16 @@ OwnerFilter.ps1         pure WBS owner-cell matching (Test-OwnerMatch: exact /
                         Unit-tested (Tests\Test-OwnerFilter.ps1).
 ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         ProcessTime phase: Get-ProcessDurationText (HH:mm:ss,
-                        not clamped to 24h), ConvertFrom-ProcessTimeOcrLines
-                        (anchors on two datetime tokens + a normal-end/abend
-                        literal per OCR'd row instead of column position),
+                        not clamped to 24h), ConvertTo-ProcessTimeNormalizedLine
+                        (repairs OCR-injected spaces INSIDE time tokens:
+                        '10 :58 :20' / '00 :00 : 0 1' -> HH:mm:ss),
+                        ConvertFrom-ProcessTimeOcrLines (anchors on normalized
+                        datetime tokens per OCR'd row instead of column
+                        position; fuzzy '...shuuryo' status match; emits
+                        PageDuration / CorrelSeen / Partial for cross-checks),
+                        Select-ProcessTimeRow + Get-ProcessTimeRowRank (full >
+                        partial, correl-seen > unseen, newest among equals),
+                        Get-ProcessTimeOcrMissNote (why a read yielded nothing),
                         Get-NewestProcessTimeRow (newest-by-StartTime). No
                         Excel/OCR. Unit-tested (Tests\Test-ProcessTimeParse.ps1).
 
@@ -113,9 +120,12 @@ ProcessTime.ps1         Phase ProcessTime: extracts each correl's HM batch
                         the duration -- archived snap\GIFT_HM|GFIX_HM\
                         <correl>.txt first (ConvertFrom-HmPageText), else OCR
                         of the HM screenshot already inserted into the
-                        evidence workbook (Export-CorrelPicture + Invoke-
-                        WinOcrFile + ConvertFrom-ProcessTimeOcrLines). Appends
-                        one summary row per correl to a standalone
+                        evidence workbook: content-validated candidate
+                        pictures (section, below-label, above-label; relaxed
+                        candidates must show the correl id in their OCR text)
+                        each read via Invoke-WinOcrFile +
+                        ConvertFrom-ProcessTimeOcrLines / Select-ProcessTimeRow.
+                        Appends one summary row per correl to a standalone
                         ProcessTime_<Owner>.xlsx evidence workbook. Run after
                         ReplaceGift/ReplaceGfix. Sets ProcessTime_Inserted.
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf. Each Mark.Boxes
@@ -370,7 +380,48 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-16 v2.12.1)
+## Current state (last bump: 2026-07-20 v2.12.2)
+
+v2.12.2 (ProcessTime: parse the OCR the recognizers ACTUALLY produce +
+content-validated picture candidates): driven by the first full office-PC run
+(43 rows, ALL `not detected [none]`; 11 rows `[MISS] no exportable HM
+picture`, hence only 32 of 43 per-correl export folders -- 2 of the missed
+correls, `JIDSCS4S`/`JIDSQS4S`, are duplicated mapping rows). Real `.ocr.txt`
+dumps showed the ja recognizer reads HM rows completely but injects spaces
+inside every time token (`10 :58 :20`, `00 :00 : 0 1`) and garbles the status
+literal (sei-TEI-shuuryo), while en-US drops the time-of-day entirely -- the
+strict datetime anchor matched nothing. **Fixed** -- `ProcessTimeParse.ps1`:
+new pure `ConvertTo-ProcessTimeNormalizedLine` (loose H:M:S cluster ->
+canonical `HH:mm:ss`; 14-digit datetimes and `1 ,036` counts untouched);
+date-to-time gap capped at 5 spaces (a date whose time OCR dropped can never
+pair with a later column's time); fuzzy `...shuuryo` status classification
+(sei->normal / i->abend, canonical literal returned). **Added** -- cross-check
+fields per row: `PageDuration` (the page's own proc-time column; compared to
+the derived end-start duration, mismatch printed as a `note:`) and
+`CorrelSeen` (target correl id seen verbatim in the line); PARTIAL rows (one
+readable datetime + status-ish literal -> start kept, `end NOT read` reported,
+duration fillable from `PageDuration`, source `ocr-partial[:<tier>]`,
+per-side mapping flag stays `2`); pure `Select-ProcessTimeRow` /
+`Get-ProcessTimeRowRank` (full > partial, correl-seen > unseen, newest among
+equals) + `Get-ProcessTimeOcrMissNote` (per-candidate "N with a date but no
+readable time-of-day"-style diagnostics; missing sheet / missing label now
+say so instead of a silent `[none]`). `Resolve-ProcessTimeSide` tries
+content-validated picture candidates in confidence order: section picture
+(position trusted) -> up to 2 below the label (first position-trusted only
+when the section had no picture; second needs `CorrelSeen`) -> up to 3 ABOVE
+the label nearest-first (`CorrelSeen` required -- covers the hand-made
+`*JDLW*` workbooks whose HM picture sits above the found label).
+`Export-SheetPicturesToPng` gained `FromBottom` (existing callers unchanged).
+`-Force` reruns REPLACE a correl's existing row in the output workbook
+instead of appending a duplicate, and duplicate mapping rows for one correl
+are extracted once per run (later duplicates mirror the first row's flags
+with a `[DIAG]`). Real office-PC OCR lines are now unit-test fixtures (46
+assertions, green under portable pwsh 7 here; Run-Tests shows only the 2
+pre-existing Linux path-separator failures in Test-EvidencePlan). **Notes** -- COM/OCR candidate
+loop is static-checked only: confirm on an office PC that a standard workbook
+still resolves from its section picture in one OCR pass, a `*JDLW*` workbook
+finds its above-label picture, and the `*JDLW*` GIFT side now explains itself
+(missing sheet vs missing label).
 
 v2.12.1 (ProcessTime OCR robustness + workbook loose-match -- synthesis of the
 open follow-up PRs #111/#112/#113): **Fixed** -- the `ProcessTime` OCR tier now

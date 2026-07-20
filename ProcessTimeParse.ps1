@@ -12,13 +12,14 @@
 #    1. the archived Ctrl+A page text saved by HmSnap.ps1 at snap time
 #       (WorkDir\snap\GIFT_HM\<correl>.txt / GFIX_HM), re-parsed with
 #       SnapVerify.ps1's ConvertFrom-HmPageText (exact, TAB-anchored).
-#    2. OCR of the evidence picture itself (ProcessTime.ps1's
-#       Export-CorrelPicture + Windows OCR), when no archived text is
-#       available (e.g. only the delivered J4 workbook is on hand). OCR
-#       output never carries real TAB characters, so this file's own
-#       ConvertFrom-ProcessTimeOcrLines is a looser, anchor-based reader
-#       (find two datetime tokens + a status literal on one line) rather
-#       than reusing ConvertFrom-HmPageText's strict field-split.
+#    2. OCR of the evidence picture itself (ProcessTime.ps1's candidate
+#       export + Windows OCR), when no archived text is available (e.g.
+#       only the delivered J4 workbook is on hand). OCR output never
+#       carries real TAB characters AND injects spaces INSIDE time tokens
+#       ('10 :58 :20', '00 :00 : 0 1' -- observed on a real office-PC run,
+#       v2.12.2), so this file's ConvertFrom-ProcessTimeOcrLines first
+#       normalizes every loose time token back to HH:mm:ss and then
+#       anchors on datetime tokens per line rather than column position.
 #
 #  Both tiers produce objects carrying StartTime/EndTime/Status, so
 #  Get-NewestProcessTimeRow (newest-by-StartTime, matching this project's
@@ -34,6 +35,9 @@
 # cross-file dependency and stays independently unit-testable).
 $script:PT_Normal = [char]0x6B63 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # seijo-shuuryo (normal end)
 $script:PT_Abend  = [char]0x7570 + [char]0x5E38 + [char]0x7D42 + [char]0x4E86  # ijo-shuuryo (abend)
+$script:PT_Shuryo = [char]0x7D42 + [char]0x4E86                                 # shuuryo (the trailing '...end')
+$script:PT_SeiChar = [string][char]0x6B63                                       # sei (normal marker)
+$script:PT_IChar   = [string][char]0x7570                                       # i (abend marker)
 
 # ---------------------------------------------------------------------------
 # Get-ProcessDurationText
@@ -52,55 +56,228 @@ function Get-ProcessDurationText {
 }
 
 # ---------------------------------------------------------------------------
+# ConvertTo-ProcessTimeNormalizedLine
+#   Repairs OCR-injected whitespace inside time tokens: the ja recognizer
+#   reads the HM page's '10:58:20' as '10 :58 :20' and '00:00:01' as
+#   '00 :00 : 0 1' (real office-PC dumps). Every loose H:M:S cluster --
+#   1-2 digit fields, optional spaces around the colons and even between
+#   the two digits of one field -- is rewritten as a canonical zero-padded
+#   HH:mm:ss. Everything else on the line (14-digit datetimes, '1 ,036'
+#   record counts) is left untouched: only colon-joined clusters qualify.
+# ---------------------------------------------------------------------------
+function ConvertTo-ProcessTimeNormalizedLine {
+    param([string]$Line)
+    if ([string]::IsNullOrEmpty($Line)) { return '' }
+    $loose = '(?<!\d)(\d{1,2})\s*:\s*(\d(?:\s?\d)?)\s*:\s*(\d(?:\s?\d)?)(?!\d)'
+    $eval = {
+        param($m)
+        $h  = ($m.Groups[1].Value -replace '\s', '')
+        $mi = ($m.Groups[2].Value -replace '\s', '')
+        $s  = ($m.Groups[3].Value -replace '\s', '')
+        ('{0}:{1}:{2}' -f $h.PadLeft(2, '0'), $mi.PadLeft(2, '0'), $s.PadLeft(2, '0'))
+    }
+    return [regex]::Replace($Line, $loose, $eval)
+}
+
+# ---------------------------------------------------------------------------
 # ConvertFrom-ProcessTimeOcrLines
 #   Anchor-based reader for OCR'd HM page text: a real table column split
 #   is unreliable once OCR has collapsed variable-width whitespace, so
-#   instead of splitting fields this scans each reconstructed line for two
-#   'yyyy/MM/dd HH:mm:ss' tokens (start, end, in that order) and an
-#   optional normal-end/abend literal, matching this project's general OCR
-#   philosophy of anchoring on distinctive substrings rather than trusting
-#   column position (see GfixLog.ps1 / Compare-SendRecordCheck).
+#   instead of splitting fields this normalizes each line's time tokens
+#   (ConvertTo-ProcessTimeNormalizedLine) and scans for
+#   'yyyy/MM/dd HH:mm:ss' datetime tokens, matching this project's general
+#   OCR philosophy of anchoring on distinctive substrings rather than
+#   trusting column position (see GfixLog.ps1 / Compare-SendRecordCheck).
+#   The date-to-time gap is capped at 5 spaces so a date whose own time
+#   was dropped by OCR cannot pair up with a time from a later column.
 #
 #   $Lines should already be RECONSTRUCTED rows (one table row per string),
 #   e.g. via SendMetadata.ps1's ConvertTo-SendRowLines against the OCR
 #   result's word boxes -- a raw OcrResult.Text line split can fragment one
 #   wide HM row across several lines.
 #
-#   Returns plain array of PSCustomObject { StartTime; EndTime; Status; RawLine }.
+#   Row kinds:
+#     full    -- two parsed datetime tokens (start, end in page order).
+#     partial -- exactly ONE parsed datetime AND the line carries a
+#                status-ish literal (...shuuryo): the row was seen but the
+#                other time was unreadable. Partial=$true, EndTime=$null.
+#                Reported so the operator knows WHICH time is missing
+#                instead of a blanket 'not detected'.
+#
+#   Extra per-row fields (all optional for downstream consumers):
+#     Status       canonical normal-end/abend literal. OCR garbles the
+#                  middle characters ('sei-TEI-shuuryo' observed for
+#                  normal-end), so after the exact literals miss, a fuzzy
+#                  match on '...shuuryo' classifies by the preceding
+#                  characters (sei->normal, i->abend).
+#     PageDuration the page's own proc-time column (first standalone
+#                  HH:mm:ss after the last datetime token), for
+#                  cross-checking the derived duration. '' when unread.
+#     CorrelSeen   $true when -CorrelId was given and appears verbatim in
+#                  the line -- lets the caller verify the OCR'd picture
+#                  actually belongs to this correl.
+#
+#   Returns plain array of PSCustomObject
+#     { StartTime; EndTime; Status; PageDuration; Partial; CorrelSeen; RawLine }.
 # ---------------------------------------------------------------------------
 function ConvertFrom-ProcessTimeOcrLines {
-    param([string[]]$Lines)
+    param([string[]]$Lines, [string]$CorrelId = '')
 
-    $dtToken = '\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2}'
+    $dtToken = '\d{4}/\d{2}/\d{2}[ \t]{1,5}\d{2}:\d{2}:\d{2}'
+    $timeToken = '(?<!\d)\d{2}:\d{2}:\d{2}(?!\d)'
     $dtFmt   = 'yyyy/MM/dd HH:mm:ss'
     $culture = [System.Globalization.CultureInfo]::InvariantCulture
     $out     = [System.Collections.Generic.List[object]]::new()
 
-    foreach ($line in @($Lines)) {
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        $dtMatches = @([regex]::Matches($line, $dtToken))
-        if ($dtMatches.Count -lt 2) { continue }
+    foreach ($rawLine in @($Lines)) {
+        if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
+        $line = ConvertTo-ProcessTimeNormalizedLine $rawLine
 
-        $startTime = $null; $endTime = $null
-        $startText = ($dtMatches[0].Value -replace '\s+', ' ').Trim()
-        $endText   = ($dtMatches[1].Value -replace '\s+', ' ').Trim()
-        try { $startTime = [datetime]::ParseExact($startText, $dtFmt, $culture) } catch {}
-        try { $endTime   = [datetime]::ParseExact($endText,   $dtFmt, $culture) } catch {}
-        if ($null -eq $startTime -or $null -eq $endTime) { continue }
+        # Parsed datetimes in page order (skip tokens whose date is garbage).
+        $parsed = @()
+        foreach ($m in @([regex]::Matches($line, $dtToken))) {
+            $txt = ($m.Value -replace '\s+', ' ').Trim()
+            $dt = $null
+            try { $dt = [datetime]::ParseExact($txt, $dtFmt, $culture) } catch {}
+            if ($null -ne $dt) { $parsed += @{ Time = $dt; End = ($m.Index + $m.Length) } }
+        }
+        if ($parsed.Count -eq 0) { continue }
 
+        # Status: exact literals first, then fuzzy '...shuuryo' (OCR garbles
+        # the middle characters; classify by the char(s) just before).
         $status = ''
-        if ($line.Contains($script:PT_Normal)) { $status = $script:PT_Normal }
-        elseif ($line.Contains($script:PT_Abend)) { $status = $script:PT_Abend }
+        if ($line.IndexOf($script:PT_Normal) -ge 0) { $status = $script:PT_Normal }
+        elseif ($line.IndexOf($script:PT_Abend) -ge 0) { $status = $script:PT_Abend }
+        else {
+            $ix = $line.IndexOf($script:PT_Shuryo)
+            if ($ix -gt 0) {
+                $from = [Math]::Max(0, $ix - 2)
+                $before = $line.Substring($from, $ix - $from)
+                if ($before.IndexOf($script:PT_IChar) -ge 0) { $status = $script:PT_Abend }
+                elseif ($before.IndexOf($script:PT_SeiChar) -ge 0) { $status = $script:PT_Normal }
+            }
+        }
+
+        $isPartial = $false
+        if ($parsed.Count -lt 2) {
+            # One readable datetime only: keep it as a PARTIAL row when the
+            # line also looks like a status row, so 'end time unreadable'
+            # can be reported instead of dropping the whole row silently.
+            if ($line.IndexOf($script:PT_Shuryo) -lt 0) { continue }
+            $isPartial = $true
+        }
+
+        $startTime = $parsed[0].Time
+        $endTime   = $null
+        $searchFrom = [int]$parsed[0].End
+        if (-not $isPartial) {
+            $endTime = $parsed[1].Time
+            $searchFrom = [int]$parsed[1].End
+        }
+
+        # The page's own proc-time column: first standalone time after the
+        # last consumed datetime token (cross-check for the derived duration).
+        $pageDuration = ''
+        if ($searchFrom -lt $line.Length) {
+            $pm = [regex]::Match($line.Substring($searchFrom), $timeToken)
+            if ($pm.Success) { $pageDuration = $pm.Value }
+        }
+
+        $correlSeen = $false
+        if (-not [string]::IsNullOrWhiteSpace($CorrelId)) {
+            $correlSeen = ($line.IndexOf($CorrelId) -ge 0)
+        }
 
         $out.Add([PSCustomObject]@{
-            StartTime = $startTime
-            EndTime   = $endTime
-            Status    = $status
-            RawLine   = $line
+            StartTime    = $startTime
+            EndTime      = $endTime
+            Status       = $status
+            PageDuration = $pageDuration
+            Partial      = $isPartial
+            CorrelSeen   = $correlSeen
+            RawLine      = $rawLine
         })
     }
 
     return $out.ToArray()
+}
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeRowRank
+#   Confidence rank of one OCR row for candidate selection:
+#     3 = full row (start+end) AND the correl id was seen on the line
+#     2 = full row, correl id not seen (or none was asked for)
+#     1 = partial row (one time only), correl id seen
+#     0 = partial row, correl id not seen
+#   Rows from the archived-text tier lack the Partial/CorrelSeen fields
+#   and rank as full/unseen (2).
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeRowRank {
+    param($Row)
+    if ($null -eq $Row) { return -1 }
+    $partial = $false; $seen = $false
+    if ($Row.PSObject.Properties['Partial'])    { $partial = [bool]$Row.Partial }
+    if ($Row.PSObject.Properties['CorrelSeen']) { $seen = [bool]$Row.CorrelSeen }
+    $rank = 0
+    if (-not $partial) { $rank += 2 }
+    if ($seen) { $rank += 1 }
+    return $rank
+}
+
+# ---------------------------------------------------------------------------
+# Select-ProcessTimeRow
+#   Picks the best row out of one OCR'd picture's parsed rows: highest
+#   Get-ProcessTimeRowRank first (a full row always beats a partial one,
+#   correl-seen beats unseen), newest StartTime among equals (this
+#   project's newest-wins convention). -RequireCorrelSeen drops every row
+#   whose line did not carry the correl id -- used for relaxed picture
+#   candidates where position alone cannot prove the picture belongs to
+#   this correl. Returns $null when nothing qualifies.
+# ---------------------------------------------------------------------------
+function Select-ProcessTimeRow {
+    param([object[]]$Rows, [switch]$RequireCorrelSeen)
+    $rows = @($Rows | Where-Object { $null -ne $_ -and $null -ne $_.StartTime })
+    if ($RequireCorrelSeen) {
+        $rows = @($rows | Where-Object { $_.PSObject.Properties['CorrelSeen'] -and [bool]$_.CorrelSeen })
+    }
+    if ($rows.Count -eq 0) { return $null }
+    $best = $null; $bestRank = -1
+    foreach ($r in $rows) {
+        $rk = Get-ProcessTimeRowRank $r
+        if ($rk -gt $bestRank -or ($rk -eq $bestRank -and $r.StartTime -gt $best.StartTime)) {
+            $best = $r; $bestRank = $rk
+        }
+    }
+    return $best
+}
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeOcrMissNote
+#   One short diagnostic string explaining WHY a pooled OCR read produced
+#   no usable time rows -- e.g. the en-US recognizer reads the date columns
+#   but drops the time-of-day entirely (real office-PC dumps), which is
+#   indistinguishable from 'blank picture' without this. Printed next to
+#   'not detected' so the operator sees what is actually missing.
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeOcrMissNote {
+    param([string[]]$Lines)
+    $dtToken   = '\d{4}/\d{2}/\d{2}[ \t]{1,5}\d{2}:\d{2}:\d{2}'
+    $dateToken = '\d{4}/\d{2}/\d{2}'
+    $total = 0; $dateNoTime = 0; $oneDt = 0
+    foreach ($rawLine in @($Lines)) {
+        if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
+        $total++
+        $line = ConvertTo-ProcessTimeNormalizedLine $rawLine
+        $dtCount = @([regex]::Matches($line, $dtToken)).Count
+        if ($dtCount -eq 1) { $oneDt++ }
+        elseif ($dtCount -eq 0 -and $line -match $dateToken) { $dateNoTime++ }
+    }
+    if ($total -eq 0) { return 'no OCR lines' }
+    $parts = @(("{0} OCR line(s)" -f $total))
+    if ($dateNoTime -gt 0) { $parts += ("{0} with a date but no readable time-of-day" -f $dateNoTime) }
+    if ($oneDt -gt 0) { $parts += ("{0} with only one datetime" -f $oneDt) }
+    if ($dateNoTime -eq 0 -and $oneDt -eq 0) { $parts += 'no date/time tokens recognized' }
+    return ($parts -join ', ')
 }
 
 # ---------------------------------------------------------------------------
