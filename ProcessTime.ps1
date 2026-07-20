@@ -14,19 +14,21 @@
 #       SnapVerify.ps1's ConvertFrom-HmPageText (exact, TAB-anchored).
 #    2. OCR of the HM screenshot ALREADY INSERTED into the evidence
 #       workbook (GIFT/GFIX jushin-kekka sheet -- see ProjectLabels.ps1
-#       SheetGiftRecv/SheetGfixRecv): Export-CorrelPicture exports just
-#       that correl's HM picture, Invoke-WinOcrFile (OcrWindows.ps1) reads
-#       it in both en-US and the configured secondary language (pooled,
-#       same lesson as GIFT_MQ's OCR tier -- one recognizer often reads
-#       the ASCII date/time cleanly while the other garbles it), and
-#       ConvertFrom-ProcessTimeOcrLines (ProcessTimeParse.ps1) anchors on
-#       two datetime tokens per line instead of trusting column position.
-#  Each correl's HM screenshot sits immediately after its Correl_ID_S
-#  label in column Replace.ColAnchor (default B) on the recv sheet --
-#  the same layout EvidencePlan.ps1's Build-Gift/GfixEvidencePlan wrote,
-#  so the first picture found in that correl's section (label row to the
-#  next label row) is always the HM screenshot even on the GFIX sheet
-#  (where a GFIX log block follows in the same section).
+#       SheetGiftRecv/SheetGfixRecv): candidate pictures are exported and
+#       OCRed one at a time (Invoke-WinOcrFile in both en-US and the
+#       configured secondary language, pooled -- the ja recognizer reads
+#       the time-of-day the en-US one drops, and vice versa for other
+#       fields), then VALIDATED BY CONTENT via ProcessTimeParse.ps1
+#       (normalized datetime tokens + the correl id appearing in the
+#       OCR text) rather than trusting picture position alone.
+#  On tool-written workbooks each correl's HM screenshot sits immediately
+#  after its Correl_ID_S label in column Replace.ColAnchor (default B) --
+#  the layout EvidencePlan.ps1 wrote -- and the first section picture is
+#  accepted directly. Hand-made workbooks (JDLW* office run, v2.12.2) can
+#  put the picture ABOVE the label or crowd the label column so the
+#  section collapses to one row; Resolve-ProcessTimeSide then widens the
+#  search below and above the label, accepting a relaxed candidate only
+#  when the correl id is actually seen in its OCR text.
 #
 #  Newest-by-StartTime wins when a page shows more than one run for a
 #  correl, matching this project's established convention (see
@@ -110,8 +112,15 @@ function Format-ProcessTimeStamp {
 
 function Format-ProcessTimeResult {
     param($Result)
-    if (-not $Result.Matched) { return 'not detected' }
-    return ("{0} -> {1} ({2})" -f (Format-ProcessTimeStamp $Result.StartTime), (Format-ProcessTimeStamp $Result.EndTime), $Result.Duration)
+    if ($Result.Matched) {
+        return ("{0} -> {1} ({2})" -f (Format-ProcessTimeStamp $Result.StartTime), (Format-ProcessTimeStamp $Result.EndTime), $Result.Duration)
+    }
+    if ($null -ne $Result.StartTime) {
+        # Partial OCR read: report WHICH time is there instead of a blanket miss.
+        $durTxt = if (-not [string]::IsNullOrWhiteSpace($Result.Duration)) { (" (page duration {0})" -f $Result.Duration) } else { '' }
+        return ("start {0}; end NOT read{1}" -f (Format-ProcessTimeStamp $Result.StartTime), $durTxt)
+    }
+    return 'not detected'
 }
 
 # Finds the Correl_ID_S label cell in $AnchorCol on the recv sheet
@@ -155,56 +164,62 @@ function Get-ProcessTimeSectionBounds {
     return @{ Top = $top; Bottom = $bottom }
 }
 
-# Exports just this correl's HM screenshot (the first picture in its
-# section -- HM is always inserted immediately after the correl label,
-# see the file header note) to a PNG. Returns the path, or $null when the
-# sheet/label/picture is not found.
-function Export-CorrelPicture {
-    param($Workbook, [string]$SheetName, [string]$CorrelId, [string]$OutDir, [int]$AnchorCol, [double]$Scale,
-          [string]$BaseName = '')
-    $ws = Get-SheetByName $Workbook $SheetName
-    if ($null -eq $ws) { return $null }
-    $labelCell = Find-ProcessTimeCorrelCell $ws $CorrelId $AnchorCol
-    if ($null -eq $labelCell) { return $null }
-
-    # Deterministic per-side base name (GIFT_/GFIX_) so the two sides of one
-    # correl don't collide on the same <correl>_NN.png / .ocr.txt in the
-    # shared per-correl export dir. Clear stale artifacts from a previous run
-    # so a MISS this run can't be masked by last run's leftover PNG/dump.
-    $base = if ([string]::IsNullOrWhiteSpace($BaseName)) { $CorrelId } else { $BaseName }
-    if (Test-Path -LiteralPath $OutDir) {
-        foreach ($pat in @(('{0}_*.png' -f $base), ('{0}_*.txt' -f $base))) {
-            Get-ChildItem -LiteralPath $OutDir -Filter $pat -File -ErrorAction SilentlyContinue |
-                ForEach-Object { try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {} }
+# OCRs one exported candidate PNG with the pooled recognizer languages and
+# dumps the reconstructed rows to <png-stem>.ocr.txt next to it. Returns
+# the pooled line array (plain array; callers wrap in @()).
+function Read-ProcessTimeOcrLines {
+    param([string]$Png, [string]$SecondaryLanguage, [string]$OutDir)
+    $langs = @('en-US', $SecondaryLanguage) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+    $pooled = New-Object System.Collections.Generic.List[string]
+    foreach ($lang in $langs) {
+        try {
+            Write-Host ("       [OCR] {0} lang={1}" -f (Split-Path $Png -Leaf), $lang) -ForegroundColor DarkGray
+            $ocr = Invoke-WinOcrFile -Path $Png -LanguageTag $lang
+            foreach ($ln in @(ConvertTo-SendRowLines $ocr.Lines)) { $pooled.Add($ln) }
+        } catch {
+            Write-Host ("       [WARN] OCR failed ({0}, {1}): {2}" -f (Split-Path $Png -Leaf), $lang, $_.Exception.Message) -ForegroundColor Yellow
         }
     }
-
-    $bounds = Get-ProcessTimeSectionBounds $ws $labelCell $AnchorCol
-    # Only the first picture in the section is the HM screenshot, so cap the
-    # export at 1 -- keeps the retry below from chart-exporting every picture
-    # from the label to the sheet end on a busy sheet.
-    $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $OutDir $base $bounds.Top $bounds.Bottom $Scale 1 |
-        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-    if ($pngs.Count -eq 0 -and $bounds.Bottom -ge 0) {
-        Write-Host ("       [DIAG] no picture in bounded section for {0}; retrying from label to sheet end" -f $CorrelId) -ForegroundColor Yellow
-        $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $OutDir $base $bounds.Top -1 $Scale 1 |
-            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    # Sidecar dump of the pooled OCR lines next to the PNG, so a run that
+    # matched nothing can be diagnosed from the actual recognized text.
+    try {
+        $dumpPath = Join-Path $OutDir (([System.IO.Path]::GetFileNameWithoutExtension($Png)) + '.ocr.txt')
+        [System.IO.File]::WriteAllText($dumpPath, (($pooled.ToArray()) -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false))
+        Write-Host ("       [OCR] wrote {0} line(s) -> {1}" -f $pooled.Count, $dumpPath) -ForegroundColor DarkGray
+    } catch {
+        Write-Host ("       [WARN] OCR dump write failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
-    if ($pngs.Count -eq 0) {
-        Write-Host ("       [MISS] no exportable HM picture for {0} on sheet '{1}'" -f $CorrelId, $SheetName) -ForegroundColor Yellow
-        return $null
-    }
-    return $pngs[0]
+    return $pooled.ToArray()
 }
 
 # Tiered start/end/duration resolution for one side (GIFT or GFIX) of one
-# correl. Returns @{ Matched; Source='archived'|'ocr'|'none'; StartTime; EndTime; Duration }.
+# correl. Returns @{ Matched; Source; StartTime; EndTime; Duration; Note }.
+#   Matched = $true only when BOTH start and end were extracted. A partial
+#   OCR read (start only) leaves Matched=$false but fills StartTime and
+#   explains the gap in Note, so the operator sees WHICH time is missing.
+#   Source  = 'archived' | 'ocr' | 'ocr:<tier>' | 'ocr-partial[:<tier>]' | 'none'.
+#
+# OCR candidate pictures are tried in confidence order and validated by
+# CONTENT (parsed time rows; the correl id appearing in the OCR text)
+# instead of trusting position alone -- some hand-made workbooks put the
+# HM picture ABOVE the correl label (JDLW* office-PC run, v2.12.2):
+#   1. section      : first picture between the label and the next label
+#                     (the layout Replace writes) -- a full time row here
+#                     is accepted as-is, position is trusted.
+#   2. below-label  : first 2 pictures below the section. Candidate 1 is
+#                     the old v2.12.1 retry target (accepted with a note
+#                     when its rows never show the correl id); candidate 2
+#                     is only accepted when the correl id IS seen (it is
+#                     usually the NEXT correl's picture).
+#   3. above-label  : up to 3 pictures above the label, nearest first --
+#                     accepted ONLY when the correl id is seen in the OCR
+#                     text (position gives no evidence at all up there).
 function Resolve-ProcessTimeSide {
     param($Workbook, [string]$SheetName, [string]$CorrelId, [string]$SnapTextPath,
           [string]$OutDir, [int]$AnchorCol, [string]$SecondaryLanguage, [double]$Scale,
           [string]$ExportBaseName = '')
 
-    $none = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = '' }
+    $result = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = ''; Note = '' }
 
     # Tier 1: archived Ctrl+A snap text (fast, exact).
     if (-not [string]::IsNullOrWhiteSpace($SnapTextPath) -and (Test-Path -LiteralPath $SnapTextPath)) {
@@ -217,6 +232,7 @@ function Resolve-ProcessTimeSide {
                     Matched = $true; Source = 'archived'
                     StartTime = $best.StartTime; EndTime = $best.EndTime
                     Duration = (Get-ProcessDurationText $best.StartTime $best.EndTime)
+                    Note = ''
                 }
             }
         } catch {
@@ -225,38 +241,137 @@ function Resolve-ProcessTimeSide {
     }
 
     # Tier 2: OCR of the HM screenshot already inserted into the evidence workbook.
-    $png = Export-CorrelPicture -Workbook $Workbook -SheetName $SheetName -CorrelId $CorrelId `
-        -OutDir $OutDir -AnchorCol $AnchorCol -Scale $Scale -BaseName $ExportBaseName
-    if ($null -eq $png) { return $none }
+    $ws = Get-SheetByName $Workbook $SheetName
+    if ($null -eq $ws) {
+        $result.Note = ("sheet '{0}' not found in workbook" -f $SheetName)
+        Write-Host ("       [MISS] {0}: {1}" -f $CorrelId, $result.Note) -ForegroundColor Yellow
+        return $result
+    }
+    $labelCell = Find-ProcessTimeCorrelCell $ws $CorrelId $AnchorCol
+    if ($null -eq $labelCell) {
+        $result.Note = ("correl label not found in column {0} of sheet '{1}'" -f $AnchorCol, $SheetName)
+        Write-Host ("       [MISS] {0}: {1}" -f $CorrelId, $result.Note) -ForegroundColor Yellow
+        return $result
+    }
 
-    $langs = @('en-US', $SecondaryLanguage) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
-    $pooled = New-Object System.Collections.Generic.List[string]
-    foreach ($lang in $langs) {
-        try {
-            Write-Host ("       [OCR] {0} lang={1}" -f (Split-Path $png -Leaf), $lang) -ForegroundColor DarkGray
-            $ocr = Invoke-WinOcrFile -Path $png -LanguageTag $lang
-            foreach ($ln in @(ConvertTo-SendRowLines $ocr.Lines)) { $pooled.Add($ln) }
-        } catch {
-            Write-Host ("       [WARN] OCR failed ({0}, {1}): {2}" -f (Split-Path $png -Leaf), $lang, $_.Exception.Message) -ForegroundColor Yellow
+    # Deterministic per-side base name (GIFT_/GFIX_) so the two sides of one
+    # correl don't collide on the same PNG/dump names in the shared per-correl
+    # export dir. Clear stale artifacts from a previous run so a MISS this run
+    # can't be masked by last run's leftover PNG/dump.
+    $base = if ([string]::IsNullOrWhiteSpace($ExportBaseName)) { $CorrelId } else { $ExportBaseName }
+    if (Test-Path -LiteralPath $OutDir) {
+        foreach ($pat in @(('{0}_*.png' -f $base), ('{0}_*.txt' -f $base))) {
+            Get-ChildItem -LiteralPath $OutDir -Filter $pat -File -ErrorAction SilentlyContinue |
+                ForEach-Object { try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {} }
         }
     }
-    # Sidecar dump of the pooled OCR lines next to the PNG, so a run that
-    # matched nothing can be diagnosed from the actual recognized text.
-    try {
-        $dumpPath = Join-Path $OutDir (([System.IO.Path]::GetFileNameWithoutExtension($png)) + '.ocr.txt')
-        [System.IO.File]::WriteAllText($dumpPath, (($pooled.ToArray()) -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false))
-        Write-Host ("       [OCR] wrote {0} line(s) -> {1}" -f $pooled.Count, $dumpPath) -ForegroundColor DarkGray
-    } catch {
-        Write-Host ("       [WARN] OCR dump write failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+
+    $bounds = Get-ProcessTimeSectionBounds $ws $labelCell $AnchorCol
+    $tiers = @()
+    $belowMin = $bounds.Top
+    if ($bounds.Bottom -ge 0) {
+        $tiers += @{ Tag = 'section'; TopMin = $bounds.Top; TopMax = $bounds.Bottom; FromBottom = $false; Max = 1; RequireCorrel = $false }
+        # below-label starts AFTER the section so a section picture that
+        # already failed the content check is not re-exported.
+        $belowMin = $bounds.Bottom
     }
-    $ocrRows = @(ConvertFrom-ProcessTimeOcrLines -Lines $pooled.ToArray())
-    $best = Get-NewestProcessTimeRow -Rows $ocrRows
-    if ($null -eq $best) { return $none }
-    return @{
-        Matched = $true; Source = 'ocr'
-        StartTime = $best.StartTime; EndTime = $best.EndTime
-        Duration = (Get-ProcessDurationText $best.StartTime $best.EndTime)
+    $tiers += @{ Tag = 'below-label'; TopMin = $belowMin; TopMax = -1;          FromBottom = $false; Max = 2; RequireCorrel = $false }
+    $tiers += @{ Tag = 'above-label'; TopMin = -1;        TopMax = $bounds.Top; FromBottom = $true;  Max = 3; RequireCorrel = $true }
+
+    $accepted = $null; $acceptedTag = ''
+    $fallbackRow = $null; $fallbackRank = -1; $fallbackTag = ''
+    $candTotal = 0
+    $sectionHadPicture = $false
+    $missNotes = New-Object System.Collections.Generic.List[string]
+
+    foreach ($tier in $tiers) {
+        if ($tier.Tag -ne 'section' -and $candTotal -gt 0) {
+            Write-Host ("       [DIAG] no accepted picture yet for {0}; widening search: {1}" -f $CorrelId, $tier.Tag) -ForegroundColor Yellow
+        }
+        $tierBase = ('{0}_{1}' -f $base, ($tier.Tag -replace '-', ''))
+        if ($tier.Tag -eq 'section') { $tierBase = $base }   # keep v2.12.1 file names for the trusted tier
+        $pngs = @(Export-SheetPicturesToPng $Workbook $SheetName $OutDir $tierBase $tier.TopMin $tier.TopMax $Scale $tier.Max $tier.FromBottom |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($tier.Tag -eq 'section' -and $pngs.Count -gt 0) { $sectionHadPicture = $true }
+
+        $candIdx = 0
+        foreach ($png in $pngs) {
+            $candIdx++
+            $candTotal++
+            $lines = @(Read-ProcessTimeOcrLines -Png $png -SecondaryLanguage $SecondaryLanguage -OutDir $OutDir)
+            $rows = @(ConvertFrom-ProcessTimeOcrLines -Lines $lines -CorrelId $CorrelId)
+            # A below-label candidate is only position-trusted when it is the
+            # FIRST picture below a section that had NO picture of its own
+            # (the v2.12.1 retry target); once the section picture existed
+            # (and failed validation), everything below the section belongs
+            # to other correls and must show this correl's id to count.
+            $strict = [bool]$tier.RequireCorrel -or
+                ($tier.Tag -eq 'below-label' -and ($candIdx -ge 2 -or $sectionHadPicture))
+            $sel = if ($strict) { Select-ProcessTimeRow -Rows $rows -RequireCorrelSeen } else { Select-ProcessTimeRow -Rows $rows }
+            if ($null -eq $sel) {
+                $note = if ($strict -and $rows.Count -gt 0) {
+                    ("{0} time row(s) but correl id not in OCR text -- skipped (likely another correl's picture)" -f $rows.Count)
+                } else {
+                    Get-ProcessTimeOcrMissNote -Lines $lines
+                }
+                $missNotes.Add(("{0}: {1}" -f (Split-Path $png -Leaf), $note))
+                Write-Host ("       [DIAG] {0}: {1}" -f (Split-Path $png -Leaf), $note) -ForegroundColor Yellow
+                continue
+            }
+            $rank = Get-ProcessTimeRowRank $sel
+            # Accept: full row + correl seen anywhere; a full row on position
+            # alone only inside the trusted section tier.
+            if ($rank -ge 3 -or ($tier.Tag -eq 'section' -and $rank -ge 2)) {
+                $accepted = $sel; $acceptedTag = $tier.Tag; break
+            }
+            if ($rank -gt $fallbackRank) { $fallbackRow = $sel; $fallbackRank = $rank; $fallbackTag = $tier.Tag }
+        }
+        if ($null -ne $accepted) { break }
     }
+
+    $row = $accepted; $tag = $acceptedTag
+    $notes = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $row -and $null -ne $fallbackRow) {
+        $row = $fallbackRow; $tag = $fallbackTag
+        $seen = $row.PSObject.Properties['CorrelSeen'] -and [bool]$row.CorrelSeen
+        if (-not $seen) { $notes.Add('correl id not seen in OCR text -- verify the picture') }
+    }
+    if ($null -eq $row) {
+        if ($candTotal -eq 0) {
+            $result.Note = ("no exportable picture found for the label on sheet '{0}'" -f $SheetName)
+            Write-Host ("       [MISS] {0}: {1}" -f $CorrelId, $result.Note) -ForegroundColor Yellow
+        } else {
+            $result.Note = ("{0} candidate picture(s) OCRed, none yielded a usable time row -- {1}" -f $candTotal, ($missNotes -join '; '))
+        }
+        return $result
+    }
+
+    $result.StartTime = $row.StartTime
+    $result.EndTime   = $row.EndTime
+    $result.Matched   = ($null -ne $row.EndTime)
+
+    # Duration: derived from start/end when both were read; cross-checked
+    # against the page's own proc-time column, which also fills in when the
+    # end time was unreadable (it is real on-page evidence, not invented).
+    $pageDur = ''
+    if ($row.PSObject.Properties['PageDuration']) { $pageDur = [string]$row.PageDuration }
+    $derived = Get-ProcessDurationText $row.StartTime $row.EndTime
+    if (-not [string]::IsNullOrWhiteSpace($derived)) {
+        $result.Duration = $derived
+        if (-not [string]::IsNullOrWhiteSpace($pageDur) -and $pageDur -ne $derived) {
+            $notes.Add(("page duration {0} != derived {1} (kept derived)" -f $pageDur, $derived))
+        }
+    } elseif (-not [string]::IsNullOrWhiteSpace($pageDur)) {
+        $result.Duration = $pageDur
+        $notes.Add('duration read from the page column (end time not read)')
+    }
+    if (-not $result.Matched) { $notes.Add('end time not read from OCR') }
+
+    $srcTag = if ($result.Matched) { 'ocr' } else { 'ocr-partial' }
+    if ($tag -ne 'section' -and -not [string]::IsNullOrWhiteSpace($tag)) { $srcTag = ('{0}:{1}' -f $srcTag, $tag) }
+    $result.Source = $srcTag
+    $result.Note = ($notes -join '; ')
+    return $result
 }
 
 # Tier-1-only preview for -DryRun (no Excel/OCR opened).
@@ -463,7 +578,13 @@ try {
                 $row.GFIX_ProcessTime = if ($gfixResult.Matched) { '1' } else { '2' }
 
                 Write-Host ("      GIFT: {0} [{1}]" -f (Format-ProcessTimeResult $giftResult), $giftResult.Source) -ForegroundColor DarkGray
+                if (-not [string]::IsNullOrWhiteSpace([string]$giftResult.Note)) {
+                    Write-Host ("        note: {0}" -f $giftResult.Note) -ForegroundColor Yellow
+                }
                 Write-Host ("      GFIX: {0} [{1}]" -f (Format-ProcessTimeResult $gfixResult), $gfixResult.Source) -ForegroundColor DarkGray
+                if (-not [string]::IsNullOrWhiteSpace([string]$gfixResult.Note)) {
+                    Write-Host ("        note: {0}" -f $gfixResult.Note) -ForegroundColor Yellow
+                }
 
                 Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -CorrelIdS $correlId -JobName $jobName -Action 'extract' `
                     -Status $(if ($giftResult.Matched -or $gfixResult.Matched) { 'ok' } else { 'fail' }) `

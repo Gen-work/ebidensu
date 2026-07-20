@@ -221,10 +221,13 @@ function Export-ShapeToPng {
 # exported -- a caller that only needs the first picture in a section
 # (e.g. ProcessTime's HM screenshot) passes 1 so a wide/unbounded section
 # does not fire slow Excel chart-exports for every picture it contains.
+# Optional FromBottom reverses the order: the BOTTOM-most picture in the
+# range exports first (ProcessTime's above-label fallback wants the
+# picture nearest the label, i.e. the lowest one above it).
 function Export-SheetPicturesToPng {
     param($Workbook, [string]$SheetName, [string]$OutDir, [string]$BaseName,
           [double]$TopMin = -1.0, [double]$TopMax = -1.0, [double]$Scale = 3.0,
-          [int]$MaxPictures = 0)
+          [int]$MaxPictures = 0, [bool]$FromBottom = $false)
     $ws = $null
     foreach ($s in $Workbook.Worksheets) {
         if ([string]$s.Name -eq $SheetName) { $ws = $s; break }
@@ -274,6 +277,10 @@ function Export-SheetPicturesToPng {
     }
     if (-not (Test-Path -LiteralPath $OutDir)) {
         New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+    }
+    if ($FromBottom -and $entries.Count -gt 1) {
+        $entries = $entries.Clone()   # never reverse $allEntries in place
+        [array]::Reverse($entries)
     }
 
     $paths = @()
