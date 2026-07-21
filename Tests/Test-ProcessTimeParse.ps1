@@ -227,45 +227,91 @@ Assert-True (-not $noHint[0].DateCorrected) 'no hints -> not corrected'
 Assert-Equal '2026/05/23 10:58:50' $noHint[0].StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'no hints leaves the ja date as read'
 
 # ---------------------------------------------------------------------------
-# Resolve-ProcessTimeRowPlan (v2.13.0: staged Ocr/Write + sidecar-based re-run)
+# Resolve-ProcessTimeRowPlan (v2.15.0: ProcessTime_Inserted is now a bitmask --
+# -OcrDone/-WriteDone replace the old plain -Inserted bool)
 # ---------------------------------------------------------------------------
-$fresh = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Both' -Force $false
+$fresh = Resolve-ProcessTimeRowPlan -SidecarExists $false -OcrDone $false -WriteDone $false -Stage 'Both' -Force $false
 Assert-True $fresh.NeedsOcr 'fresh row (Both, no Force): needs OCR'
 Assert-True $fresh.NeedsWrite 'fresh row (Both, no Force): needs write'
 Assert-True $fresh.Touch 'fresh row: touched'
 
-$ocrDoneWritePending = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $false -Stage 'Both' -Force $false
-Assert-True (-not $ocrDoneWritePending.NeedsOcr) 'sidecar cached, not yet inserted: OCR skipped (re-run reuses the cache)'
-Assert-True $ocrDoneWritePending.NeedsWrite 'sidecar cached, not yet inserted: write still pending'
+$ocrDoneWritePending = Resolve-ProcessTimeRowPlan -SidecarExists $true -OcrDone $false -WriteDone $false -Stage 'Both' -Force $false
+Assert-True (-not $ocrDoneWritePending.NeedsOcr) 'sidecar cached, bit not yet set: OCR skipped (re-run reuses the cache)'
+Assert-True $ocrDoneWritePending.NeedsWrite 'sidecar cached, write bit not set: write still pending'
 
-$legacyDone = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Both' -Force $false
-Assert-True (-not $legacyDone.NeedsOcr) 'legacy-inserted row with no sidecar: OCR not re-triggered (backward compat)'
-Assert-True (-not $legacyDone.NeedsWrite) 'legacy-inserted row: write not pending'
-Assert-True (-not $legacyDone.Touch) 'fully-done row (legacy or new): not touched at all'
+$ocrBitOnly = Resolve-ProcessTimeRowPlan -SidecarExists $false -OcrDone $true -WriteDone $false -Stage 'Both' -Force $false
+Assert-True (-not $ocrBitOnly.NeedsOcr) 'OCR bit set (no sidecar file): OCR not re-triggered'
+Assert-True $ocrBitOnly.NeedsWrite 'OCR bit set, write bit not set: write still pending'
 
-$bothDone = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $true -Stage 'Both' -Force $false
-Assert-True (-not $bothDone.Touch) 'sidecar + inserted: fully done, skipped'
+$migratedLegacyDone = Resolve-ProcessTimeRowPlan -SidecarExists $false -OcrDone $true -WriteDone $true -Stage 'Both' -Force $false
+Assert-True (-not $migratedLegacyDone.NeedsOcr) 'both bits set (e.g. a migrated legacy row): OCR not re-triggered'
+Assert-True (-not $migratedLegacyDone.NeedsWrite) 'both bits set: write not pending'
+Assert-True (-not $migratedLegacyDone.Touch) 'fully-done row (both bits): not touched at all'
 
-$forced = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $true -Stage 'Both' -Force $true
-Assert-True $forced.NeedsOcr '-Force redoes OCR even when sidecar + inserted'
-Assert-True $forced.NeedsWrite '-Force redoes write even when sidecar + inserted'
+$bothDone = Resolve-ProcessTimeRowPlan -SidecarExists $true -OcrDone $true -WriteDone $true -Stage 'Both' -Force $false
+Assert-True (-not $bothDone.Touch) 'sidecar + both bits: fully done, skipped'
 
-$ocrOnlyStage = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Ocr' -Force $false
+$forced = Resolve-ProcessTimeRowPlan -SidecarExists $true -OcrDone $true -WriteDone $true -Stage 'Both' -Force $true
+Assert-True $forced.NeedsOcr '-Force redoes OCR even when sidecar + both bits set'
+Assert-True $forced.NeedsWrite '-Force redoes write even when sidecar + both bits set'
+
+$ocrOnlyStage = Resolve-ProcessTimeRowPlan -SidecarExists $false -OcrDone $false -WriteDone $false -Stage 'Ocr' -Force $false
 Assert-True $ocrOnlyStage.NeedsOcr 'Stage=Ocr: OCR needed for a fresh row'
-Assert-True (-not $ocrOnlyStage.NeedsWrite) 'Stage=Ocr: write never requested regardless of Inserted'
+Assert-True (-not $ocrOnlyStage.NeedsWrite) 'Stage=Ocr: write never requested regardless of bits'
 
-$writeOnlyStageReady = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $false -Stage 'Write' -Force $false
+$writeOnlyStageReady = Resolve-ProcessTimeRowPlan -SidecarExists $true -OcrDone $true -WriteDone $false -Stage 'Write' -Force $false
 Assert-True (-not $writeOnlyStageReady.NeedsOcr) 'Stage=Write: OCR never requested regardless of cache state'
-Assert-True $writeOnlyStageReady.NeedsWrite 'Stage=Write: write needed when not yet inserted'
+Assert-True $writeOnlyStageReady.NeedsWrite 'Stage=Write: write needed when write bit not set'
 
-$writeOnlyStageNoCache = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Write' -Force $false
+$writeOnlyStageNoCache = Resolve-ProcessTimeRowPlan -SidecarExists $false -OcrDone $false -WriteDone $false -Stage 'Write' -Force $false
 Assert-True $writeOnlyStageNoCache.NeedsWrite 'Stage=Write: still marked pending even with no cache (caller reports a MISS and skips it at run time)'
 
-$ocrStageLegacyRow = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Ocr' -Force $false
-Assert-True (-not $ocrStageLegacyRow.Touch) 'Stage=Ocr on an already-inserted legacy row: nothing to do without -Force'
+$ocrStageLegacyRow = Resolve-ProcessTimeRowPlan -SidecarExists $false -OcrDone $true -WriteDone $true -Stage 'Ocr' -Force $false
+Assert-True (-not $ocrStageLegacyRow.Touch) 'Stage=Ocr on an already fully-done row: nothing to do without -Force'
 
-$ocrStageLegacyRowForced = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Ocr' -Force $true
-Assert-True $ocrStageLegacyRowForced.NeedsOcr 'Stage=Ocr -Force: backfills a sidecar for a legacy row on demand'
+$ocrStageLegacyRowForced = Resolve-ProcessTimeRowPlan -SidecarExists $false -OcrDone $true -WriteDone $true -Stage 'Ocr' -Force $true
+Assert-True $ocrStageLegacyRowForced.NeedsOcr 'Stage=Ocr -Force: backfills a sidecar for an already-done row on demand'
 Assert-True (-not $ocrStageLegacyRowForced.NeedsWrite) 'Stage=Ocr -Force: still never touches write'
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeMigratedInsertedValue (v2.15.0: legacy plain 0/1 -> bitmask)
+# ---------------------------------------------------------------------------
+Assert-Equal '3' (Get-ProcessTimeMigratedInsertedValue '1') 'legacy plain 1 (written) migrates to bit 3 (both done)'
+Assert-Equal '0' (Get-ProcessTimeMigratedInsertedValue '0') 'legacy 0 stays 0'
+Assert-Equal '' (Get-ProcessTimeMigratedInsertedValue '') 'blank stays blank'
+Assert-Equal '2' (Get-ProcessTimeMigratedInsertedValue '2') 'an already-bitmask value 2 passes through unchanged'
+Assert-Equal '3' (Get-ProcessTimeMigratedInsertedValue '3') 'an already-bitmask value 3 passes through unchanged'
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeOutputTag / Get-ProcessTimeOutputFileName / Resolve-ProcessTimeOutputDir
+# (v2.15.0: generalized, config-driven output classification -- no longer
+# hardcoded to just JDL/JRV, and never throws on an unrecognized tag)
+# ---------------------------------------------------------------------------
+Assert-Equal 'JDL' (Get-ProcessTimeOutputTag -ExcelName 'CJDLWDFL' -Tags @('JDL', 'JRV')) 'classifies by configured tag substring'
+Assert-Equal 'JRV' (Get-ProcessTimeOutputTag -ExcelName 'KJRVWD64' -Tags @('JDL', 'JRV')) 'classifies a second configured tag'
+Assert-Equal 'JDS' (Get-ProcessTimeOutputTag -ExcelName 'KJDSWD01' -Tags @('JDL', 'JRV', 'JDS')) 'a tag list can be extended beyond JDL/JRV (e.g. JDS)'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'ZZZZZZZZ' -Tags @('JDL', 'JRV')) 'an unrecognized Excel_NAME falls back to the unclassified bucket instead of throwing'
+Assert-Equal 'Misc' (Get-ProcessTimeOutputTag -ExcelName 'ZZZZZZZZ' -Tags @('JDL', 'JRV') -UnclassifiedTag 'Misc') '-UnclassifiedTag is configurable'
+
+Assert-Equal (([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593) + '(JDL).xlsx') `
+    (Get-ProcessTimeOutputFileName -Label ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593) -Tag 'JDL') 'Split-mode file name carries the (Tag) suffix'
+Assert-Equal 'Label.xlsx' (Get-ProcessTimeOutputFileName -Label 'Label' -Tag 'JDL' -Single $true) 'Single mode drops the tag suffix entirely'
+
+Assert-Equal 'C:\J4\JDS' (Resolve-ProcessTimeOutputDir -Tag 'JDS' -DirByTag @{ JDS = 'C:\J4\JDS' } -DefaultDir 'C:\Default') 'a configured per-tag directory wins'
+Assert-Equal 'C:\Default' (Resolve-ProcessTimeOutputDir -Tag 'JRV' -DirByTag @{ JDS = 'C:\J4\JDS' } -DefaultDir 'C:\Default') 'a tag with no override falls back to the default directory'
+Assert-Equal 'C:\Default' (Resolve-ProcessTimeOutputDir -Tag 'JRV' -DirByTag @{ JRV = '' } -DefaultDir 'C:\Default') 'a blank per-tag override is treated as unset'
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeCheckSummaryLine (v2.15.0: end-of-run manual-check summary)
+# ---------------------------------------------------------------------------
+Assert-Equal '' (Get-ProcessTimeCheckSummaryLine -CorrelId 'JIDSM01S' -GiftMatched $true -GfixMatched $true) 'both sides matched -> nothing to report'
+Assert-Equal 'JIDSM01S  -- GIFT: not detected' `
+    (Get-ProcessTimeCheckSummaryLine -CorrelId 'JIDSM01S' -GiftMatched $false -GfixMatched $true) 'GIFT-only miss reports just the GIFT side'
+Assert-Equal 'JIDSM01S  -- GFIX: not detected' `
+    (Get-ProcessTimeCheckSummaryLine -CorrelId 'JIDSM01S' -GiftMatched $true -GfixMatched $false) 'GFIX-only miss reports just the GFIX side'
+Assert-Equal 'JIDSM01S  -- GIFT: no exportable picture; GFIX: end time not read from OCR' `
+    (Get-ProcessTimeCheckSummaryLine -CorrelId 'JIDSM01S' -GiftMatched $false -GfixMatched $false -GiftNote 'no exportable picture' -GfixNote 'end time not read from OCR') 'both sides miss with their own notes'
+Assert-Equal 'JIDSM01S  -- GIFT: not detected' `
+    (Get-ProcessTimeCheckSummaryLine -CorrelId 'JIDSM01S' -GiftMatched $false -GfixMatched $true -GiftNote '') 'a blank note falls back to the generic not-detected text'
 
 exit (Complete-Tests)

@@ -497,41 +497,136 @@ function Get-NewestProcessTimeRow {
 # Resolve-ProcessTimeRowPlan
 #   Decides which stage(s) of the ProcessTime phase one mapping row still
 #   needs, given -Stage (which stage(s) THIS RUN is allowed to touch: 'Ocr' |
-#   'Write' | 'Both') and two INDEPENDENT completion signals:
+#   'Write' | 'Both') and three completion signals:
 #     -SidecarExists : a snap\ProcessTime\<correl>\result.json cache from a
 #                      previous OCR pass exists for this correl (the
 #                      per-correl, filesystem-based signal -- NOT the shared
 #                      output workbook -- so a row's OCR-done state can be
 #                      known without opening/trusting the single output
 #                      .xlsx many rows write into).
-#     -Inserted      : the mapping's ProcessTime_Inserted flag is already
-#                      '1' (the row was already written into the output
-#                      workbook by a previous run).
-#   Backward compatibility: a row that was fully processed BEFORE this
-#   sidecar cache existed has Inserted=$true but SidecarExists=$false; such a
-#   row must NOT look like it needs a fresh OCR redo just because the cache
-#   file happens to be missing, so OCR is considered "already done" when
-#   EITHER the sidecar exists OR the row is already Inserted.
-#   -Force ignores both completion signals for whichever stage(s) -Stage
-#   selects (mirrors this project's established Force convention -- see
-#   ProcessTime_Inserted's own "-Force redoes already-inserted rows").
+#     -OcrDone       : bit 1 of the mapping's ProcessTime_Inserted column is
+#                      already set (this correl's OCR result was cached AND
+#                      recorded on the row, by this run or a previous one).
+#     -WriteDone     : bit 2 of ProcessTime_Inserted is already set (the row
+#                      was already written into an output workbook by a
+#                      previous run).
+#   ProcessTime_Inserted is a BITMASK (v2.15.0), matching this project's
+#   isReplaced/isMarked/isReviewed convention: bit 1 = OCR'd, bit 2 =
+#   written, 3 = both done. Callers compute -OcrDone/-WriteDone via
+#   MappingStore.ps1's Test-BitDone against that column; a legacy plain '1'
+#   value (pre-v2.15.0, meaning "written") is migrated to '3' by
+#   Get-ProcessTimeMigratedInsertedValue before this function ever sees it,
+#   so no special-casing of the old value is needed here.
+#   OCR is considered done when EITHER the sidecar exists OR the OcrDone bit
+#   is set -- a sidecar can exist without the bit yet being persisted (e.g.
+#   a mapping save that failed after the sidecar write succeeded).
+#   -Force ignores all completion signals for whichever stage(s) -Stage
+#   selects.
 #   Returns [pscustomobject]{ NeedsOcr; NeedsWrite; Touch } (Touch = either).
 # ---------------------------------------------------------------------------
 function Resolve-ProcessTimeRowPlan {
     param(
         [bool]$SidecarExists,
-        [bool]$Inserted,
+        [bool]$OcrDone,
+        [bool]$WriteDone,
         [string]$Stage = 'Both',
         [bool]$Force = $false
     )
     $wantOcr   = ($Stage -eq 'Ocr')   -or ($Stage -eq 'Both')
     $wantWrite = ($Stage -eq 'Write') -or ($Stage -eq 'Both')
-    $ocrDone   = $SidecarExists -or $Inserted
-    $needsOcr   = $wantOcr   -and ($Force -or -not $ocrDone)
-    $needsWrite = $wantWrite -and ($Force -or -not $Inserted)
+    $ocrIsDone = $SidecarExists -or $OcrDone
+    $needsOcr   = $wantOcr   -and ($Force -or -not $ocrIsDone)
+    $needsWrite = $wantWrite -and ($Force -or -not $WriteDone)
     return [pscustomobject]@{
         NeedsOcr   = $needsOcr
         NeedsWrite = $needsWrite
         Touch      = ($needsOcr -or $needsWrite)
     }
+}
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeMigratedInsertedValue
+#   One-way migration of the ProcessTime_Inserted column from its pre-
+#   v2.15.0 plain 0/1 shape (1 = written into the output workbook; OCR
+#   completion was tracked only by sidecar-file existence, not on the row
+#   itself) to the v2.15.0 bitmask shape (bit 1 = OCR'd, bit 2 = written).
+#   A legacy '1' always meant "written", and writing can only happen after
+#   OCR succeeded, so it is migrated to '3' (both bits) -- never just bit 2
+#   -- so an old fully-done row does not appear to need a fresh OCR pass
+#   under the new scheme. Any other value ('0', '', '2', '3', ...) passes
+#   through unchanged (nothing else was ever written by the old code).
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeMigratedInsertedValue {
+    param([string]$Value)
+    if ($Value -eq '1') { return '3' }
+    return $Value
+}
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeOutputTag
+#   Classifies one result row's output bucket from its mapping Excel_NAME,
+#   by first-match order against -Tags (each tested as a literal substring,
+#   not a regex -- Excel_NAME letters are plain ASCII tags like 'JDL'/'JRV'/
+#   'JDS', not pattern metacharacters). Falls back to -UnclassifiedTag when
+#   no configured tag matches, instead of throwing -- an operator's mapping
+#   can legitimately contain an Excel_NAME the configured tag list does not
+#   yet cover (e.g. a new project prefix), and one such row must never abort
+#   writing every OTHER already-resolved tag's workbook.
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeOutputTag {
+    param([string]$ExcelName, [string[]]$Tags, [string]$UnclassifiedTag = 'Other')
+    foreach ($t in @($Tags)) {
+        if ([string]::IsNullOrWhiteSpace($t)) { continue }
+        if ($ExcelName.IndexOf($t, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return $t }
+    }
+    return $UnclassifiedTag
+}
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeOutputFileName
+#   Output workbook file name for one tag: '<Label>(<Tag>).xlsx' in Split
+#   mode, or a single untagged '<Label>.xlsx' when -Single (OutputMode
+#   'Single' writes every result row into one workbook regardless of tag).
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeOutputFileName {
+    param([string]$Label, [string]$Tag, [bool]$Single = $false)
+    if ($Single -or [string]::IsNullOrWhiteSpace($Tag)) { return ("{0}.xlsx" -f $Label) }
+    return ("{0}({1}).xlsx" -f $Label, $Tag)
+}
+
+# ---------------------------------------------------------------------------
+# Resolve-ProcessTimeOutputDir
+#   Destination directory for one tag's output workbook: -DirByTag's entry
+#   for -Tag when present and non-blank (ProcessTime.OutputDirectoryByTag --
+#   lets each tag route to its own real J4-style destination folder instead
+#   of every tag landing in the same directory), else -DefaultDir.
+# ---------------------------------------------------------------------------
+function Resolve-ProcessTimeOutputDir {
+    param([string]$Tag, [hashtable]$DirByTag, [string]$DefaultDir)
+    if ($null -ne $DirByTag -and $DirByTag.ContainsKey($Tag)) {
+        $v = [string]$DirByTag[$Tag]
+        if (-not [string]::IsNullOrWhiteSpace($v)) { return $v }
+    }
+    return $DefaultDir
+}
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeCheckSummaryLine
+#   One-line, human-readable "needs manual check" note for a correl whose
+#   GIFT and/or GFIX side was not matched -- printed in the end-of-run
+#   summary so the operator knows exactly which ids to open and verify by
+#   hand, instead of having to scroll back through the whole OCR log.
+#   Returns '' when both sides matched (nothing to report).
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeCheckSummaryLine {
+    param([string]$CorrelId, [bool]$GiftMatched, [bool]$GfixMatched, [string]$GiftNote = '', [string]$GfixNote = '')
+    $parts = New-Object System.Collections.Generic.List[string]
+    if (-not $GiftMatched) {
+        $parts.Add(("GIFT: {0}" -f $(if ([string]::IsNullOrWhiteSpace($GiftNote)) { 'not detected' } else { $GiftNote })))
+    }
+    if (-not $GfixMatched) {
+        $parts.Add(("GFIX: {0}" -f $(if ([string]::IsNullOrWhiteSpace($GfixNote)) { 'not detected' } else { $GfixNote })))
+    }
+    if ($parts.Count -eq 0) { return '' }
+    return ("{0}  -- {1}" -f $CorrelId, ($parts -join '; '))
 }

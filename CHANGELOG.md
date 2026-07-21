@@ -1,3 +1,54 @@
+## 2026-07-21 - ProcessTime: bitmask ProcessTime_Inserted + config-driven output tags (v2.15.0)
+
+A real office-PC run (`-Stage Both`, 43 rows spanning JRV/JDL/JDS-family
+workbooks) surfaced a crash-on-unknown-tag bug and two usability requests.
+
+### Fixed
+- The Write stage's output classifier used a hard `throw` when a result
+  row's Excel_NAME matched neither the literal `JDL` nor `JRV` substring,
+  aborting the ENTIRE write -- including workbooks that had already resolved
+  cleanly -- the moment the mapping contained a workbook from a different
+  project family (the same run also carried JDS-family workbooks). Output
+  classification is now driven by `ProcessTime.OutputTags` (default
+  `@('JDL', 'JRV')`, extendable to any project tag, e.g. `'JDS'`); a row
+  matching none of the configured tags is routed to a
+  `ProcessTime.UnclassifiedTag` fallback bucket (default `'Other'`, with a
+  console `[WARN]` naming the Excel_NAMEs involved) instead of throwing.
+  Each tag is now written in its own try/catch so one tag failing to save
+  does not block the others.
+
+### Added
+- `ProcessTime.OutputMode` (`'Split'` default / `'Single'`): `'Single'`
+  writes every result row into one combined workbook instead of splitting
+  by tag.
+- `ProcessTime.OutputDirectoryByTag`: routes a tag to its own destination
+  directory (e.g. each project's real J4 folder) instead of every tag
+  sharing `OutputDirectory`.
+- An end-of-run "needs manual check" summary listing every correl this run
+  touched whose GIFT and/or GFIX side did not match, with the reason, so the
+  operator does not have to scroll back through the OCR log to find which
+  ids need a by-hand look.
+
+### Changed
+- `ProcessTime_Inserted` is now a BITMASK, matching this project's
+  `isReplaced`/`isMarked`/`isReviewed` convention, instead of a plain 0/1
+  flag: bit 1 (1) = this correl's OCR result has been extracted and cached,
+  bit 2 (2) = the row has been written into an output workbook, `3` = both
+  done. A pre-v2.15.0 mapping's plain `1` is migrated to `3` once, on load
+  (never to just bit 2, since a legacy write could only happen after OCR
+  succeeded). `PhaseOrder`'s `ProcessTime` entry gained `BitValue = 3`.
+
+### Notes
+- New pure helpers (`Get-ProcessTimeMigratedInsertedValue`,
+  `Get-ProcessTimeOutputTag`, `Get-ProcessTimeOutputFileName`,
+  `Resolve-ProcessTimeOutputDir`, `Get-ProcessTimeCheckSummaryLine`) are
+  unit-tested in `Tests\Test-ProcessTimeParse.ps1`. `Resolve-ProcessTimeRowPlan`'s
+  signature changed from a single `-Inserted` bool to `-OcrDone`/`-WriteDone`;
+  the only callers (`ProcessTime.ps1` and its test file) were updated.
+  Still no PowerShell/Excel in this dev environment -- confirm the legacy
+  migration, the per-tag write + failure isolation, and the manual-check
+  summary against a real work folder on an office PC.
+
 ## 2026-07-21 - ProcessTime: fix Write-stage cast crash + a broken unit test (v2.14.1)
 
 Two bugs the operator hit on the first real office-PC run of v2.14.0

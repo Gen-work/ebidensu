@@ -112,8 +112,15 @@ ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         Get-NewestProcessTimeRow (newest-by-StartTime;
                         -MinimumTimeOfDay default 09:00, v2.14.0),
                         Resolve-ProcessTimeRowPlan (-Stage + sidecar-exists +
-                        ProcessTime_Inserted + -Force -> per-row NeedsOcr/
-                        NeedsWrite; v2.13.0). ConvertTo-ProcessTimeCorrelKey
+                        ProcessTime_Inserted bitmask bits + -Force -> per-row
+                        NeedsOcr/NeedsWrite; v2.13.0, bitmask v2.15.0) +
+                        Get-ProcessTimeMigratedInsertedValue (legacy plain
+                        '1' -> bitmask '3'), Get-ProcessTimeOutputTag /
+                        Get-ProcessTimeOutputFileName / Resolve-ProcessTime
+                        OutputDir (config-driven output tag classification,
+                        not hardcoded to JDL/JRV) and Get-ProcessTime
+                        CheckSummaryLine (end-of-run manual-check summary
+                        line), all v2.15.0. ConvertTo-ProcessTimeCorrelKey
                         also strips OCR-inserted whitespace before folding
                         (v2.14.0); Select-ProcessTimeRow's -MinimumTimeOfDay
                         (default 09:00) drops HM history rows; Get-ProcessTime
@@ -135,16 +142,26 @@ ProcessTime.ps1         Phase ProcessTime: extracts each correl's HM batch
                         each read via Invoke-WinOcrFile +
                         ConvertFrom-ProcessTimeOcrLines / Select-ProcessTimeRow.
                         Writes one row per GIFT/GFIX side per correl to
-                        separate <label>(JDL).xlsx / (JRV).xlsx evidence
-                        workbooks under ProcessTime.OutputDirectory (v2.14.0;
-                        classified by whether Excel_NAME contains "JDL" or
-                        "JRV"). Run after ReplaceGift/ReplaceGfix. Sets
-                        ProcessTime_Inserted. -Stage Ocr|Write|Both (v2.13.0)
-                        runs the extract-and-cache-to-sidecar step and the
+                        <label>(<Tag>).xlsx evidence workbooks under
+                        ProcessTime.OutputDirectory (v2.14.0; classified per
+                        ProcessTime.OutputTags, default JDL/JRV but
+                        extendable, e.g. JDS -- v2.15.0; a row matching no
+                        tag goes to UnclassifiedTag instead of aborting the
+                        run; OutputMode 'Single' writes one untagged
+                        workbook instead; OutputDirectoryByTag routes a tag
+                        to its own destination directory). Run after
+                        ReplaceGift/ReplaceGfix. Sets ProcessTime_Inserted,
+                        a bitmask since v2.15.0 (bit 1 = OCR'd, bit 2 =
+                        written; a legacy plain '1' is migrated to '3').
+                        -Stage Ocr|Write|Both (v2.13.0) runs the
+                        extract-and-cache-to-sidecar step and the
                         write-the-output-workbooks step independently; each
                         correl's OCR result (both sides, combined) is cached
                         at snap\ProcessTime\<correl>\result.json so a
                         Write-only rerun opens no evidence workbook at all.
+                        Prints an end-of-run "needs manual check" summary
+                        listing every correl whose GIFT and/or GFIX side was
+                        not matched (v2.15.0).
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf. Each Mark.Boxes
                         entry may add a 'Template' key to try image-recognition
                         placement (Locate-ByImage.ps1 LockBits match against
@@ -337,11 +354,23 @@ mapping.
 `GIFT_ProcessTime` / `GFIX_ProcessTime` are plain, informational per-side
 value columns (NOT a bitmask, NOT this phase's `Get-PendingRows` field):
 `0` not yet attempted, `1` start/end extracted, `2` not found. The
-`ProcessTime` phase gates its own reprocessing on `ProcessTime_Inserted`
-instead (a plain `0/1` flag like `isDelivered`): `1` once the correl's row
-has been written into the generated `ProcessTime_<Owner>.xlsx` evidence
-workbook, whether or not either side was actually detected. `-Force` redoes
-already-inserted rows.
+`ProcessTime` phase gates its own reprocessing on `ProcessTime_Inserted`,
+which **is** a bitmask (v2.15.0, matching the `isReplaced`/`isMarked`/
+`isReviewed` convention above): bit 1 (1) = this correl's OCR result has
+been extracted and cached (per-correl sidecar under
+`snap\ProcessTime\<correl>\result.json`); bit 2 (2) = the row has been
+written into an output workbook; `3` = both done. A pre-v2.15.0 mapping's
+plain `1` (the old "written" flag) is migrated to `3` once, on load
+(`Get-ProcessTimeMigratedInsertedValue`, `ProcessTimeParse.ps1`) — a legacy
+write could only ever happen after OCR succeeded, so it is never migrated to
+just bit 2. `-Force` redoes whichever stage(s) `-Stage` selects regardless of
+its bit. Output is written per configurable tag (`ProcessTime.OutputTags`,
+default `JDL`/`JRV` but not limited to them — e.g. add `JDS`) into
+`<ProcessTime label>(<Tag>).xlsx`; a result row matching no configured tag is
+routed to `ProcessTime.UnclassifiedTag` (default `Other`) instead of
+aborting the whole write, and `ProcessTime.OutputMode = 'Single'` writes
+every row into one untagged workbook instead. `ProcessTime.
+OutputDirectoryByTag` routes a tag to its own destination directory.
 
 `PhaseOrder` in `VerifyConfig.psd1` has a `BitValue` key for each bitmask phase.
 
@@ -397,7 +426,58 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-21 v2.14.1)
+## Current state (last bump: 2026-07-21 v2.15.0)
+
+v2.15.0 (ProcessTime: bitmask ProcessTime_Inserted, config-driven output
+tags, no more crash-on-unknown-tag, end-of-run manual-check summary): a real
+office-PC run (`-Stage Both`, 43 rows across JRV/JDL/JDS-family workbooks)
+surfaced two real problems on top of general OCR-log noise. **Fixed** --
+(1) the Write stage's JDL/JRV classifier used a hard `throw` when a result
+row's Excel_NAME matched neither literal ("N result row(s) could not be
+classified as JDL or JRV"), aborting the ENTIRE write -- including the JDL
+and JRV workbooks that had already resolved cleanly -- the moment the
+mapping contained so much as one workbook of a different project family
+(exactly what happened: the same run also carried JDS-family workbooks,
+which this literal check has no way to recognize). Output classification is
+now config-driven (`ProcessTime.OutputTags`, default `@('JDL','JRV')` but not
+limited to them -- add `'JDS'` or any other project tag actually in use) and
+a row matching none of the configured tags is routed to a fallback
+`ProcessTime.UnclassifiedTag` bucket (default `'Other'`, printed as a
+`[WARN]` naming the Excel_NAMEs involved) instead of throwing, so one
+unrecognized tag never blocks every other tag's already-resolved write.
+Each tag is now also written in its own try/catch, so one tag's workbook
+failing to save (e.g. open elsewhere) no longer prevents the others from
+being written. New `ProcessTime.OutputMode` (`'Split'` default / `'Single'`)
+lets an operator opt out of the per-tag split entirely and get one combined
+workbook. New `ProcessTime.OutputDirectoryByTag` routes a tag to its own
+destination directory (e.g. each project's real J4 folder) instead of every
+tag sharing `OutputDirectory`. **Changed** -- `ProcessTime_Inserted` is now
+a BITMASK (matching this project's `isReplaced`/`isMarked`/`isReviewed`
+convention) instead of a plain 0/1 flag: bit 1 (1) = this correl's OCR
+result has been extracted and cached, bit 2 (2) = the row has been written
+into an output workbook, `3` = both done -- the two independent completion
+signals `-Stage Ocr`/`-Stage Write` already tracked (sidecar-file existence
+and the old plain flag) are now both recorded ON THE ROW ITSELF, so Status
+and `Get-PendingRows` can see partial progress instead of only "written or
+not". A pre-v2.15.0 mapping's plain `1` is migrated to `3` once, on load
+(`Get-ProcessTimeMigratedInsertedValue`) -- never to just bit 2, since a
+legacy write could only ever happen after OCR succeeded. `PhaseOrder`'s
+`ProcessTime` entry gained `BitValue = 3` so Status/recommend-phase read the
+bitmask correctly. **Added** -- an end-of-run "needs manual check" summary
+(`Get-ProcessTimeCheckSummaryLine`, unit-tested): every correl this run
+touched is listed with its GIFT/GFIX-side miss reason when either side did
+not match, printed as its own banner instead of requiring the operator to
+scroll back through the whole OCR diagnostic log to find which ids need a
+by-hand look. **Notes** -- new pure helpers (`Get-ProcessTimeMigratedInserted
+Value`, `Get-ProcessTimeOutputTag`, `Get-ProcessTimeOutputFileName`,
+`Resolve-ProcessTimeOutputDir`, `Get-ProcessTimeCheckSummaryLine`) are
+unit-tested in `Tests\Test-ProcessTimeParse.ps1`; `Resolve-ProcessTimeRowPlan`'s
+signature changed from a single `-Inserted` bool to `-OcrDone`/`-WriteDone`
+(bit-derived) -- no other caller exists outside `ProcessTime.ps1` and its
+test file, both updated. Still no PowerShell/Excel in this dev environment
+-- confirm the migration, the per-tag write + failure isolation, and the
+manual-check summary against a real work folder (ideally the exact JDL/JRV/
+JDS-mixed mapping that surfaced the original crash) on an office PC.
 
 v2.14.1 (ProcessTime: fix Write-stage cast crash + a broken unit test): two
 bugs the operator hit on the first real office-PC run of v2.14.0 (`-Stage

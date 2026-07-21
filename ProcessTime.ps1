@@ -2,11 +2,11 @@
 # ============================================================
 #  ProcessTime.ps1   (Phase: ProcessTime)   -- UTF-8, NO BOM, ASCII source.
 #
-#  For each pending mapping row (ProcessTime_Inserted = 0), extracts the
-#  HM batch processing start time / end time (and derives the duration)
-#  for the GIFT and GFIX sides, then writes one row per side per correl
-#  into separate JDL/JRV ProcessTime evidence workbooks (classified by
-#  Excel_NAME containing "JDL" or "JRV").
+#  For each pending mapping row (ProcessTime_Inserted bit 2 not yet set),
+#  extracts the HM batch processing start time / end time (and derives the
+#  duration) for the GIFT and GFIX sides, then writes one row per side per
+#  correl into one or more ProcessTime evidence workbooks, classified by
+#  configurable Excel_NAME tag (see "Output classification" below).
 #
 #  Source, two tiers per side (cheapest/most-accurate first):
 #    1. archived Ctrl+A page text HmSnap.ps1 saved at snap time
@@ -38,10 +38,29 @@
 #  Mapping columns (MappingStore.ps1):
 #    GIFT_ProcessTime / GFIX_ProcessTime : informational per-side result
 #      ('0' not yet attempted, '1' start/end extracted, '2' not found).
-#    ProcessTime_Inserted : plain 0/1 completion flag -- '1' once the row
-#      has been written into the ProcessTime evidence workbook, regardless
-#      of whether either side was actually detected (a "not detected" row
-#      is still listed so the operator can see it was checked).
+#    ProcessTime_Inserted : BITMASK (v2.15.0, matches the project's
+#      isReplaced/isMarked/isReviewed convention) -- bit 1 (1) = this
+#      correl's OCR result has been extracted and cached; bit 2 (2) = the
+#      row has been written into an output workbook; 3 = both done. A
+#      pre-v2.15.0 mapping's plain '1' (the old "written" flag) is migrated
+#      to '3' once, on load (Get-ProcessTimeMigratedInsertedValue) -- see
+#      Resolve-ProcessTimeRowPlan (ProcessTimeParse.ps1).
+#
+#  Output classification (v2.15.0): -OutputMode 'Split' (default) buckets
+#  result rows by the first entry of -OutputTags found as a substring of
+#  the row's Excel_NAME (e.g. 'JDL'/'JRV'/'JDS', fully configurable via
+#  ProcessTime.OutputTags -- not hardcoded to just JDL/JRV), writing one
+#  workbook per tag; a row matching no configured tag is routed to the
+#  -UnclassifiedTag bucket (default 'Other') with a console WARN instead of
+#  aborting the whole write. -OutputMode 'Single' ignores tags and writes
+#  every result row into one workbook. -OutputDirectoryByTag lets a tag
+#  route to its own destination directory instead of every tag sharing
+#  -OutputDirectory.
+#
+#  End of run, every correl this run touched is checked against its cached
+#  OCR result and any side that did not match prints in a
+#  "needs manual check" summary, so the operator does not have to scroll
+#  back through the OCR log to find which ids to verify by hand.
 #
 #  -Stage Ocr | Write | Both (default Both): lets the extraction pass and
 #  the output-workbook write be run and re-run independently.
@@ -57,14 +76,16 @@
 #             redoing OCR for it).
 #  Per-row re-run detection (non -Force) is now two INDEPENDENT signals,
 #  not one shared one: the OCR stage is considered done for a correl when
-#  its sidecar file exists (a per-correl filesystem check, NOT the shared
+#  its sidecar file exists OR ProcessTime_Inserted bit 1 is set (a
+#  per-correl filesystem check plus the row's own bit, NOT the shared
 #  output .xlsx many rows write into -- that file can't tell "already
 #  extracted, just needs writing" apart from "never touched"); the write
-#  stage is still gated on ProcessTime_Inserted, as before. -Force ignores
-#  both signals for whichever stage(s) -Stage selects. A row already fully
-#  done before this sidecar cache existed (Inserted=1, no sidecar file) is
-#  NOT treated as needing a fresh OCR redo -- see Resolve-ProcessTimeRowPlan
-#  (ProcessTimeParse.ps1) for the exact rule and its unit tests.
+#  stage is gated on ProcessTime_Inserted bit 2. -Force ignores both
+#  signals for whichever stage(s) -Stage selects. A legacy row fully done
+#  before this sidecar cache existed is migrated (plain '1' -> bitmask '3')
+#  on load, so it is NOT treated as needing a fresh OCR redo -- see
+#  Resolve-ProcessTimeRowPlan / Get-ProcessTimeMigratedInsertedValue
+#  (ProcessTimeParse.ps1) for the exact rule and their unit tests.
 # ============================================================
 
 param(
@@ -80,13 +101,28 @@ param(
     [int]$AnchorCol = 2,
 
     # Legacy destination option. Its directory is used when OutputDirectory
-    # is blank; the file name itself is ignored because output is now split
-    # into two operator-facing workbooks, ProcessTime(JDL).xlsx and
-    # ProcessTime(JRV).xlsx (Japanese ProcessTime label as the stem).
+    # is blank; the file name itself is ignored because output is generated
+    # per-tag (Split mode) or as one file (Single mode) from the ProcessTime
+    # label (ProjectLabels.ps1 SheetProcessTime) as the stem.
     [string]$OutputPath = '',
-    # Destination directory for both workbooks. Blank -> WorkDir.
+    # Default destination directory. Blank -> WorkDir. Used for any tag with
+    # no OutputDirectoryByTag override (Split mode), or for the one output
+    # file (Single mode).
     [string]$OutputDirectory = '',
     [string]$OutputSheetName = '',
+    # 'Split' (default): bucket result rows by -OutputTags into one workbook
+    # per tag (falls back to -UnclassifiedTag when no tag matches). 'Single':
+    # ignore tags and write every result row into one workbook.
+    [string]$OutputMode = 'Split',
+    # Ordered list of Excel_NAME substrings used to classify each result row
+    # into its own output workbook (Split mode only). Not hardcoded to
+    # JDL/JRV -- add more (e.g. 'JDS') via ProcessTime.OutputTags.
+    [string[]]$OutputTags = @('JDL', 'JRV'),
+    # Bucket name for a result row matching none of -OutputTags (Split mode).
+    [string]$UnclassifiedTag = 'Other',
+    # Optional Tag -> destination directory overrides (Split mode). A tag
+    # absent here uses -OutputDirectory.
+    [hashtable]$OutputDirectoryByTag = @{},
 
     # Which stage(s) to run: 'Ocr' (extract + cache sidecars only),
     # 'Write' (write the output workbook from cached sidecars only), or
@@ -645,10 +681,20 @@ if (-not $stageMap.ContainsKey($stageKey)) {
 }
 $Stage = $stageMap[$stageKey]
 
+$outputModeMap = @{ 'split' = 'Split'; 'single' = 'Single' }
+$outputModeKey = ([string]$OutputMode).Trim().ToLowerInvariant()
+if ([string]::IsNullOrWhiteSpace($outputModeKey)) { $outputModeKey = 'split' }
+if (-not $outputModeMap.ContainsKey($outputModeKey)) {
+    Write-Host ("[ERROR] -OutputMode must be Split or Single (got '{0}')" -f $OutputMode) -ForegroundColor Red
+    exit 1
+}
+$OutputMode = $outputModeMap[$outputModeKey]
+$OutputTags = @($OutputTags | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+if ($null -eq $OutputDirectoryByTag) { $OutputDirectoryByTag = @{} }
+
 $labels = Get-ProjectLabels
-if ([string]::IsNullOrWhiteSpace($OutputSheetName)) { $OutputSheetName = $labels['SheetProcessTime'] }
-$outputJdlPath = Join-Path $OutputDirectory ("{0}(JDL).xlsx" -f $labels['SheetProcessTime'])
-$outputJrvPath = Join-Path $OutputDirectory ("{0}(JRV).xlsx" -f $labels['SheetProcessTime'])
+$outputLabel = $labels['SheetProcessTime']
+if ([string]::IsNullOrWhiteSpace($OutputSheetName)) { $OutputSheetName = $outputLabel }
 $sheetGiftRecv = $labels['SheetGiftRecv']
 $sheetGfixRecv = $labels['SheetGfixRecv']
 
@@ -663,16 +709,30 @@ if ($allRows.Count -eq 0) {
 }
 Ensure-MappingColumns -Rows $allRows | Out-Null
 
+# One-way migration of a pre-v2.15.0 plain 0/1 ProcessTime_Inserted value
+# ('1' = written) to the new bitmask shape (bit 1 = OCR'd, bit 2 = written;
+# '3' = both, since a legacy write could only happen after OCR succeeded).
+# See Get-ProcessTimeMigratedInsertedValue (ProcessTimeParse.ps1).
+$migratedCount = 0
+foreach ($row in $allRows) {
+    $cur = Get-RowProp $row 'ProcessTime_Inserted'
+    $migrated = Get-ProcessTimeMigratedInsertedValue $cur
+    if ($migrated -ne $cur) { $row.ProcessTime_Inserted = $migrated; $migratedCount++ }
+}
+if ($migratedCount -gt 0) {
+    Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+    Write-Host ("  [INFO] migrated {0} legacy ProcessTime_Inserted flag(s) (1 -> 3; bitmask: 1=OCR'd, 2=written)" -f $migratedCount) -ForegroundColor DarkGray
+}
+
 $exportRoot = Join-Path $WorkDir 'snap\ProcessTime'
 $targets = @(ConvertTo-TargetIdList $TargetIds)
 
 # Per-row plan: which stage(s) THIS run still needs, resolved from -Stage
-# plus two independent, per-correl completion signals
-# (Resolve-ProcessTimeRowPlan, ProcessTimeParse.ps1) -- a filesystem sidecar
-# cache for the OCR stage, and the mapping's ProcessTime_Inserted flag for
-# the write stage. This replaces gating BOTH stages off the single shared
-# output workbook, which cannot tell "OCR already extracted, just needs
-# writing" apart from "never touched at all".
+# plus completion signals (Resolve-ProcessTimeRowPlan, ProcessTimeParse.ps1)
+# -- a filesystem sidecar cache and the ProcessTime_Inserted bitmask's OCR
+# (bit 1) and write (bit 2) bits. This replaces gating BOTH stages off the
+# single shared output workbook, which cannot tell "OCR already extracted,
+# just needs writing" apart from "never touched at all".
 $plans = New-Object System.Collections.Generic.List[object]
 foreach ($row in $allRows) {
     if (-not (Test-TargetRow $row $targets)) { continue }
@@ -680,8 +740,10 @@ foreach ($row in $allRows) {
     if ([string]::IsNullOrWhiteSpace($correlId)) { continue }
     $sidecarPath = Get-ProcessTimeSidecarPath -ExportRoot $exportRoot -CorrelId $correlId
     $sidecarExists = Test-Path -LiteralPath $sidecarPath
-    $inserted = ((Get-RowProp $row 'ProcessTime_Inserted') -eq '1')
-    $plan = Resolve-ProcessTimeRowPlan -SidecarExists $sidecarExists -Inserted $inserted -Stage $Stage -Force $forceFlag
+    $insertedVal = Get-RowProp $row 'ProcessTime_Inserted'
+    $ocrBitSet   = Test-BitDone $insertedVal 1
+    $writeBitSet = Test-BitDone $insertedVal 2
+    $plan = Resolve-ProcessTimeRowPlan -SidecarExists $sidecarExists -OcrDone $ocrBitSet -WriteDone $writeBitSet -Stage $Stage -Force $forceFlag
     if (-not $plan.Touch) { continue }
     $plans.Add([pscustomobject]@{
         Row = $row; CorrelId = $correlId; SidecarPath = $sidecarPath
@@ -695,8 +757,13 @@ Write-Host ''
 Write-Host '===== ProcessTime =====' -ForegroundColor Green
 Write-Host ("  WorkDir      : {0}" -f $WorkDir)
 Write-Host ("  EvidenceDir  : {0}" -f $EvidenceDir)
-Write-Host ("  Output JDL   : {0}" -f $outputJdlPath)
-Write-Host ("  Output JRV   : {0}" -f $outputJrvPath)
+Write-Host ("  OutputMode   : {0}" -f $OutputMode)
+if ($OutputMode -eq 'Single') {
+    Write-Host ("  Output       : {0}" -f (Join-Path $OutputDirectory (Get-ProcessTimeOutputFileName -Label $outputLabel -Tag '' -Single $true)))
+} else {
+    Write-Host ("  OutputTags   : {0} (+ '{1}' fallback bucket)" -f ($OutputTags -join ', '), $UnclassifiedTag)
+    Write-Host ("  OutputDir    : {0}" -f $OutputDirectory)
+}
 Write-Host ("  AnchorCol    : {0}" -f $AnchorCol)
 Write-Host ("  OcrLanguage  : {0}" -f $(if ([string]::IsNullOrWhiteSpace($OcrLanguage)) { 'en-US' } else { 'en-US + ' + $OcrLanguage }))
 Write-Host ("  Stage        : {0}" -f $Stage)
@@ -728,7 +795,11 @@ if ($dryRunFlag) {
             Write-Host ("      (cached OCR result from a previous run -- {0})" -f $p.SidecarPath) -ForegroundColor DarkGray
         }
     }
-    Write-Host ("  would write -> {0}, {1}" -f $outputJdlPath, $outputJrvPath) -ForegroundColor DarkGray
+    if ($OutputMode -eq 'Single') {
+        Write-Host ("  would write -> {0}" -f (Join-Path $OutputDirectory (Get-ProcessTimeOutputFileName -Label $outputLabel -Tag '' -Single $true))) -ForegroundColor DarkGray
+    } else {
+        Write-Host ("  would write -> one workbook per tag ({0}) under {1} (+ '{2}' fallback)" -f ($OutputTags -join ', '), $OutputDirectory, $UnclassifiedTag) -ForegroundColor DarkGray
+    }
     exit 0
 }
 
@@ -749,8 +820,7 @@ foreach ($p in $ocrPlans) {
 
 $excel = $null
 $sidecarCache   = @{}   # CorrelId -> sidecar payload produced/read this run
-$ocrDoneThisRun = @{}   # CorrelId -> $true once actually OCR'd this run (dedupes duplicate mapping rows)
-$writtenRows    = New-Object System.Collections.Generic.List[object]
+$ocrDoneThisRun = @{}   # CorrelId -> $true iff its sidecar was saved this run (dedupes duplicate mapping rows; key presence alone means "already OCR'd this run")
 $mappingDirty   = $false
 
 try {
@@ -796,6 +866,7 @@ try {
                         $cached = $sidecarCache[$correlId]
                         $row.GIFT_ProcessTime = if ([bool]$cached.GiftMatched) { '1' } else { '2' }
                         $row.GFIX_ProcessTime = if ([bool]$cached.GfixMatched) { '1' } else { '2' }
+                        if ($ocrDoneThisRun[$correlId]) { Set-MappingBit -Row $row -Field 'ProcessTime_Inserted' -Bit 1 }
                         $mappingDirty = $true
                         continue
                     }
@@ -854,13 +925,16 @@ try {
                         GfixNote      = [string]$gfixResult.Note
                         Row           = $resultRow
                     }
+                    $sidecarSaved = $false
                     try {
                         Save-ProcessTimeSidecar -Path $p.SidecarPath -Payload $payload
+                        $sidecarSaved = $true
                     } catch {
                         Write-Host ("      [WARN] could not write ProcessTime sidecar ({0}): {1}" -f $p.SidecarPath, $_.Exception.Message) -ForegroundColor Yellow
                     }
+                    if ($sidecarSaved) { Set-MappingBit -Row $row -Field 'ProcessTime_Inserted' -Bit 1 }
                     $sidecarCache[$correlId] = $payload
-                    $ocrDoneThisRun[$correlId] = $true
+                    $ocrDoneThisRun[$correlId] = $sidecarSaved
                 }
             } catch {
                 Write-Host ("  [FAIL] {0}: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
@@ -887,6 +961,7 @@ try {
         # this run's own OCR pass first, else whatever is already on disk
         # from a previous -Stage Ocr run. No evidence workbook is opened here.
         $results = New-Object System.Collections.Generic.List[object]
+        $writtenRowsByCorrel = @{}   # CorrelId -> list of mapping row(s) contributed this run (duplicate-correl-safe)
         foreach ($p in $writePlans) {
             $correlId = $p.CorrelId
             $payload = $sidecarCache[$correlId]
@@ -898,47 +973,116 @@ try {
                 continue
             }
             $results.Add($payload.Row)
-            $writtenRows.Add($p.Row)
+            if (-not $writtenRowsByCorrel.ContainsKey($correlId)) { $writtenRowsByCorrel[$correlId] = New-Object System.Collections.Generic.List[object] }
+            $writtenRowsByCorrel[$correlId].Add($p.Row)
         }
 
         if ($results.Count -eq 0) {
             Write-Host ''
             Write-Host '[ProcessTime] nothing to write; no evidence workbook touched.' -ForegroundColor Yellow
         } else {
-            try {
-                $jdlRows = @($results.ToArray() | Where-Object { [string]$_.ExcelName -match 'JDL' })
-                $jrvRows = @($results.ToArray() | Where-Object { [string]$_.ExcelName -match 'JRV' })
-                $unclassified = @($results.ToArray() | Where-Object { [string]$_.ExcelName -notmatch 'JDL|JRV' })
-                if ($unclassified.Count -gt 0) {
-                    throw ("{0} result row(s) could not be classified as JDL or JRV" -f $unclassified.Count)
+            # Group by output tag (Split mode) or write everything to one
+            # workbook (Single mode). Unlike the old JDL/JRV-only classifier,
+            # a row matching none of -OutputTags is routed to the
+            # -UnclassifiedTag bucket instead of throwing -- one unexpected
+            # Excel_NAME (e.g. a project tag not yet added to OutputTags)
+            # must never abort every OTHER tag's already-resolved write.
+            # Each tag is also written in its OWN try/catch, so one tag
+            # failing to save (e.g. its output file is open elsewhere) does
+            # not prevent the other tags from being written this run.
+            $buckets = @{}
+            $bucketOrder = New-Object System.Collections.Generic.List[string]
+            if ($OutputMode -eq 'Single') {
+                $bucketOrder.Add('')
+                $buckets[''] = @($results.ToArray())
+            } else {
+                foreach ($r in $results) {
+                    $tag = Get-ProcessTimeOutputTag -ExcelName ([string]$r.ExcelName) -Tags $OutputTags -UnclassifiedTag $UnclassifiedTag
+                    if (-not $buckets.ContainsKey($tag)) { $buckets[$tag] = New-Object System.Collections.Generic.List[object]; $bucketOrder.Add($tag) }
+                    $buckets[$tag].Add($r)
                 }
-                $written = New-Object System.Collections.Generic.List[string]
-                if ($jdlRows.Count -gt 0) {
-                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $outputJdlPath -SheetName $OutputSheetName -Rows $jdlRows
-                    $written.Add($outputJdlPath)
+            }
+
+            $written = New-Object System.Collections.Generic.List[string]
+            $failedTags = New-Object System.Collections.Generic.List[string]
+            $writtenCorrelCount = 0
+            foreach ($tag in $bucketOrder) {
+                $rowsForTag = @($buckets[$tag])
+                if ($rowsForTag.Count -eq 0) { continue }
+                if ($OutputMode -ne 'Single' -and $tag -eq $UnclassifiedTag) {
+                    $names = ($rowsForTag | ForEach-Object { [string]$_.ExcelName } | Select-Object -Unique) -join ', '
+                    Write-Host ("  [WARN] {0} result row(s) matched no configured OutputTag ({1}) -- routed to the '{2}' bucket: {3}" -f `
+                        $rowsForTag.Count, ($OutputTags -join ', '), $UnclassifiedTag, $names) -ForegroundColor Yellow
                 }
-                if ($jrvRows.Count -gt 0) {
-                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $outputJrvPath -SheetName $OutputSheetName -Rows $jrvRows
-                    $written.Add($outputJrvPath)
+                $dir = if ($OutputMode -eq 'Single') { $OutputDirectory } else { Resolve-ProcessTimeOutputDir -Tag $tag -DirByTag $OutputDirectoryByTag -DefaultDir $OutputDirectory }
+                if (-not [System.IO.Path]::IsPathRooted($dir)) { $dir = Join-Path $WorkDir $dir }
+                if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+                $fileName = Get-ProcessTimeOutputFileName -Label $outputLabel -Tag $tag -Single ($OutputMode -eq 'Single')
+                $path = Join-Path $dir $fileName
+                try {
+                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $path -SheetName $OutputSheetName -Rows $rowsForTag
+                    $written.Add($path)
+                    $writtenCorrelCount += $rowsForTag.Count
+                    # Only the rows that made it into a SUCCESSFULLY written
+                    # workbook get their write bit set; a row whose tag's
+                    # workbook failed to save stays pending for the next run.
+                    # Every mapping row sharing a correl (duplicates included)
+                    # is marked, not just the first.
+                    foreach ($r in $rowsForTag) {
+                        foreach ($mrow in @($writtenRowsByCorrel[$r.CorrelId])) {
+                            Set-MappingBit -Row $mrow -Field 'ProcessTime_Inserted' -Bit 2
+                        }
+                    }
+                } catch {
+                    $failedTags.Add($tag)
+                    Write-Host ("  [FAIL] could not write '{0}' output workbook ({1}): {2}" -f $tag, $path, $_.Exception.Message) -ForegroundColor Red
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'fail' `
+                        -Message ("tag={0} path={1} {2}" -f $tag, $path, $_.Exception.Message)
                 }
-                foreach ($row in $writtenRows) { $row.ProcessTime_Inserted = '1' }
-                Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
-                Write-Host ''
-                Write-Host ("[OK] wrote {0} correl(s), {1} output row(s) -> {2}" -f $results.Count, ($results.Count * 2), ($written -join ', ')) -ForegroundColor Green
+            }
+
+            Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+            Write-Host ''
+            if ($written.Count -gt 0) {
+                Write-Host ("[OK] wrote {0} correl(s), {1} output row(s) -> {2}" -f $writtenCorrelCount, ($writtenCorrelCount * 2), ($written -join ', ')) -ForegroundColor Green
                 Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'ok' `
-                    -Message ("{0} correl(s), {1} output row(s) -> {2}" -f $results.Count, ($results.Count * 2), ($written -join ', '))
-            } catch {
-                Write-Host ("[FAIL] could not write process-time workbook: {0}" -f $_.Exception.Message) -ForegroundColor Red
-                Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'fail' -Message $_.Exception.Message
-                # Still persist the per-side detection flags/sidecars even though
-                # ProcessTime_Inserted stays 0 -- cheaper to keep this run's OCR
-                # verdicts than force a full re-OCR.
-                Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+                    -Message ("{0} correl(s), {1} output row(s) -> {2}" -f $writtenCorrelCount, ($writtenCorrelCount * 2), ($written -join ', '))
+            }
+            if ($failedTags.Count -gt 0) {
+                Write-Host ("[ProcessTime] {0} tag(s) failed to write and stay pending for the next run: {1}" -f $failedTags.Count, ($failedTags -join ', ')) -ForegroundColor Yellow
             }
         }
     }
 } finally {
     if ($excel) { Close-ExcelApp $excel }
+}
+
+# -- end-of-run manual-check summary ------------------------------------
+# Every correl this run touched, checked against its cached OCR result
+# (this run's own pass, else whatever is already cached on disk), so the
+# operator gets a plain list of which ids to open and verify by hand
+# instead of scrolling back through the whole OCR log.
+$needsCheck = New-Object System.Collections.Generic.List[string]
+foreach ($p in $plans) {
+    $correlId = $p.CorrelId
+    $payload = $sidecarCache[$correlId]
+    if ($null -eq $payload) { $payload = Read-ProcessTimeSidecar -Path $p.SidecarPath }
+    if ($null -eq $payload) {
+        $needsCheck.Add(("{0}  -- no OCR result cached yet (run -Stage Ocr or Both)" -f $correlId))
+        continue
+    }
+    $line = Get-ProcessTimeCheckSummaryLine -CorrelId $correlId -GiftMatched ([bool]$payload.GiftMatched) -GfixMatched ([bool]$payload.GfixMatched) `
+        -GiftNote ([string]$payload.GiftNote) -GfixNote ([string]$payload.GfixNote)
+    if (-not [string]::IsNullOrWhiteSpace($line)) { $needsCheck.Add($line) }
+}
+Write-Host ''
+if ($needsCheck.Count -gt 0) {
+    Write-Host ("===== ProcessTime: {0} correl(s) need manual check =====" -f $needsCheck.Count) -ForegroundColor Yellow
+    foreach ($ln in $needsCheck) { Write-Host ("  {0}" -f $ln) -ForegroundColor Yellow }
+    Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'manual-check-summary' -Status 'info' `
+        -Message ("{0} correl(s): {1}" -f $needsCheck.Count, ($needsCheck -join ' | '))
+} else {
+    Write-Host '[ProcessTime] no correls need manual check this run.' -ForegroundColor Green
 }
 
 Write-Host ''

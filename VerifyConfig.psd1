@@ -395,7 +395,7 @@
     # start/end time (and derives the duration) from the GIFT/GFIX
     # receive-result evidence screenshot already inserted by ReplaceGift/
     # ReplaceGfix, then writes one row per GIFT/GFIX side per correl into
-    # separate JDL/JRV evidence workbooks (ProcessTime.ps1).
+    # one or more evidence workbooks (ProcessTime.ps1).
     ProcessTime = @{
         # Column (1-indexed) the correl-id label sits in on the recv
         # sheets. Matches Replace.ColAnchor (2 = column B) -- override
@@ -403,14 +403,30 @@
         AnchorCol       = 2
         # Legacy output path; when set, only its directory is used.
         OutputPath      = ''
-        # Destination directory for both workbooks. Blank -> <WorkDir>.
-        # Two operator-facing workbooks are generated there:
-        # <ProcessTime label>(JDL).xlsx / (JRV).xlsx, classified per correl
-        # by whether its mapping Excel_NAME contains "JDL" or "JRV".
+        # Default destination directory. Blank -> <WorkDir>. Used for any
+        # tag with no OutputDirectoryByTag override (OutputMode 'Split'),
+        # or for the single output file (OutputMode 'Single').
         OutputDirectory = ''
         # Sheet name in the generated workbooks. Blank -> [char] label
         # (ProjectLabels.ps1 SheetProcessTime).
         OutputSheetName = ''
+        # 'Split' (default): classify each result row by the first entry of
+        # OutputTags found in its mapping Excel_NAME and write one workbook
+        # per tag, '<ProcessTime label>(<Tag>).xlsx'; a row matching no tag
+        # goes to the UnclassifiedTag bucket instead of aborting the run.
+        # 'Single': ignore tags and write every result row into one
+        # '<ProcessTime label>.xlsx'.
+        OutputMode      = 'Split'
+        # Ordered list of Excel_NAME substrings used to classify output
+        # (Split mode only). Not limited to JDL/JRV -- add any project tag
+        # actually in use (e.g. 'JDS').
+        OutputTags      = @('JDL', 'JRV')
+        # Bucket name for a result row matching none of OutputTags.
+        UnclassifiedTag = 'Other'
+        # Optional per-tag destination directory overrides (Split mode),
+        # e.g. @{ JDS = '\\Fs-...\...\JDS' }. A tag absent here uses
+        # OutputDirectory.
+        OutputDirectoryByTag = @{}
         # Which stage(s) -Phase ProcessTime runs by default: 'Ocr' (extract
         # + cache a per-correl sidecar only), 'Write' (write the output
         # workbook from already-cached sidecars only, no evidence workbook
@@ -551,7 +567,7 @@
         @{ Key='ReplaceGift';        Field='isReplaced'; BitValue=1; Label='GIFT 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceGfix';        Field='isReplaced'; BitValue=2; Label='GFIX 証跡置換';                   Status='implemented' }
         @{ Key='ReplaceDf';          Field='isReplaced'; BitValue=4; Label='DF 証跡置換';                     Status='implemented' }
-        @{ Key='ProcessTime';        Field='ProcessTime_Inserted'; Label='処理時間 抽出 (証跡 Excel 生成)';  Status='implemented' }
+        @{ Key='ProcessTime';        Field='ProcessTime_Inserted'; BitValue=3; Label='処理時間 抽出 (証跡 Excel 生成)';  Status='implemented' }
         @{ Key='MarkGift';           Field='isMarked';   BitValue=1; Label='GIFT 赤枠 mark';                  Status='implemented' }
         @{ Key='MarkGfix';           Field='isMarked';   BitValue=2; Label='GFIX 赤枠 mark';                  Status='implemented' }
         @{ Key='MarkDf';             Field='isMarked';   BitValue=4; Label='DF 赤枠 mark';                    Status='implemented' }
