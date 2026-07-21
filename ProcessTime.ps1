@@ -4,8 +4,9 @@
 #
 #  For each pending mapping row (ProcessTime_Inserted = 0), extracts the
 #  HM batch processing start time / end time (and derives the duration)
-#  for the GIFT and GFIX sides, then writes one summary row per correl
-#  into a standalone ProcessTime evidence workbook.
+#  for the GIFT and GFIX sides, then writes one row per side per correl
+#  into separate JDL/JRV ProcessTime evidence workbooks (classified by
+#  Excel_NAME containing "JDL" or "JRV").
 #
 #  Source, two tiers per side (cheapest/most-accurate first):
 #    1. archived Ctrl+A page text HmSnap.ps1 saved at snap time
@@ -78,8 +79,13 @@ param(
     # New-TextOp writes correl labels there.
     [int]$AnchorCol = 2,
 
-    # Destination for the generated evidence workbook. Blank -> WorkDir\ProcessTime_<Owner>.xlsx.
+    # Legacy destination option. Its directory is used when OutputDirectory
+    # is blank; the file name itself is ignored because output is now split
+    # into two operator-facing workbooks, ProcessTime(JDL).xlsx and
+    # ProcessTime(JRV).xlsx (Japanese ProcessTime label as the stem).
     [string]$OutputPath = '',
+    # Destination directory for both workbooks. Blank -> WorkDir.
+    [string]$OutputDirectory = '',
     [string]$OutputSheetName = '',
 
     # Which stage(s) to run: 'Ocr' (extract + cache sidecars only),
@@ -389,7 +395,10 @@ function Resolve-ProcessTimeSide {
                 ($tier.Tag -eq 'below-label' -and ($candIdx -ge 2 -or $sectionHadPicture))
             $sel = if ($strict) { Select-ProcessTimeRow -Rows $rows -RequireCorrelSeen } else { Select-ProcessTimeRow -Rows $rows }
             if ($null -eq $sel) {
-                $note = if ($strict -and $rows.Count -gt 0) {
+                $dayRows = @($rows | Where-Object { $null -ne $_.StartTime -and $_.StartTime.TimeOfDay -ge ([timespan]'09:00:00') })
+                $note = if ($rows.Count -gt 0 -and $dayRows.Count -eq 0) {
+                    ("{0} time row(s), all before 09:00 -- skipped as history" -f $rows.Count)
+                } elseif ($strict -and $rows.Count -gt 0) {
                     ("{0} time row(s) but correl id not in OCR text -- skipped (likely another correl's picture)" -f $rows.Count)
                 } else {
                     Get-ProcessTimeOcrMissNote -Lines $lines
@@ -474,20 +483,48 @@ function Get-ArchivedProcessTimePreview {
     }
 }
 
-# Appends $Rows to $OutputPath (creating it, with a header row, if it does
-# not exist yet), so an incremental (non -Force) run accumulates instead
-# of clobbering earlier runs' extracted rows. A row whose
-# (Excel_NAME, Correl_ID_S) pair is being rewritten this run REPLACES the
-# old one (deleted first), so a -Force redo keeps ONE row per correl
-# instead of stacking a fresh 43 rows on top of the previous run's 43.
+# Writes the operator-facing, vertical layout requested for delivery:
+# No. / GIFT-GFIX / correl / start / end / duration / count / job. Each
+# correl in -Rows (the combined GIFT+GFIX shape ProcessTime.ps1 resolves,
+# cached one-per-correl in the sidecar) becomes TWO output rows here, one
+# per side. Incremental (non -Force) runs retain older records; a repeated
+# (side, correl) pair REPLACES its prior row (deleted first), so a redo
+# keeps one row per (side, correl) instead of stacking duplicates.
 function Write-ProcessTimeWorkbook {
     param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows)
 
     $headers = @(
-        'Excel_NAME', 'JOB_NAME', 'Correl_ID_S',
-        'GIFT Start', 'GIFT End', 'GIFT Duration', 'GIFT Count', 'GIFT Source',
-        'GFIX Start', 'GFIX End', 'GFIX Duration', 'GFIX Count', 'GFIX Source'
+        'No.', 'GIFT/GFIX',
+        ([string][char]0x76F8 + [char]0x95A2 + 'ID'),
+        ([string][char]0x958B + [char]0x59CB + [char]0x65E5 + [char]0x6642),
+        ([string][char]0x7D42 + [char]0x4E86 + [char]0x65E5 + [char]0x6642),
+        ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593),
+        ([string][char]0x51E6 + [char]0x7406 + [char]0x4EF6 + [char]0x6570),
+        ([string][char]0x30B8 + [char]0x30E7 + [char]0x30D6)
     )
+
+    $flatRows = New-Object System.Collections.Generic.List[object]
+    $jobOrder = New-Object System.Collections.Generic.List[string]
+    foreach ($r in @($Rows)) {
+        $job = [string]$r.JobName
+        if (-not $jobOrder.Contains($job)) { $jobOrder.Add($job) }
+    }
+    # Within each job, list all GIFT correls and then all GFIX correls
+    # (rather than interleaving the two sides).
+    foreach ($job in $jobOrder) {
+        foreach ($side in @('GIFT', 'GFIX')) {
+            foreach ($r in @($Rows | Where-Object { [string]$_.JobName -eq $job })) {
+                $isGift = $side -eq 'GIFT'
+                $flatRows.Add([pscustomobject]@{
+                    Side = $side; CorrelId = [string]$r.CorrelId; JobName = [string]$r.JobName
+                    Start = [string]$(if ($isGift) { $r.GiftStart } else { $r.GfixStart })
+                    End = [string]$(if ($isGift) { $r.GiftEnd } else { $r.GfixEnd })
+                    Duration = [string]$(if ($isGift) { $r.GiftDuration } else { $r.GfixDuration })
+                    Count = [string]$(if ($isGift) { $r.GiftCount } else { $r.GfixCount })
+                })
+            }
+        }
+    }
 
     $isNew = -not (Test-Path -LiteralPath $OutputPath)
     $wb = if ($isNew) { $Excel.Workbooks.Add() } else { $Excel.Workbooks.Open($OutputPath) }
@@ -512,17 +549,15 @@ function Write-ProcessTimeWorkbook {
             $lastRow = 1
         }
 
-        # Replace-in-place: delete existing rows for the correls being
-        # rewritten (bottom-up so row indices stay valid). Keys are plain
-        # string compares -- Excel_NAME/Correl_ID_S are always alphanumeric.
+        # Replace-in-place by (GIFT/GFIX, correl).
         if ($lastRow -gt 1) {
             $keys = @{}
-            foreach ($r in @($Rows)) {
-                $keys[('{0}|{1}' -f [string]$r.ExcelName, [string]$r.CorrelId)] = $true
+            foreach ($r in $flatRows) {
+                $keys[('{0}|{1}' -f $r.Side, $r.CorrelId)] = $true
             }
             $deleted = 0
             for ($rr = $lastRow; $rr -ge 2; $rr--) {
-                $k = ('{0}|{1}' -f [string]$ws.Cells.Item($rr, 1).Value2, [string]$ws.Cells.Item($rr, 3).Value2)
+                $k = ('{0}|{1}' -f [string]$ws.Cells.Item($rr, 2).Value2, [string]$ws.Cells.Item($rr, 3).Value2)
                 if ($keys.ContainsKey($k)) {
                     $ws.Rows.Item($rr).Delete() | Out-Null
                     $deleted++
@@ -536,22 +571,32 @@ function Write-ProcessTimeWorkbook {
         }
 
         $row = $lastRow + 1
-        foreach ($r in @($Rows)) {
-            $ws.Cells.Item($row, 1).Value2  = [string]$r.ExcelName
-            $ws.Cells.Item($row, 2).Value2  = [string]$r.JobName
-            $ws.Cells.Item($row, 3).Value2  = [string]$r.CorrelId
-            $ws.Cells.Item($row, 4).Value2  = [string]$r.GiftStart
-            $ws.Cells.Item($row, 5).Value2  = [string]$r.GiftEnd
-            $ws.Cells.Item($row, 6).Value2  = [string]$r.GiftDuration
-            $ws.Cells.Item($row, 7).Value2  = [string]$r.GiftCount
-            $ws.Cells.Item($row, 8).Value2  = [string]$r.GiftSource
-            $ws.Cells.Item($row, 9).Value2  = [string]$r.GfixStart
-            $ws.Cells.Item($row, 10).Value2 = [string]$r.GfixEnd
-            $ws.Cells.Item($row, 11).Value2 = [string]$r.GfixDuration
-            $ws.Cells.Item($row, 12).Value2 = [string]$r.GfixCount
-            $ws.Cells.Item($row, 13).Value2 = [string]$r.GfixSource
+        foreach ($r in $flatRows) {
+            $ws.Cells.Item($row, 1).Value2 = $row - 1
+            $ws.Cells.Item($row, 2).Value2 = $r.Side
+            $ws.Cells.Item($row, 3).Value2 = $r.CorrelId
+            $ws.Cells.Item($row, 4).Value2 = $r.Start
+            $ws.Cells.Item($row, 5).Value2 = $r.End
+            $ws.Cells.Item($row, 6).Value2 = $r.Duration
+            $ws.Cells.Item($row, 7).Value2 = $r.Count
+            $ws.Cells.Item($row, 8).Value2 = $r.JobName
+            if ($r.Side -eq 'GIFT') {
+                try { $ws.Range($ws.Cells.Item($row, 1), $ws.Cells.Item($row, 8)).Interior.Color = 15073398 } catch {}
+            }
             $row++
         }
+        # Renumber retained + appended records and make the range filterable.
+        try {
+            $finalRow = [int]$ws.Cells.Item($ws.Rows.Count, 2).End($xlUp).Row
+            for ($rr = 2; $rr -le $finalRow; $rr++) { $ws.Cells.Item($rr, 1).Value2 = $rr - 1 }
+            $tableRange = $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item($finalRow, 8))
+            $tableRange.AutoFilter() | Out-Null
+            $headerRange = $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item(1, 8))
+            $headerRange.Interior.Color = 10053120
+            $headerRange.Font.Color = 16777215
+            $headerRange.Font.Bold = $true
+            $tableRange.Borders.LineStyle = 1
+        } catch {}
         try { $ws.Columns.AutoFit() | Out-Null } catch {}
 
         if ($isNew) { $wb.SaveAs($OutputPath, 51) } else { $wb.Save() }   # 51 = xlOpenXMLWorkbook (.xlsx)
@@ -570,8 +615,17 @@ if (-not (Test-Path -LiteralPath $WorkDir)) {
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir 'evidence' }
 elseif (-not [System.IO.Path]::IsPathRooted($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir $EvidenceDir }
 
-if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = Join-Path $WorkDir ("ProcessTime_{0}.xlsx" -f $Owner) }
-elseif (-not [System.IO.Path]::IsPathRooted($OutputPath)) { $OutputPath = Join-Path $WorkDir $OutputPath }
+if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    if (-not [System.IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory = Join-Path $WorkDir $OutputDirectory }
+} elseif (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
+    if (-not [System.IO.Path]::IsPathRooted($OutputPath)) { $OutputPath = Join-Path $WorkDir $OutputPath }
+    $OutputDirectory = Split-Path $OutputPath -Parent
+} else {
+    $OutputDirectory = $WorkDir
+}
+if (-not (Test-Path -LiteralPath $OutputDirectory)) {
+    [void](New-Item -ItemType Directory -Path $OutputDirectory -Force)
+}
 
 $stageMap = @{ 'ocr' = 'Ocr'; 'write' = 'Write'; 'both' = 'Both' }
 $stageKey = ([string]$Stage).Trim().ToLowerInvariant()
@@ -584,6 +638,8 @@ $Stage = $stageMap[$stageKey]
 
 $labels = Get-ProjectLabels
 if ([string]::IsNullOrWhiteSpace($OutputSheetName)) { $OutputSheetName = $labels['SheetProcessTime'] }
+$outputJdlPath = Join-Path $OutputDirectory ("{0}(JDL).xlsx" -f $labels['SheetProcessTime'])
+$outputJrvPath = Join-Path $OutputDirectory ("{0}(JRV).xlsx" -f $labels['SheetProcessTime'])
 $sheetGiftRecv = $labels['SheetGiftRecv']
 $sheetGfixRecv = $labels['SheetGfixRecv']
 
@@ -630,7 +686,8 @@ Write-Host ''
 Write-Host '===== ProcessTime =====' -ForegroundColor Green
 Write-Host ("  WorkDir      : {0}" -f $WorkDir)
 Write-Host ("  EvidenceDir  : {0}" -f $EvidenceDir)
-Write-Host ("  OutputPath   : {0}" -f $OutputPath)
+Write-Host ("  Output JDL   : {0}" -f $outputJdlPath)
+Write-Host ("  Output JRV   : {0}" -f $outputJrvPath)
 Write-Host ("  AnchorCol    : {0}" -f $AnchorCol)
 Write-Host ("  OcrLanguage  : {0}" -f $(if ([string]::IsNullOrWhiteSpace($OcrLanguage)) { 'en-US' } else { 'en-US + ' + $OcrLanguage }))
 Write-Host ("  Stage        : {0}" -f $Stage)
@@ -662,7 +719,7 @@ if ($dryRunFlag) {
             Write-Host ("      (cached OCR result from a previous run -- {0})" -f $p.SidecarPath) -ForegroundColor DarkGray
         }
     }
-    Write-Host ("  would write -> {0}" -f $OutputPath) -ForegroundColor DarkGray
+    Write-Host ("  would write -> {0}, {1}" -f $outputJdlPath, $outputJrvPath) -ForegroundColor DarkGray
     exit 0
 }
 
@@ -840,13 +897,27 @@ try {
             Write-Host '[ProcessTime] nothing to write; no evidence workbook touched.' -ForegroundColor Yellow
         } else {
             try {
-                Write-ProcessTimeWorkbook -Excel $excel -OutputPath $OutputPath -SheetName $OutputSheetName -Rows $results.ToArray()
+                $jdlRows = @($results.ToArray() | Where-Object { [string]$_.ExcelName -match 'JDL' })
+                $jrvRows = @($results.ToArray() | Where-Object { [string]$_.ExcelName -match 'JRV' })
+                $unclassified = @($results.ToArray() | Where-Object { [string]$_.ExcelName -notmatch 'JDL|JRV' })
+                if ($unclassified.Count -gt 0) {
+                    throw ("{0} result row(s) could not be classified as JDL or JRV" -f $unclassified.Count)
+                }
+                $written = New-Object System.Collections.Generic.List[string]
+                if ($jdlRows.Count -gt 0) {
+                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $outputJdlPath -SheetName $OutputSheetName -Rows $jdlRows
+                    $written.Add($outputJdlPath)
+                }
+                if ($jrvRows.Count -gt 0) {
+                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $outputJrvPath -SheetName $OutputSheetName -Rows $jrvRows
+                    $written.Add($outputJrvPath)
+                }
                 foreach ($row in $writtenRows) { $row.ProcessTime_Inserted = '1' }
                 Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
                 Write-Host ''
-                Write-Host ("[OK] wrote {0} row(s) -> {1}" -f $results.Count, $OutputPath) -ForegroundColor Green
+                Write-Host ("[OK] wrote {0} correl(s), {1} output row(s) -> {2}" -f $results.Count, ($results.Count * 2), ($written -join ', ')) -ForegroundColor Green
                 Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'ok' `
-                    -Message ("{0} row(s) -> {1}" -f $results.Count, $OutputPath)
+                    -Message ("{0} correl(s), {1} output row(s) -> {2}" -f $results.Count, ($results.Count * 2), ($written -join ', '))
             } catch {
                 Write-Host ("[FAIL] could not write process-time workbook: {0}" -f $_.Exception.Message) -ForegroundColor Red
                 Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'fail' -Message $_.Exception.Message

@@ -561,8 +561,9 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  NOTE: extracts each correl''s HM batch processing start/end time (GIFT and GFIX)',
             '        from the already-inserted receive-result evidence screenshot -- archived',
             '        snap\GIFT_HM|GFIX_HM\<correl>.txt first, else OCR of the evidence picture --',
-            '        and appends one summary row per correl to ProcessTime_<Owner>.xlsx (config',
-            '        ProcessTime.OutputPath). Run this AFTER ReplaceGift/ReplaceGfix (the HM',
+            '        and writes one row per GIFT/GFIX side to separate JDL/JRV workbooks (config',
+            '        ProcessTime.OutputDirectory; classified by whether the row''s Excel_NAME',
+            '        contains "JDL" or "JRV"). Run this AFTER ReplaceGift/ReplaceGfix (the HM',
             '        picture must already be in the evidence workbook).',
             '  NOTE: -Stage Ocr caches each correl''s OCR result to a per-correl sidecar',
             '        (snap\ProcessTime\<correl>\result.json) without opening the output workbook;',
@@ -1791,6 +1792,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             $pt = $Config.ProcessTime
             if ($pt.ContainsKey('AnchorCol') -and $null -ne $pt.AnchorCol) { $args['AnchorCol'] = [int]$pt.AnchorCol }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputPath))       { $args['OutputPath']      = [string]$pt.OutputPath }
+            if ($pt.ContainsKey('OutputDirectory') -and -not [string]::IsNullOrWhiteSpace([string]$pt.OutputDirectory)) { $args['OutputDirectory'] = [string]$pt.OutputDirectory }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputSheetName))  { $args['OutputSheetName'] = [string]$pt.OutputSheetName }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OcrLanguage))      { $args['OcrLanguage']     = [string]$pt.OcrLanguage }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }

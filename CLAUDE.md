@@ -109,11 +109,17 @@ ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         Select-ProcessTimeRow + Get-ProcessTimeRowRank (full >
                         partial, correl-seen > unseen, newest among equals),
                         Get-ProcessTimeOcrMissNote (why a read yielded nothing),
-                        Get-NewestProcessTimeRow (newest-by-StartTime),
+                        Get-NewestProcessTimeRow (newest-by-StartTime;
+                        -MinimumTimeOfDay default 09:00, v2.14.0),
                         Resolve-ProcessTimeRowPlan (-Stage + sidecar-exists +
                         ProcessTime_Inserted + -Force -> per-row NeedsOcr/
-                        NeedsWrite; v2.13.0). No Excel/OCR. Unit-tested
-                        (Tests\Test-ProcessTimeParse.ps1).
+                        NeedsWrite; v2.13.0). ConvertTo-ProcessTimeCorrelKey
+                        also strips OCR-inserted whitespace before folding
+                        (v2.14.0); Select-ProcessTimeRow's -MinimumTimeOfDay
+                        (default 09:00) drops HM history rows; Get-ProcessTime
+                        RecordCount falls back to the count immediately before
+                        the result diamond when no datestamp anchors it (JDL).
+                        No Excel/OCR. Unit-tested (Tests\Test-ProcessTimeParse.ps1).
 
 Clone.ps1               Phase Clone
 Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
@@ -128,15 +134,17 @@ ProcessTime.ps1         Phase ProcessTime: extracts each correl's HM batch
                         candidates must show the correl id in their OCR text)
                         each read via Invoke-WinOcrFile +
                         ConvertFrom-ProcessTimeOcrLines / Select-ProcessTimeRow.
-                        Appends one summary row per correl to a standalone
-                        ProcessTime_<Owner>.xlsx evidence workbook. Run after
-                        ReplaceGift/ReplaceGfix. Sets ProcessTime_Inserted.
-                        -Stage Ocr|Write|Both (v2.13.0) runs the extract-and-
-                        cache-to-sidecar step and the write-the-output-
-                        workbook step independently; each correl's OCR
-                        result is cached at snap\ProcessTime\<correl>\
-                        result.json so a Write-only rerun opens no evidence
-                        workbook at all.
+                        Writes one row per GIFT/GFIX side per correl to
+                        separate <label>(JDL).xlsx / (JRV).xlsx evidence
+                        workbooks under ProcessTime.OutputDirectory (v2.14.0;
+                        classified by whether Excel_NAME contains "JDL" or
+                        "JRV"). Run after ReplaceGift/ReplaceGfix. Sets
+                        ProcessTime_Inserted. -Stage Ocr|Write|Both (v2.13.0)
+                        runs the extract-and-cache-to-sidecar step and the
+                        write-the-output-workbooks step independently; each
+                        correl's OCR result (both sides, combined) is cached
+                        at snap\ProcessTime\<correl>\result.json so a
+                        Write-only rerun opens no evidence workbook at all.
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf. Each Mark.Boxes
                         entry may add a 'Template' key to try image-recognition
                         placement (Locate-ByImage.ps1 LockBits match against
@@ -389,7 +397,43 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-21 v2.13.0)
+## Current state (last bump: 2026-07-21 v2.14.0)
+
+v2.14.0 (ProcessTime: JDL/JRV split output + OCR robustness fixes): layered
+on top of v2.13.0's Stage/sidecar split, using real OCR content supplied for
+JDL/JRV correls -- same root-cause class as v2.12.x, the recognizer
+reconstructs a wide HM table imperfectly and exact-match/column-position
+assumptions kept discarding correct screenshots or picking the wrong row.
+**Fixed** -- an OCR-inserted space inside a correl id (`J IDSCS4S`) now folds
+to the same key as the space-free id (`ConvertTo-ProcessTimeCorrelKey` drops
+whitespace before the existing glyph-confusion folds); correl-id ownership
+is now evidence about the WHOLE exported picture, not just the OCR line
+carrying the timestamps (the far-right correl-id cell often lands on a
+different reconstructed line -- `CorrelSeen` is promoted picture-wide);
+history rows before the operator's actual working window no longer outrank
+a genuine daytime row on the same picture (`Select-ProcessTimeRow` /
+`Get-NewestProcessTimeRow` gained `-MinimumTimeOfDay`, default 09:00, both
+OCR and archived-text tiers; an all-history picture is now diagnosed as
+"skipped as history"); record-count recovery now joins an en-US date-only
+row's count onto the matching ja timestamp row by their shared 14-digit
+creation stamp, falls back to reading the count immediately before the
+result diamond when JDL OCR drops the datestamp column entirely, and no
+longer mistakes a digit embedded in the correl id itself for the count.
+**Added** -- `ProcessTime.OutputDirectory` config + `-OutputDirectory` param:
+output is now two workbooks, `<label>(JDL).xlsx` / `(JRV).xlsx` (default
+`<WorkDir>`; legacy `OutputPath` still works as a directory hint), each
+correl classified by whether its mapping `Excel_NAME` contains "JDL" or
+"JRV" (neither aborts the write with an explicit error). `Write-
+ProcessTimeWorkbook`'s layout changed to the requested vertical form (`No.`
+/ `GIFT/GFIX` / correl / start / end / duration / count / job, one row per
+side per correl, grouped by job) with autofilter/borders/header styling and
+GIFT-row highlighting. Composes cleanly with v2.13.0's `-Stage`: the
+per-correl sidecar cache stores the same combined GIFT+GFIX row either stage
+reads from, so `-Stage Write` still needs no evidence workbook or OCR to
+produce the JDL/JRV split. **Notes** -- no PowerShell/Excel here; the pure
+`ProcessTimeParse.ps1` logic is unit-tested (new real-OCR-derived fixtures
+in `Tests\Test-ProcessTimeParse.ps1`), the workbook flattening/styling and
+JDL/JRV classification are static-checked only -- confirm on an office PC.
 
 v2.13.0 (ProcessTime: staged Ocr/Write control + sidecar-based re-run
 detection): PR #118 (Codex, "picture-wide correl ownership, split JDL/JRV

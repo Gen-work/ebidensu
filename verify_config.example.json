@@ -60,6 +60,7 @@
   "ProcessTime": {
     "AnchorCol": 2,
     "OutputPath": "",
+    "OutputDirectory": "",
     "OutputSheetName": "",
     "OcrLanguage": "ja",
     "ExportScale": 3.0,

@@ -1,3 +1,75 @@
+## 2026-07-21 - ProcessTime: JDL/JRV split output + OCR robustness fixes (v2.14.0)
+
+Layered on top of v2.13.0's Stage/sidecar split, using real OCR content the
+operator supplied for JDL/JRV correls. Same root cause class as v2.12.x: the
+recognizer reconstructs a wide HM table imperfectly, and the exact-match /
+column-position assumptions from earlier versions kept discarding correct
+screenshots or picking the wrong row.
+
+### Fixed
+- Correlation ids with an OCR-inserted space (`J IDSCS4S`, `J IGPF05S`) now
+  fold to the same key as the space-free id: `ConvertTo-ProcessTimeCorrelKey`
+  (`ProcessTimeParse.ps1`) drops whitespace before applying the existing
+  glyph-confusion folds (I/L/|/!->1, O/Q->0, S->5, B->8, Z->2). Previously
+  these JDL screenshots were rejected outright because the exact-plus-glyph-
+  fold comparison never accounted for inserted spaces.
+- Correlation-id ownership is now evidence about the WHOLE exported picture,
+  not just the one OCR line carrying the timestamps: Windows OCR frequently
+  returns the far-right correl-id cell on a separate reconstructed line from
+  the start/end timestamps. `ConvertFrom-ProcessTimeOcrLines` now also
+  checks every line in the picture for the correl id (`CorrelSeen` is
+  promoted picture-wide) instead of only the timestamp row's own line.
+- History rows before the operator's actual working window no longer win
+  by confidence rank against a genuine daytime row on the same picture: a
+  real JRV sample showed a 13:44 daytime run and a 00:17 historical run for
+  the same correl, and the old rank-based tiebreak could pick the midnight
+  row when the daytime row's id read with lower confidence. `Select-
+  ProcessTimeRow` and `Get-NewestProcessTimeRow` gained `-MinimumTimeOfDay`
+  (default 09:00, both the OCR and archived-text tiers) that drops rows
+  before it; a picture whose rows are ALL pre-09:00 is now diagnosed as
+  "skipped as history" instead of a generic "no usable time row" miss.
+- Record-count (shori-kensu) recovery: (1) English OCR sometimes reads only
+  the date and the 14-digit creation stamp cleanly (dropping the ja
+  recognizer's fuller time-of-day read) but reads the count fine --
+  `ConvertFrom-ProcessTimeOcrLines` now joins that count onto the matching
+  ja timestamp row by the shared creation stamp instead of losing it; (2)
+  some JDL rows lose the blank data-creation column entirely, so
+  `Get-ProcessTimeRecordCount` falls back to reading the count immediately
+  before the black result diamond (unambiguous, and only used when the
+  normal datestamp anchor is absent); (3) the count regex now requires a
+  non-alphanumeric boundary on both sides so a digit embedded in the correl
+  id itself (e.g. `JIGPFO5S`) is never mistaken for the count.
+
+### Added
+- `ProcessTime.OutputDirectory` config + `-OutputDirectory` param: output is
+  now two operator-requested workbooks, `<label>(JDL).xlsx` and
+  `<label>(JRV).xlsx` in this directory (default `<WorkDir>`; legacy
+  `OutputPath` is still honored as a directory hint when `OutputDirectory`
+  is blank), each correl classified by whether its mapping `Excel_NAME`
+  contains "JDL" or "JRV" (a row matching neither aborts the write with an
+  explicit error rather than filing it under a guess). `Write-
+  ProcessTimeWorkbook`'s layout changed to the requested vertical form --
+  `No.` / `GIFT/GFIX` / correl / start / end / duration / count / job, one
+  row per side per correl, grouped by job (all GIFT rows then all GFIX rows
+  per job) -- with autofilter, borders, header styling, and GIFT rows
+  highlighted. Composes with v2.13.0's `-Stage`: the per-correl sidecar
+  cache (`snap\ProcessTime\<correl>\result.json`) stores the same combined
+  GIFT+GFIX row either stage reads from, so `-Stage Write` still needs no
+  evidence workbook or OCR to produce the JDL/JRV split.
+- New real-OCR-derived unit test fixtures in `Tests\Test-ProcessTimeParse.ps1`
+  covering the whitespace-tolerant id fold, split-line picture ownership,
+  the daytime-vs-midnight selection case, the JDL diamond-anchor count
+  fallback, and the en-US/ja count join.
+
+### Notes
+- No PowerShell/Excel in this dev environment -- the pure `ProcessTimeParse.ps1`
+  logic is unit-tested; the `Write-ProcessTimeWorkbook` flattening/styling and
+  the JDL/JRV classification are static-checked only. Confirm on an office PC:
+  a real JDL screenshot whose id OCR'd with a leading-space, a picture whose
+  correl id lands on a different OCR line than its timestamps, a correl with
+  both a genuine daytime run and pre-09:00 history on the same page, and the
+  two output workbooks' styling (autofilter/borders/GIFT highlight).
+
 ## 2026-07-21 - ProcessTime: staged Ocr/Write control + sidecar-based re-run detection (v2.13.0)
 
 PR #118 (Codex, "picture-wide correl ownership, split JDL/JRV outputs, and

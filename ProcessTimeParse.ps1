@@ -106,6 +106,10 @@ function ConvertTo-ProcessTimeCorrelKey {
     $sb = New-Object System.Text.StringBuilder
     foreach ($ch in $Text.ToUpperInvariant().ToCharArray()) {
         $c = [string]$ch
+        # OCR frequently inserts a space between the leading J and the rest
+        # of the fixed-width id ("J IDSCS4S", "J IGPM05S"). Formatting
+        # whitespace is not part of an HM correlation id.
+        if ([char]::IsWhiteSpace($ch)) { continue }
         if ($map.ContainsKey($c)) { [void]$sb.Append($map[$c]) }
         else { [void]$sb.Append($c) }
     }
@@ -138,19 +142,27 @@ function Test-ProcessTimeCorrelSeen {
 #   splits the digits with spaces ('1 1 ,262') so any internal whitespace is
 #   removed. $SearchFrom lets the caller start the scan after the row's end
 #   datetime so the proc-time (HH:mm:ss) column is never taken for the count.
-#   Anchoring on the 8-14 digit datestamp is required (returns '' without it)
-#   so a partial/garbled row never guesses a count out of some other column.
+#   Normally the 8-14 digit datestamp anchors the scan. JDL rows where OCR
+#   drops that blank column use the result diamond as a strict fallback
+#   anchor, so a partial/garbled row never guesses from the batch id.
 # ---------------------------------------------------------------------------
 function Get-ProcessTimeRecordCount {
     param([string]$Line, [int]$SearchFrom = 0)
     if ([string]::IsNullOrEmpty($Line)) { return '' }
     $tail = if ($SearchFrom -gt 0 -and $SearchFrom -lt $Line.Length) { $Line.Substring($SearchFrom) } else { $Line }
     $mStamp = [regex]::Match($tail, '(?<!\d)\d{8,14}(?!\d)')
-    if (-not $mStamp.Success) { return '' }
-    $tail = $tail.Substring($mStamp.Index + $mStamp.Length)
-    $mCount = [regex]::Match($tail, '\d[\d ,]*\d|\d')
-    if (-not $mCount.Success) { return '' }
-    return ($mCount.Value -replace '\s', '')
+    if ($mStamp.Success) {
+        $tail = $tail.Substring($mStamp.Index + $mStamp.Length)
+        $mCount = [regex]::Match($tail, '(?<![A-Z0-9])(\d[\d ,]*\d|\d)(?![A-Z0-9])', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($mCount.Success) { return ($mCount.Value -replace '\s', '') }
+    }
+    # Some JDL OCR rows lose the blank data-creation column completely, but
+    # retain the count immediately before the black result diamond. This
+    # anchor is unambiguous and avoids mistaking digits in the batch id.
+    $diamond = [string][char]0x25C6
+    $beforeResult = [regex]::Match($tail, ('(\d[\d ,]*\d|\d)\s*{0}' -f [regex]::Escape($diamond)))
+    if ($beforeResult.Success) { return ($beforeResult.Groups[1].Value -replace '\s', '') }
+    return ''
 }
 
 # ---------------------------------------------------------------------------
@@ -244,6 +256,36 @@ function ConvertFrom-ProcessTimeOcrLines {
     $dtFmt   = 'yyyy/MM/dd HH:mm:ss'
     $culture = [System.Globalization.CultureInfo]::InvariantCulture
     $out     = [System.Collections.Generic.List[object]]::new()
+    $countHints = @{}
+
+    # en-US often reads the 14-digit creation stamp and count cleanly but
+    # drops both time-of-day columns. Preserve those counts and join them to
+    # the ja timestamp row by the creation stamp (= start datetime).
+    foreach ($hintLine in @($Lines)) {
+        foreach ($stamp in @([regex]::Matches($hintLine, '(?<!\d)\d{14}(?!\d)'))) {
+            $after = $hintLine.Substring($stamp.Index + $stamp.Length)
+            $countMatch = [regex]::Match($after, '(?<![A-Z0-9])(\d[\d ,]*\d|\d)(?![A-Z0-9])', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($countMatch.Success) {
+                $countHints[$stamp.Value] = ($countMatch.Value -replace '\s', '')
+            }
+        }
+    }
+
+    # Windows OCR reconstructs a wide HM table as several visual rows. In
+    # particular, the correlation id is frequently returned on a different
+    # line from the start/end timestamps. Candidate ownership is therefore
+    # evidence about the complete exported picture, not only the timestamp
+    # line. Keep the per-line check below, but promote it when the id appears
+    # anywhere in this picture's OCR output.
+    $pictureCorrelSeen = $false
+    if (-not [string]::IsNullOrWhiteSpace($CorrelId)) {
+        foreach ($candidateLine in @($Lines)) {
+            if (Test-ProcessTimeCorrelSeen -Line $candidateLine -CorrelId $CorrelId) {
+                $pictureCorrelSeen = $true
+                break
+            }
+        }
+    }
 
     foreach ($rawLine in @($Lines)) {
         if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
@@ -322,12 +364,16 @@ function ConvertFrom-ProcessTimeOcrLines {
 
         $correlSeen = $false
         if (-not [string]::IsNullOrWhiteSpace($CorrelId)) {
-            $correlSeen = (Test-ProcessTimeCorrelSeen -Line $line -CorrelId $CorrelId)
+            $correlSeen = $pictureCorrelSeen -or (Test-ProcessTimeCorrelSeen -Line $line -CorrelId $CorrelId)
         }
 
         # Record count (shori-kensu), scanned after the row's end datetime so
         # the proc-time column is never mistaken for it.
         $recordCount = Get-ProcessTimeRecordCount -Line $line -SearchFrom $searchFrom
+        if ([string]::IsNullOrWhiteSpace($recordCount) -and $null -ne $startTime) {
+            $stampKey = $startTime.ToString('yyyyMMddHHmmss')
+            if ($countHints.ContainsKey($stampKey)) { $recordCount = [string]$countHints[$stampKey] }
+        }
 
         $out.Add([PSCustomObject]@{
             StartTime     = $startTime
@@ -375,11 +421,16 @@ function Get-ProcessTimeRowRank {
 #   project's newest-wins convention). -RequireCorrelSeen drops every row
 #   whose line did not carry the correl id -- used for relaxed picture
 #   candidates where position alone cannot prove the picture belongs to
-#   this correl. Returns $null when nothing qualifies.
+#   this correl. -MinimumTimeOfDay (default 09:00) drops HM history rows
+#   from before the operator's actual working window -- pass [timespan]::Zero
+#   to disable. Returns $null when nothing qualifies.
 # ---------------------------------------------------------------------------
 function Select-ProcessTimeRow {
-    param([object[]]$Rows, [switch]$RequireCorrelSeen)
+    param([object[]]$Rows, [switch]$RequireCorrelSeen, [timespan]$MinimumTimeOfDay = ([timespan]'09:00:00'))
     $rows = @($Rows | Where-Object { $null -ne $_ -and $null -ne $_.StartTime })
+    if ($MinimumTimeOfDay -gt [timespan]::Zero) {
+        $rows = @($rows | Where-Object { $_.StartTime.TimeOfDay -ge $MinimumTimeOfDay })
+    }
     if ($RequireCorrelSeen) {
         $rows = @($rows | Where-Object { $_.PSObject.Properties['CorrelSeen'] -and [bool]$_.CorrelSeen })
     }
@@ -429,11 +480,15 @@ function Get-ProcessTimeOcrMissNote {
 #   Test-HmAbend / GIFT_MQ's established convention), or $null when -Rows
 #   is empty. Works uniformly on rows from ConvertFrom-HmPageText (archived
 #   text tier) or ConvertFrom-ProcessTimeOcrLines (OCR tier) -- both carry
-#   a StartTime property.
+#   a StartTime property. -MinimumTimeOfDay (default 09:00) rejects HM
+#   history rows the same way the OCR-tier Select-ProcessTimeRow does.
 # ---------------------------------------------------------------------------
 function Get-NewestProcessTimeRow {
-    param([object[]]$Rows)
+    param([object[]]$Rows, [timespan]$MinimumTimeOfDay = ([timespan]'09:00:00'))
     $rows = @($Rows | Where-Object { $null -ne $_ -and $null -ne $_.StartTime })
+    if ($MinimumTimeOfDay -gt [timespan]::Zero) {
+        $rows = @($rows | Where-Object { $_.StartTime.TimeOfDay -ge $MinimumTimeOfDay })
+    }
     if ($rows.Count -eq 0) { return $null }
     return @($rows | Sort-Object StartTime -Descending)[0]
 }
