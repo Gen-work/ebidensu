@@ -426,7 +426,37 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-21 v2.15.0)
+## Current state (last bump: 2026-07-21 v2.15.1)
+
+v2.15.1 (ProcessTime: template-matched worksheet formatting + code-review
+fixes): the office-PC formatting fix from the v2.15.0 follow-up (Yu Gothic
+11pt template styling, A1-address ranges to dodge the `Cells.Item` COM
+overload mismatch) went through a code review that caught three real bugs,
+all fixed here. **Fixed** -- (1) the formatting block's single bare
+`catch {}` silently skipped every remaining step (and printed no warning)
+the moment one COM call failed, so a workbook could report success while
+only partially formatted; split into one try/catch per concern (range
+resolve / AutoFilter+borders / header fill+font / font+row-height /
+alignment / GIFT-GFIX row fill / column widths), each logging
+`Write-Warning` with the failing step and output path. (2)
+`Generate-HostOpenMapping.ps1`'s snap `ID.txt`/`ID.png` bulk-ID selector --
+documented as only for `-FromBizCode JOD -Owner all` -- actually fired for
+ANY call omitting `-CorrelIdsM`/`-JobNames`/`-ExcelNames`, so a stale
+`ID.txt` left over from an earlier JOD batch could silently hijack an
+unrelated run (e.g. `-FromBizCode JRV -Owner AAA`) into a tiny ID-file-
+limited temp mapping instead of the intended WBS+FromBizCode scan; gated
+behind a new pure, unit-tested `Test-MappingIdBulkSelectorEnabled`
+(`MappingInput.ps1`). (3) a duplicated `CHANGELOG.md` entry from the prior
+commit was merged into one, versioned entry. **Notes** -- current
+`ProcessTime.ps1` output formatting settings (colors/fonts/sizes/widths) are
+now documented inline as a reference point; a dedicated formatting module
+is still a TODO, and Start/End are written as plain formatted TEXT rather
+than real Excel date/time values with a cell `NumberFormat`. Also removed an
+accidentally committed `VerifyConfig_bk.psd1` backup and added a
+`.gitignore` rule for `*_bk.ps1`/`*_bk.psd1`/`*.bak`; line-ending
+normalization (`.gitattributes`) done as a separate commit per review
+feedback. No PowerShell/Excel in this dev environment -- confirm the
+per-step formatting warnings and the mapping selector gate on an office PC.
 
 v2.15.0 (ProcessTime: bitmask ProcessTime_Inserted, config-driven output
 tags, no more crash-on-unknown-tag, end-of-run manual-check summary): a real

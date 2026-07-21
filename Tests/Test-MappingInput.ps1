@@ -29,4 +29,13 @@ try {
 
 $sorted = @(Sort-MappingJobsByTemplateOrder -Jobs @('CJODJ003','CJODJ001','CJODJ002','OTHER') -TemplateJobs @('CJODW002','CJODJ003'))
 Assert-Equal 'CJODJ002,CJODJ003,CJODJ001,OTHER' ($sorted -join ',') 'template jobs first in col-H order, unmatched jobs remain stable'
+
+Assert-True (Test-MappingIdBulkSelectorEnabled -FromBizCode 'JOD' -Owner 'all' -AddFlag $false) 'JOD + Owner=all enables the bulk ID selector'
+Assert-True (Test-MappingIdBulkSelectorEnabled -FromBizCode 'jod' -Owner 'ALL' -AddFlag $false) 'match is case-insensitive'
+Assert-True (-not (Test-MappingIdBulkSelectorEnabled -FromBizCode 'JRV' -Owner 'all' -AddFlag $false)) 'a non-JOD FromBizCode never enables the bulk selector, e.g. a plain -FromBizCode JRV -Owner AAA run must not be hijacked by a stale ID.txt'
+Assert-True (-not (Test-MappingIdBulkSelectorEnabled -FromBizCode 'JOD' -Owner 'AAA' -AddFlag $false)) 'Owner other than all never enables the bulk selector'
+Assert-True (-not (Test-MappingIdBulkSelectorEnabled -FromBizCode 'JOD' -Owner 'all' -AddFlag $true)) '-Add never enables the bulk selector'
+Assert-True (-not (Test-MappingIdBulkSelectorEnabled -FromBizCode '' -Owner 'all' -AddFlag $false)) 'blank FromBizCode never enables the bulk selector'
+Assert-True (-not (Test-MappingIdBulkSelectorEnabled -FromBizCode 'JOD' -Owner '' -AddFlag $false)) 'blank Owner never enables the bulk selector'
+
 exit (Complete-Tests)

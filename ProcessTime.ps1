@@ -628,6 +628,22 @@ function Write-ProcessTimeWorkbook {
             $row++
         }
         # Renumber retained + appended records and make the range filterable.
+        #
+        # Current template formatting settings (reference point for future changes --
+        # TODO: this whole block belongs in a dedicated formatting module instead of
+        # inline in the phase script; kept here as-is for now):
+        #   - Header row (A1:H1): fill 10053120 (BGR, i.e. RGB #007DA0-ish teal),
+        #     font color 16777215 (white), bold, centered horizontal+vertical.
+        #   - Table body (A1:H<last>): font 'Yu Gothic' 11pt, row height 18pt,
+        #     thin borders (LineStyle=1), vertical-centered; column A additionally
+        #     horizontal-centered.
+        #   - Per-row fill by Side (col B): GIFT rows 15398626, GFIX rows 16777215
+        #     (white) -- both BGR Long values, not RGB (Excel Interior.Color order).
+        #   - Column widths (A..H): 9, 10, 14, 24, 24, 20, 14, 17.
+        #   - Start/End (cols D/E) are written as plain pre-formatted TEXT
+        #     ('yyyy/MM/dd HH:mm:ss' via Format-ProcessTimeStamp / $r.Start /
+        #     $r.End), not real Excel date/time values -- there is currently no
+        #     cell NumberFormat applied to these columns.
         try {
             $finalRow = [int]$ws.Cells.Item($ws.Rows.Count, 2).End($xlUp).Row
             for ($rr = 2; $rr -le $finalRow; $rr++) { Set-RangeValue2 $ws.Cells.Item($rr, 1) ($rr - 1) | Out-Null }
@@ -636,13 +652,27 @@ function Write-ProcessTimeWorkbook {
             # reject the proxy overload with DISP_E_TYPEMISMATCH ("argument
             # type mismatch"), which must never prevent the workbook save.
             $tableRange = $ws.Range(('A1:H{0}' -f $finalRow))
-            $tableRange.AutoFilter() | Out-Null
             $headerRange = $ws.Range('A1:H1')
+        } catch {
+            Write-Warning ("ProcessTime workbook formatting: could not resolve table/header range for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
+
+        try {
+            $tableRange.AutoFilter() | Out-Null
+            $tableRange.Borders.LineStyle = 1
+        } catch {
+            Write-Warning ("ProcessTime workbook formatting: AutoFilter/borders failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
+
+        try {
             $headerRange.Interior.Color = 10053120
             $headerRange.Font.Color = 16777215
             $headerRange.Font.Bold = $true
-            $tableRange.Borders.LineStyle = 1
+        } catch {
+            Write-Warning ("ProcessTime workbook formatting: header fill/font failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
 
+        try {
             # The reference sheet uses Excel's Japanese default typeface at
             # 11 pt throughout, with compact 18-point rows.  Apply this to
             # the complete table after incremental rows have been merged so
@@ -650,10 +680,20 @@ function Write-ProcessTimeWorkbook {
             $tableRange.Font.Name = 'Yu Gothic'
             $tableRange.Font.Size = 11
             $tableRange.Rows.RowHeight = 18
+        } catch {
+            Write-Warning ("ProcessTime workbook formatting: font/row-height failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
+
+        try {
             $headerRange.HorizontalAlignment = -4108 # xlCenter
             $headerRange.VerticalAlignment = -4108   # xlCenter
             $ws.Range(('A2:A{0}' -f $finalRow)).HorizontalAlignment = -4108
             $tableRange.VerticalAlignment = -4108
+        } catch {
+            Write-Warning ("ProcessTime workbook formatting: alignment failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
+
+        try {
             for ($rr = 2; $rr -le $finalRow; $rr++) {
                 $side = [string]$ws.Cells.Item($rr, 2).Value2
                 # Color is explicitly Double for the Excel COM Variant
@@ -662,7 +702,10 @@ function Write-ProcessTimeWorkbook {
                 [double]$fill = if ($side -eq 'GIFT') { 15398626 } else { 16777215 }
                 $ws.Range(('A{0}:H{0}' -f $rr)).Interior.Color = $fill
             }
-        } catch {}
+        } catch {
+            Write-Warning ("ProcessTime workbook formatting: GIFT/GFIX row fill failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
+
         try {
             # Fixed widths reproduce the template proportions and keep the
             # date/time fields from changing width with different data.
@@ -670,7 +713,9 @@ function Write-ProcessTimeWorkbook {
             for ($c = 1; $c -le $widths.Count; $c++) {
                 $ws.Columns.Item($c).ColumnWidth = $widths[$c - 1]
             }
-        } catch {}
+        } catch {
+            Write-Warning ("ProcessTime workbook formatting: column widths failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
 
         if ($isNew) { $wb.SaveAs($OutputPath, 51) } else { $wb.Save() }   # 51 = xlOpenXMLWorkbook (.xlsx)
     } finally {

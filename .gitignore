@@ -7,6 +7,15 @@ bk/
 mapping_*.csv
 *.bak
 
+# --- Personal/local backup copies of tracked files (e.g. VerifyConfig_bk.psd1) --
+# never intended as the authoritative source; commit examples under docs/ or
+# examples/ instead if a reference copy is actually needed. ---
+*_bk.ps1
+*_bk.psd1
+*_bk.json
+*.bak.ps1
+*.bak.psd1
+
 # --- IDE / workspace state (Eclipse-family workspaces carry logs with hostnames and user paths) ---
 .metadata/
 .project

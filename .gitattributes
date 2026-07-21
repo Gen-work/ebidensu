@@ -1,0 +1,19 @@
+# Line-ending policy for this repository.
+#
+# The codebase is authored on Windows (PowerShell 5.1) but is git-tracked and
+# mostly stored as plain LF today -- PowerShell 5.1 and Excel COM do not
+# require CRLF in .ps1/.psd1 source files, only in the multi-line strings
+# they emit at runtime. Declaring `text eol=lf` here keeps every checkout
+# (Windows office PC or this Linux dev environment) normalized to LF and
+# stops editor/OS line-ending churn from drowning real diffs in noise -- see
+# CHANGELOG.md's 2026-07-21 entry, where a single CRLF whole-file rewrite of
+# a 31-line change showed up as 2700+ inserted/deleted lines.
+*.ps1  text eol=lf
+*.psd1 text eol=lf
+*.psm1 text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.txt  text eol=lf
+.gitattributes text eol=lf
+.gitignore     text eol=lf
