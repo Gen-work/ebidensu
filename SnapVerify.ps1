@@ -88,13 +88,21 @@ function ConvertFrom-HmPageText {
             if ($fields[$i].Trim() -ne '') { $correlId = $fields[$i].Trim(); break }
         }
 
+        # Record count (shori-kensu) -- fields[7] on the standard HM row
+        # (start, end, proc-time, batchid, ss, status, data-create, COUNT,
+        # result, correl). Kept as-is (comma-grouped) so ProcessTime's
+        # archived tier can surface the same column the OCR tier does.
+        $recordCount = ''
+        if ($fields.Count -gt 7) { $recordCount = $fields[7].Trim() }
+
         $results.Add([PSCustomObject]@{
-            StartTime = $startTime
-            EndTime   = $endTime
-            BatchId   = $fields[3].Trim()
-            Status    = $status
-            CorrelId  = $correlId
-            RawLine   = $rawLine
+            StartTime   = $startTime
+            EndTime     = $endTime
+            BatchId     = $fields[3].Trim()
+            Status      = $status
+            RecordCount = $recordCount
+            CorrelId    = $correlId
+            RawLine     = $rawLine
         })
     }
 
