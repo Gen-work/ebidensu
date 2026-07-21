@@ -129,6 +129,8 @@ Assert-Equal $newer.StartTime.ToString('yyyy/MM/dd HH:mm:ss') $picked.StartTime.
 
 Assert-True ($null -eq (Get-NewestProcessTimeRow -Rows @())) 'empty input returns null'
 Assert-True ($null -eq (Get-NewestProcessTimeRow -Rows @($null))) 'array of only nulls returns null'
+$midnightArchived = [PSCustomObject]@{ StartTime = [datetime]'2026/07/16 00:17:21'; EndTime = [datetime]'2026/07/16 00:17:21' }
+Assert-True ($null -eq (Get-NewestProcessTimeRow -Rows @($midnightArchived))) 'archived tier also rejects pre-09:00 history'
 
 # ---------------------------------------------------------------------------
 # ConvertTo-ProcessTimeCorrelKey / Test-ProcessTimeCorrelSeen (OCR glyph fold)
@@ -142,6 +144,34 @@ Assert-True (Test-ProcessTimeCorrelSeen -Line 'a row for JIDSM48S here' -CorrelI
 Assert-True (-not (Test-ProcessTimeCorrelSeen -Line 'a row for JIDSK48S here' -CorrelId 'JIDSM48S')) 'a genuinely different correl (K vs M) is not a false match'
 Assert-True (-not (Test-ProcessTimeCorrelSeen -Line 'no id anywhere' -CorrelId 'JIGPKB1S')) 'absent correl id is not seen'
 Assert-True (-not (Test-ProcessTimeCorrelSeen -Line 'anything' -CorrelId '')) 'blank correl id is never seen'
+Assert-True (Test-ProcessTimeCorrelSeen -Line 'result cell: J IDSCS4S' -CorrelId 'JIDSCS4S') 'OCR whitespace inside correl id is ignored'
+Assert-True (Test-ProcessTimeCorrelSeen -Line 'result cell: J IGPF05S' -CorrelId 'JIGPFO5S') 'whitespace and O/0 glyph confusion compose safely'
+
+# The OCR API commonly places the far-right correl cell on a separate visual
+# line from the timestamps. Ownership must apply to the complete picture.
+$splitCorrel = @(ConvertFrom-ProcessTimeOcrLines -Lines @(
+    "2026/05/12 10:58:00  2026/05/12 10:58:07  00:00:07  $normal",
+    'right edge cell: JIDSCS4S'
+) -CorrelId 'JIDSCS4S')
+Assert-Equal 1 $splitCorrel.Count 'timestamp row parses when correl is on another OCR line'
+Assert-True $splitCorrel[0].CorrelSeen 'correl seen anywhere in the exported picture owns its timestamp rows'
+
+$splitWrong = @(ConvertFrom-ProcessTimeOcrLines -Lines @(
+    "2026/05/12 10:58:00  2026/05/12 10:58:07  00:00:07  $normal",
+    'right edge cell: JIDSMS4S'
+) -CorrelId 'JIDSCS4S')
+Assert-True (-not $splitWrong[0].CorrelSeen) 'a different correl on another OCR line does not claim the picture'
+
+# Real multi-row JRV sample: newest daytime row must beat a valid midnight
+# history row from the same picture.
+$dayAndMidnight = @(ConvertFrom-ProcessTimeOcrLines -Lines @(
+    "2026/05/15  13 :44 :25  2026/05/15  13 :44 :25  00 :00 :00  IGPLB133 F $normal 20260515134425 0 J IGPF05S",
+    "2026/05/15 00 : 17 :21  2026/05/15 00 : 17 :21  00 :00 :00  IGPLB133 F $normal 20260515001721 0 JIGPF05S"
+) -CorrelId 'JIGPFO5S')
+Assert-Equal 2 $dayAndMidnight.Count 'both real JRV history rows parse'
+$pickedDay = Select-ProcessTimeRow -Rows $dayAndMidnight -RequireCorrelSeen
+Assert-Equal '2026/05/15 13:44:25' $pickedDay.StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'daytime row is selected instead of midnight history'
+Assert-True ($null -eq (Select-ProcessTimeRow -Rows @($dayAndMidnight[1]) -RequireCorrelSeen)) 'a picture containing only pre-09:00 history is rejected'
 
 # ---------------------------------------------------------------------------
 # Get-ProcessTimeRecordCount (shori-kensu) -- ja HM rows split the count digits
@@ -159,6 +189,15 @@ $rz = @(ConvertFrom-ProcessTimeOcrLines -Lines @($zeroLine) -CorrelId 'JIDSC48S'
 Assert-Equal '0' $rz[0].RecordCount 'a zero record count is read'
 
 Assert-Equal '' (Get-ProcessTimeRecordCount -Line 'no digits at all here') 'no datestamp -> empty record count (never guesses)'
+Assert-Equal '' (Get-ProcessTimeRecordCount -Line '20260515001721 JIGPFO5S') 'digit embedded in correl id is not mistaken for count'
+$diamondOnly = '2026/05/12 10:58:02 2026/05/12 10:58:02 00:00:00 IDSLDO13 C ' + $normal + ' 0 ' + $diamond + ' J IDSCS4S'
+Assert-Equal '0' (Get-ProcessTimeRecordCount -Line $diamondOnly -SearchFrom 40) 'JDL count before result diamond is read without a creation stamp'
+
+$countFromEn = @(ConvertFrom-ProcessTimeOcrLines -Lines @(
+    '2026/05/15 2026/05/15 IGPLB073 20260515134743 82 JIGPQBIS',
+    '2026/05/15 13 :47 :43 2026/05/15 13 :47 :43 00 :00 :00 IGPLB073 ' + $normal + ' ' + $diamond + ' JIGPQBIS'
+) -CorrelId 'JIGPQB1S')
+Assert-Equal '82' $countFromEn[0].RecordCount 'count from en-US date-only row joins to ja timestamp row by creation stamp'
 
 # ---------------------------------------------------------------------------
 # Get-ProcessTimeDateHints + -StartDateHints date correction (v2.12.3):
@@ -183,5 +222,47 @@ Assert-Equal '2026/05/23 10:58:50' $agree[0].StartTime.ToString('yyyy/MM/dd HH:m
 $noHint = @(ConvertFrom-ProcessTimeOcrLines -Lines @($jaWrongDate) -CorrelId 'JIGPKB1S')
 Assert-True (-not $noHint[0].DateCorrected) 'no hints -> not corrected'
 Assert-Equal '2026/05/23 10:58:50' $noHint[0].StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'no hints leaves the ja date as read'
+
+# ---------------------------------------------------------------------------
+# Resolve-ProcessTimeRowPlan (v2.13.0: staged Ocr/Write + sidecar-based re-run)
+# ---------------------------------------------------------------------------
+$fresh = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Both' -Force $false
+Assert-True $fresh.NeedsOcr 'fresh row (Both, no Force): needs OCR'
+Assert-True $fresh.NeedsWrite 'fresh row (Both, no Force): needs write'
+Assert-True $fresh.Touch 'fresh row: touched'
+
+$ocrDoneWritePending = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $false -Stage 'Both' -Force $false
+Assert-True (-not $ocrDoneWritePending.NeedsOcr) 'sidecar cached, not yet inserted: OCR skipped (re-run reuses the cache)'
+Assert-True $ocrDoneWritePending.NeedsWrite 'sidecar cached, not yet inserted: write still pending'
+
+$legacyDone = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Both' -Force $false
+Assert-True (-not $legacyDone.NeedsOcr) 'legacy-inserted row with no sidecar: OCR not re-triggered (backward compat)'
+Assert-True (-not $legacyDone.NeedsWrite) 'legacy-inserted row: write not pending'
+Assert-True (-not $legacyDone.Touch) 'fully-done row (legacy or new): not touched at all'
+
+$bothDone = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $true -Stage 'Both' -Force $false
+Assert-True (-not $bothDone.Touch) 'sidecar + inserted: fully done, skipped'
+
+$forced = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $true -Stage 'Both' -Force $true
+Assert-True $forced.NeedsOcr '-Force redoes OCR even when sidecar + inserted'
+Assert-True $forced.NeedsWrite '-Force redoes write even when sidecar + inserted'
+
+$ocrOnlyStage = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Ocr' -Force $false
+Assert-True $ocrOnlyStage.NeedsOcr 'Stage=Ocr: OCR needed for a fresh row'
+Assert-True (-not $ocrOnlyStage.NeedsWrite) 'Stage=Ocr: write never requested regardless of Inserted'
+
+$writeOnlyStageReady = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $false -Stage 'Write' -Force $false
+Assert-True (-not $writeOnlyStageReady.NeedsOcr) 'Stage=Write: OCR never requested regardless of cache state'
+Assert-True $writeOnlyStageReady.NeedsWrite 'Stage=Write: write needed when not yet inserted'
+
+$writeOnlyStageNoCache = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Write' -Force $false
+Assert-True $writeOnlyStageNoCache.NeedsWrite 'Stage=Write: still marked pending even with no cache (caller reports a MISS and skips it at run time)'
+
+$ocrStageLegacyRow = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Ocr' -Force $false
+Assert-True (-not $ocrStageLegacyRow.Touch) 'Stage=Ocr on an already-inserted legacy row: nothing to do without -Force'
+
+$ocrStageLegacyRowForced = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Ocr' -Force $true
+Assert-True $ocrStageLegacyRowForced.NeedsOcr 'Stage=Ocr -Force: backfills a sidecar for a legacy row on demand'
+Assert-True (-not $ocrStageLegacyRowForced.NeedsWrite) 'Stage=Ocr -Force: still never touches write'
 
 exit (Complete-Tests)

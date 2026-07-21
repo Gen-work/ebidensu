@@ -394,19 +394,32 @@
     # ProcessTime phase: extracts each correl's HM batch processing
     # start/end time (and derives the duration) from the GIFT/GFIX
     # receive-result evidence screenshot already inserted by ReplaceGift/
-    # ReplaceGfix, then writes one summary row per correl into a
-    # standalone evidence workbook (ProcessTime.ps1).
+    # ReplaceGfix, then writes one row per GIFT/GFIX side per correl into
+    # separate JDL/JRV evidence workbooks (ProcessTime.ps1).
     ProcessTime = @{
         # Column (1-indexed) the correl-id label sits in on the recv
         # sheets. Matches Replace.ColAnchor (2 = column B) -- override
         # only if Replace.ColAnchor itself is changed.
         AnchorCol       = 2
-        # Destination for the generated evidence workbook. Blank ->
-        # <WorkDir>\ProcessTime_<Owner>.xlsx.
+        # Legacy output path; when set, only its directory is used.
         OutputPath      = ''
-        # Sheet name in the generated workbook. Blank -> [char] label
+        # Destination directory for both workbooks. Blank -> <WorkDir>.
+        # Two operator-facing workbooks are generated there:
+        # <ProcessTime label>(JDL).xlsx / (JRV).xlsx, classified per correl
+        # by whether its mapping Excel_NAME contains "JDL" or "JRV".
+        OutputDirectory = ''
+        # Sheet name in the generated workbooks. Blank -> [char] label
         # (ProjectLabels.ps1 SheetProcessTime).
         OutputSheetName = ''
+        # Which stage(s) -Phase ProcessTime runs by default: 'Ocr' (extract
+        # + cache a per-correl sidecar only), 'Write' (write the output
+        # workbook from already-cached sidecars only, no evidence workbook
+        # opened), or 'Both' (default -- OCR whatever is still needed, then
+        # write whatever is still needed). CLI -Stage / the 'stage' menu
+        # option override this per run. See ProcessTime.ps1's header
+        # comment and Resolve-ProcessTimeRowPlan (ProcessTimeParse.ps1) for
+        # how non -Force re-run detection works per stage.
+        Stage           = 'Both'
         # Secondary Windows OCR language pooled alongside 'en-US' when no
         # archived snap text is available (HmSnap.ps1's SnapVerify.SaveText).
         OcrLanguage     = 'ja'

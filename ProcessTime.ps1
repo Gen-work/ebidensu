@@ -4,8 +4,9 @@
 #
 #  For each pending mapping row (ProcessTime_Inserted = 0), extracts the
 #  HM batch processing start time / end time (and derives the duration)
-#  for the GIFT and GFIX sides, then writes one summary row per correl
-#  into a standalone ProcessTime evidence workbook.
+#  for the GIFT and GFIX sides, then writes one row per side per correl
+#  into separate JDL/JRV ProcessTime evidence workbooks (classified by
+#  Excel_NAME containing "JDL" or "JRV").
 #
 #  Source, two tiers per side (cheapest/most-accurate first):
 #    1. archived Ctrl+A page text HmSnap.ps1 saved at snap time
@@ -37,11 +38,33 @@
 #  Mapping columns (MappingStore.ps1):
 #    GIFT_ProcessTime / GFIX_ProcessTime : informational per-side result
 #      ('0' not yet attempted, '1' start/end extracted, '2' not found).
-#    ProcessTime_Inserted : plain 0/1 completion flag (this phase's
-#      Get-PendingRows field) -- '1' once the row has been written into
-#      the ProcessTime evidence workbook, regardless of whether either
-#      side was actually detected (a "not detected" row is still listed
-#      so the operator can see it was checked). Re-run with -Force to redo.
+#    ProcessTime_Inserted : plain 0/1 completion flag -- '1' once the row
+#      has been written into the ProcessTime evidence workbook, regardless
+#      of whether either side was actually detected (a "not detected" row
+#      is still listed so the operator can see it was checked).
+#
+#  -Stage Ocr | Write | Both (default Both): lets the extraction pass and
+#  the output-workbook write be run and re-run independently.
+#    Ocr   -- resolve GIFT/GFIX for pending correls and cache the result to
+#             a per-correl sidecar (WorkDir\snap\ProcessTime\<correl>\
+#             result.json); never opens/writes the output workbook.
+#    Write -- write the output workbook from already-cached sidecars only;
+#             never opens an evidence workbook or runs OCR. A correl with
+#             no cached sidecar is reported as a MISS and skipped (its
+#             ProcessTime_Inserted flag is left untouched).
+#    Both  -- OCR whatever is still needed, then write whatever is still
+#             needed (reusing any sidecar already on disk instead of
+#             redoing OCR for it).
+#  Per-row re-run detection (non -Force) is now two INDEPENDENT signals,
+#  not one shared one: the OCR stage is considered done for a correl when
+#  its sidecar file exists (a per-correl filesystem check, NOT the shared
+#  output .xlsx many rows write into -- that file can't tell "already
+#  extracted, just needs writing" apart from "never touched"); the write
+#  stage is still gated on ProcessTime_Inserted, as before. -Force ignores
+#  both signals for whichever stage(s) -Stage selects. A row already fully
+#  done before this sidecar cache existed (Inserted=1, no sidecar file) is
+#  NOT treated as needing a fresh OCR redo -- see Resolve-ProcessTimeRowPlan
+#  (ProcessTimeParse.ps1) for the exact rule and its unit tests.
 # ============================================================
 
 param(
@@ -56,9 +79,20 @@ param(
     # New-TextOp writes correl labels there.
     [int]$AnchorCol = 2,
 
-    # Destination for the generated evidence workbook. Blank -> WorkDir\ProcessTime_<Owner>.xlsx.
+    # Legacy destination option. Its directory is used when OutputDirectory
+    # is blank; the file name itself is ignored because output is now split
+    # into two operator-facing workbooks, ProcessTime(JDL).xlsx and
+    # ProcessTime(JRV).xlsx (Japanese ProcessTime label as the stem).
     [string]$OutputPath = '',
+    # Destination directory for both workbooks. Blank -> WorkDir.
+    [string]$OutputDirectory = '',
     [string]$OutputSheetName = '',
+
+    # Which stage(s) to run: 'Ocr' (extract + cache sidecars only),
+    # 'Write' (write the output workbook from cached sidecars only), or
+    # 'Both' (default -- OCR whatever is still needed, then write whatever
+    # is still needed). Case-insensitive; validated below.
+    [string]$Stage = 'Both',
 
     # Secondary OCR language pooled alongside 'en-US' for the OCR tier.
     # Empty (default) means en-US only; set e.g. 'ja' to also pool the
@@ -121,6 +155,40 @@ function Format-ProcessTimeResult {
         return ("start {0}; end NOT read{1}" -f (Format-ProcessTimeStamp $Result.StartTime), $durTxt)
     }
     return 'not detected'
+}
+
+# Per-correl OCR result cache: WorkDir\snap\ProcessTime\<correl>\result.json,
+# in the SAME per-correl folder Resolve-ProcessTimeSide already exports its
+# diagnostic PNG/.ocr.txt candidates into. This is the per-row, filesystem-
+# based "was this correl's OCR already extracted" signal
+# (Resolve-ProcessTimeRowPlan, ProcessTimeParse.ps1) -- independent of
+# whether the result has been WRITTEN into the shared output workbook yet
+# (ProcessTime_Inserted), so a -Stage Write (or a Both) rerun can tell
+# "already extracted, just needs writing" apart from "never touched".
+function Get-ProcessTimeSidecarPath {
+    param([string]$ExportRoot, [string]$CorrelId)
+    return Join-Path (Join-Path $ExportRoot $CorrelId) 'result.json'
+}
+
+function Save-ProcessTimeSidecar {
+    param([string]$Path, [pscustomobject]$Payload)
+    $dir = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    ($Payload | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+# Returns $null when the sidecar is missing, unreadable, or not valid JSON --
+# callers treat that exactly like "never OCR'd" (never throws; a half-written
+# or corrupt cache file is never trusted over doing the real extraction).
+function Read-ProcessTimeSidecar {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
+    } catch {
+        Write-Host ("       [WARN] ProcessTime sidecar unreadable ({0}): {1}" -f $Path, $_.Exception.Message) -ForegroundColor Yellow
+        return $null
+    }
 }
 
 # Finds the Correl_ID_S label cell in $AnchorCol on the recv sheet
@@ -327,7 +395,10 @@ function Resolve-ProcessTimeSide {
                 ($tier.Tag -eq 'below-label' -and ($candIdx -ge 2 -or $sectionHadPicture))
             $sel = if ($strict) { Select-ProcessTimeRow -Rows $rows -RequireCorrelSeen } else { Select-ProcessTimeRow -Rows $rows }
             if ($null -eq $sel) {
-                $note = if ($strict -and $rows.Count -gt 0) {
+                $dayRows = @($rows | Where-Object { $null -ne $_.StartTime -and $_.StartTime.TimeOfDay -ge ([timespan]'09:00:00') })
+                $note = if ($rows.Count -gt 0 -and $dayRows.Count -eq 0) {
+                    ("{0} time row(s), all before 09:00 -- skipped as history" -f $rows.Count)
+                } elseif ($strict -and $rows.Count -gt 0) {
                     ("{0} time row(s) but correl id not in OCR text -- skipped (likely another correl's picture)" -f $rows.Count)
                 } else {
                     Get-ProcessTimeOcrMissNote -Lines $lines
@@ -412,20 +483,48 @@ function Get-ArchivedProcessTimePreview {
     }
 }
 
-# Appends $Rows to $OutputPath (creating it, with a header row, if it does
-# not exist yet), so an incremental (non -Force) run accumulates instead
-# of clobbering earlier runs' extracted rows. A row whose
-# (Excel_NAME, Correl_ID_S) pair is being rewritten this run REPLACES the
-# old one (deleted first), so a -Force redo keeps ONE row per correl
-# instead of stacking a fresh 43 rows on top of the previous run's 43.
+# Writes the operator-facing, vertical layout requested for delivery:
+# No. / GIFT-GFIX / correl / start / end / duration / count / job. Each
+# correl in -Rows (the combined GIFT+GFIX shape ProcessTime.ps1 resolves,
+# cached one-per-correl in the sidecar) becomes TWO output rows here, one
+# per side. Incremental (non -Force) runs retain older records; a repeated
+# (side, correl) pair REPLACES its prior row (deleted first), so a redo
+# keeps one row per (side, correl) instead of stacking duplicates.
 function Write-ProcessTimeWorkbook {
     param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows)
 
     $headers = @(
-        'Excel_NAME', 'JOB_NAME', 'Correl_ID_S',
-        'GIFT Start', 'GIFT End', 'GIFT Duration', 'GIFT Count', 'GIFT Source',
-        'GFIX Start', 'GFIX End', 'GFIX Duration', 'GFIX Count', 'GFIX Source'
+        'No.', 'GIFT/GFIX',
+        ([string][char]0x76F8 + [char]0x95A2 + 'ID'),
+        ([string][char]0x958B + [char]0x59CB + [char]0x65E5 + [char]0x6642),
+        ([string][char]0x7D42 + [char]0x4E86 + [char]0x65E5 + [char]0x6642),
+        ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593),
+        ([string][char]0x51E6 + [char]0x7406 + [char]0x4EF6 + [char]0x6570),
+        ([string][char]0x30B8 + [char]0x30E7 + [char]0x30D6)
     )
+
+    $flatRows = New-Object System.Collections.Generic.List[object]
+    $jobOrder = New-Object System.Collections.Generic.List[string]
+    foreach ($r in @($Rows)) {
+        $job = [string]$r.JobName
+        if (-not $jobOrder.Contains($job)) { $jobOrder.Add($job) }
+    }
+    # Within each job, list all GIFT correls and then all GFIX correls
+    # (rather than interleaving the two sides).
+    foreach ($job in $jobOrder) {
+        foreach ($side in @('GIFT', 'GFIX')) {
+            foreach ($r in @($Rows | Where-Object { [string]$_.JobName -eq $job })) {
+                $isGift = $side -eq 'GIFT'
+                $flatRows.Add([pscustomobject]@{
+                    Side = $side; CorrelId = [string]$r.CorrelId; JobName = [string]$r.JobName
+                    Start = [string]$(if ($isGift) { $r.GiftStart } else { $r.GfixStart })
+                    End = [string]$(if ($isGift) { $r.GiftEnd } else { $r.GfixEnd })
+                    Duration = [string]$(if ($isGift) { $r.GiftDuration } else { $r.GfixDuration })
+                    Count = [string]$(if ($isGift) { $r.GiftCount } else { $r.GfixCount })
+                })
+            }
+        }
+    }
 
     $isNew = -not (Test-Path -LiteralPath $OutputPath)
     $wb = if ($isNew) { $Excel.Workbooks.Add() } else { $Excel.Workbooks.Open($OutputPath) }
@@ -450,17 +549,15 @@ function Write-ProcessTimeWorkbook {
             $lastRow = 1
         }
 
-        # Replace-in-place: delete existing rows for the correls being
-        # rewritten (bottom-up so row indices stay valid). Keys are plain
-        # string compares -- Excel_NAME/Correl_ID_S are always alphanumeric.
+        # Replace-in-place by (GIFT/GFIX, correl).
         if ($lastRow -gt 1) {
             $keys = @{}
-            foreach ($r in @($Rows)) {
-                $keys[('{0}|{1}' -f [string]$r.ExcelName, [string]$r.CorrelId)] = $true
+            foreach ($r in $flatRows) {
+                $keys[('{0}|{1}' -f $r.Side, $r.CorrelId)] = $true
             }
             $deleted = 0
             for ($rr = $lastRow; $rr -ge 2; $rr--) {
-                $k = ('{0}|{1}' -f [string]$ws.Cells.Item($rr, 1).Value2, [string]$ws.Cells.Item($rr, 3).Value2)
+                $k = ('{0}|{1}' -f [string]$ws.Cells.Item($rr, 2).Value2, [string]$ws.Cells.Item($rr, 3).Value2)
                 if ($keys.ContainsKey($k)) {
                     $ws.Rows.Item($rr).Delete() | Out-Null
                     $deleted++
@@ -474,22 +571,32 @@ function Write-ProcessTimeWorkbook {
         }
 
         $row = $lastRow + 1
-        foreach ($r in @($Rows)) {
-            $ws.Cells.Item($row, 1).Value2  = [string]$r.ExcelName
-            $ws.Cells.Item($row, 2).Value2  = [string]$r.JobName
-            $ws.Cells.Item($row, 3).Value2  = [string]$r.CorrelId
-            $ws.Cells.Item($row, 4).Value2  = [string]$r.GiftStart
-            $ws.Cells.Item($row, 5).Value2  = [string]$r.GiftEnd
-            $ws.Cells.Item($row, 6).Value2  = [string]$r.GiftDuration
-            $ws.Cells.Item($row, 7).Value2  = [string]$r.GiftCount
-            $ws.Cells.Item($row, 8).Value2  = [string]$r.GiftSource
-            $ws.Cells.Item($row, 9).Value2  = [string]$r.GfixStart
-            $ws.Cells.Item($row, 10).Value2 = [string]$r.GfixEnd
-            $ws.Cells.Item($row, 11).Value2 = [string]$r.GfixDuration
-            $ws.Cells.Item($row, 12).Value2 = [string]$r.GfixCount
-            $ws.Cells.Item($row, 13).Value2 = [string]$r.GfixSource
+        foreach ($r in $flatRows) {
+            $ws.Cells.Item($row, 1).Value2 = $row - 1
+            $ws.Cells.Item($row, 2).Value2 = $r.Side
+            $ws.Cells.Item($row, 3).Value2 = $r.CorrelId
+            $ws.Cells.Item($row, 4).Value2 = $r.Start
+            $ws.Cells.Item($row, 5).Value2 = $r.End
+            $ws.Cells.Item($row, 6).Value2 = $r.Duration
+            $ws.Cells.Item($row, 7).Value2 = $r.Count
+            $ws.Cells.Item($row, 8).Value2 = $r.JobName
+            if ($r.Side -eq 'GIFT') {
+                try { $ws.Range($ws.Cells.Item($row, 1), $ws.Cells.Item($row, 8)).Interior.Color = 15073398 } catch {}
+            }
             $row++
         }
+        # Renumber retained + appended records and make the range filterable.
+        try {
+            $finalRow = [int]$ws.Cells.Item($ws.Rows.Count, 2).End($xlUp).Row
+            for ($rr = 2; $rr -le $finalRow; $rr++) { $ws.Cells.Item($rr, 1).Value2 = $rr - 1 }
+            $tableRange = $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item($finalRow, 8))
+            $tableRange.AutoFilter() | Out-Null
+            $headerRange = $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item(1, 8))
+            $headerRange.Interior.Color = 10053120
+            $headerRange.Font.Color = 16777215
+            $headerRange.Font.Bold = $true
+            $tableRange.Borders.LineStyle = 1
+        } catch {}
         try { $ws.Columns.AutoFit() | Out-Null } catch {}
 
         if ($isNew) { $wb.SaveAs($OutputPath, 51) } else { $wb.Save() }   # 51 = xlOpenXMLWorkbook (.xlsx)
@@ -508,11 +615,31 @@ if (-not (Test-Path -LiteralPath $WorkDir)) {
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir 'evidence' }
 elseif (-not [System.IO.Path]::IsPathRooted($EvidenceDir)) { $EvidenceDir = Join-Path $WorkDir $EvidenceDir }
 
-if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = Join-Path $WorkDir ("ProcessTime_{0}.xlsx" -f $Owner) }
-elseif (-not [System.IO.Path]::IsPathRooted($OutputPath)) { $OutputPath = Join-Path $WorkDir $OutputPath }
+if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    if (-not [System.IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory = Join-Path $WorkDir $OutputDirectory }
+} elseif (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
+    if (-not [System.IO.Path]::IsPathRooted($OutputPath)) { $OutputPath = Join-Path $WorkDir $OutputPath }
+    $OutputDirectory = Split-Path $OutputPath -Parent
+} else {
+    $OutputDirectory = $WorkDir
+}
+if (-not (Test-Path -LiteralPath $OutputDirectory)) {
+    [void](New-Item -ItemType Directory -Path $OutputDirectory -Force)
+}
+
+$stageMap = @{ 'ocr' = 'Ocr'; 'write' = 'Write'; 'both' = 'Both' }
+$stageKey = ([string]$Stage).Trim().ToLowerInvariant()
+if ([string]::IsNullOrWhiteSpace($stageKey)) { $stageKey = 'both' }
+if (-not $stageMap.ContainsKey($stageKey)) {
+    Write-Host ("[ERROR] -Stage must be Ocr, Write, or Both (got '{0}')" -f $Stage) -ForegroundColor Red
+    exit 1
+}
+$Stage = $stageMap[$stageKey]
 
 $labels = Get-ProjectLabels
 if ([string]::IsNullOrWhiteSpace($OutputSheetName)) { $OutputSheetName = $labels['SheetProcessTime'] }
+$outputJdlPath = Join-Path $OutputDirectory ("{0}(JDL).xlsx" -f $labels['SheetProcessTime'])
+$outputJrvPath = Join-Path $OutputDirectory ("{0}(JRV).xlsx" -f $labels['SheetProcessTime'])
 $sheetGiftRecv = $labels['SheetGiftRecv']
 $sheetGfixRecv = $labels['SheetGfixRecv']
 
@@ -527,184 +654,278 @@ if ($allRows.Count -eq 0) {
 }
 Ensure-MappingColumns -Rows $allRows | Out-Null
 
+$exportRoot = Join-Path $WorkDir 'snap\ProcessTime'
 $targets = @(ConvertTo-TargetIdList $TargetIds)
-$pending = @(Get-PendingRows -Rows $allRows -Field 'ProcessTime_Inserted' -Force $forceFlag -Targets $targets)
+
+# Per-row plan: which stage(s) THIS run still needs, resolved from -Stage
+# plus two independent, per-correl completion signals
+# (Resolve-ProcessTimeRowPlan, ProcessTimeParse.ps1) -- a filesystem sidecar
+# cache for the OCR stage, and the mapping's ProcessTime_Inserted flag for
+# the write stage. This replaces gating BOTH stages off the single shared
+# output workbook, which cannot tell "OCR already extracted, just needs
+# writing" apart from "never touched at all".
+$plans = New-Object System.Collections.Generic.List[object]
+foreach ($row in $allRows) {
+    if (-not (Test-TargetRow $row $targets)) { continue }
+    $correlId = [string]$row.Correl_ID_S
+    if ([string]::IsNullOrWhiteSpace($correlId)) { continue }
+    $sidecarPath = Get-ProcessTimeSidecarPath -ExportRoot $exportRoot -CorrelId $correlId
+    $sidecarExists = Test-Path -LiteralPath $sidecarPath
+    $inserted = ((Get-RowProp $row 'ProcessTime_Inserted') -eq '1')
+    $plan = Resolve-ProcessTimeRowPlan -SidecarExists $sidecarExists -Inserted $inserted -Stage $Stage -Force $forceFlag
+    if (-not $plan.Touch) { continue }
+    $plans.Add([pscustomobject]@{
+        Row = $row; CorrelId = $correlId; SidecarPath = $sidecarPath
+        NeedsOcr = $plan.NeedsOcr; NeedsWrite = $plan.NeedsWrite
+    })
+}
+$ocrPlans   = @($plans | Where-Object { $_.NeedsOcr })
+$writePlans = @($plans | Where-Object { $_.NeedsWrite })
 
 Write-Host ''
 Write-Host '===== ProcessTime =====' -ForegroundColor Green
 Write-Host ("  WorkDir      : {0}" -f $WorkDir)
 Write-Host ("  EvidenceDir  : {0}" -f $EvidenceDir)
-Write-Host ("  OutputPath   : {0}" -f $OutputPath)
+Write-Host ("  Output JDL   : {0}" -f $outputJdlPath)
+Write-Host ("  Output JRV   : {0}" -f $outputJrvPath)
 Write-Host ("  AnchorCol    : {0}" -f $AnchorCol)
 Write-Host ("  OcrLanguage  : {0}" -f $(if ([string]::IsNullOrWhiteSpace($OcrLanguage)) { 'en-US' } else { 'en-US + ' + $OcrLanguage }))
-Write-Host ("  Pending      : {0}" -f $pending.Count)
+Write-Host ("  Stage        : {0}" -f $Stage)
+Write-Host ("  Pending      : {0} row(s) touched -- OCR {1}, Write {2}" -f $plans.Count, $ocrPlans.Count, $writePlans.Count)
 Write-Host ("  Force        : {0}   DryRun : {1}" -f $forceFlag, $dryRunFlag)
 
 Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'start' -Status 'info' `
-    -Message ("pending={0}" -f $pending.Count)
+    -Message ("stage={0} pending={1} ocr={2} write={3}" -f $Stage, $plans.Count, $ocrPlans.Count, $writePlans.Count)
 
-if ($pending.Count -eq 0) {
-    Write-Host '[ProcessTime] No pending rows.' -ForegroundColor Green
+if ($plans.Count -eq 0) {
+    Write-Host ("[ProcessTime] No pending rows for -Stage {0}." -f $Stage) -ForegroundColor Green
     exit 0
 }
 
 if ($dryRunFlag) {
     Write-Host ''
     Write-Host '  [DRY RUN] archived-text-only preview (no Excel/OCR opened):' -ForegroundColor Yellow
-    foreach ($row in $pending) {
-        $correlId = [string]$row.Correl_ID_S
-        if ([string]::IsNullOrWhiteSpace($correlId)) { continue }
-        $giftTxt = Join-Path (Join-Path $WorkDir 'snap\GIFT_HM') ("{0}.txt" -f $correlId)
-        $gfixTxt = Join-Path (Join-Path $WorkDir 'snap\GFIX_HM') ("{0}.txt" -f $correlId)
-        Write-Host ("    {0}" -f $correlId) -ForegroundColor Cyan
-        Write-Host ("      GIFT: {0}" -f (Get-ArchivedProcessTimePreview $giftTxt $correlId)) -ForegroundColor DarkGray
-        Write-Host ("      GFIX: {0}" -f (Get-ArchivedProcessTimePreview $gfixTxt $correlId)) -ForegroundColor DarkGray
+    foreach ($p in $plans) {
+        $correlId = $p.CorrelId
+        $ocrTxt   = if ($p.NeedsOcr) { 'yes' } else { 'no' }
+        $writeTxt = if ($p.NeedsWrite) { 'yes' } else { 'no' }
+        Write-Host ("    {0}  (OCR:{1} Write:{2})" -f $correlId, $ocrTxt, $writeTxt) -ForegroundColor Cyan
+        if ($p.NeedsOcr) {
+            $giftTxt = Join-Path (Join-Path $WorkDir 'snap\GIFT_HM') ("{0}.txt" -f $correlId)
+            $gfixTxt = Join-Path (Join-Path $WorkDir 'snap\GFIX_HM') ("{0}.txt" -f $correlId)
+            Write-Host ("      GIFT: {0}" -f (Get-ArchivedProcessTimePreview $giftTxt $correlId)) -ForegroundColor DarkGray
+            Write-Host ("      GFIX: {0}" -f (Get-ArchivedProcessTimePreview $gfixTxt $correlId)) -ForegroundColor DarkGray
+        } else {
+            Write-Host ("      (cached OCR result from a previous run -- {0})" -f $p.SidecarPath) -ForegroundColor DarkGray
+        }
     }
-    Write-Host ("  would write -> {0}" -f $OutputPath) -ForegroundColor DarkGray
+    Write-Host ("  would write -> {0}, {1}" -f $outputJdlPath, $outputJrvPath) -ForegroundColor DarkGray
     exit 0
 }
 
-# -- group pending rows by Excel_NAME (mapping order; one workbook open each) --
+# -- OCR-pending rows grouped by Excel_NAME (mapping order; one workbook
+#    open each). A -Stage Write run never reaches here with anything in
+#    $ocrPlans, so it never opens an evidence workbook at all. --
 $namesOrdered = New-Object System.Collections.Generic.List[string]
 $rowsByName   = @{}
-foreach ($row in $pending) {
-    $name = [string]$row.Excel_NAME
+foreach ($p in $ocrPlans) {
+    $name = [string]$p.Row.Excel_NAME
     if ([string]::IsNullOrWhiteSpace($name)) { continue }
     if (-not $rowsByName.ContainsKey($name)) {
         $rowsByName[$name] = New-Object System.Collections.Generic.List[object]
         $namesOrdered.Add($name)
     }
-    $rowsByName[$name].Add($row)
+    $rowsByName[$name].Add($p)
 }
 
 $excel = $null
-$results       = New-Object System.Collections.Generic.List[object]
-$processedRows = New-Object System.Collections.Generic.List[object]
-$seenThisRun   = @{}   # 'Excel_NAME|Correl_ID_S' -> per-side flags of the first occurrence
-$exportRoot    = Join-Path $WorkDir 'snap\ProcessTime'
+$sidecarCache   = @{}   # CorrelId -> sidecar payload produced/read this run
+$ocrDoneThisRun = @{}   # CorrelId -> $true once actually OCR'd this run (dedupes duplicate mapping rows)
+$writtenRows    = New-Object System.Collections.Generic.List[object]
+$mappingDirty   = $false
 
 try {
     $excel = New-ExcelApp
 
-    foreach ($name in $namesOrdered) {
-        $groupRows = $rowsByName[$name]
-        $prefix = Resolve-ExcelPrefixWithDisk -Row $groupRows[0] -DefaultPrefix $ExcelPrefix -ExcelName $name -EvidenceDir $EvidenceDir
-        $fullStem = Get-ExcelFullStem -Prefix $prefix -Name $name
-        $wbPath = Find-WorkbookByExcelName -Dir $EvidenceDir -ExcelName $fullStem -FullWidthFallback Reject
-
+    if ($ocrPlans.Count -gt 0) {
         Write-Host ''
-        Write-Host ("----- {0} -----" -f $name) -ForegroundColor Cyan
-        if ($null -eq $wbPath) {
-            Write-Host ("  [MISS] no evidence workbook found: {0}" -f $fullStem) -ForegroundColor Yellow
-            foreach ($row in $groupRows) {
-                Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -CorrelIdS ([string]$row.Correl_ID_S) `
-                    -JobName ([string]$row.JOB_NAME) -Action 'find-workbook' -Status 'fail' `
-                    -Message ("workbook not found: {0}" -f $fullStem)
+        Write-Host ("----- OCR stage: {0} row(s) -----" -f $ocrPlans.Count) -ForegroundColor Green
+        foreach ($name in $namesOrdered) {
+            $groupPlans = $rowsByName[$name]
+            $prefix = Resolve-ExcelPrefixWithDisk -Row $groupPlans[0].Row -DefaultPrefix $ExcelPrefix -ExcelName $name -EvidenceDir $EvidenceDir
+            $fullStem = Get-ExcelFullStem -Prefix $prefix -Name $name
+            $wbPath = Find-WorkbookByExcelName -Dir $EvidenceDir -ExcelName $fullStem -FullWidthFallback Reject
+
+            Write-Host ''
+            Write-Host ("----- {0} -----" -f $name) -ForegroundColor Cyan
+            if ($null -eq $wbPath) {
+                Write-Host ("  [MISS] no evidence workbook found: {0}" -f $fullStem) -ForegroundColor Yellow
+                foreach ($p in $groupPlans) {
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -CorrelIdS $p.CorrelId `
+                        -JobName ([string]$p.Row.JOB_NAME) -Action 'find-workbook' -Status 'fail' `
+                        -Message ("workbook not found: {0}" -f $fullStem)
+                }
+                continue
             }
-            continue
+            Write-Host ("  {0}" -f (Split-Path $wbPath -Leaf)) -ForegroundColor White
+
+            $wb = $null
+            try {
+                $wb = $excel.Workbooks.Open($wbPath, 0, $true)   # read-only
+                foreach ($p in $groupPlans) {
+                    $correlId = $p.CorrelId
+                    $row = $p.Row
+                    $jobName = [string]$row.JOB_NAME
+                    Write-Host ("    {0}" -f $correlId) -ForegroundColor White
+
+                    # The mapping can carry the same correl twice (duplicate
+                    # rows observed in a real run). Extract once per correl;
+                    # later duplicates mirror the first occurrence's flags
+                    # instead of redoing export+OCR and re-saving the sidecar.
+                    if ($ocrDoneThisRun.ContainsKey($correlId)) {
+                        Write-Host '      [DIAG] duplicate mapping row for this correl; reusing this run''s OCR result (check the mapping for unintended duplicates)' -ForegroundColor Yellow
+                        $cached = $sidecarCache[$correlId]
+                        $row.GIFT_ProcessTime = if ([bool]$cached.GiftMatched) { '1' } else { '2' }
+                        $row.GFIX_ProcessTime = if ([bool]$cached.GfixMatched) { '1' } else { '2' }
+                        $mappingDirty = $true
+                        continue
+                    }
+
+                    $giftTxt   = Join-Path (Join-Path $WorkDir 'snap\GIFT_HM') ("{0}.txt" -f $correlId)
+                    $gfixTxt   = Join-Path (Join-Path $WorkDir 'snap\GFIX_HM') ("{0}.txt" -f $correlId)
+                    $exportDir = Join-Path $exportRoot $correlId
+
+                    $giftResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGiftRecv -CorrelId $correlId `
+                        -SnapTextPath $giftTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
+                        -ExportBaseName ("GIFT_{0}" -f $correlId)
+                    $gfixResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGfixRecv -CorrelId $correlId `
+                        -SnapTextPath $gfixTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
+                        -ExportBaseName ("GFIX_{0}" -f $correlId)
+
+                    $row.GIFT_ProcessTime = if ($giftResult.Matched) { '1' } else { '2' }
+                    $row.GFIX_ProcessTime = if ($gfixResult.Matched) { '1' } else { '2' }
+                    $mappingDirty = $true
+
+                    $giftCountTxt = if (-not [string]::IsNullOrWhiteSpace([string]$giftResult.RecordCount)) { (" count={0}" -f $giftResult.RecordCount) } else { '' }
+                    $gfixCountTxt = if (-not [string]::IsNullOrWhiteSpace([string]$gfixResult.RecordCount)) { (" count={0}" -f $gfixResult.RecordCount) } else { '' }
+                    Write-Host ("      GIFT: {0} [{1}]{2}" -f (Format-ProcessTimeResult $giftResult), $giftResult.Source, $giftCountTxt) -ForegroundColor DarkGray
+                    if (-not [string]::IsNullOrWhiteSpace([string]$giftResult.Note)) {
+                        Write-Host ("        note: {0}" -f $giftResult.Note) -ForegroundColor Yellow
+                    }
+                    Write-Host ("      GFIX: {0} [{1}]{2}" -f (Format-ProcessTimeResult $gfixResult), $gfixResult.Source, $gfixCountTxt) -ForegroundColor DarkGray
+                    if (-not [string]::IsNullOrWhiteSpace([string]$gfixResult.Note)) {
+                        Write-Host ("        note: {0}" -f $gfixResult.Note) -ForegroundColor Yellow
+                    }
+
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -CorrelIdS $correlId -JobName $jobName -Action 'extract' `
+                        -Status $(if ($giftResult.Matched -or $gfixResult.Matched) { 'ok' } else { 'fail' }) `
+                        -Message ("GIFT={0}[{1}] GFIX={2}[{3}]" -f $giftResult.Duration, $giftResult.Source, $gfixResult.Duration, $gfixResult.Source)
+
+                    $resultRow = [pscustomobject]@{
+                        ExcelName    = $name
+                        JobName      = $jobName
+                        CorrelId     = $correlId
+                        GiftStart    = (Format-ProcessTimeStamp $giftResult.StartTime)
+                        GiftEnd      = (Format-ProcessTimeStamp $giftResult.EndTime)
+                        GiftDuration = $giftResult.Duration
+                        GiftCount    = $giftResult.RecordCount
+                        GiftSource   = $giftResult.Source
+                        GfixStart    = (Format-ProcessTimeStamp $gfixResult.StartTime)
+                        GfixEnd      = (Format-ProcessTimeStamp $gfixResult.EndTime)
+                        GfixDuration = $gfixResult.Duration
+                        GfixCount    = $gfixResult.RecordCount
+                        GfixSource   = $gfixResult.Source
+                    }
+                    $payload = [pscustomobject]@{
+                        SchemaVersion = 1
+                        SavedAt       = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                        GiftMatched   = [bool]$giftResult.Matched
+                        GfixMatched   = [bool]$gfixResult.Matched
+                        GiftNote      = [string]$giftResult.Note
+                        GfixNote      = [string]$gfixResult.Note
+                        Row           = $resultRow
+                    }
+                    try {
+                        Save-ProcessTimeSidecar -Path $p.SidecarPath -Payload $payload
+                    } catch {
+                        Write-Host ("      [WARN] could not write ProcessTime sidecar ({0}): {1}" -f $p.SidecarPath, $_.Exception.Message) -ForegroundColor Yellow
+                    }
+                    $sidecarCache[$correlId] = $payload
+                    $ocrDoneThisRun[$correlId] = $true
+                }
+            } catch {
+                Write-Host ("  [FAIL] {0}: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
+                foreach ($p in $groupPlans) {
+                    Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -CorrelIdS $p.CorrelId `
+                        -JobName ([string]$p.Row.JOB_NAME) -Action 'open-workbook' -Status 'fail' -Message $_.Exception.Message
+                }
+            } finally {
+                if ($null -ne $wb) { try { $wb.Close($false) } catch {} }
+            }
         }
-        Write-Host ("  {0}" -f (Split-Path $wbPath -Leaf)) -ForegroundColor White
 
-        $wb = $null
-        try {
-            $wb = $excel.Workbooks.Open($wbPath, 0, $true)   # read-only
-            foreach ($row in $groupRows) {
-                $correlId = [string]$row.Correl_ID_S
-                if ([string]::IsNullOrWhiteSpace($correlId)) { continue }
-                $jobName = [string]$row.JOB_NAME
-                Write-Host ("    {0}" -f $correlId) -ForegroundColor White
-
-                # The mapping can carry the same correl twice (observed:
-                # JIDSCS4S / JIDSQS4S in a real run). Extract once per
-                # (Excel_NAME, correl); later duplicates mirror the first
-                # occurrence's flags instead of redoing export+OCR and
-                # writing a second identical workbook row.
-                $dupKey = ('{0}|{1}' -f $name, $correlId)
-                if ($seenThisRun.ContainsKey($dupKey)) {
-                    Write-Host '      [DIAG] duplicate mapping row for this correl; reusing this run''s result (check the mapping for unintended duplicates)' -ForegroundColor Yellow
-                    $flags = $seenThisRun[$dupKey]
-                    $row.GIFT_ProcessTime = $flags.Gift
-                    $row.GFIX_ProcessTime = $flags.Gfix
-                    $processedRows.Add($row)
-                    continue
-                }
-
-                $giftTxt   = Join-Path (Join-Path $WorkDir 'snap\GIFT_HM') ("{0}.txt" -f $correlId)
-                $gfixTxt   = Join-Path (Join-Path $WorkDir 'snap\GFIX_HM') ("{0}.txt" -f $correlId)
-                $exportDir = Join-Path $exportRoot $correlId
-
-                $giftResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGiftRecv -CorrelId $correlId `
-                    -SnapTextPath $giftTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
-                    -ExportBaseName ("GIFT_{0}" -f $correlId)
-                $gfixResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGfixRecv -CorrelId $correlId `
-                    -SnapTextPath $gfixTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
-                    -ExportBaseName ("GFIX_{0}" -f $correlId)
-
-                $row.GIFT_ProcessTime = if ($giftResult.Matched) { '1' } else { '2' }
-                $row.GFIX_ProcessTime = if ($gfixResult.Matched) { '1' } else { '2' }
-                $seenThisRun[$dupKey] = @{ Gift = $row.GIFT_ProcessTime; Gfix = $row.GFIX_ProcessTime }
-
-                $giftCountTxt = if (-not [string]::IsNullOrWhiteSpace([string]$giftResult.RecordCount)) { (" count={0}" -f $giftResult.RecordCount) } else { '' }
-                $gfixCountTxt = if (-not [string]::IsNullOrWhiteSpace([string]$gfixResult.RecordCount)) { (" count={0}" -f $gfixResult.RecordCount) } else { '' }
-                Write-Host ("      GIFT: {0} [{1}]{2}" -f (Format-ProcessTimeResult $giftResult), $giftResult.Source, $giftCountTxt) -ForegroundColor DarkGray
-                if (-not [string]::IsNullOrWhiteSpace([string]$giftResult.Note)) {
-                    Write-Host ("        note: {0}" -f $giftResult.Note) -ForegroundColor Yellow
-                }
-                Write-Host ("      GFIX: {0} [{1}]{2}" -f (Format-ProcessTimeResult $gfixResult), $gfixResult.Source, $gfixCountTxt) -ForegroundColor DarkGray
-                if (-not [string]::IsNullOrWhiteSpace([string]$gfixResult.Note)) {
-                    Write-Host ("        note: {0}" -f $gfixResult.Note) -ForegroundColor Yellow
-                }
-
-                Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -CorrelIdS $correlId -JobName $jobName -Action 'extract' `
-                    -Status $(if ($giftResult.Matched -or $gfixResult.Matched) { 'ok' } else { 'fail' }) `
-                    -Message ("GIFT={0}[{1}] GFIX={2}[{3}]" -f $giftResult.Duration, $giftResult.Source, $gfixResult.Duration, $gfixResult.Source)
-
-                $results.Add([pscustomobject]@{
-                    ExcelName    = $name
-                    JobName      = $jobName
-                    CorrelId     = $correlId
-                    GiftStart    = (Format-ProcessTimeStamp $giftResult.StartTime)
-                    GiftEnd      = (Format-ProcessTimeStamp $giftResult.EndTime)
-                    GiftDuration = $giftResult.Duration
-                    GiftCount    = $giftResult.RecordCount
-                    GiftSource   = $giftResult.Source
-                    GfixStart    = (Format-ProcessTimeStamp $gfixResult.StartTime)
-                    GfixEnd      = (Format-ProcessTimeStamp $gfixResult.EndTime)
-                    GfixDuration = $gfixResult.Duration
-                    GfixCount    = $gfixResult.RecordCount
-                    GfixSource   = $gfixResult.Source
-                })
-                $processedRows.Add($row)
-            }
-        } catch {
-            Write-Host ("  [FAIL] {0}: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
-            foreach ($row in $groupRows) {
-                Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -CorrelIdS ([string]$row.Correl_ID_S) `
-                    -JobName ([string]$row.JOB_NAME) -Action 'open-workbook' -Status 'fail' -Message $_.Exception.Message
-            }
-        } finally {
-            if ($null -ne $wb) { try { $wb.Close($false) } catch {} }
+        if ($mappingDirty) {
+            Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+            $mappingDirty = $false
         }
     }
 
-    if ($results.Count -eq 0) {
+    if ($Stage -eq 'Ocr') {
         Write-Host ''
-        Write-Host '[ProcessTime] nothing extracted; no evidence workbook written.' -ForegroundColor Yellow
+        Write-Host ("[OK] OCR stage complete -- {0} correl(s) cached under {1}" -f $sidecarCache.Count, $exportRoot) -ForegroundColor Green
     } else {
-        try {
-            Write-ProcessTimeWorkbook -Excel $excel -OutputPath $OutputPath -SheetName $OutputSheetName -Rows $results.ToArray()
-            foreach ($row in $processedRows) { $row.ProcessTime_Inserted = '1' }
-            Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+        # Write stage: build the output rows purely from cached sidecars --
+        # this run's own OCR pass first, else whatever is already on disk
+        # from a previous -Stage Ocr run. No evidence workbook is opened here.
+        $results = New-Object System.Collections.Generic.List[object]
+        foreach ($p in $writePlans) {
+            $correlId = $p.CorrelId
+            $payload = $sidecarCache[$correlId]
+            if ($null -eq $payload) { $payload = Read-ProcessTimeSidecar -Path $p.SidecarPath }
+            if ($null -eq $payload -or $null -eq $payload.Row) {
+                Write-Host ("  [MISS] {0}: no cached ProcessTime OCR result -- run -Stage Ocr (or Both) first" -f $correlId) -ForegroundColor Yellow
+                Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -CorrelIdS $correlId -JobName ([string]$p.Row.JOB_NAME) `
+                    -Action 'write-row' -Status 'fail' -Message 'no cached OCR result; run -Stage Ocr (or Both) first'
+                continue
+            }
+            $results.Add($payload.Row)
+            $writtenRows.Add($p.Row)
+        }
+
+        if ($results.Count -eq 0) {
             Write-Host ''
-            Write-Host ("[OK] wrote {0} row(s) -> {1}" -f $results.Count, $OutputPath) -ForegroundColor Green
-            Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'ok' `
-                -Message ("{0} row(s) -> {1}" -f $results.Count, $OutputPath)
-        } catch {
-            Write-Host ("[FAIL] could not write process-time workbook: {0}" -f $_.Exception.Message) -ForegroundColor Red
-            Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'fail' -Message $_.Exception.Message
-            # Still persist the per-side detection flags even though ProcessTime_Inserted
-            # stays 0 -- cheaper to keep this run's OCR verdicts than force a full re-OCR.
-            Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+            Write-Host '[ProcessTime] nothing to write; no evidence workbook touched.' -ForegroundColor Yellow
+        } else {
+            try {
+                $jdlRows = @($results.ToArray() | Where-Object { [string]$_.ExcelName -match 'JDL' })
+                $jrvRows = @($results.ToArray() | Where-Object { [string]$_.ExcelName -match 'JRV' })
+                $unclassified = @($results.ToArray() | Where-Object { [string]$_.ExcelName -notmatch 'JDL|JRV' })
+                if ($unclassified.Count -gt 0) {
+                    throw ("{0} result row(s) could not be classified as JDL or JRV" -f $unclassified.Count)
+                }
+                $written = New-Object System.Collections.Generic.List[string]
+                if ($jdlRows.Count -gt 0) {
+                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $outputJdlPath -SheetName $OutputSheetName -Rows $jdlRows
+                    $written.Add($outputJdlPath)
+                }
+                if ($jrvRows.Count -gt 0) {
+                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $outputJrvPath -SheetName $OutputSheetName -Rows $jrvRows
+                    $written.Add($outputJrvPath)
+                }
+                foreach ($row in $writtenRows) { $row.ProcessTime_Inserted = '1' }
+                Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+                Write-Host ''
+                Write-Host ("[OK] wrote {0} correl(s), {1} output row(s) -> {2}" -f $results.Count, ($results.Count * 2), ($written -join ', ')) -ForegroundColor Green
+                Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'ok' `
+                    -Message ("{0} correl(s), {1} output row(s) -> {2}" -f $results.Count, ($results.Count * 2), ($written -join ', '))
+            } catch {
+                Write-Host ("[FAIL] could not write process-time workbook: {0}" -f $_.Exception.Message) -ForegroundColor Red
+                Write-ProgressEvent -WorkDir $WorkDir -Phase 'ProcessTime' -Action 'write-workbook' -Status 'fail' -Message $_.Exception.Message
+                # Still persist the per-side detection flags/sidecars even though
+                # ProcessTime_Inserted stays 0 -- cheaper to keep this run's OCR
+                # verdicts than force a full re-OCR.
+                Export-MappingAtomic -Rows $allRows -Path $mappingPath | Out-Null
+            }
         }
     }
 } finally {

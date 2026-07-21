@@ -53,6 +53,10 @@ param(
     # CheckSheet
     [string]$CheckSheetPath = '',
 
+    # ProcessTime: which stage(s) to run -- 'Ocr' | 'Write' | 'Both'.
+    # Blank -> config ProcessTime.Stage -> 'Both'.
+    [string]$Stage = '',
+
     [switch]$Force,
     [switch]$Ocr,
     # Review phases: open the delivered J4 copy (J4EvidenceDir) instead of the
@@ -550,13 +554,24 @@ function Show-PhaseNotes([string]$PhaseKey) {
         '^ProcessTime$' { @(
             '  Phase params:',
             '    t=TargetIds    -> limit rows',
-            '    f=Force        -> re-extract rows already inserted into the ProcessTime workbook',
+            '    f=Force        -> re-run whichever stage(s) -Stage selects, ignoring their own',
+            '                      completion signal (sidecar cache for Ocr, ProcessTime_Inserted',
+            '                      for Write)',
+            '    stage=Stage    -> Ocr | Write | Both (default Both; config ProcessTime.Stage)',
             '  NOTE: extracts each correl''s HM batch processing start/end time (GIFT and GFIX)',
             '        from the already-inserted receive-result evidence screenshot -- archived',
             '        snap\GIFT_HM|GFIX_HM\<correl>.txt first, else OCR of the evidence picture --',
-            '        and appends one summary row per correl to ProcessTime_<Owner>.xlsx (config',
-            '        ProcessTime.OutputPath). Run this AFTER ReplaceGift/ReplaceGfix (the HM',
-            '        picture must already be in the evidence workbook).'
+            '        and writes one row per GIFT/GFIX side to separate JDL/JRV workbooks (config',
+            '        ProcessTime.OutputDirectory; classified by whether the row''s Excel_NAME',
+            '        contains "JDL" or "JRV"). Run this AFTER ReplaceGift/ReplaceGfix (the HM',
+            '        picture must already be in the evidence workbook).',
+            '  NOTE: -Stage Ocr caches each correl''s OCR result to a per-correl sidecar',
+            '        (snap\ProcessTime\<correl>\result.json) without opening the output workbook;',
+            '        -Stage Write writes the output workbook from cached sidecars only, without',
+            '        opening any evidence workbook (a correl with no cached sidecar is reported',
+            '        as a MISS and left pending). Non -Force re-runs skip a correl''s OCR once its',
+            '        sidecar exists (or it was already fully inserted before this cache existed),',
+            '        and skip its write once ProcessTime_Inserted=1 -- independently of each other.'
         ) }
         '^Validate$' { @(
             '  Phase params:',
@@ -667,7 +682,7 @@ function Get-PhaseOptionKeys([string]$PhaseKey) {
         '^GiftMqSnap$|^(Gift|Gfix)HmSnap$' { return @('t','i','f','n','w','c','tc') }
         '^GfixLogDownload$' { return @('t','f') }
         '^DfSnap$' { return @('t','f','e') }
-        '^ProcessTime$' { return @('t','f') }
+        '^ProcessTime$' { return @('t','f','stage') }
         '^Validate$' { return @('t') }
         '^ProbeShapes$' { return @('p','s') }
         '^Crop$' { return @('c','f') }
@@ -733,6 +748,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
     if (Test-PhaseOption $allowed 'p') { Write-Host ("  ProbeFile      : {0}" -f $State.ProbeFile) }
     if (Test-PhaseOption $allowed 's') { Write-Host ("  ProbeSheet     : {0}" -f $State.ProbeSheet) }
     if (Test-PhaseOption $allowed 'k') { Write-Host ("  CheckSheetPath : {0}" -f $(if ([string]::IsNullOrWhiteSpace($State.CheckSheetPath)) { '(config/prompt)' } else { $State.CheckSheetPath })) }
+    if (Test-PhaseOption $allowed 'stage') { Write-Host ("  Stage          : {0}  (Ocr | Write | Both)" -f $State.Stage) }
     if (Test-PhaseOption $allowed 'xe') { Write-Host ("  SkipExcel      : {0}" -f (To-BoolText $State.SkipExcel)) }
     if (Test-PhaseOption $allowed 'xd') { Write-Host ("  SkipData       : {0}" -f (To-BoolText $State.SkipData)) }
     if (Test-PhaseOption $allowed 'bk') { Write-Host ("  Backup         : {0}" -f (To-BoolText $State.Backup)) }
@@ -762,6 +778,7 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
         if (Test-PhaseOption $allowed 'p') { $help += 'p=ProbeFile' }
         if (Test-PhaseOption $allowed 's') { $help += 's=ProbeSheet' }
         if (Test-PhaseOption $allowed 'k') { $help += 'k=CheckSheet path' }
+        if (Test-PhaseOption $allowed 'stage') { $help += 'stage=ProcessTime Ocr/Write/Both' }
         if (Test-PhaseOption $allowed 'xe') { $help += 'xe=SkipExcel toggle' }
         if (Test-PhaseOption $allowed 'xd') { $help += 'xd=SkipData toggle' }
         if (Test-PhaseOption $allowed 'bk') { $help += 'bk=Backup toggle' }
@@ -900,6 +917,16 @@ function Ask-RunOptions([hashtable]$State, [string]$PhaseKey = '') {
             '^k$' {
                 if (-not (Test-PhaseOption $allowed 'k')) { Write-UnusedOption $PhaseKey 'k' }
                 else { $State.CheckSheetPath = Read-Choice 'Review check sheet .xlsx path. Empty = use config' $State.CheckSheetPath }
+            }
+            '^-?stage$' {
+                if (-not (Test-PhaseOption $allowed 'stage')) { Write-UnusedOption $PhaseKey 'stage' }
+                else {
+                    $v = Read-Choice 'ProcessTime stage: Ocr, Write, or Both' $State.Stage
+                    $norm = @{ 'ocr' = 'Ocr'; 'write' = 'Write'; 'both' = 'Both' }[$v.Trim().ToLower()]
+                    if ([string]::IsNullOrWhiteSpace($norm)) { Write-Host '  invalid stage (expected Ocr, Write, or Both)' -ForegroundColor Yellow }
+                    else { $State.Stage = $norm }
+                    Write-Host ("  Stage          : {0}" -f $State.Stage) -ForegroundColor DarkGray
+                }
             }
 
             '^-?o(cr)?$' {
@@ -1765,10 +1792,12 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             $pt = $Config.ProcessTime
             if ($pt.ContainsKey('AnchorCol') -and $null -ne $pt.AnchorCol) { $args['AnchorCol'] = [int]$pt.AnchorCol }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputPath))       { $args['OutputPath']      = [string]$pt.OutputPath }
+            if ($pt.ContainsKey('OutputDirectory') -and -not [string]::IsNullOrWhiteSpace([string]$pt.OutputDirectory)) { $args['OutputDirectory'] = [string]$pt.OutputDirectory }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputSheetName))  { $args['OutputSheetName'] = [string]$pt.OutputSheetName }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OcrLanguage))      { $args['OcrLanguage']     = [string]$pt.OcrLanguage }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
         }
+        if (-not [string]::IsNullOrWhiteSpace($State.Stage)) { $args['Stage'] = $State.Stage }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
         if ($State.Force)  { $args['Force']  = $true }
         if ($State.DryRun) { $args['DryRun'] = $true }
@@ -2292,6 +2321,15 @@ if ([string]::IsNullOrWhiteSpace($CheckSheetPath) -and $session.ContainsKey('Che
     $CheckSheetPath = [string]$session['CheckSheetPath']
 }
 
+# ProcessTime Stage: CLI > work-folder config ProcessTime.Stage > 'Both'.
+# Not remembered in the session -- each run defaults back to 'Both' unless
+# a config value or CLI flag says otherwise, so an operator who ran
+# -Stage Ocr once does not accidentally stay Ocr-only forever.
+if ([string]::IsNullOrWhiteSpace($Stage) -and $Config.ProcessTime -and -not [string]::IsNullOrWhiteSpace([string]$Config.ProcessTime.Stage)) {
+    $Stage = [string]$Config.ProcessTime.Stage
+}
+if ([string]::IsNullOrWhiteSpace($Stage)) { $Stage = 'Both' }
+
 # DfExePath: CLI > last session > config Df.ExePath. When all are empty the
 # DfSnap dispatch prompts once (first run), offering Df.DefaultExePath, and
 # the answer is remembered in the session below.
@@ -2376,6 +2414,7 @@ $state = @{
     ProbeSheet      = $ProbeSheet
     DfExePath       = $DfExePath
     CheckSheetPath  = $CheckSheetPath
+    Stage           = $Stage
     Force           = [bool]$Force.IsPresent
     # Review phases: open the delivered J4 copy instead of the work evidence
     # folder; 'j4' menu option toggles it per run.
