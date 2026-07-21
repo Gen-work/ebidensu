@@ -380,7 +380,33 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-20 v2.12.2)
+## Current state (last bump: 2026-07-21 v2.12.3)
+
+v2.12.3 (ProcessTime: fuzzy correl-id matching + record-count column): a
+second office-PC GFIX debug session (real `.ocr.txt` + screenshots) proved the
+GFIX `not detected` rows were the correct HM picture being thrown away by an
+EXACT correl-id gate -- the recognizer reads `JIGPKB1S` as `JIGPKBIS`
+(digit `1` as letter `I`), so every above-label `RequireCorrel` candidate was
+rejected even though its two HM time rows read cleanly. **Fixed** -- new pure
+`ConvertTo-ProcessTimeCorrelKey` / `Test-ProcessTimeCorrelSeen`
+(`ProcessTimeParse.ps1`) fold the OCR-confused letter<->digit pairs
+(`I/L/|/!`->1, `O/Q`->0, `S`->5, `B`->8, `Z`->2) on BOTH the id and the OCR
+line before comparing; `ConvertFrom-ProcessTimeOcrLines`'s `CorrelSeen` uses
+it instead of exact `IndexOf`. The trusted in-section path is untouched, so
+workbooks that already resolved are unaffected. **Added** -- record-count
+(shori-kensu) column: pure `Get-ProcessTimeRecordCount` reads the HM row's
+count after the 14-digit data-creation datestamp (`1 1 ,262` -> `11,262`,
+`0`), surfaced as a per-row `RecordCount`, threaded through
+`Resolve-ProcessTimeSide`, and written as `GIFT Count` / `GFIX Count` columns
+in `ProcessTime_<Owner>.xlsx` (console shows `count=...`); the archived tier
+fills it too (`ConvertFrom-HmPageText` now returns `RecordCount`, fields[7]).
+Unit tests use the real office-PC OCR strings. **Notes** -- pure logic
+unit-tested (static-checked here; run `Tests\Run-Tests.ps1` on Windows PS 5.1);
+Excel COM/column-write static-checked only. OCR date-digit noise
+(`2026/05/29` misread as `2026/05/23` while the times are right) is unchanged
+and out of scope. Still deferred: the no-label positional fallback (classify
+every picture on a side as HM/MQ/Jenkins by OCR content) -- picture ORDER is
+confirmed by `Probe-Shapes` but was not needed for the confirmed failing rows.
 
 v2.12.2 (ProcessTime: parse the OCR the recognizers ACTUALLY produce +
 content-validated picture candidates): driven by the first full office-PC run

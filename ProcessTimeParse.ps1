@@ -80,6 +80,80 @@ function ConvertTo-ProcessTimeNormalizedLine {
 }
 
 # ---------------------------------------------------------------------------
+# ConvertTo-ProcessTimeCorrelKey
+#   Folds the glyphs Windows OCR most often confuses on the HM page's
+#   fixed-pitch correl id into a single canonical digit, so a correl id can
+#   still be recognized when the recognizer misread it. Observed on a real
+#   office-PC run: 'JIGPKB1S' comes back as 'JIGPKBIS' (the digit 1 read as
+#   letter I), which an exact substring test rejected -- discarding the
+#   correct HM screenshot. Only the letter<->digit pairs that actually occur
+#   in these ids are folded (I/L/|/!->1, O/Q->0, S->5, B->8, Z->2); the
+#   distinguishing letters (J G D M K P C R F Y U) and the digits 3/4/6/7/9
+#   are left alone so two genuinely different correls do not collapse
+#   together. Both the correl id and the OCR line are folded the same way
+#   before comparing, so real matches are preserved.
+# ---------------------------------------------------------------------------
+function ConvertTo-ProcessTimeCorrelKey {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return '' }
+    $map = @{
+        'I' = '1'; 'L' = '1'; '|' = '1'; '!' = '1'
+        'O' = '0'; 'Q' = '0'
+        'S' = '5'
+        'B' = '8'
+        'Z' = '2'
+    }
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $Text.ToUpperInvariant().ToCharArray()) {
+        $c = [string]$ch
+        if ($map.ContainsKey($c)) { [void]$sb.Append($map[$c]) }
+        else { [void]$sb.Append($c) }
+    }
+    return $sb.ToString()
+}
+
+# ---------------------------------------------------------------------------
+# Test-ProcessTimeCorrelSeen
+#   $true when $CorrelId appears in $Line, either verbatim (case-insensitive)
+#   or after OCR glyph folding (ConvertTo-ProcessTimeCorrelKey) -- so a
+#   screenshot whose correl id OCR misread (1<->I etc.) still counts as
+#   belonging to this correl. The id is 8 chars, so a folded substring hit
+#   is very unlikely to be coincidental.
+# ---------------------------------------------------------------------------
+function Test-ProcessTimeCorrelSeen {
+    param([string]$Line, [string]$CorrelId)
+    if ([string]::IsNullOrWhiteSpace($CorrelId) -or [string]::IsNullOrEmpty($Line)) { return $false }
+    if ($Line.IndexOf($CorrelId, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+    $keyId = ConvertTo-ProcessTimeCorrelKey $CorrelId
+    if ([string]::IsNullOrEmpty($keyId)) { return $false }
+    $keyLine = ConvertTo-ProcessTimeCorrelKey $Line
+    return ($keyLine.IndexOf($keyId) -ge 0)
+}
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeRecordCount
+#   Extracts the HM row's record count (shori-kensu) from an OCR'd line: the
+#   comma-grouped integer that sits AFTER the data-creation datestamp and
+#   before the result / correl-id columns (e.g. '11,262', '2,370', '0'). OCR
+#   splits the digits with spaces ('1 1 ,262') so any internal whitespace is
+#   removed. $SearchFrom lets the caller start the scan after the row's end
+#   datetime so the proc-time (HH:mm:ss) column is never taken for the count.
+#   Anchoring on the 8-14 digit datestamp is required (returns '' without it)
+#   so a partial/garbled row never guesses a count out of some other column.
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeRecordCount {
+    param([string]$Line, [int]$SearchFrom = 0)
+    if ([string]::IsNullOrEmpty($Line)) { return '' }
+    $tail = if ($SearchFrom -gt 0 -and $SearchFrom -lt $Line.Length) { $Line.Substring($SearchFrom) } else { $Line }
+    $mStamp = [regex]::Match($tail, '(?<!\d)\d{8,14}(?!\d)')
+    if (-not $mStamp.Success) { return '' }
+    $tail = $tail.Substring($mStamp.Index + $mStamp.Length)
+    $mCount = [regex]::Match($tail, '\d[\d ,]*\d|\d')
+    if (-not $mCount.Success) { return '' }
+    return ($mCount.Value -replace '\s', '')
+}
+
+# ---------------------------------------------------------------------------
 # ConvertFrom-ProcessTimeOcrLines
 #   Anchor-based reader for OCR'd HM page text: a real table column split
 #   is unreliable once OCR has collapsed variable-width whitespace, so
@@ -113,12 +187,17 @@ function ConvertTo-ProcessTimeNormalizedLine {
 #     PageDuration the page's own proc-time column (first standalone
 #                  HH:mm:ss after the last datetime token), for
 #                  cross-checking the derived duration. '' when unread.
-#     CorrelSeen   $true when -CorrelId was given and appears verbatim in
-#                  the line -- lets the caller verify the OCR'd picture
-#                  actually belongs to this correl.
+#     CorrelSeen   $true when -CorrelId was given and appears in the line,
+#                  verbatim OR after OCR glyph folding (Test-ProcessTime
+#                  CorrelSeen: 1<->I etc.) -- lets the caller verify the
+#                  OCR'd picture belongs to this correl even when the
+#                  recognizer misread a digit in the id.
+#     RecordCount  the HM row's record count (shori-kensu, comma-grouped),
+#                  read after the data-creation datestamp. '' when unread.
 #
 #   Returns plain array of PSCustomObject
-#     { StartTime; EndTime; Status; PageDuration; Partial; CorrelSeen; RawLine }.
+#     { StartTime; EndTime; Status; PageDuration; RecordCount; Partial;
+#       CorrelSeen; RawLine }.
 # ---------------------------------------------------------------------------
 function ConvertFrom-ProcessTimeOcrLines {
     param([string[]]$Lines, [string]$CorrelId = '')
@@ -185,14 +264,19 @@ function ConvertFrom-ProcessTimeOcrLines {
 
         $correlSeen = $false
         if (-not [string]::IsNullOrWhiteSpace($CorrelId)) {
-            $correlSeen = ($line.IndexOf($CorrelId) -ge 0)
+            $correlSeen = (Test-ProcessTimeCorrelSeen -Line $line -CorrelId $CorrelId)
         }
+
+        # Record count (shori-kensu), scanned after the row's end datetime so
+        # the proc-time column is never mistaken for it.
+        $recordCount = Get-ProcessTimeRecordCount -Line $line -SearchFrom $searchFrom
 
         $out.Add([PSCustomObject]@{
             StartTime    = $startTime
             EndTime      = $endTime
             Status       = $status
             PageDuration = $pageDuration
+            RecordCount  = $recordCount
             Partial      = $isPartial
             CorrelSeen   = $correlSeen
             RawLine      = $rawLine

@@ -130,4 +130,34 @@ Assert-Equal $newer.StartTime.ToString('yyyy/MM/dd HH:mm:ss') $picked.StartTime.
 Assert-True ($null -eq (Get-NewestProcessTimeRow -Rows @())) 'empty input returns null'
 Assert-True ($null -eq (Get-NewestProcessTimeRow -Rows @($null))) 'array of only nulls returns null'
 
+# ---------------------------------------------------------------------------
+# ConvertTo-ProcessTimeCorrelKey / Test-ProcessTimeCorrelSeen (OCR glyph fold)
+# Real office-PC run (v2.12.3): the HM OCR reads 'JIGPKB1S' as 'JIGPKBIS'
+# (digit 1 -> letter I), which the old exact substring test rejected --
+# discarding the correct HM screenshot.
+# ---------------------------------------------------------------------------
+Assert-Equal (ConvertTo-ProcessTimeCorrelKey 'JIGPKBIS') (ConvertTo-ProcessTimeCorrelKey 'JIGPKB1S') 'JIGPKBIS and JIGPKB1S fold to the same key'
+Assert-True (Test-ProcessTimeCorrelSeen -Line '...  1 1 ,262   JIGPKBIS' -CorrelId 'JIGPKB1S') 'correl id seen through the 1<->I OCR confusion'
+Assert-True (Test-ProcessTimeCorrelSeen -Line 'a row for JIDSM48S here' -CorrelId 'JIDSM48S') 'exact correl id still matches'
+Assert-True (-not (Test-ProcessTimeCorrelSeen -Line 'a row for JIDSK48S here' -CorrelId 'JIDSM48S')) 'a genuinely different correl (K vs M) is not a false match'
+Assert-True (-not (Test-ProcessTimeCorrelSeen -Line 'no id anywhere' -CorrelId 'JIGPKB1S')) 'absent correl id is not seen'
+Assert-True (-not (Test-ProcessTimeCorrelSeen -Line 'anything' -CorrelId '')) 'blank correl id is never seen'
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeRecordCount (shori-kensu) -- ja HM rows split the count digits
+# ('1 1 ,262'); the count is read after the 14-digit data-creation stamp.
+# ---------------------------------------------------------------------------
+$countLine = '2026/05/23  10 :58 :50       2026/05/23  10 :58 :57       00 :00 :07      IGPLB073        K   ' + $normal + '       20260523105850                       1 1 ,262   ' + $diamond + '          JIGPKBIS'
+$rc = @(ConvertFrom-ProcessTimeOcrLines -Lines @($countLine) -CorrelId 'JIGPKB1S')
+Assert-Equal 1 $rc.Count 'record-count line parses as one full row'
+Assert-Equal '2026/05/23 10:58:50' $rc[0].StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'spaced start time normalized'
+Assert-Equal '11,262' $rc[0].RecordCount 'record count read after the data-creation stamp, internal spaces stripped'
+Assert-True $rc[0].CorrelSeen 'correl id seen via glyph fold on the count row'
+
+$zeroLine = '2026/05/23  01 :21 :43       2026/05/23  01 :21 :50       00 :00 :07      IDSLB053      C   ' + $normal + '       20260523012143                   0   ' + $diamond + '            JIDSC48S'
+$rz = @(ConvertFrom-ProcessTimeOcrLines -Lines @($zeroLine) -CorrelId 'JIDSC48S')
+Assert-Equal '0' $rz[0].RecordCount 'a zero record count is read'
+
+Assert-Equal '' (Get-ProcessTimeRecordCount -Line 'no digits at all here') 'no datestamp -> empty record count (never guesses)'
+
 exit (Complete-Tests)

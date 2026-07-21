@@ -1,3 +1,69 @@
+## 2026-07-21 - ProcessTime: fuzzy correl-id matching + record-count column (v2.12.3)
+
+Driven by a second office-PC debug session on the GFIX side. Real `.ocr.txt`
+dumps + the source screenshots proved TWO root causes behind rows that came
+out `GFIX: not detected` even though the HM screenshot was present and its
+time rows were read cleanly:
+
+1. The correct HM picture WAS found (above the label) and OCR'd two full
+   time rows, but was thrown away because the content gate did an EXACT
+   correl-id substring match and the recognizer reads `JIGPKB1S` as
+   `JIGPKBIS` (the digit `1` as letter `I`). Every above-label candidate
+   (`RequireCorrel`) was rejected with "correl id not in OCR text".
+2. Some workbooks (e.g. `KJRVWD50`) carry no per-correl text label on a
+   side, so the label anchor is not found at all. (For those GFIX-only
+   correls the GIFT side genuinely has no data, so the label-not-found ->
+   return is correct there; the general no-label positional fallback is
+   still open -- see below.)
+
+The operator also asked for the HM row's record count (shori-kensu, e.g.
+`11,262` / `2,370`) in the output.
+
+### Fixed
+- Correl-id content validation is now OCR-glyph tolerant. New pure
+  `ConvertTo-ProcessTimeCorrelKey` / `Test-ProcessTimeCorrelSeen`
+  (`ProcessTimeParse.ps1`) fold the letter<->digit pairs the recognizer
+  confuses on the fixed-pitch id (`I/L/|/!`->1, `O/Q`->0, `S`->5, `B`->8,
+  `Z`->2) on BOTH the correl id and the OCR line before comparing;
+  `ConvertFrom-ProcessTimeOcrLines`'s `CorrelSeen` uses it instead of the
+  old exact `IndexOf`. This alone recovers the GFIX HM rows that were being
+  rejected purely for the `1<->I` misread, and does NOT touch the trusted
+  in-section path, so workbooks that already resolved are unaffected. The
+  distinguishing letters (J G D M K P C R F Y U) and digits 3/4/6/7/9 are
+  left alone so two genuinely different correls do not collapse.
+
+### Added
+- Record-count column. New pure `Get-ProcessTimeRecordCount`
+  (`ProcessTimeParse.ps1`) reads the HM row's count after the 14-digit
+  data-creation datestamp (stripping OCR's internal spaces: `1 1 ,262` ->
+  `11,262`, and `0`), anchored so the proc-time column is never mistaken
+  for it. Surfaced as a per-row `RecordCount` field, threaded through
+  `Resolve-ProcessTimeSide`, and written as new `GIFT Count` / `GFIX Count`
+  columns in `ProcessTime_<Owner>.xlsx` (also shown in the console line as
+  `count=...`). The archived tier fills it too: `ConvertFrom-HmPageText`
+  (`SnapVerify.ps1`) now returns the `RecordCount` field (fields[7]).
+- Unit tests (`Tests\Test-ProcessTimeParse.ps1`) use the REAL office-PC OCR
+  strings: `JIGPKBIS` folds equal to `JIGPKB1S`; a `K`-vs-`M` neighbor does
+  NOT false-match; `1 1 ,262` -> `11,262`; a `0` count; no-datestamp -> ''.
+
+### Notes
+- No PowerShell/Excel in this dev environment -- the pure logic is
+  unit-tested (static-checked here; run `Tests\Run-Tests.ps1` on a Windows
+  PS 5.1 host) and the Excel COM / column-write path is static-checked only.
+  Confirm on an office PC that the previously-`not detected` GFIX rows (the
+  `*B1S` / `*O5S` correls) now resolve and that `GIFT Count` / `GFIX Count`
+  populate.
+- OCR date noise is unchanged and out of scope: the ja recognizer can misread
+  a date digit (observed `2026/05/29` read as `2026/05/23`) while the times
+  are correct -- the derived duration and the count are right, the date may
+  be off by a digit. A "merge en-US date + ja time" pass is possible later.
+- Still open (deferred): the no-label positional fallback (pull every picture
+  on a side when the label is not found, classify each as HM/MQ/Jenkins by
+  OCR content, take the HM one). The picture ORDER is confirmed by
+  `Probe-Shapes` (GIFT: Excel-strip, HM, MQ, ..., Jenkins; GFIX: Excel-strip,
+  HM, ..., Jenkins), so it is buildable, but was not needed for the confirmed
+  failing rows (their misses were the `1<->I` gate, not a missing label).
+
 ## 2026-07-20 - ProcessTime: parse the OCR the recognizers ACTUALLY produce + content-validated picture candidates (v2.12.2)
 
 Driven by the first full office-PC run (43 rows, ALL `not detected [none]`,

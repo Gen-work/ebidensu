@@ -219,7 +219,7 @@ function Resolve-ProcessTimeSide {
           [string]$OutDir, [int]$AnchorCol, [string]$SecondaryLanguage, [double]$Scale,
           [string]$ExportBaseName = '')
 
-    $result = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = ''; Note = '' }
+    $result = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = ''; RecordCount = ''; Note = '' }
 
     # Tier 1: archived Ctrl+A snap text (fast, exact).
     if (-not [string]::IsNullOrWhiteSpace($SnapTextPath) -and (Test-Path -LiteralPath $SnapTextPath)) {
@@ -232,6 +232,7 @@ function Resolve-ProcessTimeSide {
                     Matched = $true; Source = 'archived'
                     StartTime = $best.StartTime; EndTime = $best.EndTime
                     Duration = (Get-ProcessDurationText $best.StartTime $best.EndTime)
+                    RecordCount = $(if ($best.PSObject.Properties['RecordCount']) { [string]$best.RecordCount } else { '' })
                     Note = ''
                 }
             }
@@ -349,6 +350,7 @@ function Resolve-ProcessTimeSide {
     $result.StartTime = $row.StartTime
     $result.EndTime   = $row.EndTime
     $result.Matched   = ($null -ne $row.EndTime)
+    if ($row.PSObject.Properties['RecordCount']) { $result.RecordCount = [string]$row.RecordCount }
 
     # Duration: derived from start/end when both were read; cross-checked
     # against the page's own proc-time column, which also fills in when the
@@ -401,8 +403,8 @@ function Write-ProcessTimeWorkbook {
 
     $headers = @(
         'Excel_NAME', 'JOB_NAME', 'Correl_ID_S',
-        'GIFT Start', 'GIFT End', 'GIFT Duration', 'GIFT Source',
-        'GFIX Start', 'GFIX End', 'GFIX Duration', 'GFIX Source'
+        'GIFT Start', 'GIFT End', 'GIFT Duration', 'GIFT Count', 'GIFT Source',
+        'GFIX Start', 'GFIX End', 'GFIX Duration', 'GFIX Count', 'GFIX Source'
     )
 
     $isNew = -not (Test-Path -LiteralPath $OutputPath)
@@ -459,11 +461,13 @@ function Write-ProcessTimeWorkbook {
             $ws.Cells.Item($row, 4).Value2  = [string]$r.GiftStart
             $ws.Cells.Item($row, 5).Value2  = [string]$r.GiftEnd
             $ws.Cells.Item($row, 6).Value2  = [string]$r.GiftDuration
-            $ws.Cells.Item($row, 7).Value2  = [string]$r.GiftSource
-            $ws.Cells.Item($row, 8).Value2  = [string]$r.GfixStart
-            $ws.Cells.Item($row, 9).Value2  = [string]$r.GfixEnd
-            $ws.Cells.Item($row, 10).Value2 = [string]$r.GfixDuration
-            $ws.Cells.Item($row, 11).Value2 = [string]$r.GfixSource
+            $ws.Cells.Item($row, 7).Value2  = [string]$r.GiftCount
+            $ws.Cells.Item($row, 8).Value2  = [string]$r.GiftSource
+            $ws.Cells.Item($row, 9).Value2  = [string]$r.GfixStart
+            $ws.Cells.Item($row, 10).Value2 = [string]$r.GfixEnd
+            $ws.Cells.Item($row, 11).Value2 = [string]$r.GfixDuration
+            $ws.Cells.Item($row, 12).Value2 = [string]$r.GfixCount
+            $ws.Cells.Item($row, 13).Value2 = [string]$r.GfixSource
             $row++
         }
         try { $ws.Columns.AutoFit() | Out-Null } catch {}
@@ -620,11 +624,13 @@ try {
                 $row.GFIX_ProcessTime = if ($gfixResult.Matched) { '1' } else { '2' }
                 $seenThisRun[$dupKey] = @{ Gift = $row.GIFT_ProcessTime; Gfix = $row.GFIX_ProcessTime }
 
-                Write-Host ("      GIFT: {0} [{1}]" -f (Format-ProcessTimeResult $giftResult), $giftResult.Source) -ForegroundColor DarkGray
+                $giftCountTxt = if (-not [string]::IsNullOrWhiteSpace([string]$giftResult.RecordCount)) { (" count={0}" -f $giftResult.RecordCount) } else { '' }
+                $gfixCountTxt = if (-not [string]::IsNullOrWhiteSpace([string]$gfixResult.RecordCount)) { (" count={0}" -f $gfixResult.RecordCount) } else { '' }
+                Write-Host ("      GIFT: {0} [{1}]{2}" -f (Format-ProcessTimeResult $giftResult), $giftResult.Source, $giftCountTxt) -ForegroundColor DarkGray
                 if (-not [string]::IsNullOrWhiteSpace([string]$giftResult.Note)) {
                     Write-Host ("        note: {0}" -f $giftResult.Note) -ForegroundColor Yellow
                 }
-                Write-Host ("      GFIX: {0} [{1}]" -f (Format-ProcessTimeResult $gfixResult), $gfixResult.Source) -ForegroundColor DarkGray
+                Write-Host ("      GFIX: {0} [{1}]{2}" -f (Format-ProcessTimeResult $gfixResult), $gfixResult.Source, $gfixCountTxt) -ForegroundColor DarkGray
                 if (-not [string]::IsNullOrWhiteSpace([string]$gfixResult.Note)) {
                     Write-Host ("        note: {0}" -f $gfixResult.Note) -ForegroundColor Yellow
                 }
@@ -640,10 +646,12 @@ try {
                     GiftStart    = (Format-ProcessTimeStamp $giftResult.StartTime)
                     GiftEnd      = (Format-ProcessTimeStamp $giftResult.EndTime)
                     GiftDuration = $giftResult.Duration
+                    GiftCount    = $giftResult.RecordCount
                     GiftSource   = $giftResult.Source
                     GfixStart    = (Format-ProcessTimeStamp $gfixResult.StartTime)
                     GfixEnd      = (Format-ProcessTimeStamp $gfixResult.EndTime)
                     GfixDuration = $gfixResult.Duration
+                    GfixCount    = $gfixResult.RecordCount
                     GfixSource   = $gfixResult.Source
                 })
                 $processedRows.Add($row)
