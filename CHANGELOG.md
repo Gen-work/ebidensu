@@ -1,3 +1,34 @@
+## 2026-07-21 - ProcessTime: template-matched worksheet formatting
+
+### Changed
+- ProcessTime output now uses Yu Gothic 11 pt text, compact 18-point rows,
+  fixed template column widths, centered headers and row numbers, and the
+  template's pale-green GIFT / white GFIX row fills.  GFIX white is applied
+  explicitly so incremental writes cannot retain stale manual formatting.
+
+### Fixed
+- Excel on the office PC raised `argument type mismatch` before saving both
+  JRV and JDL outputs because PowerShell selected an incompatible COM overload
+  when two `Cells.Item(...)` proxies were passed to `Worksheet.Range`.  All
+  formatting ranges now use A1 addresses, and fill colours are passed as
+  explicit `Double` values for compatibility with the Excel Variant binder.
+
+
+## 2026-07-21 - ProcessTime: template-matched worksheet formatting
+
+### Changed
+- ProcessTime output now uses Yu Gothic 11 pt text, compact 18-point rows,
+  fixed template column widths, centered headers and row numbers, and the
+  template's pale-green GIFT / white GFIX row fills.  GFIX white is applied
+  explicitly so incremental writes cannot retain stale manual formatting.
+
+### Fixed
+- Excel on the office PC raised `argument type mismatch` before saving both
+  JRV and JDL outputs because PowerShell selected an incompatible COM overload
+  when two `Cells.Item(...)` proxies were passed to `Worksheet.Range`.  All
+  formatting ranges now use A1 addresses, and fill colours are passed as
+  explicit `Double` values for compatibility with the Excel Variant binder.
+
 ## 2026-07-21 - ProcessTime: bitmask ProcessTime_Inserted + config-driven output tags (v2.15.0)
 
 A real office-PC run (`-Stage Both`, 43 rows spanning JRV/JDL/JDS-family

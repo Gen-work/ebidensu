@@ -26,6 +26,9 @@ Assert-True  (-not (Test-OwnerMatch 'BBB' 'AAA'))            'different owner do
 Assert-True  (-not (Test-OwnerMatch '' 'AAA'))               'empty cell does not match'
 Assert-True  (-not (Test-OwnerMatch 'AAA' ''))               'empty owner input does not match'
 Assert-True  (Test-OwnerMatch '  AAA  ' 'AAA')               'whitespace is trimmed'
+Assert-True  (Test-OwnerMatch 'BBB' 'all')                    'owner all disables owner filtering'
+Assert-True  (Test-OwnerMatch 'BBB' 'ALL')                    'owner all is case-insensitive'
+Assert-True  (Test-OwnerMatch '' 'all')                       'owner all also keeps blank owner cells'
 
 # ---- Select-JobsByOwner ----
 $map = @{

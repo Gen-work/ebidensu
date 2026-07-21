@@ -611,6 +611,22 @@ function Resolve-ProcessTimeOutputDir {
 }
 
 # ---------------------------------------------------------------------------
+# ConvertTo-ProcessTimeBucketArray
+#   Materializes an output bucket without using @($Buckets[$tag]). Windows
+#   PowerShell 5.1 can throw "Argument types do not match" when its dynamic
+#   binder enumerates a generic List[object] obtained through a hashtable
+#   index. Keeping this workaround in a pure helper makes the exact runtime
+#   regression directly testable instead of relying on visual inspection of
+#   ProcessTime.ps1.
+# ---------------------------------------------------------------------------
+function ConvertTo-ProcessTimeBucketArray {
+    param([Parameter(Mandatory = $true)][System.Collections.Generic.List[object]]$Bucket)
+    # Unary comma prevents PowerShell's function pipeline from unrolling the
+    # array (and turning a one-row bucket back into a scalar).
+    return ,$Bucket.ToArray()
+}
+
+# ---------------------------------------------------------------------------
 # Get-ProcessTimeCheckSummaryLine
 #   One-line, human-readable "needs manual check" note for a correl whose
 #   GIFT and/or GFIX side was not matched -- printed in the end-of-run

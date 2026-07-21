@@ -8,11 +8,14 @@
 # ============================================================
 
 # Decide whether a WBS owner cell represents the current operator (-Owner).
+# The sentinel owner "all" deliberately matches every cell, including blanks.
 # Count only these patterns (others, incl. reverse direction, are NOT owned):
 #   1) exact owner              : Owner
 #   2) owner followed by <-...  : Owner<-Other   (owner is the receiver)
 #   3) ... followed by ->owner  : Other->Owner   (owner is the receiver)
 function Test-OwnerMatch([string]$OwnerCell, [string]$OwnerInput) {
+    if (-not [string]::IsNullOrWhiteSpace($OwnerInput) -and
+        $OwnerInput.Trim().Equals('all', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     if ([string]::IsNullOrWhiteSpace($OwnerCell) -or [string]::IsNullOrWhiteSpace($OwnerInput)) {
         return $false
     }

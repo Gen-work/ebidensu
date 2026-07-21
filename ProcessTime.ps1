@@ -625,24 +625,52 @@ function Write-ProcessTimeWorkbook {
             Set-RangeValue2 $ws.Cells.Item($row, 6) $r.Duration | Out-Null
             Set-RangeValue2 $ws.Cells.Item($row, 7) $r.Count | Out-Null
             Set-RangeValue2 $ws.Cells.Item($row, 8) $r.JobName | Out-Null
-            if ($r.Side -eq 'GIFT') {
-                try { $ws.Range($ws.Cells.Item($row, 1), $ws.Cells.Item($row, 8)).Interior.Color = 15073398 } catch {}
-            }
             $row++
         }
         # Renumber retained + appended records and make the range filterable.
         try {
             $finalRow = [int]$ws.Cells.Item($ws.Rows.Count, 2).End($xlUp).Row
             for ($rr = 2; $rr -le $finalRow; $rr++) { Set-RangeValue2 $ws.Cells.Item($rr, 1) ($rr - 1) | Out-Null }
-            $tableRange = $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item($finalRow, 8))
+            # Use A1 addresses rather than passing two Range COM proxies to
+            # Worksheet.Range.  Some office-PC Excel/PowerShell combinations
+            # reject the proxy overload with DISP_E_TYPEMISMATCH ("argument
+            # type mismatch"), which must never prevent the workbook save.
+            $tableRange = $ws.Range(('A1:H{0}' -f $finalRow))
             $tableRange.AutoFilter() | Out-Null
-            $headerRange = $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item(1, 8))
+            $headerRange = $ws.Range('A1:H1')
             $headerRange.Interior.Color = 10053120
             $headerRange.Font.Color = 16777215
             $headerRange.Font.Bold = $true
             $tableRange.Borders.LineStyle = 1
+
+            # The reference sheet uses Excel's Japanese default typeface at
+            # 11 pt throughout, with compact 18-point rows.  Apply this to
+            # the complete table after incremental rows have been merged so
+            # retained and newly appended records are visually identical.
+            $tableRange.Font.Name = 'Yu Gothic'
+            $tableRange.Font.Size = 11
+            $tableRange.Rows.RowHeight = 18
+            $headerRange.HorizontalAlignment = -4108 # xlCenter
+            $headerRange.VerticalAlignment = -4108   # xlCenter
+            $ws.Range(('A2:A{0}' -f $finalRow)).HorizontalAlignment = -4108
+            $tableRange.VerticalAlignment = -4108
+            for ($rr = 2; $rr -le $finalRow; $rr++) {
+                $side = [string]$ws.Cells.Item($rr, 2).Value2
+                # Color is explicitly Double for the Excel COM Variant
+                # binder; using the branch's boxed Int32 can also produce a
+                # type mismatch on older Windows PowerShell/Excel versions.
+                [double]$fill = if ($side -eq 'GIFT') { 15398626 } else { 16777215 }
+                $ws.Range(('A{0}:H{0}' -f $rr)).Interior.Color = $fill
+            }
         } catch {}
-        try { $ws.Columns.AutoFit() | Out-Null } catch {}
+        try {
+            # Fixed widths reproduce the template proportions and keep the
+            # date/time fields from changing width with different data.
+            $widths = @(9, 10, 14, 24, 24, 20, 14, 17)
+            for ($c = 1; $c -le $widths.Count; $c++) {
+                $ws.Columns.Item($c).ColumnWidth = $widths[$c - 1]
+            }
+        } catch {}
 
         if ($isNew) { $wb.SaveAs($OutputPath, 51) } else { $wb.Save() }   # 51 = xlOpenXMLWorkbook (.xlsx)
     } finally {
@@ -994,7 +1022,11 @@ try {
             $bucketOrder = New-Object System.Collections.Generic.List[string]
             if ($OutputMode -eq 'Single') {
                 $bucketOrder.Add('')
-                $buckets[''] = @($results.ToArray())
+                # Keep every bucket as the same concrete collection type.  In
+                # Windows PowerShell 5.1, wrapping a generic List[object]
+                # obtained through a hashtable index in @() can fail with
+                # "Argument types do not match" instead of enumerating it.
+                $buckets[''] = $results
             } else {
                 foreach ($r in $results) {
                     $tag = Get-ProcessTimeOutputTag -ExcelName ([string]$r.ExcelName) -Tags $OutputTags -UnclassifiedTag $UnclassifiedTag
@@ -1007,7 +1039,7 @@ try {
             $failedTags = New-Object System.Collections.Generic.List[string]
             $writtenCorrelCount = 0
             foreach ($tag in $bucketOrder) {
-                $rowsForTag = @($buckets[$tag])
+                $rowsForTag = ConvertTo-ProcessTimeBucketArray -Bucket $buckets[$tag]
                 if ($rowsForTag.Count -eq 0) { continue }
                 if ($OutputMode -ne 'Single' -and $tag -eq $UnclassifiedTag) {
                     $names = ($rowsForTag | ForEach-Object { [string]$_.ExcelName } | Select-Object -Unique) -join ', '

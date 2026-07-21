@@ -301,6 +301,30 @@ Assert-Equal 'C:\J4\JDS' (Resolve-ProcessTimeOutputDir -Tag 'JDS' -DirByTag @{ J
 Assert-Equal 'C:\Default' (Resolve-ProcessTimeOutputDir -Tag 'JRV' -DirByTag @{ JDS = 'C:\J4\JDS' } -DefaultDir 'C:\Default') 'a tag with no override falls back to the default directory'
 Assert-Equal 'C:\Default' (Resolve-ProcessTimeOutputDir -Tag 'JRV' -DirByTag @{ JRV = '' } -DefaultDir 'C:\Default') 'a blank per-tag override is treated as unset'
 
+# ProcessTime workbook formatting is COM-bound and cannot be executed in the
+# pure test suite.  Guard the office-PC compatibility fix statically: passing
+# two Cells COM proxies to Worksheet.Range caused DISP_E_TYPEMISMATCH on a
+# real Windows PowerShell/Excel run; A1-address Range calls avoid that binder.
+$processTimeSource = Get-Content -LiteralPath (Join-Path (Split-Path $here -Parent) 'ProcessTime.ps1') -Raw
+Assert-True ($processTimeSource -notmatch '\$ws\.Range\(\$ws\.Cells\.Item') 'ProcessTime formatting never passes Cells COM proxies to Worksheet.Range'
+Assert-True ($processTimeSource -match '\$ws\.Range\(\(''A1:H\{0\}'' -f \$finalRow\)\)') 'ProcessTime table formatting uses a COM-safe A1 address'
+
+# Windows PowerShell 5.1 can fail when @() directly wraps a List[object]
+# fetched through a hashtable index. Exercise the production workaround with
+# the same collection shape used by ProcessTime.ps1's Split output buckets.
+$bucketTable = @{}
+$bucketTable['JDL'] = New-Object System.Collections.Generic.List[object]
+$bucketTable['JDL'].Add([pscustomobject]@{ CorrelId = 'JIDSA01S' })
+$bucketTable['JDL'].Add([pscustomobject]@{ CorrelId = 'JIDSA02S' })
+$bucketRows = ConvertTo-ProcessTimeBucketArray -Bucket $bucketTable['JDL']
+Assert-Equal 2 $bucketRows.Count 'generic output bucket materializes without the PowerShell 5.1 hashtable/list binder crash'
+Assert-Equal 'JIDSA01S' $bucketRows[0].CorrelId 'bucket materialization preserves row order'
+$oneRowBucket = New-Object System.Collections.Generic.List[object]
+$oneRowBucket.Add([pscustomobject]@{ CorrelId = 'JIDSA03S' })
+$oneBucketRows = ConvertTo-ProcessTimeBucketArray -Bucket $oneRowBucket
+Assert-True ($oneBucketRows -is [array]) 'one-row bucket remains an array instead of being pipeline-unrolled to a scalar'
+Assert-Equal 1 $oneBucketRows.Count 'one-row bucket keeps an accurate Count'
+
 # ---------------------------------------------------------------------------
 # Get-ProcessTimeCheckSummaryLine (v2.15.0: end-of-run manual-check summary)
 # ---------------------------------------------------------------------------

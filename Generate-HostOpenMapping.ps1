@@ -19,6 +19,10 @@
 #    .\Generate-HostOpenMapping.ps1
 #    .\Generate-HostOpenMapping.ps1 -FromBizCode JRV
 #    .\Generate-HostOpenMapping.ps1 -FromBizCode JRV -Owner <Owner>
+#    .\Generate-HostOpenMapping.ps1 -FromBizCode JOD -Owner all
+#      Owner=all keeps every WBS owner; snap\GFIX_HM\ID.txt is preferred,
+#      then snap\GIFT_HM\ID.png / snap\GFIX_HM\ID.png OCR. Only
+#      ?JOD(W/J)??? identifiers are accepted from these bulk-ID sources.
 #    .\Generate-HostOpenMapping.ps1 -WbsStartRow 1275 -WbsEndRow 2250
 #    .\Generate-HostOpenMapping.ps1 -Force
 #
@@ -59,6 +63,7 @@ $scriptDir = Split-Path $MyInvocation.MyCommand.Path
 $forceFlag = [bool]$Force.IsPresent    # capture before dot-source
 . (Join-Path $scriptDir 'MappingStore.ps1')
 . (Join-Path $scriptDir 'OwnerFilter.ps1')   # pure Test-OwnerMatch / Select-JobsByOwner
+. (Join-Path $scriptDir 'MappingInput.ps1')
 
 # -- Force console to UTF-8 --
 try {
@@ -106,6 +111,24 @@ $requestedJobNames = @(
         if ($j.Length -eq 8 -and $j[4] -eq 'W') { $j.Substring(0, 4) + 'J' + $j.Substring(5) } else { $j }
     } | Select-Object -Unique
 )
+
+# A prepared Ctrl+A list is the most accurate bulk selector.  If it is absent
+# or contains no JOD jobs, OCR the deliberately small ID.png before falling
+# back to the WBS. Explicit command-line selectors always win.
+if ($requestedCorrelIdsM.Count -eq 0 -and $requestedJobNames.Count -eq 0) {
+    $idInput = Get-MappingIdInput -WorkDir $WorkDir -OcrImage {
+        param($imagePath)
+        . (Join-Path $scriptDir 'OcrWindows.ps1')
+        . (Join-Path $scriptDir 'SendMetadata.ps1')
+        if (-not (Test-WinOcrAvailable)) { return @() }
+        $ocr = Invoke-WinOcrFile -Path $imagePath -LanguageTag 'en-US'
+        return @(ConvertTo-SendRowLines $ocr.Lines)
+    }
+    if ($null -ne $idInput) {
+        $requestedJobNames = @($idInput.Jobs)
+        Write-Host ("[INFO] ID selector ({0}): {1} ({2} JOD job(s))" -f $idInput.Kind, $idInput.Source, $requestedJobNames.Count) -ForegroundColor Green
+    }
+}
 
 $addFlag = [bool]$Add.IsPresent
 
@@ -547,6 +570,32 @@ $excel = New-Object -ComObject Excel.Application
         Write-Host "[ABORT] No matching JOB_NAMEs." -ForegroundColor Yellow; return
     }
 
+    # A colleague-supplied process-time workbook is authoritative for job
+    # order. Read column H in its displayed top-to-bottom order; jobs absent
+    # from the template remain at the end in their original stable order.
+    $processTimeName = (([char[]]@(0x51E6,0x7406,0x6642,0x9593) -join '') + '.xlsx')
+    $processTimePath = Join-Path $WorkDir $processTimeName
+    if (Test-Path -LiteralPath $processTimePath -PathType Leaf) {
+        Write-Host '[Step C4] Applying process-time workbook column H order...' -ForegroundColor Cyan
+        $wbOrder = $null
+        try {
+            $wbOrder = $excel.Workbooks.Open($processTimePath, $false, $true)
+            $wsOrder = $wbOrder.Worksheets.Item(1)
+            $lastOrderRow = $wsOrder.UsedRange.Row + $wsOrder.UsedRange.Rows.Count - 1
+            $orderValues = @()
+            for ($r = 1; $r -le $lastOrderRow; $r++) { $orderValues += [string]$wsOrder.Cells.Item($r, 8).Value2 }
+            $ordered = @(Sort-MappingJobsByTemplateOrder -Jobs @($jobNameList) -TemplateJobs $orderValues)
+            $jobNameList = New-Object 'System.Collections.Generic.List[System.String]'
+            foreach ($j in $ordered) { [void]$jobNameList.Add($j) }
+            $templateOrderCount = @(ConvertFrom-MappingIdText $orderValues).Count
+            Write-Host ("  Applied {0} template JOB order entries." -f $templateOrderCount) -ForegroundColor Green
+        } catch {
+            Write-Host ("  [WARN] could not read process-time workbook order; keeping current order: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        } finally {
+            if ($wbOrder) { try { $wbOrder.Close($false) } catch {}; [void][Runtime.InteropServices.Marshal]::ReleaseComObject($wbOrder) }
+        }
+    }
+
     # ============================================================
     # Step D: Build job -> GFIX rows index
     # ============================================================
@@ -564,6 +613,10 @@ $excel = New-Object -ComObject Excel.Application
         if ($null -eq $v) { continue }
         $jc = ([string]$v).Trim()
         if ($jobToRows.ContainsKey($jc)) {
+            if ($useFromFilter) {
+                $actualFrom = Read-CellStr $wsGfix ($startRow + $i - 1) $col_from_code
+                if ($actualFrom -ne $FromBizCode) { continue }
+            }
             $jobToRows[$jc].Add($startRow + $i - 1)
         }
     }
