@@ -397,7 +397,28 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-21 v2.14.0)
+## Current state (last bump: 2026-07-21 v2.14.1)
+
+v2.14.1 (ProcessTime: fix Write-stage cast crash + a broken unit test): two
+bugs the operator hit on the first real office-PC run of v2.14.0 (`-Stage
+Write -Force`, 21 real rows), reported with the actual console output.
+**Fixed** -- `-Stage Write` crashed with "Unable to cast object of type
+'System.Int32' to type 'System.String'" writing the output workbook: PS
+5.1's COM binder can cache a `Range.Value2` setter conversion rule from the
+first value type seen and misapply it to a later `Value2` call with a
+different type on the same worksheet -- the same bug class already fixed
+once here (`FillCheckSheet.ps1`'s `Set-RangeValue2`, v2.10.8). v2.14.0's
+vertical layout writes column 1 (`No.`) as `[int]` and every other column as
+`[string]`, exactly the alternating pattern that trips it. Promoted
+`Set-RangeValue2` into shared `ExcelHelpers.ps1` and routed every `Value2`
+write in `Write-ProcessTimeWorkbook` through it. Also fixed a PRE-EXISTING
+unit test (`Tests\Test-ProcessTimeParse.ps1`, "a full row beats a NEWER
+partial row") that v2.14.0's new `-MinimumTimeOfDay` default (09:00)
+silently broke by filtering out one of its two test rows before rank
+comparison; it now explicitly passes `-MinimumTimeOfDay ([timespan]::Zero)`
+since it tests rank-vs-recency, not the history filter. **Notes** -- still
+no PowerShell/Excel here; confirm `-Stage Write -Force` against a real work
+folder and re-run `Tests\Run-Tests.ps1` on an office PC.
 
 v2.14.0 (ProcessTime: JDL/JRV split output + OCR robustness fixes): layered
 on top of v2.13.0's Stage/sidecar split, using real OCR content supplied for

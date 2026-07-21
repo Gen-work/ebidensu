@@ -402,6 +402,35 @@ function Set-CellRangeFill($ws, [int]$row, [int]$colStart, [int]$colEnd, [long]$
     try { $range.Interior.Color = $oleColor } catch {}
 }
 
+# Assigns $Value to $Cell.Value2, retrying once via IDispatch InvokeMember on
+# failure. PS 5.1's COM property-set binder caches a conversion rule for the
+# Value2 setter and can reuse a STALE one when a caller alternates value
+# types (e.g. a numeric column and a text column both writing Value2 in the
+# same loop): a later write of a type the cached rule wasn't built for then
+# throws "Unable to cast object of type 'X' to type 'Y'" even though a fresh
+# assignment to that same cell would succeed. InvokeMember re-resolves the
+# setter from scratch, bypassing the stale cache. First seen/fixed in
+# FillCheckSheet.ps1's date-write path (v2.10.8) -- shared here so any
+# script writing mixed numeric/text columns via Value2 can reuse the fix.
+function Set-RangeValue2($cell, $value) {
+    try {
+        $cell.Value2 = $value
+        return 'assign'
+    } catch {
+        $first = $_
+        try {
+            [void]$cell.GetType().InvokeMember('Value2', [System.Reflection.BindingFlags]::SetProperty, $null, $cell, @($value))
+            return 'invokemember'
+        } catch {
+            # Re-throw the ORIGINAL assignment error -- for a genuinely bad
+            # cell (protected sheet etc.) it carries the meaningful COM
+            # message, while the retry failure is usually a generic
+            # TargetInvocationException wrapper around the same error.
+            throw $first.Exception
+        }
+    }
+}
+
 function Remove-MarkShapes($ws, [string]$namePrefix) {
     <#
     Deletes every shape on $ws whose Name starts with $namePrefix.

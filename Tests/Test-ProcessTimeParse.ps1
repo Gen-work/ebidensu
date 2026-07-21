@@ -102,7 +102,10 @@ $selReal = Select-ProcessTimeRow -Rows $real
 Assert-Equal '2026/05/23 10:58:20' $selReal.StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'newest full row wins among equal ranks'
 
 $mix = @($partial[0], $real[1])   # partial (10:58, rank 1) vs full (01:21, rank 3)
-$selMix = Select-ProcessTimeRow -Rows $mix
+# -MinimumTimeOfDay disabled here: this checks rank-vs-recency (full beats a
+# newer partial regardless of clock time), not the 09:00 history filter --
+# $real[1]'s 01:21 start would otherwise be dropped before rank is compared.
+$selMix = Select-ProcessTimeRow -Rows $mix -MinimumTimeOfDay ([timespan]::Zero)
 Assert-True (-not $selMix.Partial) 'a full row beats a NEWER partial row'
 
 $unseen = @(ConvertFrom-ProcessTimeOcrLines -Lines @($jaLine1) -CorrelId 'JIDSXXXX')

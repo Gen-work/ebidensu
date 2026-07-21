@@ -114,36 +114,10 @@ function Format-CellReadback($v) {
     return ('{0} ({1})' -f $v, $v.GetType().Name)
 }
 
-# Office-PC log 2026-07-09: the date write threw a managed InvalidCastException
-# ("Unable to cast object of type 'System.Double' to type 'System.String'")
-# out of `$cell.Value2 = <double>` while the five STRING columns wrote fine.
-# That cast never happens inside Excel -- it is PowerShell 5.1's COM binder:
-# the dynamic call site for the Value2 setter caches a conversion rule from a
-# previous binding (string) and then force-casts the next value (double)
-# through it. Route every cell write through this helper: normal assignment
-# first, and on ANY exception retry once via IDispatch InvokeMember, which
-# bypasses the PS binder (and its cached rule) entirely. A genuinely failing
-# cell (protected sheet etc.) fails the retry too and that exception
-# propagates to Set-CellChecked's catch as before. Returns which path wrote:
-# 'assign' or 'invokemember'.
-function Set-RangeValue2($cell, $value) {
-    try {
-        $cell.Value2 = $value
-        return 'assign'
-    } catch {
-        $first = $_
-        try {
-            [void]$cell.GetType().InvokeMember('Value2', [System.Reflection.BindingFlags]::SetProperty, $null, $cell, @($value))
-            return 'invokemember'
-        } catch {
-            # Re-throw the ORIGINAL assignment error -- for a genuinely bad
-            # cell (protected sheet etc.) it carries the meaningful COM
-            # message, while the retry failure is usually a generic
-            # TargetInvocationException wrapper around the same error.
-            throw $first.Exception
-        }
-    }
-}
+# Set-RangeValue2 (retry-via-InvokeMember Value2 write, fixing PS 5.1's COM
+# binder cached-conversion-rule bug -- office-PC log 2026-07-09) now lives in
+# ExcelHelpers.ps1 (dot-sourced above), shared with ProcessTime.ps1's
+# Write-ProcessTimeWorkbook (v2.14.1), which hit the same bug.
 
 # Writes one cell and reads it back to confirm the value actually stuck --
 # a bare try{}catch{} around Value2 assignment swallows both real COM

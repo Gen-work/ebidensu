@@ -490,6 +490,15 @@ function Get-ArchivedProcessTimePreview {
 # per side. Incremental (non -Force) runs retain older records; a repeated
 # (side, correl) pair REPLACES its prior row (deleted first), so a redo
 # keeps one row per (side, correl) instead of stacking duplicates.
+#
+# Cell writes go through ExcelHelpers.ps1's Set-RangeValue2, not a bare
+# Value2 assignment: column 1 (No.) writes an [int] while every other
+# column writes a [string], and PS 5.1's COM property-set binder can cache
+# a conversion rule from one Value2 call and misapply it to a later Value2
+# call with a different value type on the same worksheet -- observed on a
+# real run as "Unable to cast object of type 'System.Int32' to type
+# 'System.String'" (same root cause as FillCheckSheet.ps1's v2.10.8 date
+# write bug). Set-RangeValue2 retries via reflection on that failure.
 function Write-ProcessTimeWorkbook {
     param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows)
 
@@ -543,7 +552,7 @@ function Write-ProcessTimeWorkbook {
         if ($lastRow -eq 0) {
             for ($c = 0; $c -lt $headers.Count; $c++) {
                 $cell = $ws.Cells.Item(1, $c + 1)
-                $cell.Value2 = $headers[$c]
+                Set-RangeValue2 $cell $headers[$c] | Out-Null
                 try { $cell.Font.Bold = $true } catch {}
             }
             $lastRow = 1
@@ -572,14 +581,14 @@ function Write-ProcessTimeWorkbook {
 
         $row = $lastRow + 1
         foreach ($r in $flatRows) {
-            $ws.Cells.Item($row, 1).Value2 = $row - 1
-            $ws.Cells.Item($row, 2).Value2 = $r.Side
-            $ws.Cells.Item($row, 3).Value2 = $r.CorrelId
-            $ws.Cells.Item($row, 4).Value2 = $r.Start
-            $ws.Cells.Item($row, 5).Value2 = $r.End
-            $ws.Cells.Item($row, 6).Value2 = $r.Duration
-            $ws.Cells.Item($row, 7).Value2 = $r.Count
-            $ws.Cells.Item($row, 8).Value2 = $r.JobName
+            Set-RangeValue2 $ws.Cells.Item($row, 1) ($row - 1) | Out-Null
+            Set-RangeValue2 $ws.Cells.Item($row, 2) $r.Side | Out-Null
+            Set-RangeValue2 $ws.Cells.Item($row, 3) $r.CorrelId | Out-Null
+            Set-RangeValue2 $ws.Cells.Item($row, 4) $r.Start | Out-Null
+            Set-RangeValue2 $ws.Cells.Item($row, 5) $r.End | Out-Null
+            Set-RangeValue2 $ws.Cells.Item($row, 6) $r.Duration | Out-Null
+            Set-RangeValue2 $ws.Cells.Item($row, 7) $r.Count | Out-Null
+            Set-RangeValue2 $ws.Cells.Item($row, 8) $r.JobName | Out-Null
             if ($r.Side -eq 'GIFT') {
                 try { $ws.Range($ws.Cells.Item($row, 1), $ws.Cells.Item($row, 8)).Interior.Color = 15073398 } catch {}
             }
@@ -588,7 +597,7 @@ function Write-ProcessTimeWorkbook {
         # Renumber retained + appended records and make the range filterable.
         try {
             $finalRow = [int]$ws.Cells.Item($ws.Rows.Count, 2).End($xlUp).Row
-            for ($rr = 2; $rr -le $finalRow; $rr++) { $ws.Cells.Item($rr, 1).Value2 = $rr - 1 }
+            for ($rr = 2; $rr -le $finalRow; $rr++) { Set-RangeValue2 $ws.Cells.Item($rr, 1) ($rr - 1) | Out-Null }
             $tableRange = $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item($finalRow, 8))
             $tableRange.AutoFilter() | Out-Null
             $headerRange = $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item(1, 8))
