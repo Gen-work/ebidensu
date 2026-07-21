@@ -184,4 +184,46 @@ $noHint = @(ConvertFrom-ProcessTimeOcrLines -Lines @($jaWrongDate) -CorrelId 'JI
 Assert-True (-not $noHint[0].DateCorrected) 'no hints -> not corrected'
 Assert-Equal '2026/05/23 10:58:50' $noHint[0].StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'no hints leaves the ja date as read'
 
+# ---------------------------------------------------------------------------
+# Resolve-ProcessTimeRowPlan (v2.13.0: staged Ocr/Write + sidecar-based re-run)
+# ---------------------------------------------------------------------------
+$fresh = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Both' -Force $false
+Assert-True $fresh.NeedsOcr 'fresh row (Both, no Force): needs OCR'
+Assert-True $fresh.NeedsWrite 'fresh row (Both, no Force): needs write'
+Assert-True $fresh.Touch 'fresh row: touched'
+
+$ocrDoneWritePending = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $false -Stage 'Both' -Force $false
+Assert-True (-not $ocrDoneWritePending.NeedsOcr) 'sidecar cached, not yet inserted: OCR skipped (re-run reuses the cache)'
+Assert-True $ocrDoneWritePending.NeedsWrite 'sidecar cached, not yet inserted: write still pending'
+
+$legacyDone = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Both' -Force $false
+Assert-True (-not $legacyDone.NeedsOcr) 'legacy-inserted row with no sidecar: OCR not re-triggered (backward compat)'
+Assert-True (-not $legacyDone.NeedsWrite) 'legacy-inserted row: write not pending'
+Assert-True (-not $legacyDone.Touch) 'fully-done row (legacy or new): not touched at all'
+
+$bothDone = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $true -Stage 'Both' -Force $false
+Assert-True (-not $bothDone.Touch) 'sidecar + inserted: fully done, skipped'
+
+$forced = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $true -Stage 'Both' -Force $true
+Assert-True $forced.NeedsOcr '-Force redoes OCR even when sidecar + inserted'
+Assert-True $forced.NeedsWrite '-Force redoes write even when sidecar + inserted'
+
+$ocrOnlyStage = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Ocr' -Force $false
+Assert-True $ocrOnlyStage.NeedsOcr 'Stage=Ocr: OCR needed for a fresh row'
+Assert-True (-not $ocrOnlyStage.NeedsWrite) 'Stage=Ocr: write never requested regardless of Inserted'
+
+$writeOnlyStageReady = Resolve-ProcessTimeRowPlan -SidecarExists $true -Inserted $false -Stage 'Write' -Force $false
+Assert-True (-not $writeOnlyStageReady.NeedsOcr) 'Stage=Write: OCR never requested regardless of cache state'
+Assert-True $writeOnlyStageReady.NeedsWrite 'Stage=Write: write needed when not yet inserted'
+
+$writeOnlyStageNoCache = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $false -Stage 'Write' -Force $false
+Assert-True $writeOnlyStageNoCache.NeedsWrite 'Stage=Write: still marked pending even with no cache (caller reports a MISS and skips it at run time)'
+
+$ocrStageLegacyRow = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Ocr' -Force $false
+Assert-True (-not $ocrStageLegacyRow.Touch) 'Stage=Ocr on an already-inserted legacy row: nothing to do without -Force'
+
+$ocrStageLegacyRowForced = Resolve-ProcessTimeRowPlan -SidecarExists $false -Inserted $true -Stage 'Ocr' -Force $true
+Assert-True $ocrStageLegacyRowForced.NeedsOcr 'Stage=Ocr -Force: backfills a sidecar for a legacy row on demand'
+Assert-True (-not $ocrStageLegacyRowForced.NeedsWrite) 'Stage=Ocr -Force: still never touches write'
+
 exit (Complete-Tests)

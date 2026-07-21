@@ -62,7 +62,8 @@
     "OutputPath": "",
     "OutputSheetName": "",
     "OcrLanguage": "ja",
-    "ExportScale": 3.0
+    "ExportScale": 3.0,
+    "Stage": "Both"
   },
 
   "ExpectedTime": {

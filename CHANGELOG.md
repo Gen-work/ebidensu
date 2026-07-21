@@ -1,3 +1,61 @@
+## 2026-07-21 - ProcessTime: staged Ocr/Write control + sidecar-based re-run detection (v2.13.0)
+
+PR #118 (Codex, "picture-wide correl ownership, split JDL/JRV outputs, and
+OCR robustness fixes") was opened and closed within seconds with an EMPTY
+diff -- its head branch pointed at the exact same commit as `main` (0 files
+changed, 0 commits), even though the PR description and follow-up comments
+described substantial work. None of that work actually exists in this repo.
+This release is a fresh implementation of a related, explicitly requested
+follow-up: independent control over the ProcessTime phase's two stages, and
+smarter non `-Force` re-run detection.
+
+### Added
+- `-Stage Ocr | Write | Both` (default `Both`) on `ProcessTime.ps1`, plus a
+  matching `ProcessTime.Stage` config default and a `stage` interactive menu
+  option (`VerifyConfig.psd1`, `VerifyTool.ps1`). `Ocr` extracts GIFT/GFIX
+  for pending correls and caches the result to a new per-correl sidecar
+  (`WorkDir\snap\ProcessTime\<correl>\result.json`) without ever opening or
+  writing the output workbook. `Write` writes the output workbook purely
+  from already-cached sidecars, without opening any evidence workbook or
+  running OCR at all -- a correl with no cached sidecar is reported as a
+  `[MISS]` and left pending rather than silently triggering OCR. `Both`
+  (the previous, only behavior) OCRs whatever is still needed and then
+  writes whatever is still needed, reusing any sidecar already on disk
+  instead of redoing OCR for it.
+- Sidecar-based per-row re-run detection: non `-Force` re-runs used to gate
+  BOTH stages off the single shared `ProcessTime_Inserted` flag (set only
+  once a row is written into the shared output `.xlsx`), which cannot tell
+  "already OCR'd, just needs writing" apart from "never touched at all" --
+  exactly the distinction a `-Stage Write` rerun needs. The OCR stage is now
+  considered done for a correl once its `snap\ProcessTime\<correl>\
+  result.json` sidecar exists (a per-correl filesystem check, independent of
+  the shared output workbook); the write stage is still gated on
+  `ProcessTime_Inserted`, as before. New pure `Resolve-ProcessTimeRowPlan`
+  (`ProcessTimeParse.ps1`, unit-tested) resolves `-Stage` + both signals +
+  `-Force` into per-row `NeedsOcr` / `NeedsWrite` decisions. A row already
+  fully done before this cache existed (`ProcessTime_Inserted=1`, no
+  sidecar) is treated as OCR-already-done rather than needing a fresh redo,
+  so upgrading to this version does not trigger a mass re-OCR of every
+  historical row on the next run.
+- `Both`-stage runs now skip opening any evidence workbook at all when every
+  pending row already has a cached sidecar (only the write phase runs), and
+  a pure `-Stage Write` run never opens one either -- a real efficiency
+  change, not just a bookkeeping one.
+
+### Notes
+- No PowerShell/Excel in this dev environment (consistent with this
+  project's established constraint) -- `Resolve-ProcessTimeRowPlan`'s
+  decision table is unit-tested (`Tests\Test-ProcessTimeParse.ps1`); the
+  sidecar read/write, the two-phase `ProcessTime.ps1` driver, and the new
+  CLI/menu wiring are static-checked only. Confirm on an office PC: a fresh
+  `-Stage Ocr` run caches sidecars and leaves the output workbook untouched;
+  a follow-up `-Stage Write` run (no Excel/OCR opened) writes them and sets
+  `ProcessTime_Inserted`; a plain `-Phase ProcessTime` (Both, non `-Force`)
+  re-run against an already-fully-processed work folder does no OCR and
+  writes nothing (fully skipped); and a `-Stage Write` run against a correl
+  with no prior `-Stage Ocr` pass reports a `[MISS]` instead of silently
+  running OCR.
+
 ## 2026-07-21 - ProcessTime: OCR date correction + no-label picture fallback (v2.12.4)
 
 Two follow-ups the operator asked for after v2.12.3, both driven by the same

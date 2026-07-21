@@ -437,3 +437,46 @@ function Get-NewestProcessTimeRow {
     if ($rows.Count -eq 0) { return $null }
     return @($rows | Sort-Object StartTime -Descending)[0]
 }
+
+# ---------------------------------------------------------------------------
+# Resolve-ProcessTimeRowPlan
+#   Decides which stage(s) of the ProcessTime phase one mapping row still
+#   needs, given -Stage (which stage(s) THIS RUN is allowed to touch: 'Ocr' |
+#   'Write' | 'Both') and two INDEPENDENT completion signals:
+#     -SidecarExists : a snap\ProcessTime\<correl>\result.json cache from a
+#                      previous OCR pass exists for this correl (the
+#                      per-correl, filesystem-based signal -- NOT the shared
+#                      output workbook -- so a row's OCR-done state can be
+#                      known without opening/trusting the single output
+#                      .xlsx many rows write into).
+#     -Inserted      : the mapping's ProcessTime_Inserted flag is already
+#                      '1' (the row was already written into the output
+#                      workbook by a previous run).
+#   Backward compatibility: a row that was fully processed BEFORE this
+#   sidecar cache existed has Inserted=$true but SidecarExists=$false; such a
+#   row must NOT look like it needs a fresh OCR redo just because the cache
+#   file happens to be missing, so OCR is considered "already done" when
+#   EITHER the sidecar exists OR the row is already Inserted.
+#   -Force ignores both completion signals for whichever stage(s) -Stage
+#   selects (mirrors this project's established Force convention -- see
+#   ProcessTime_Inserted's own "-Force redoes already-inserted rows").
+#   Returns [pscustomobject]{ NeedsOcr; NeedsWrite; Touch } (Touch = either).
+# ---------------------------------------------------------------------------
+function Resolve-ProcessTimeRowPlan {
+    param(
+        [bool]$SidecarExists,
+        [bool]$Inserted,
+        [string]$Stage = 'Both',
+        [bool]$Force = $false
+    )
+    $wantOcr   = ($Stage -eq 'Ocr')   -or ($Stage -eq 'Both')
+    $wantWrite = ($Stage -eq 'Write') -or ($Stage -eq 'Both')
+    $ocrDone   = $SidecarExists -or $Inserted
+    $needsOcr   = $wantOcr   -and ($Force -or -not $ocrDone)
+    $needsWrite = $wantWrite -and ($Force -or -not $Inserted)
+    return [pscustomobject]@{
+        NeedsOcr   = $needsOcr
+        NeedsWrite = $needsWrite
+        Touch      = ($needsOcr -or $needsWrite)
+    }
+}

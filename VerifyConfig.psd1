@@ -407,6 +407,15 @@
         # Sheet name in the generated workbook. Blank -> [char] label
         # (ProjectLabels.ps1 SheetProcessTime).
         OutputSheetName = ''
+        # Which stage(s) -Phase ProcessTime runs by default: 'Ocr' (extract
+        # + cache a per-correl sidecar only), 'Write' (write the output
+        # workbook from already-cached sidecars only, no evidence workbook
+        # opened), or 'Both' (default -- OCR whatever is still needed, then
+        # write whatever is still needed). CLI -Stage / the 'stage' menu
+        # option override this per run. See ProcessTime.ps1's header
+        # comment and Resolve-ProcessTimeRowPlan (ProcessTimeParse.ps1) for
+        # how non -Force re-run detection works per stage.
+        Stage           = 'Both'
         # Secondary Windows OCR language pooled alongside 'en-US' when no
         # archived snap text is available (HmSnap.ps1's SnapVerify.SaveText).
         OcrLanguage     = 'ja'
