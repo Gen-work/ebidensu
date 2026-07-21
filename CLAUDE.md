@@ -380,7 +380,29 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-21 v2.12.3)
+## Current state (last bump: 2026-07-21 v2.12.4)
+
+v2.12.4 (ProcessTime: OCR date correction + no-label picture fallback): two
+follow-ups to v2.12.3, same GFIX debug session. **Fixed** -- OCR date-digit
+correction: the ja recognizer misreads a date digit (`2026/05/29` as
+`2026/05/23`) while the time of day is right; the 14-digit data-creation
+datestamp is a clean Latin-digit run the en-US recognizer reads correctly.
+New pure `Get-ProcessTimeDateHints` parses en-US datestamps into trusted start
+datetimes; `ConvertFrom-ProcessTimeOcrLines` gained `-StartDateHints` (a row
+whose start time-of-day matches a hint's but whose date differs adopts the
+hint's date, end shifted by the same delta, keeping the ja time-of-day);
+`Read-ProcessTimeOcrLines` keeps en-US rows separate and returns
+`@{ Lines; DateHints }`; corrected rows are tagged `DateCorrected` + noted on
+the console. **Added** -- no-label positional fallback: when a side has no
+`Correl_ID_S` label in column B, `Resolve-ProcessTimeSide` scans every picture
+on the sheet (`wholesheet` tier, up to 12) and accepts the one that OCRs as a
+full HM row for this correl (fuzzy id). The HM two-datetime structure is the
+type classifier (Excel-strip / MQ / Jenkins never yield a full HM row), so
+picture ORDER is not relied on. **Notes** -- pure logic unit-tested + static-
+checked (run `Tests\Run-Tests.ps1` on Windows PS 5.1); COM/OCR static-checked
+only. The `wholesheet` fallback OCRs up to 12 pictures on a no-label side
+(early-exits on the first HM hit; a genuinely-absent side OCRs all before
+"not detected").
 
 v2.12.3 (ProcessTime: fuzzy correl-id matching + record-count column): a
 second office-PC GFIX debug session (real `.ocr.txt` + screenshots) proved the
@@ -402,11 +424,7 @@ in `ProcessTime_<Owner>.xlsx` (console shows `count=...`); the archived tier
 fills it too (`ConvertFrom-HmPageText` now returns `RecordCount`, fields[7]).
 Unit tests use the real office-PC OCR strings. **Notes** -- pure logic
 unit-tested (static-checked here; run `Tests\Run-Tests.ps1` on Windows PS 5.1);
-Excel COM/column-write static-checked only. OCR date-digit noise
-(`2026/05/29` misread as `2026/05/23` while the times are right) is unchanged
-and out of scope. Still deferred: the no-label positional fallback (classify
-every picture on a side as HM/MQ/Jenkins by OCR content) -- picture ORDER is
-confirmed by `Probe-Shapes` but was not needed for the confirmed failing rows.
+Excel COM/column-write static-checked only.
 
 v2.12.2 (ProcessTime: parse the OCR the recognizers ACTUALLY produce +
 content-validated picture candidates): driven by the first full office-PC run

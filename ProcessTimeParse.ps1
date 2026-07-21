@@ -154,6 +154,35 @@ function Get-ProcessTimeRecordCount {
 }
 
 # ---------------------------------------------------------------------------
+# Get-ProcessTimeDateHints
+#   Parses every 14-digit data-creation datestamp (yyyyMMddHHmmss) out of a
+#   set of OCR lines into [datetime] values. The datestamp equals the batch
+#   start datetime and is a pure Latin-digit run, so the en-US recognizer
+#   reads it cleanly even when the ja recognizer misreads a DATE digit in the
+#   same row's start-time column (observed: ja reads '2026/05/29' as
+#   '2026/05/23' while the times of day are correct). Feed the en-US-only
+#   lines here and pass the result as -StartDateHints to
+#   ConvertFrom-ProcessTimeOcrLines to correct a row's date without losing
+#   the ja recognizer's more complete time-of-day read. Returns plain array.
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeDateHints {
+    param([string[]]$Lines)
+    $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    $styles  = [System.Globalization.DateTimeStyles]::None
+    $hints   = [System.Collections.Generic.List[datetime]]::new()
+    foreach ($ln in @($Lines)) {
+        if ([string]::IsNullOrWhiteSpace($ln)) { continue }
+        foreach ($m in @([regex]::Matches($ln, '(?<!\d)\d{14}(?!\d)'))) {
+            $dt = [datetime]::MinValue
+            if ([datetime]::TryParseExact($m.Value, 'yyyyMMddHHmmss', $culture, $styles, [ref]$dt)) {
+                $hints.Add($dt)
+            }
+        }
+    }
+    return $hints.ToArray()
+}
+
+# ---------------------------------------------------------------------------
 # ConvertFrom-ProcessTimeOcrLines
 #   Anchor-based reader for OCR'd HM page text: a real table column split
 #   is unreliable once OCR has collapsed variable-width whitespace, so
@@ -194,13 +223,21 @@ function Get-ProcessTimeRecordCount {
 #                  recognizer misread a digit in the id.
 #     RecordCount  the HM row's record count (shori-kensu, comma-grouped),
 #                  read after the data-creation datestamp. '' when unread.
+#     DateCorrected $true when the row's date was replaced from a -StartDateHints
+#                  entry (a ja date-digit misread fixed from the en-US
+#                  datestamp; the time of day is kept).
+#
+#   -StartDateHints (optional): trusted start [datetime]s, e.g. from
+#     Get-ProcessTimeDateHints over the en-US-only lines. A row whose start
+#     time-of-day matches a hint's but whose date differs adopts the hint's
+#     date (end time shifted by the same delta).
 #
 #   Returns plain array of PSCustomObject
 #     { StartTime; EndTime; Status; PageDuration; RecordCount; Partial;
-#       CorrelSeen; RawLine }.
+#       CorrelSeen; DateCorrected; RawLine }.
 # ---------------------------------------------------------------------------
 function ConvertFrom-ProcessTimeOcrLines {
-    param([string[]]$Lines, [string]$CorrelId = '')
+    param([string[]]$Lines, [string]$CorrelId = '', [datetime[]]$StartDateHints = @())
 
     $dtToken = '\d{4}/\d{2}/\d{2}[ \t]{1,5}\d{2}:\d{2}:\d{2}'
     $timeToken = '(?<!\d)\d{2}:\d{2}:\d{2}(?!\d)'
@@ -254,6 +291,27 @@ function ConvertFrom-ProcessTimeOcrLines {
             $searchFrom = [int]$parsed[1].End
         }
 
+        # Date correction: the ja recognizer sometimes misreads a DATE digit
+        # in the start-time column ('2026/05/29' -> '2026/05/23') while the
+        # time of day is correct. When a trusted en-US start-datetime hint
+        # (from the clean 14-digit datestamp) shares this row's start
+        # time-of-day but carries a different date, adopt the hint's date and
+        # shift the end time by the same delta -- keeping the ja time-of-day.
+        $dateCorrected = $false
+        if ($StartDateHints.Count -gt 0 -and $null -ne $startTime) {
+            foreach ($hint in $StartDateHints) {
+                if ($hint.TimeOfDay -eq $startTime.TimeOfDay) {
+                    if ($hint.Date -ne $startTime.Date) {
+                        $delta = $hint.Date - $startTime.Date
+                        $startTime = $startTime.Add($delta)
+                        if ($null -ne $endTime) { $endTime = $endTime.Add($delta) }
+                        $dateCorrected = $true
+                    }
+                    break
+                }
+            }
+        }
+
         # The page's own proc-time column: first standalone time after the
         # last consumed datetime token (cross-check for the derived duration).
         $pageDuration = ''
@@ -272,14 +330,15 @@ function ConvertFrom-ProcessTimeOcrLines {
         $recordCount = Get-ProcessTimeRecordCount -Line $line -SearchFrom $searchFrom
 
         $out.Add([PSCustomObject]@{
-            StartTime    = $startTime
-            EndTime      = $endTime
-            Status       = $status
-            PageDuration = $pageDuration
-            RecordCount  = $recordCount
-            Partial      = $isPartial
-            CorrelSeen   = $correlSeen
-            RawLine      = $rawLine
+            StartTime     = $startTime
+            EndTime       = $endTime
+            Status        = $status
+            PageDuration  = $pageDuration
+            RecordCount   = $recordCount
+            Partial       = $isPartial
+            CorrelSeen    = $correlSeen
+            DateCorrected = $dateCorrected
+            RawLine       = $rawLine
         })
     }
 

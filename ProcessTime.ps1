@@ -170,12 +170,18 @@ function Get-ProcessTimeSectionBounds {
 function Read-ProcessTimeOcrLines {
     param([string]$Png, [string]$SecondaryLanguage, [string]$OutDir)
     $langs = @('en-US', $SecondaryLanguage) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
-    $pooled = New-Object System.Collections.Generic.List[string]
+    $pooled  = New-Object System.Collections.Generic.List[string]
+    $enLines = New-Object System.Collections.Generic.List[string]
     foreach ($lang in $langs) {
         try {
             Write-Host ("       [OCR] {0} lang={1}" -f (Split-Path $Png -Leaf), $lang) -ForegroundColor DarkGray
             $ocr = Invoke-WinOcrFile -Path $Png -LanguageTag $lang
-            foreach ($ln in @(ConvertTo-SendRowLines $ocr.Lines)) { $pooled.Add($ln) }
+            $rowLines = @(ConvertTo-SendRowLines $ocr.Lines)
+            foreach ($ln in $rowLines) { $pooled.Add($ln) }
+            # Keep the en-US rows separately: the Latin-digit recognizer reads
+            # the 14-digit data-creation datestamp cleanly, so its dates are the
+            # trusted source for correcting a ja date-digit misread.
+            if ($lang -eq 'en-US') { foreach ($ln in $rowLines) { $enLines.Add($ln) } }
         } catch {
             Write-Host ("       [WARN] OCR failed ({0}, {1}): {2}" -f (Split-Path $Png -Leaf), $lang, $_.Exception.Message) -ForegroundColor Yellow
         }
@@ -189,7 +195,7 @@ function Read-ProcessTimeOcrLines {
     } catch {
         Write-Host ("       [WARN] OCR dump write failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
-    return $pooled.ToArray()
+    return @{ Lines = $pooled.ToArray(); DateHints = (Get-ProcessTimeDateHints -Lines $enLines.ToArray()) }
 }
 
 # Tiered start/end/duration resolution for one side (GIFT or GFIX) of one
@@ -249,16 +255,12 @@ function Resolve-ProcessTimeSide {
         return $result
     }
     $labelCell = Find-ProcessTimeCorrelCell $ws $CorrelId $AnchorCol
-    if ($null -eq $labelCell) {
-        $result.Note = ("correl label not found in column {0} of sheet '{1}'" -f $AnchorCol, $SheetName)
-        Write-Host ("       [MISS] {0}: {1}" -f $CorrelId, $result.Note) -ForegroundColor Yellow
-        return $result
-    }
 
     # Deterministic per-side base name (GIFT_/GFIX_) so the two sides of one
     # correl don't collide on the same PNG/dump names in the shared per-correl
     # export dir. Clear stale artifacts from a previous run so a MISS this run
-    # can't be masked by last run's leftover PNG/dump.
+    # can't be masked by last run's leftover PNG/dump. Done regardless of the
+    # label so the no-label fallback below also starts clean.
     $base = if ([string]::IsNullOrWhiteSpace($ExportBaseName)) { $CorrelId } else { $ExportBaseName }
     if (Test-Path -LiteralPath $OutDir) {
         foreach ($pat in @(('{0}_*.png' -f $base), ('{0}_*.txt' -f $base))) {
@@ -267,17 +269,31 @@ function Resolve-ProcessTimeSide {
         }
     }
 
-    $bounds = Get-ProcessTimeSectionBounds $ws $labelCell $AnchorCol
     $tiers = @()
-    $belowMin = $bounds.Top
-    if ($bounds.Bottom -ge 0) {
-        $tiers += @{ Tag = 'section'; TopMin = $bounds.Top; TopMax = $bounds.Bottom; FromBottom = $false; Max = 1; RequireCorrel = $false }
-        # below-label starts AFTER the section so a section picture that
-        # already failed the content check is not re-exported.
-        $belowMin = $bounds.Bottom
+    if ($null -eq $labelCell) {
+        # No per-correl text label on this side (some hand-made workbooks omit
+        # the Correl_ID_S label in column B). Without a label there is no
+        # section to anchor, so scan EVERY picture on the sheet and accept the
+        # one that OCRs as a full HM row for THIS correl (fuzzy id). The HM
+        # row's two-datetime structure is itself the classifier: the Excel
+        # send-metadata strip, the MQ transfer table, and the Jenkins file
+        # list never yield a full start+end HM row, so only the HM screenshot
+        # qualifies. RequireCorrel keeps a multi-correl no-label sheet from
+        # returning a neighbor's HM picture.
+        Write-Host ("       [DIAG] {0}: no correl label in column {1} of sheet '{2}'; scanning every picture (no-label fallback)" -f $CorrelId, $AnchorCol, $SheetName) -ForegroundColor Yellow
+        $tiers += @{ Tag = 'wholesheet'; TopMin = -1; TopMax = -1; FromBottom = $false; Max = 12; RequireCorrel = $true }
+    } else {
+        $bounds = Get-ProcessTimeSectionBounds $ws $labelCell $AnchorCol
+        $belowMin = $bounds.Top
+        if ($bounds.Bottom -ge 0) {
+            $tiers += @{ Tag = 'section'; TopMin = $bounds.Top; TopMax = $bounds.Bottom; FromBottom = $false; Max = 1; RequireCorrel = $false }
+            # below-label starts AFTER the section so a section picture that
+            # already failed the content check is not re-exported.
+            $belowMin = $bounds.Bottom
+        }
+        $tiers += @{ Tag = 'below-label'; TopMin = $belowMin; TopMax = -1;          FromBottom = $false; Max = 2; RequireCorrel = $false }
+        $tiers += @{ Tag = 'above-label'; TopMin = -1;        TopMax = $bounds.Top; FromBottom = $true;  Max = 3; RequireCorrel = $true }
     }
-    $tiers += @{ Tag = 'below-label'; TopMin = $belowMin; TopMax = -1;          FromBottom = $false; Max = 2; RequireCorrel = $false }
-    $tiers += @{ Tag = 'above-label'; TopMin = -1;        TopMax = $bounds.Top; FromBottom = $true;  Max = 3; RequireCorrel = $true }
 
     $accepted = $null; $acceptedTag = ''
     $fallbackRow = $null; $fallbackRank = -1; $fallbackTag = ''
@@ -299,8 +315,9 @@ function Resolve-ProcessTimeSide {
         foreach ($png in $pngs) {
             $candIdx++
             $candTotal++
-            $lines = @(Read-ProcessTimeOcrLines -Png $png -SecondaryLanguage $SecondaryLanguage -OutDir $OutDir)
-            $rows = @(ConvertFrom-ProcessTimeOcrLines -Lines $lines -CorrelId $CorrelId)
+            $read = Read-ProcessTimeOcrLines -Png $png -SecondaryLanguage $SecondaryLanguage -OutDir $OutDir
+            $lines = @($read.Lines)
+            $rows = @(ConvertFrom-ProcessTimeOcrLines -Lines $lines -CorrelId $CorrelId -StartDateHints $read.DateHints)
             # A below-label candidate is only position-trusted when it is the
             # FIRST picture below a section that had NO picture of its own
             # (the v2.12.1 retry target); once the section picture existed
@@ -351,6 +368,9 @@ function Resolve-ProcessTimeSide {
     $result.EndTime   = $row.EndTime
     $result.Matched   = ($null -ne $row.EndTime)
     if ($row.PSObject.Properties['RecordCount']) { $result.RecordCount = [string]$row.RecordCount }
+    if ($row.PSObject.Properties['DateCorrected'] -and [bool]$row.DateCorrected) {
+        $notes.Add('start date taken from en-US datestamp (ja date OCR-corrected)')
+    }
 
     # Duration: derived from start/end when both were read; cross-checked
     # against the page's own proc-time column, which also fills in when the

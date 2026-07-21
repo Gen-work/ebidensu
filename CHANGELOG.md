@@ -1,3 +1,47 @@
+## 2026-07-21 - ProcessTime: OCR date correction + no-label picture fallback (v2.12.4)
+
+Two follow-ups the operator asked for after v2.12.3, both driven by the same
+GFIX debug data.
+
+### Fixed
+- OCR date-digit correction. The ja recognizer misreads a DATE digit in the
+  start-time column (`2026/05/29` read as `2026/05/23`) while the time of day
+  is correct; the 14-digit data-creation datestamp is a pure Latin-digit run
+  that the en-US recognizer reads cleanly. New pure `Get-ProcessTimeDateHints`
+  (`ProcessTimeParse.ps1`) parses en-US datestamps into trusted start
+  datetimes; `ConvertFrom-ProcessTimeOcrLines` gained `-StartDateHints` -- a
+  row whose start time-of-day matches a hint's but whose date differs adopts
+  the hint's date (end time shifted by the same delta), keeping the ja
+  recognizer's more complete time-of-day read. `Read-ProcessTimeOcrLines`
+  (`ProcessTime.ps1`) now keeps the en-US-only rows separately and returns
+  `@{ Lines; DateHints }`; the corrected row is tagged `DateCorrected` and
+  surfaced as a `note:` on the console line. No hint / matching-date hint =
+  no change (workbooks that already read correctly are untouched).
+
+### Added
+- No-label positional fallback. When a side has no per-correl `Correl_ID_S`
+  text label in column B (some hand-made workbooks omit it),
+  `Resolve-ProcessTimeSide` no longer returns immediately -- it now scans
+  EVERY picture on the sheet (`wholesheet` tier, up to 12) and accepts the
+  one that OCRs as a full HM row for THIS correl (fuzzy id, from v2.12.3).
+  The HM row's two-datetime structure is itself the type classifier: the
+  Excel send-metadata strip, the MQ transfer table, and the Jenkins file
+  list never produce a full start+end HM row, so only the HM screenshot
+  qualifies, and `RequireCorrel` keeps a multi-correl no-label sheet from
+  returning a neighbor's picture. Picture order (confirmed via `Probe-Shapes`:
+  GIFT = Excel-strip, HM, MQ, ..., Jenkins; GFIX = Excel-strip, HM, ...,
+  Jenkins) is therefore not relied on -- content is.
+
+### Notes
+- No PowerShell/Excel here -- pure logic (date hints/correction, the fuzzy
+  matcher, the whole-sheet tier's selection reuse) is unit-tested and static-
+  checked; run `Tests\Run-Tests.ps1` on Windows PS 5.1. The `wholesheet`
+  fallback OCRs up to 12 pictures on a no-label side; it early-exits on the
+  first accepted HM row, but a side that genuinely has no data for the correl
+  (e.g. the GIFT side of a GFIX-only correl) will OCR all candidates before
+  reporting "not detected" -- correct, but slower than the old immediate
+  label-not-found return. Confirm on an office PC.
+
 ## 2026-07-21 - ProcessTime: fuzzy correl-id matching + record-count column (v2.12.3)
 
 Driven by a second office-PC debug session on the GFIX side. Real `.ocr.txt`

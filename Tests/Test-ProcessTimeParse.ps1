@@ -160,4 +160,28 @@ Assert-Equal '0' $rz[0].RecordCount 'a zero record count is read'
 
 Assert-Equal '' (Get-ProcessTimeRecordCount -Line 'no digits at all here') 'no datestamp -> empty record count (never guesses)'
 
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeDateHints + -StartDateHints date correction (v2.12.3):
+# the ja recognizer misreads a DATE digit ('2026/05/29' -> '2026/05/23') while
+# the time of day is correct; the en-US datestamp is the trusted date source.
+# ---------------------------------------------------------------------------
+$hints = @(Get-ProcessTimeDateHints -Lines @('start 20260529105850 count 11,262 JIGPKBIS', 'no stamp here', 'x 20260529075413 y'))
+Assert-Equal 2 $hints.Count '14-digit datestamps parsed to datetimes (others ignored)'
+Assert-Equal '2026/05/29 10:58:50' $hints[0].ToString('yyyy/MM/dd HH:mm:ss') 'datestamp parsed as yyyyMMddHHmmss'
+
+$jaWrongDate = '2026/05/23  10 :58 :50       2026/05/23  10 :58 :57       00 :00 :07      IGPLB073        K   ' + $normal + '       20260523105850                       1 1 ,262   ' + $diamond + '          JIGPKBIS'
+$enHint = @(Get-ProcessTimeDateHints -Lines @('2026/05/29   2026/05/29   IGPLB073   20260529105850   11,262   JIGPKBIS'))
+$corr = @(ConvertFrom-ProcessTimeOcrLines -Lines @($jaWrongDate) -CorrelId 'JIGPKB1S' -StartDateHints $enHint)
+Assert-Equal '2026/05/29 10:58:50' $corr[0].StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'ja date-digit misread corrected from the en-US datestamp (time kept)'
+Assert-Equal '2026/05/29 10:58:57' $corr[0].EndTime.ToString('yyyy/MM/dd HH:mm:ss') 'end time shifted to the corrected date'
+Assert-True $corr[0].DateCorrected 'date-corrected flag is set'
+
+$agree = @(ConvertFrom-ProcessTimeOcrLines -Lines @($jaWrongDate) -CorrelId 'JIGPKB1S' -StartDateHints @([datetime]'2026/05/23 10:58:50'))
+Assert-True (-not $agree[0].DateCorrected) 'no correction when the hint date already matches the read date'
+Assert-Equal '2026/05/23 10:58:50' $agree[0].StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'a matching-date hint leaves the row unchanged'
+
+$noHint = @(ConvertFrom-ProcessTimeOcrLines -Lines @($jaWrongDate) -CorrelId 'JIGPKB1S')
+Assert-True (-not $noHint[0].DateCorrected) 'no hints -> not corrected'
+Assert-Equal '2026/05/23 10:58:50' $noHint[0].StartTime.ToString('yyyy/MM/dd HH:mm:ss') 'no hints leaves the ja date as read'
+
 exit (Complete-Tests)
