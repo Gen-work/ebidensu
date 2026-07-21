@@ -214,6 +214,7 @@ function Show-VerifyHelp([hashtable]$Config) {
     }
     Write-Host ''
     Write-Host 'isReplaced/isMarked/isReviewed bitmask: 1=GIFT, 2=GFIX, 4=DF. 7 = all done.'
+    Write-Host 'ProcessTime_Inserted bitmask: 1=OCR''d, 2=written to output workbook. 3 = both done.'
     Write-Host ''
     Write-Host 'Per-work-folder config overlay:'
     Write-Host '  <WorkDir>\verify_config.json overrides VerifyConfig.psd1 (JSON wins; CLI still wins).'
@@ -555,23 +556,28 @@ function Show-PhaseNotes([string]$PhaseKey) {
             '  Phase params:',
             '    t=TargetIds    -> limit rows',
             '    f=Force        -> re-run whichever stage(s) -Stage selects, ignoring their own',
-            '                      completion signal (sidecar cache for Ocr, ProcessTime_Inserted',
-            '                      for Write)',
+            '                      completion bit (bit 1 = OCR''d for Ocr, bit 2 = written for Write)',
             '    stage=Stage    -> Ocr | Write | Both (default Both; config ProcessTime.Stage)',
             '  NOTE: extracts each correl''s HM batch processing start/end time (GIFT and GFIX)',
             '        from the already-inserted receive-result evidence screenshot -- archived',
             '        snap\GIFT_HM|GFIX_HM\<correl>.txt first, else OCR of the evidence picture --',
-            '        and writes one row per GIFT/GFIX side to separate JDL/JRV workbooks (config',
-            '        ProcessTime.OutputDirectory; classified by whether the row''s Excel_NAME',
-            '        contains "JDL" or "JRV"). Run this AFTER ReplaceGift/ReplaceGfix (the HM',
-            '        picture must already be in the evidence workbook).',
+            '        and writes one row per GIFT/GFIX side into one workbook per tag (config',
+            '        ProcessTime.OutputTags, default JDL/JRV but not limited to them -- e.g. add',
+            '        "JDS"; a row matching none of them goes to the UnclassifiedTag bucket instead',
+            '        of aborting the run). ProcessTime.OutputMode ''Single'' writes everything into',
+            '        one workbook instead. ProcessTime.OutputDirectoryByTag routes a tag to its own',
+            '        destination directory. Run this AFTER ReplaceGift/ReplaceGfix (the HM picture',
+            '        must already be in the evidence workbook).',
             '  NOTE: -Stage Ocr caches each correl''s OCR result to a per-correl sidecar',
             '        (snap\ProcessTime\<correl>\result.json) without opening the output workbook;',
-            '        -Stage Write writes the output workbook from cached sidecars only, without',
+            '        -Stage Write writes the output workbook(s) from cached sidecars only, without',
             '        opening any evidence workbook (a correl with no cached sidecar is reported',
             '        as a MISS and left pending). Non -Force re-runs skip a correl''s OCR once its',
-            '        sidecar exists (or it was already fully inserted before this cache existed),',
-            '        and skip its write once ProcessTime_Inserted=1 -- independently of each other.'
+            '        sidecar exists or ProcessTime_Inserted bit 1 is set, and skip its write once',
+            '        bit 2 is set -- independently of each other. ProcessTime_Inserted is a bitmask',
+            '        (1=OCR''d, 2=written, 3=both); a pre-v2.15.0 plain ''1'' is migrated to ''3''.',
+            '  NOTE: end of run prints a "needs manual check" summary listing every correl whose',
+            '        GIFT and/or GFIX side was not matched, so it is not buried in the OCR log.'
         ) }
         '^Validate$' { @(
             '  Phase params:',
@@ -1794,6 +1800,12 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputPath))       { $args['OutputPath']      = [string]$pt.OutputPath }
             if ($pt.ContainsKey('OutputDirectory') -and -not [string]::IsNullOrWhiteSpace([string]$pt.OutputDirectory)) { $args['OutputDirectory'] = [string]$pt.OutputDirectory }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputSheetName))  { $args['OutputSheetName'] = [string]$pt.OutputSheetName }
+            if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputMode))       { $args['OutputMode']      = [string]$pt.OutputMode }
+            if ($pt.ContainsKey('OutputTags') -and @($pt.OutputTags).Count -gt 0) { $args['OutputTags'] = [string[]]$pt.OutputTags }
+            if (-not [string]::IsNullOrWhiteSpace([string]$pt.UnclassifiedTag)) { $args['UnclassifiedTag'] = [string]$pt.UnclassifiedTag }
+            if ($pt.ContainsKey('OutputDirectoryByTag') -and $pt.OutputDirectoryByTag -is [hashtable] -and $pt.OutputDirectoryByTag.Count -gt 0) {
+                $args['OutputDirectoryByTag'] = $pt.OutputDirectoryByTag
+            }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OcrLanguage))      { $args['OcrLanguage']     = [string]$pt.OcrLanguage }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
         }
