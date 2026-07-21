@@ -1,33 +1,39 @@
-## 2026-07-21 - ProcessTime: template-matched worksheet formatting
-
-### Changed
-- ProcessTime output now uses Yu Gothic 11 pt text, compact 18-point rows,
-  fixed template column widths, centered headers and row numbers, and the
-  template's pale-green GIFT / white GFIX row fills.  GFIX white is applied
-  explicitly so incremental writes cannot retain stale manual formatting.
+## 2026-07-21 - ProcessTime: template-matched worksheet formatting + code-review fixes (v2.15.1)
 
 ### Fixed
 - Excel on the office PC raised `argument type mismatch` before saving both
   JRV and JDL outputs because PowerShell selected an incompatible COM overload
-  when two `Cells.Item(...)` proxies were passed to `Worksheet.Range`.  All
+  when two `Cells.Item(...)` proxies were passed to `Worksheet.Range`. All
   formatting ranges now use A1 addresses, and fill colours are passed as
   explicit `Double` values for compatibility with the Excel Variant binder.
-
-
-## 2026-07-21 - ProcessTime: template-matched worksheet formatting
+- The formatting block's single bare `catch {}` silently skipped every
+  remaining step (and any warning) the moment one COM call failed, so a
+  workbook could save as "successful" while only partially formatted. Split
+  into one try/catch per concern (range resolve / AutoFilter+borders /
+  header fill+font / font+row-height / alignment / GIFT-GFIX row fill /
+  column widths), each logging `Write-Warning` with the failing step and
+  output path.
+- `Generate-HostOpenMapping.ps1`'s snap `ID.txt`/`ID.png` bulk-ID selector
+  (documented as only for `-FromBizCode JOD -Owner all`) actually fired for
+  ANY call omitting `-CorrelIdsM`/`-JobNames`/`-ExcelNames`, so a stale
+  `ID.txt` left over from an earlier JOD batch could silently hijack an
+  unrelated run (e.g. `-FromBizCode JRV -Owner AAA`) into a tiny ID-file-
+  limited temp mapping instead of the intended WBS+FromBizCode scan. Gated
+  behind a new pure, unit-tested `Test-MappingIdBulkSelectorEnabled`.
 
 ### Changed
 - ProcessTime output now uses Yu Gothic 11 pt text, compact 18-point rows,
   fixed template column widths, centered headers and row numbers, and the
-  template's pale-green GIFT / white GFIX row fills.  GFIX white is applied
+  template's pale-green GIFT / white GFIX row fills. GFIX white is applied
   explicitly so incremental writes cannot retain stale manual formatting.
+  Current settings are documented inline in `ProcessTime.ps1` as a reference
+  point for future changes; a dedicated formatting module is a TODO (also
+  note: Start/End are written as plain formatted TEXT, not real Excel
+  date/time values with a cell `NumberFormat`).
 
-### Fixed
-- Excel on the office PC raised `argument type mismatch` before saving both
-  JRV and JDL outputs because PowerShell selected an incompatible COM overload
-  when two `Cells.Item(...)` proxies were passed to `Worksheet.Range`.  All
-  formatting ranges now use A1 addresses, and fill colours are passed as
-  explicit `Double` values for compatibility with the Excel Variant binder.
+### Notes
+- No PowerShell/Excel in this dev environment -- confirm the formatting, the
+  new per-step warnings, and the mapping bulk-selector gate on an office PC.
 
 ## 2026-07-21 - ProcessTime: bitmask ProcessTime_Inserted + config-driven output tags (v2.15.0)
 

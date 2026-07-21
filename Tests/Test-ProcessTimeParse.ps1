@@ -309,6 +309,16 @@ $processTimeSource = Get-Content -LiteralPath (Join-Path (Split-Path $here -Pare
 Assert-True ($processTimeSource -notmatch '\$ws\.Range\(\$ws\.Cells\.Item') 'ProcessTime formatting never passes Cells COM proxies to Worksheet.Range'
 Assert-True ($processTimeSource -match '\$ws\.Range\(\(''A1:H\{0\}'' -f \$finalRow\)\)') 'ProcessTime table formatting uses a COM-safe A1 address'
 
+# A COM formatting step failing must never be silently swallowed -- each
+# formatting try/catch block around the table write has to log a Write-Warning
+# (with the failing step + output path) instead of a bare `catch {}`, so a
+# real Excel/PowerShell incompatibility is diagnosable instead of showing up
+# only as "the saved workbook just isn't formatted".
+$formattingRegion = if ($processTimeSource -match '(?s)# Renumber retained \+ appended records.*?if \(\$isNew\)') { $Matches[0] } else { '' }
+Assert-True (-not [string]::IsNullOrEmpty($formattingRegion)) 'ProcessTime workbook formatting region is present for the empty-catch regression check'
+Assert-True ($formattingRegion -notmatch 'catch\s*\{\s*\}') 'ProcessTime workbook formatting no longer uses a bare catch {} that silently swallows COM errors'
+Assert-Equal 7 (([regex]::Matches($formattingRegion, 'Write-Warning \("ProcessTime workbook formatting:')).Count) 'every formatting sub-step (range resolve, autofilter/borders, header fill/font, font/row-height, alignment, row fill, column widths) warns on failure'
+
 # Windows PowerShell 5.1 can fail when @() directly wraps a List[object]
 # fetched through a hashtable index. Exercise the production workaround with
 # the same collection shape used by ProcessTime.ps1's Split output buckets.

@@ -112,10 +112,16 @@ $requestedJobNames = @(
     } | Select-Object -Unique
 )
 
-# A prepared Ctrl+A list is the most accurate bulk selector.  If it is absent
-# or contains no JOD jobs, OCR the deliberately small ID.png before falling
-# back to the WBS. Explicit command-line selectors always win.
-if ($requestedCorrelIdsM.Count -eq 0 -and $requestedJobNames.Count -eq 0) {
+$addFlag = [bool]$Add.IsPresent
+
+# A prepared Ctrl+A list is the most accurate bulk selector, but it only applies
+# to the documented "-FromBizCode JOD -Owner all" full-WBS bulk run -- NOT to
+# every call that simply omits -CorrelIdsM/-JobNames/-ExcelNames (a stale
+# ID.txt/ID.png left over from an earlier JOD batch would otherwise silently
+# hijack an unrelated run, e.g. "-FromBizCode JRV -Owner AAA", by skipping its
+# WBS/FromBizCode scan -- see Test-MappingIdBulkSelectorEnabled).
+if ((Test-MappingIdBulkSelectorEnabled -FromBizCode $FromBizCode -Owner $Owner -AddFlag $addFlag) -and
+    $requestedCorrelIdsM.Count -eq 0 -and $requestedJobNames.Count -eq 0) {
     $idInput = Get-MappingIdInput -WorkDir $WorkDir -OcrImage {
         param($imagePath)
         . (Join-Path $scriptDir 'OcrWindows.ps1')
@@ -126,11 +132,10 @@ if ($requestedCorrelIdsM.Count -eq 0 -and $requestedJobNames.Count -eq 0) {
     }
     if ($null -ne $idInput) {
         $requestedJobNames = @($idInput.Jobs)
+        Write-Host ("[INFO] Bulk mode ({0}/{1}): switched from full-WBS scan to ID-file-limited selection." -f $FromBizCode, $Owner) -ForegroundColor Yellow
         Write-Host ("[INFO] ID selector ({0}): {1} ({2} JOD job(s))" -f $idInput.Kind, $idInput.Source, $requestedJobNames.Count) -ForegroundColor Green
     }
 }
-
-$addFlag = [bool]$Add.IsPresent
 
 $useRowRange   = ($WbsStartRow -gt 0 -and $WbsEndRow -gt 0)
 $useFromFilter = -not [string]::IsNullOrWhiteSpace($FromBizCode)

@@ -1,5 +1,25 @@
 # Pure helpers for discovering mapping JOB_NAME input and applying template order.
 
+# The snap\GFIX_HM\ID.txt / *_HM\ID.png bulk-ID selector is only meaningful for
+# the documented "-FromBizCode JOD -Owner all" full-WBS bulk run (see
+# Generate-HostOpenMapping.ps1's header comment). It must NOT fire for a plain
+# "-FromBizCode JRV -Owner <op>"-style call just because that call also happens
+# to supply no explicit -CorrelIdsM/-JobNames/-ExcelNames -- a stale ID.txt left
+# over from an earlier JOD batch would otherwise silently switch such a call
+# from a full WBS+FromBizCode scan to a tiny ID-file-limited temp mapping.
+function Test-MappingIdBulkSelectorEnabled {
+    param(
+        [string]$FromBizCode,
+        [string]$Owner,
+        [bool]$AddFlag
+    )
+    if ($AddFlag) { return $false }
+    if ([string]::IsNullOrWhiteSpace($FromBizCode) -or [string]::IsNullOrWhiteSpace($Owner)) { return $false }
+    if (-not $FromBizCode.Trim().Equals('JOD', [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+    if (-not $Owner.Trim().Equals('all', [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+    return $true
+}
+
 function ConvertFrom-MappingIdText {
     param([string[]]$Text)
 
