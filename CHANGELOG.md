@@ -1,3 +1,47 @@
+## 2026-07-21 - ProcessTime: fix Write-stage cast crash + a broken unit test (v2.14.1)
+
+Two bugs the operator hit on the first real office-PC run of v2.14.0
+(`-Stage Write -Force` against 21 real rows), reported with the actual
+console output.
+
+### Fixed
+- `-Stage Write` crashed writing the output workbook: `[FAIL] could not
+  write process-time workbook: ... 型 'System.Int32' のオブジェクトを型
+  'System.String' にキャストできません。` (`Unable to cast object of type
+  'System.Int32' to type 'System.String'`). Root cause: PowerShell 5.1's COM
+  property-set binder can cache a conversion rule for a `Range.Value2`
+  setter call from the FIRST value type it sees and misapply that cached
+  rule to a LATER `Value2` call with a different value type -- the exact
+  same bug class already fixed once in this repo (`FillCheckSheet.ps1`'s
+  `Set-RangeValue2`, v2.10.8). `Write-ProcessTimeWorkbook`'s new (v2.14.0)
+  vertical layout writes column 1 (`No.`) as an `[int]` and every other
+  column as a `[string]` on the same worksheet, which is exactly the
+  alternating-type pattern that trips the stale cache. Promoted
+  `Set-RangeValue2` into the shared `ExcelHelpers.ps1` (was local to
+  `FillCheckSheet.ps1`) and switched every `Value2` write in
+  `Write-ProcessTimeWorkbook` (header row, data rows, the renumber pass) to
+  go through it; a genuinely bad cell (protected sheet, etc.) still surfaces
+  its real COM error instead of being masked by the retry.
+- `Tests\Test-ProcessTimeParse.ps1`: `[FAIL] a full row beats a NEWER
+  partial row`. v2.14.0's `-MinimumTimeOfDay` default (09:00) on
+  `Select-ProcessTimeRow` silently changed this PRE-EXISTING test's
+  behavior -- one of its two rows starts at 01:21, which the new default
+  now drops before rank is even compared, so only the partial row survived
+  filtering and "won" by having no competition. This test predates v2.14.0
+  and is about rank beating recency (a full row beats a newer partial row),
+  not about the 09:00 history filter, so it now passes
+  `-MinimumTimeOfDay ([timespan]::Zero)` explicitly to opt out, matching
+  the parameter's own documented escape hatch. Audited every other
+  pre-existing `Select-ProcessTimeRow` / `Get-NewestProcessTimeRow` call in
+  the test file for the same class of silent breakage; none of the others
+  were affected (their expected-winner row was already >= 09:00, or the
+  filtered-out row was never the expected pick to begin with).
+
+### Notes
+- Still no PowerShell/Excel in this dev environment -- confirm `-Stage
+  Write -Force` against a real work folder (the exact repro that surfaced
+  the cast bug) and re-run `Tests\Run-Tests.ps1` on an office PC.
+
 ## 2026-07-21 - ProcessTime: JDL/JRV split output + OCR robustness fixes (v2.14.0)
 
 Layered on top of v2.13.0's Stage/sidecar split, using real OCR content the
