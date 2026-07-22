@@ -64,7 +64,11 @@
     "OutputSheetName": "",
     "OcrLanguage": "ja",
     "ExportScale": 3.0,
-    "Stage": "Both"
+    "Stage": "Both",
+    "EmitCheckColumns": true,
+    "OcrPreprocessBinarize": false,
+    "OcrPreprocessThreshold": 128,
+    "_CheckColumnsNote": "EmitCheckColumns (default true) appends the on-sheet audit columns after the A..H data columns: I duration re-derivation (=E-D), J T/F compare of the written vs re-derived duration, K record-count check. Set false to write A..H data only. OcrPreprocessBinarize/OcrPreprocessThreshold are reserved (carried through but not yet wired into the OCR image pipeline)."
   },
 
   "ExpectedTime": {

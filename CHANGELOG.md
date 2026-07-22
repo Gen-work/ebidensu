@@ -1,3 +1,83 @@
+## 2026-07-22 - ProcessTime: check-formula module + unified generation (v2.16.0)
+
+Pure refactor of the ProcessTime output workbook's on-sheet audit ("check")
+columns -- no OCR or extraction behavior changes. The check formulas were
+previously inlined into `Write-ProcessTimeWorkbook`'s per-row data-write
+loop (col I `=E-D`, col J `=IF(ROUND(F*86400,0)=ROUND(I*86400,0),"T","F")`),
+where they were untestable and coupled to the data write. They are now a
+data-driven module generated in one uniform finalizing pass, and the
+operator's manual "count check" is formalized as a new column K.
+
+Target runtime is Windows PowerShell 5.1; this Linux dev environment can
+only prove parse-correctness + pure logic (pwsh 7). The COM finalizer and
+the dynamic-range formatting are static-checked only -- confirm the I/J/K
+column formulas and values on an office PC with Excel.
+
+### Added
+- **New pure module `ProcessTimeCheck.ps1`** (dot-source, no `param()`, no
+  COM -- CLAUDE.md dot-source-safe; ASCII source, Japanese headers via
+  `[char]`):
+  - `Get-ProcessTimeCheckColumnSpec` returns the ordered, data-driven spec
+    for the audit columns appended after the A..H data columns:
+    - I `処理時間(検算)` -- worksheet re-derivation of the duration (`=E-D`),
+      number format `[h]:mm:ss`.
+    - J `チェック` -- T/F compare, to the second, of the written duration (F)
+      against the re-derived one (I).
+    - K `件数チェック` (NEW) -- formalizes the operator's manual record-count
+      check. FIRST VERSION criterion: the per-row record count (col G)
+      parses to a POSITIVE number once any thousands commas are stripped;
+      a blank count leaves the cell blank (partial row), a zero/non-numeric
+      count reads `NG`. A stricter GIFT-vs-GFIX cross-row equality check is
+      a documented follow-up: the vertical layout groups all GIFT rows then
+      all GFIX rows per job, so a GIFT row's paired GFIX row is not at a
+      fixed offset a single-row formula template can reference.
+    - Each spec formula is SELF-GUARDING (blank/text source cells yield `""`
+      in the cell), so the "a partial row stays blank" rule is preserved
+      with no per-row inspection.
+  - `New-ProcessTimeCheckFormula -Template -Row` fills a formula template's
+    `{0}` with the row number (pure string op, e.g. row 5 -> `=E5-D5`).
+  - Unit-tested in `Tests\Test-ProcessTimeCheck.ps1` (formula fill for
+    each column, spec shape/columns/headers).
+- **`ProcessTime.EmitCheckColumns`** config (default `$true`; threaded
+  VerifyConfig.psd1 -> VerifyTool.ps1 -> ProcessTime.ps1). `$false` writes
+  the A..H data columns only and skips the whole check-column pass.
+- **Reserved config** `ProcessTime.OcrPreprocessBinarize` (default `$false`)
+  / `OcrPreprocessThreshold` (128): carried through config + CLI + docs but
+  NOT wired into the OCR image pipeline yet -- a placeholder for a later
+  stage. Toggling them today has no effect.
+
+### Changed
+- **`ProcessTime.ps1` -- unified check-column generation**:
+  - `Write-ProcessTimeWorkbook` writes A..H data values only; the per-row
+    inline I/J formula block is removed.
+  - New COM finalizer `Set-ProcessTimeCheckColumns -Worksheet -HeaderRow
+    -FirstDataRow -LastDataRow -Spec` walks the spec after all data rows
+    exist, writing the check headers, per-row formulas (via the pure
+    `New-ProcessTimeCheckFormula`) and number formats uniformly; value
+    writes go through `Set-RangeValue2` (PS 5.1 COM binder hazard). Gated on
+    `-EmitCheckColumns`; `ProcessTimeCheck.ps1` is dot-sourced.
+  - The table range / borders / header fill / per-row fill / column widths
+    now use a dynamic last-column letter (A..H with check columns off,
+    A..K with them on); check-column widths come from the spec.
+- **Comment cleanup (`ProcessTime.ps1`)**: the v2.15.x "Current template
+  formatting settings" reference block and several over-long OCR-tier
+  headers are compressed without losing information.
+- **`CLAUDE.md`**: "Current state" trimmed to the recent versions
+  (v2.16.0 / v2.15.3 / v2.15.2 / v2.15.1); v2.15.0 and earlier folded into
+  a one-line pointer to this CHANGELOG. Dot-source-safe list + file map add
+  `ProcessTimeCheck.ps1`.
+
+### Notes
+- `Tests\Test-ProcessTimeParse.ps1` source guards updated for the refactor:
+  the COM-safe A1 table-range assertion now matches the dynamic
+  `'A1:{0}{1}' -f $lastColLetter, $finalRow` form, and the formatting
+  sub-step warning count is 8 (adds the check-columns step).
+- `ConfigOverlay.ps1` readme text + `verify_config.example.json` document
+  `EmitCheckColumns` and the reserved binarize fields. The
+  `Test-ConfigOverlay` schema-drift guard already covers the `ProcessTime`
+  top-level section (in the `excel` editor group), so the new sub-fields
+  need no group change.
+
 ## 2026-07-22 - ProcessTime: code-review hardening -- strict derive regex, OCR image preprocessing, PS 5.1 guards (v2.15.3)
 
 Three code-review findings against v2.15.2, all addressed.

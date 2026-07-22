@@ -349,7 +349,7 @@ Assert-True ($processTimeSource -notmatch '@\(\$writtenRowsByCorrel\[') 'Process
 # real-run incidents (v2.15.0 buckets, v2.15.2 write bits) were this exact
 # pattern. Materialize through ConvertTo-ProcessTimeBucketArray instead.
 Assert-True ($processTimeSource -notmatch '@\(\$\w+\[') 'ProcessTime source contains no @($var[index]) collection wrap (PS 5.1 binder hazard)'
-Assert-True ($processTimeSource -match '\$ws\.Range\(\(''A1:J\{0\}'' -f \$finalRow\)\)') 'ProcessTime table formatting uses a COM-safe A1 address'
+Assert-True ($processTimeSource -match '\$ws\.Range\(\(''A1:\{0\}\{1\}'' -f \$lastColLetter, \$finalRow\)\)') 'ProcessTime table formatting uses a COM-safe A1 address (dynamic last column)'
 
 # A COM formatting step failing must never be silently swallowed -- each
 # formatting try/catch block around the table write has to log a Write-Warning
@@ -359,7 +359,7 @@ Assert-True ($processTimeSource -match '\$ws\.Range\(\(''A1:J\{0\}'' -f \$finalR
 $formattingRegion = if ($processTimeSource -match '(?s)# Renumber retained \+ appended records.*?if \(\$isNew\)') { $Matches[0] } else { '' }
 Assert-True (-not [string]::IsNullOrEmpty($formattingRegion)) 'ProcessTime workbook formatting region is present for the empty-catch regression check'
 Assert-True ($formattingRegion -notmatch 'catch\s*\{\s*\}') 'ProcessTime workbook formatting no longer uses a bare catch {} that silently swallows COM errors'
-Assert-Equal 7 (([regex]::Matches($formattingRegion, 'Write-Warning \("ProcessTime workbook formatting:')).Count) 'every formatting sub-step (range resolve, autofilter/borders, header fill/font, font/row-height, alignment, row fill, column widths) warns on failure'
+Assert-Equal 8 (([regex]::Matches($formattingRegion, 'Write-Warning \("ProcessTime workbook formatting:')).Count) 'every formatting sub-step (range resolve, check columns, autofilter/borders, header fill/font, font/row-height, alignment, row fill, column widths) warns on failure'
 
 # Windows PowerShell 5.1 can fail when @() directly wraps a List[object]
 # fetched through a hashtable index. Exercise the production workaround with

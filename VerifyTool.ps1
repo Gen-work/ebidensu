@@ -1811,7 +1811,10 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($pt.ContainsKey('OcrPreprocess') -and $null -ne $pt.OcrPreprocess) { $args['OcrPreprocess'] = [bool]$pt.OcrPreprocess }
             if ($pt.ContainsKey('OcrPreprocessScale') -and $null -ne $pt.OcrPreprocessScale) { $args['OcrPreprocessScale'] = [double]$pt.OcrPreprocessScale }
             if ($pt.ContainsKey('OcrPreprocessContrast') -and $null -ne $pt.OcrPreprocessContrast) { $args['OcrPreprocessContrast'] = [double]$pt.OcrPreprocessContrast }
+            if ($pt.ContainsKey('OcrPreprocessBinarize') -and $null -ne $pt.OcrPreprocessBinarize) { $args['OcrPreprocessBinarize'] = [bool]$pt.OcrPreprocessBinarize }
+            if ($pt.ContainsKey('OcrPreprocessThreshold') -and $null -ne $pt.OcrPreprocessThreshold) { $args['OcrPreprocessThreshold'] = [int]$pt.OcrPreprocessThreshold }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
+            if ($pt.ContainsKey('EmitCheckColumns') -and $null -ne $pt.EmitCheckColumns) { $args['EmitCheckColumns'] = [bool]$pt.EmitCheckColumns }
         }
         if (-not [string]::IsNullOrWhiteSpace($State.Stage)) { $args['Stage'] = $State.Stage }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }
