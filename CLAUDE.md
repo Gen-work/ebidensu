@@ -223,6 +223,12 @@ Validate.ps1            Phase Validate (read-only diagnostic)
 Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
 Check-Encoding.ps1      read-only encoding policy checker + label self-test
 Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1
+docs/ProcessTime-OcrBenchmark-Plan.md
+                        Phase 2/3 design: OCR benchmark test set + 3/9 fix
+                        (real-snap + synthetic-HTML ground truth, runner,
+                        datestamp hh:mm cross-correction, preprocessing tuning,
+                        optional bounding-box second-pass). Office-PC-run;
+                        CI proves pure logic only.
 
 JenkinsSnap.ps1         Phase GiftJenkins / GfixJenkins / GiftJenkinsNoFile
 HmSnap.ps1              Phase GiftHmSnap / GfixHmSnap. MappingStore + ProgressLog
@@ -1850,22 +1856,30 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
-- **ProcessTime: ja-OCR digit 9->3 -- ADDRESSED via image preprocessing**
-  (v2.15.3; originally recorded v2.15.2, recurring per operator) — the ja
-  recognizer misread digit `9` as `3` on the HM font in time-of-day,
-  14-digit datestamp AND record-count fields (JIGPC06S: real page
-  `11:19:16 / 11:19:28 / 20260701111906 / 29,264`; ja read `11:13:16 /
-  11:13:28 / 20260701111306 / 23,264`). Fixed at the root: every picture
-  is preprocessed (2x bicubic upscale capped below the WinRT OCR
-  MaxImageDimension + grayscale + 1.3 contrast stretch,
-  `ConvertTo-ProcessTimeOcrImage`) before either recognizer reads it. A
-  post-hoc regex check cannot catch this class of misread (the result is a
-  format-valid timestamp), so prevention-before-recognition is the only
-  clean fix. Needs office-PC confirmation on the JIGPC06S picture; if
-  misreads persist there, the fallback plan remains pooling the en-US
-  read's time-of-day/count digits as hints (same shape as
-  `-StartDateHints`) and adopting them when the recognizers disagree only
-  on 3/9 positions.
+- **ProcessTime: ja-OCR digit 9->3 -- PHASED FIX IN PROGRESS** (see
+  `docs/ProcessTime-OcrBenchmark-Plan.md`). v2.15.3 added image preprocessing
+  (`ConvertTo-ProcessTimeOcrImage`) as a root-cause mitigation, but there is no
+  way yet to MEASURE 3/9 accuracy or tune it. Plan: (Phase 2, v2.17.0) build a
+  pixel-level OCR benchmark — real snaps + confirmed J-column values as the
+  primary ground truth, a synthetic 「バッチ処理状況一覧」HTML generator as a
+  supplement — plus `Test-OcrAccuracy.ps1` (3<->9 confusion matrix) and a
+  deterministic `Repair-ProcessTimeStartFromStamp` (adopt the clean en-US
+  14-digit datestamp's hh:mm for the start time when the ja read differs only
+  by a 3<->9 swap; seconds unchanged). (Phase 3) tune preprocessing via
+  `-Sweep`, and only if that still misses 100% add the bounding-box en-US
+  second-pass (Plan A), gated on the J-column `F` trigger. A post-hoc regex
+  check cannot catch this bug — a 9->3 misread is a format-valid timestamp.
+
+- **ProcessTime: OCR benchmark harness** (Phase 2,
+  `docs/ProcessTime-OcrBenchmark-Plan.md`) -- new office-PC-only
+  `Export-OcrBenchmarkTruth.ps1` (reverse-export truth manifest from a
+  confirmed `処理時間(*).xlsx`), `Build-OcrBenchmarkImages.ps1` (Edge render of
+  a faithful HM template + crop reusing `ScreenRegion.ps1`), and
+  `Test-OcrAccuracy.ps1` (`-Sweep`/`-Json`). The synthetic HTML template needs
+  operator-supplied CSS + office-PC visual calibration (real captured snaps
+  stay the primary ground truth; synthetic pages only cover 3/9 combinations
+  absent from real data). Windows/Edge/OCR paths are static-checked only; pure
+  `Compare-OcrDigits` / `Get-OcrBenchmarkScore` are CI-unit-tested.
 
 - **NEXT: ReplaceGfix duplicate-candidate confirmation** — since v2.9.18,
   `GfixLogDownload` deliberately downloads *every* GoAnywhere job matching a
