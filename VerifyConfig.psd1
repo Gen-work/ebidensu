@@ -423,6 +423,13 @@
         OutputTags      = @('JDL', 'JRV')
         # Bucket name for a result row matching none of OutputTags.
         UnclassifiedTag = 'Other'
+        # When no OutputTags entry matches, derive the tag from the
+        # Excel_NAME's own '?XXX????' shape (chars 2-4: CJODWDEJ -> JOD)
+        # instead of routing the row to UnclassifiedTag, so a project
+        # family missing from OutputTags still gets its own
+        # '<label>(<Tag>).xlsx'. Set $false to restore fallback-to-
+        # UnclassifiedTag-only classification.
+        AutoDeriveTag   = $true
         # Optional per-tag destination directory overrides (Split mode),
         # e.g. @{ JDS = '\\Fs-...\...\JDS' }. A tag absent here uses
         # OutputDirectory.

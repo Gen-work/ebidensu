@@ -8,11 +8,15 @@
 #  correl into one or more ProcessTime evidence workbooks, classified by
 #  configurable Excel_NAME tag (see "Output classification" below).
 #
-#  Source, two tiers per side (cheapest/most-accurate first):
+#  Source, three tiers per side (cheapest/most-accurate first):
 #    1. archived Ctrl+A page text HmSnap.ps1 saved at snap time
 #       (WorkDir\snap\GIFT_HM\<correl>.txt / GFIX_HM\<correl>.txt, only
 #       present when SnapVerify.SaveText was on) -- re-parsed with
 #       SnapVerify.ps1's ConvertFrom-HmPageText (exact, TAB-anchored).
+#    1.5 (v2.15.2) OCR of the snap-time HM screenshot itself
+#       (WorkDir\snap\GIFT_HM\<correl>.png / GFIX_HM\<correl>.png) -- the
+#       per-correl-named original capture, a cleaner OCR target than the
+#       evidence-workbook copy and trusted like the section tier.
 #    2. OCR of the HM screenshot ALREADY INSERTED into the evidence
 #       workbook (GIFT/GFIX jushin-kekka sheet -- see ProjectLabels.ps1
 #       SheetGiftRecv/SheetGfixRecv): candidate pictures are exported and
@@ -50,9 +54,12 @@
 #  result rows by the first entry of -OutputTags found as a substring of
 #  the row's Excel_NAME (e.g. 'JDL'/'JRV'/'JDS', fully configurable via
 #  ProcessTime.OutputTags -- not hardcoded to just JDL/JRV), writing one
-#  workbook per tag; a row matching no configured tag is routed to the
-#  -UnclassifiedTag bucket (default 'Other') with a console WARN instead of
-#  aborting the whole write. -OutputMode 'Single' ignores tags and writes
+#  workbook per tag; when no configured tag matches, -AutoDeriveTag
+#  (default $true, v2.15.2) derives the tag from the Excel_NAME's own
+#  '?XXX????' shape (chars 2-4: CJODWDEJ -> JOD) so an unlisted project
+#  family still routes to its own workbook, and only a non-conforming name
+#  is routed to the -UnclassifiedTag bucket (default 'Other') with a
+#  console WARN instead of aborting the whole write. -OutputMode 'Single' ignores tags and writes
 #  every result row into one workbook. -OutputDirectoryByTag lets a tag
 #  route to its own destination directory instead of every tag sharing
 #  -OutputDirectory.
@@ -120,6 +127,11 @@ param(
     [string[]]$OutputTags = @('JDL', 'JRV'),
     # Bucket name for a result row matching none of -OutputTags (Split mode).
     [string]$UnclassifiedTag = 'Other',
+    # When no configured -OutputTags entry matches, derive the tag from the
+    # Excel_NAME's own '?XXX????' shape (chars 2-4, e.g. CJODWDEJ -> JOD)
+    # instead of routing the row to -UnclassifiedTag. On by default so a
+    # project family missing from OutputTags still gets its own workbook.
+    [bool]$AutoDeriveTag = $true,
     # Optional Tag -> destination directory overrides (Split mode). A tag
     # absent here uses -OutputDirectory.
     [hashtable]$OutputDirectoryByTag = @{},
@@ -272,7 +284,7 @@ function Get-ProcessTimeSectionBounds {
 # dumps the reconstructed rows to <png-stem>.ocr.txt next to it. Returns
 # the pooled line array (plain array; callers wrap in @()).
 function Read-ProcessTimeOcrLines {
-    param([string]$Png, [string]$SecondaryLanguage, [string]$OutDir)
+    param([string]$Png, [string]$SecondaryLanguage, [string]$OutDir, [string]$DumpBaseName = '')
     $langs = @('en-US', $SecondaryLanguage) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
     $pooled  = New-Object System.Collections.Generic.List[string]
     $enLines = New-Object System.Collections.Generic.List[string]
@@ -293,7 +305,8 @@ function Read-ProcessTimeOcrLines {
     # Sidecar dump of the pooled OCR lines next to the PNG, so a run that
     # matched nothing can be diagnosed from the actual recognized text.
     try {
-        $dumpPath = Join-Path $OutDir (([System.IO.Path]::GetFileNameWithoutExtension($Png)) + '.ocr.txt')
+        $dumpStem = if ([string]::IsNullOrWhiteSpace($DumpBaseName)) { [System.IO.Path]::GetFileNameWithoutExtension($Png) } else { $DumpBaseName }
+        $dumpPath = Join-Path $OutDir ($dumpStem + '.ocr.txt')
         [System.IO.File]::WriteAllText($dumpPath, (($pooled.ToArray()) -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false))
         Write-Host ("       [OCR] wrote {0} line(s) -> {1}" -f $pooled.Count, $dumpPath) -ForegroundColor DarkGray
     } catch {
@@ -324,10 +337,19 @@ function Read-ProcessTimeOcrLines {
 #   3. above-label  : up to 3 pictures above the label, nearest first --
 #                     accepted ONLY when the correl id is seen in the OCR
 #                     text (position gives no evidence at all up there).
+#
+# Between the archived text and the evidence-workbook tiers sits the
+# snap-PNG tier (-SnapPngPath, snap\<Stage>_HM\<correl>.png): the ORIGINAL
+# screenshot HmSnap saved for exactly this correl, OCR'd directly. It is a
+# better OCR target than the evidence-workbook copy (never rescaled by the
+# paste, and its per-correl file name makes ownership certain, so no
+# correl-seen gate is needed), and it avoids exporting workbook pictures
+# entirely when it reads cleanly. Full priority order per side:
+#   snap .txt -> snap .png OCR -> evidence-workbook picture OCR.
 function Resolve-ProcessTimeSide {
     param($Workbook, [string]$SheetName, [string]$CorrelId, [string]$SnapTextPath,
           [string]$OutDir, [int]$AnchorCol, [string]$SecondaryLanguage, [double]$Scale,
-          [string]$ExportBaseName = '')
+          [string]$ExportBaseName = '', [string]$SnapPngPath = '')
 
     $result = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = ''; RecordCount = ''; Note = '' }
 
@@ -351,21 +373,16 @@ function Resolve-ProcessTimeSide {
         }
     }
 
-    # Tier 2: OCR of the HM screenshot already inserted into the evidence workbook.
-    $ws = Get-SheetByName $Workbook $SheetName
-    if ($null -eq $ws) {
-        $result.Note = ("sheet '{0}' not found in workbook" -f $SheetName)
-        Write-Host ("       [MISS] {0}: {1}" -f $CorrelId, $result.Note) -ForegroundColor Yellow
-        return $result
-    }
-    $labelCell = Find-ProcessTimeCorrelCell $ws $CorrelId $AnchorCol
-
     # Deterministic per-side base name (GIFT_/GFIX_) so the two sides of one
     # correl don't collide on the same PNG/dump names in the shared per-correl
     # export dir. Clear stale artifacts from a previous run so a MISS this run
-    # can't be masked by last run's leftover PNG/dump. Done regardless of the
-    # label so the no-label fallback below also starts clean.
+    # can't be masked by last run's leftover PNG/dump. Done before the
+    # snap-PNG tier so its own dump also starts clean (and is not deleted by
+    # this pass afterwards).
     $base = if ([string]::IsNullOrWhiteSpace($ExportBaseName)) { $CorrelId } else { $ExportBaseName }
+    if (-not (Test-Path -LiteralPath $OutDir)) {
+        try { New-Item -ItemType Directory -Path $OutDir -Force | Out-Null } catch {}
+    }
     if (Test-Path -LiteralPath $OutDir) {
         foreach ($pat in @(('{0}_*.png' -f $base), ('{0}_*.txt' -f $base))) {
             Get-ChildItem -LiteralPath $OutDir -Filter $pat -File -ErrorAction SilentlyContinue |
@@ -373,37 +390,78 @@ function Resolve-ProcessTimeSide {
         }
     }
 
-    $tiers = @()
-    if ($null -eq $labelCell) {
-        # No per-correl text label on this side (some hand-made workbooks omit
-        # the Correl_ID_S label in column B). Without a label there is no
-        # section to anchor, so scan EVERY picture on the sheet and accept the
-        # one that OCRs as a full HM row for THIS correl (fuzzy id). The HM
-        # row's two-datetime structure is itself the classifier: the Excel
-        # send-metadata strip, the MQ transfer table, and the Jenkins file
-        # list never yield a full start+end HM row, so only the HM screenshot
-        # qualifies. RequireCorrel keeps a multi-correl no-label sheet from
-        # returning a neighbor's HM picture.
-        Write-Host ("       [DIAG] {0}: no correl label in column {1} of sheet '{2}'; scanning every picture (no-label fallback)" -f $CorrelId, $AnchorCol, $SheetName) -ForegroundColor Yellow
-        $tiers += @{ Tag = 'wholesheet'; TopMin = -1; TopMax = -1; FromBottom = $false; Max = 12; RequireCorrel = $true }
-    } else {
-        $bounds = Get-ProcessTimeSectionBounds $ws $labelCell $AnchorCol
-        $belowMin = $bounds.Top
-        if ($bounds.Bottom -ge 0) {
-            $tiers += @{ Tag = 'section'; TopMin = $bounds.Top; TopMax = $bounds.Bottom; FromBottom = $false; Max = 1; RequireCorrel = $false }
-            # below-label starts AFTER the section so a section picture that
-            # already failed the content check is not re-exported.
-            $belowMin = $bounds.Bottom
-        }
-        $tiers += @{ Tag = 'below-label'; TopMin = $belowMin; TopMax = -1;          FromBottom = $false; Max = 2; RequireCorrel = $false }
-        $tiers += @{ Tag = 'above-label'; TopMin = -1;        TopMax = $bounds.Top; FromBottom = $true;  Max = 3; RequireCorrel = $true }
-    }
-
     $accepted = $null; $acceptedTag = ''
     $fallbackRow = $null; $fallbackRank = -1; $fallbackTag = ''
     $candTotal = 0
     $sectionHadPicture = $false
     $missNotes = New-Object System.Collections.Generic.List[string]
+
+    # Tier 1.5: OCR the snap-time HM screenshot itself (snap\<Stage>_HM\
+    # <correl>.png). It was captured FOR this correl (per-correl file name),
+    # so ownership is certain and a full time row is accepted on that alone,
+    # same trust level as the evidence workbook's section tier -- and it is
+    # the cleaner OCR target (never rescaled by the evidence paste). Only
+    # when it is absent or unreadable does the evidence-workbook picture
+    # search below run at all.
+    if (-not [string]::IsNullOrWhiteSpace($SnapPngPath) -and (Test-Path -LiteralPath $SnapPngPath)) {
+        $candTotal++
+        $read = Read-ProcessTimeOcrLines -Png $SnapPngPath -SecondaryLanguage $SecondaryLanguage -OutDir $OutDir -DumpBaseName ($base + '_snapocr')
+        $lines = @($read.Lines)
+        $rows = @(ConvertFrom-ProcessTimeOcrLines -Lines $lines -CorrelId $CorrelId -StartDateHints $read.DateHints)
+        $sel = Select-ProcessTimeRow -Rows $rows
+        if ($null -ne $sel) {
+            $rank = Get-ProcessTimeRowRank $sel
+            if ($rank -ge 2) {
+                $accepted = $sel; $acceptedTag = 'snap-png'
+            } elseif ($rank -gt $fallbackRank) {
+                $fallbackRow = $sel; $fallbackRank = $rank; $fallbackTag = 'snap-png'
+            }
+        }
+        if ($null -eq $accepted) {
+            $note = if ($null -ne $sel) { 'partial time row only (kept as fallback)' }
+                    elseif ($rows.Count -gt 0) { ("{0} time row(s), all before 09:00 -- skipped as history" -f $rows.Count) }
+                    else { Get-ProcessTimeOcrMissNote -Lines $lines }
+            $missNotes.Add(("{0}: {1}" -f (Split-Path $SnapPngPath -Leaf), $note))
+            Write-Host ("       [DIAG] snap png {0}: {1}" -f (Split-Path $SnapPngPath -Leaf), $note) -ForegroundColor Yellow
+        }
+    }
+
+    # Tier 2: OCR of the HM screenshot already inserted into the evidence
+    # workbook -- only reached when neither snap artifact resolved the side.
+    $tiers = @()
+    if ($null -eq $accepted) {
+        $ws = Get-SheetByName $Workbook $SheetName
+        if ($null -eq $ws) {
+            $missNotes.Add(("sheet '{0}' not found in workbook" -f $SheetName))
+            Write-Host ("       [MISS] {0}: sheet '{1}' not found in workbook" -f $CorrelId, $SheetName) -ForegroundColor Yellow
+        } else {
+            $labelCell = Find-ProcessTimeCorrelCell $ws $CorrelId $AnchorCol
+            if ($null -eq $labelCell) {
+                # No per-correl text label on this side (some hand-made workbooks omit
+                # the Correl_ID_S label in column B). Without a label there is no
+                # section to anchor, so scan EVERY picture on the sheet and accept the
+                # one that OCRs as a full HM row for THIS correl (fuzzy id). The HM
+                # row's two-datetime structure is itself the classifier: the Excel
+                # send-metadata strip, the MQ transfer table, and the Jenkins file
+                # list never yield a full start+end HM row, so only the HM screenshot
+                # qualifies. RequireCorrel keeps a multi-correl no-label sheet from
+                # returning a neighbor's HM picture.
+                Write-Host ("       [DIAG] {0}: no correl label in column {1} of sheet '{2}'; scanning every picture (no-label fallback)" -f $CorrelId, $AnchorCol, $SheetName) -ForegroundColor Yellow
+                $tiers += @{ Tag = 'wholesheet'; TopMin = -1; TopMax = -1; FromBottom = $false; Max = 12; RequireCorrel = $true }
+            } else {
+                $bounds = Get-ProcessTimeSectionBounds $ws $labelCell $AnchorCol
+                $belowMin = $bounds.Top
+                if ($bounds.Bottom -ge 0) {
+                    $tiers += @{ Tag = 'section'; TopMin = $bounds.Top; TopMax = $bounds.Bottom; FromBottom = $false; Max = 1; RequireCorrel = $false }
+                    # below-label starts AFTER the section so a section picture that
+                    # already failed the content check is not re-exported.
+                    $belowMin = $bounds.Bottom
+                }
+                $tiers += @{ Tag = 'below-label'; TopMin = $belowMin; TopMax = -1;          FromBottom = $false; Max = 2; RequireCorrel = $false }
+                $tiers += @{ Tag = 'above-label'; TopMin = -1;        TopMax = $bounds.Top; FromBottom = $true;  Max = 3; RequireCorrel = $true }
+            }
+        }
+    }
 
     foreach ($tier in $tiers) {
         if ($tier.Tag -ne 'section' -and $candTotal -gt 0) {
@@ -463,7 +521,8 @@ function Resolve-ProcessTimeSide {
     }
     if ($null -eq $row) {
         if ($candTotal -eq 0) {
-            $result.Note = ("no exportable picture found for the label on sheet '{0}'" -f $SheetName)
+            $result.Note = if ($missNotes.Count -gt 0) { ($missNotes -join '; ') }
+                           else { ("no exportable picture found for the label on sheet '{0}'" -f $SheetName) }
             Write-Host ("       [MISS] {0}: {1}" -f $CorrelId, $result.Note) -ForegroundColor Yellow
         } else {
             $result.Note = ("{0} candidate picture(s) OCRed, none yielded a usable time row -- {1}" -f $candTotal, ($missNotes -join '; '))
@@ -545,7 +604,12 @@ function Write-ProcessTimeWorkbook {
         ([string][char]0x7D42 + [char]0x4E86 + [char]0x65E5 + [char]0x6642),
         ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593),
         ([string][char]0x51E6 + [char]0x7406 + [char]0x4EF6 + [char]0x6570),
-        ([string][char]0x30B8 + [char]0x30E7 + [char]0x30D6)
+        ([string][char]0x30B8 + [char]0x30E7 + [char]0x30D6),
+        # I: shori-jikan (kensan) -- worksheet-side re-derivation of the
+        # duration (=E-D), J: chekku -- T/F compare of the written duration
+        # vs the re-derived one, both requested as on-sheet audit columns.
+        ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593 + '(' + [char]0x691C + [char]0x7B97 + ')'),
+        ([string][char]0x30C1 + [char]0x30A7 + [char]0x30C3 + [char]0x30AF)
     )
 
     $flatRows = New-Object System.Collections.Generic.List[object]
@@ -620,11 +684,52 @@ function Write-ProcessTimeWorkbook {
             Set-RangeValue2 $ws.Cells.Item($row, 1) ($row - 1) | Out-Null
             Set-RangeValue2 $ws.Cells.Item($row, 2) $r.Side | Out-Null
             Set-RangeValue2 $ws.Cells.Item($row, 3) $r.CorrelId | Out-Null
-            Set-RangeValue2 $ws.Cells.Item($row, 4) $r.Start | Out-Null
-            Set-RangeValue2 $ws.Cells.Item($row, 5) $r.End | Out-Null
-            Set-RangeValue2 $ws.Cells.Item($row, 6) $r.Duration | Out-Null
+
+            # Start/End/Duration are written as REAL Excel date/time values
+            # (OADate serial + NumberFormat, format set BEFORE the value per
+            # the v2.10.7 FillCheckSheet lesson) so the I/J check-formula
+            # columns below can compute; an unparseable value falls back to
+            # the old plain-text write so nothing is ever lost.
+            $startDt = ConvertTo-ProcessTimeDateTimeValue $r.Start
+            $endDt   = ConvertTo-ProcessTimeDateTimeValue $r.End
+            $durVal  = ConvertTo-ProcessTimeDurationValue $r.Duration
+            foreach ($spec in @(
+                @{ Col = 4; Dt = $startDt; Text = $r.Start },
+                @{ Col = 5; Dt = $endDt;   Text = $r.End })) {
+                $cell = $ws.Cells.Item($row, $spec.Col)
+                if ($null -ne $spec.Dt) {
+                    try { $cell.NumberFormat = 'yyyy/mm/dd hh:mm:ss' } catch {}
+                    Set-RangeValue2 $cell ([double]$spec.Dt.ToOADate()) | Out-Null
+                } else {
+                    Set-RangeValue2 $cell $spec.Text | Out-Null
+                }
+            }
+            $durCell = $ws.Cells.Item($row, 6)
+            if ($null -ne $durVal) {
+                try { $durCell.NumberFormat = '[h]:mm:ss' } catch {}
+                Set-RangeValue2 $durCell ([double]$durVal) | Out-Null
+            } else {
+                Set-RangeValue2 $durCell $r.Duration | Out-Null
+            }
+
             Set-RangeValue2 $ws.Cells.Item($row, 7) $r.Count | Out-Null
             Set-RangeValue2 $ws.Cells.Item($row, 8) $r.JobName | Out-Null
+
+            # Audit columns: I re-derives the duration on-sheet (=E-D) and J
+            # compares it (to the second) against the written duration F.
+            # Only written when all three source cells hold real values --
+            # a partial read (missing end time) leaves them blank, which is
+            # exactly the row the manual-check summary already flags.
+            if ($null -ne $startDt -and $null -ne $endDt -and $null -ne $durVal) {
+                try {
+                    $chkCell = $ws.Cells.Item($row, 9)
+                    try { $chkCell.NumberFormat = '[h]:mm:ss' } catch {}
+                    $chkCell.Formula = ('=E{0}-D{0}' -f $row)
+                    $ws.Cells.Item($row, 10).Formula = ('=IF(ROUND(F{0}*86400,0)=ROUND(I{0}*86400,0),"T","F")' -f $row)
+                } catch {
+                    Write-Warning ("ProcessTime workbook: check formulas failed at row {0} of '{1}': {2}" -f $row, $OutputPath, $_.Exception.Message)
+                }
+            }
             $row++
         }
         # Renumber retained + appended records and make the range filterable.
@@ -632,18 +737,19 @@ function Write-ProcessTimeWorkbook {
         # Current template formatting settings (reference point for future changes --
         # TODO: this whole block belongs in a dedicated formatting module instead of
         # inline in the phase script; kept here as-is for now):
-        #   - Header row (A1:H1): fill 10053120 (BGR, i.e. RGB #007DA0-ish teal),
+        #   - Header row (A1:J1): fill 10053120 (BGR, i.e. RGB #007DA0-ish teal),
         #     font color 16777215 (white), bold, centered horizontal+vertical.
-        #   - Table body (A1:H<last>): font 'Yu Gothic' 11pt, row height 18pt,
+        #   - Table body (A1:J<last>): font 'Yu Gothic' 11pt, row height 18pt,
         #     thin borders (LineStyle=1), vertical-centered; column A additionally
         #     horizontal-centered.
         #   - Per-row fill by Side (col B): GIFT rows 15398626, GFIX rows 16777215
         #     (white) -- both BGR Long values, not RGB (Excel Interior.Color order).
-        #   - Column widths (A..H): 9, 10, 14, 24, 24, 20, 14, 17.
-        #   - Start/End (cols D/E) are written as plain pre-formatted TEXT
-        #     ('yyyy/MM/dd HH:mm:ss' via Format-ProcessTimeStamp / $r.Start /
-        #     $r.End), not real Excel date/time values -- there is currently no
-        #     cell NumberFormat applied to these columns.
+        #   - Column widths (A..J): 9, 10, 14, 24, 24, 20, 14, 17, 20, 8.
+        #   - Start/End (cols D/E) are real Excel date/time values (OADate +
+        #     'yyyy/mm/dd hh:mm:ss' NumberFormat) and the duration (col F) a
+        #     real time serial ('[h]:mm:ss') since v2.15.2; cols I/J hold the
+        #     =E-D re-derivation + T/F check formulas (text fallback only for
+        #     an unparseable value).
         try {
             $finalRow = [int]$ws.Cells.Item($ws.Rows.Count, 2).End($xlUp).Row
             for ($rr = 2; $rr -le $finalRow; $rr++) { Set-RangeValue2 $ws.Cells.Item($rr, 1) ($rr - 1) | Out-Null }
@@ -651,8 +757,8 @@ function Write-ProcessTimeWorkbook {
             # Worksheet.Range.  Some office-PC Excel/PowerShell combinations
             # reject the proxy overload with DISP_E_TYPEMISMATCH ("argument
             # type mismatch"), which must never prevent the workbook save.
-            $tableRange = $ws.Range(('A1:H{0}' -f $finalRow))
-            $headerRange = $ws.Range('A1:H1')
+            $tableRange = $ws.Range(('A1:J{0}' -f $finalRow))
+            $headerRange = $ws.Range('A1:J1')
         } catch {
             Write-Warning ("ProcessTime workbook formatting: could not resolve table/header range for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
         }
@@ -700,7 +806,7 @@ function Write-ProcessTimeWorkbook {
                 # binder; using the branch's boxed Int32 can also produce a
                 # type mismatch on older Windows PowerShell/Excel versions.
                 [double]$fill = if ($side -eq 'GIFT') { 15398626 } else { 16777215 }
-                $ws.Range(('A{0}:H{0}' -f $rr)).Interior.Color = $fill
+                $ws.Range(('A{0}:J{0}' -f $rr)).Interior.Color = $fill
             }
         } catch {
             Write-Warning ("ProcessTime workbook formatting: GIFT/GFIX row fill failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
@@ -709,7 +815,7 @@ function Write-ProcessTimeWorkbook {
         try {
             # Fixed widths reproduce the template proportions and keep the
             # date/time fields from changing width with different data.
-            $widths = @(9, 10, 14, 24, 24, 20, 14, 17)
+            $widths = @(9, 10, 14, 24, 24, 20, 14, 17, 20, 8)
             for ($c = 1; $c -le $widths.Count; $c++) {
                 $ws.Columns.Item($c).ColumnWidth = $widths[$c - 1]
             }
@@ -946,13 +1052,15 @@ try {
 
                     $giftTxt   = Join-Path (Join-Path $WorkDir 'snap\GIFT_HM') ("{0}.txt" -f $correlId)
                     $gfixTxt   = Join-Path (Join-Path $WorkDir 'snap\GFIX_HM') ("{0}.txt" -f $correlId)
+                    $giftPng   = Join-Path (Join-Path $WorkDir 'snap\GIFT_HM') ("{0}.png" -f $correlId)
+                    $gfixPng   = Join-Path (Join-Path $WorkDir 'snap\GFIX_HM') ("{0}.png" -f $correlId)
                     $exportDir = Join-Path $exportRoot $correlId
 
                     $giftResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGiftRecv -CorrelId $correlId `
-                        -SnapTextPath $giftTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
+                        -SnapTextPath $giftTxt -SnapPngPath $giftPng -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
                         -ExportBaseName ("GIFT_{0}" -f $correlId)
                     $gfixResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGfixRecv -CorrelId $correlId `
-                        -SnapTextPath $gfixTxt -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
+                        -SnapTextPath $gfixTxt -SnapPngPath $gfixPng -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
                         -ExportBaseName ("GFIX_{0}" -f $correlId)
 
                     $row.GIFT_ProcessTime = if ($giftResult.Matched) { '1' } else { '2' }
@@ -1073,10 +1181,15 @@ try {
                 # "Argument types do not match" instead of enumerating it.
                 $buckets[''] = $results
             } else {
+                $derivedTags = @{}
                 foreach ($r in $results) {
-                    $tag = Get-ProcessTimeOutputTag -ExcelName ([string]$r.ExcelName) -Tags $OutputTags -UnclassifiedTag $UnclassifiedTag
+                    $tag = Get-ProcessTimeOutputTag -ExcelName ([string]$r.ExcelName) -Tags $OutputTags -UnclassifiedTag $UnclassifiedTag -DeriveFromName $AutoDeriveTag
+                    if ($tag -ne $UnclassifiedTag -and (@($OutputTags) -notcontains $tag)) { $derivedTags[$tag] = $true }
                     if (-not $buckets.ContainsKey($tag)) { $buckets[$tag] = New-Object System.Collections.Generic.List[object]; $bucketOrder.Add($tag) }
                     $buckets[$tag].Add($r)
+                }
+                if ($derivedTags.Count -gt 0) {
+                    Write-Host ("  [INFO] output tag(s) derived from the Excel_NAME '?XXX????' pattern (not in OutputTags): {0}" -f (($derivedTags.Keys | Sort-Object) -join ', ')) -ForegroundColor DarkGray
                 }
             }
 
@@ -1104,9 +1217,14 @@ try {
                     # workbook get their write bit set; a row whose tag's
                     # workbook failed to save stays pending for the next run.
                     # Every mapping row sharing a correl (duplicates included)
-                    # is marked, not just the first.
+                    # is marked, not just the first. The bucket-array helper
+                    # is REQUIRED here: @() over a List[object] pulled out of
+                    # a hashtable can throw "Argument types do not match" on
+                    # PS 5.1 -- a real office-PC run hit exactly that AFTER
+                    # the workbook saved, so the tag was reported both FAILED
+                    # and written and no write bit was ever set.
                     foreach ($r in $rowsForTag) {
-                        foreach ($mrow in @($writtenRowsByCorrel[$r.CorrelId])) {
+                        foreach ($mrow in (ConvertTo-ProcessTimeBucketArray -Bucket $writtenRowsByCorrel[$r.CorrelId])) {
                             Set-MappingBit -Row $mrow -Field 'ProcessTime_Inserted' -Bit 2
                         }
                     }

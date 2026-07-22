@@ -1803,6 +1803,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputMode))       { $args['OutputMode']      = [string]$pt.OutputMode }
             if ($pt.ContainsKey('OutputTags') -and @($pt.OutputTags).Count -gt 0) { $args['OutputTags'] = [string[]]$pt.OutputTags }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.UnclassifiedTag)) { $args['UnclassifiedTag'] = [string]$pt.UnclassifiedTag }
+            if ($pt.ContainsKey('AutoDeriveTag') -and $null -ne $pt.AutoDeriveTag) { $args['AutoDeriveTag'] = [bool]$pt.AutoDeriveTag }
             if ($pt.ContainsKey('OutputDirectoryByTag') -and $pt.OutputDirectoryByTag -is [hashtable] -and $pt.OutputDirectoryByTag.Count -gt 0) {
                 $args['OutputDirectoryByTag'] = $pt.OutputDirectoryByTag
             }

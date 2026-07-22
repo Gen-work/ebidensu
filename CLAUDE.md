@@ -118,9 +118,16 @@ ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         '1' -> bitmask '3'), Get-ProcessTimeOutputTag /
                         Get-ProcessTimeOutputFileName / Resolve-ProcessTime
                         OutputDir (config-driven output tag classification,
-                        not hardcoded to JDL/JRV) and Get-ProcessTime
-                        CheckSummaryLine (end-of-run manual-check summary
-                        line), all v2.15.0. ConvertTo-ProcessTimeCorrelKey
+                        not hardcoded to JDL/JRV; -DeriveFromName derives an
+                        unlisted tag from Excel_NAME chars 2-4, v2.15.2) and
+                        Get-ProcessTimeCheckSummaryLine (end-of-run
+                        manual-check summary line), all v2.15.0.
+                        ConvertTo-ProcessTimeDateTimeValue / ConvertTo-
+                        ProcessTimeDurationValue (v2.15.2) parse the
+                        sidecar's formatted stamps back into real Excel
+                        date/time serials for the output workbook's value
+                        cells + check-formula columns.
+                        ConvertTo-ProcessTimeCorrelKey
                         also strips OCR-inserted whitespace before folding
                         (v2.14.0); Select-ProcessTimeRow's -MinimumTimeOfDay
                         (default 09:00) drops HM history rows; Get-ProcessTime
@@ -250,6 +257,13 @@ Export-DailyPatch.ps1   extracts today's git diff to clipboard
 Parse-GiftMq.ps1        parses GIFT/MQ transfer status page text
 Parse-JenkinsList.ps1   parses Jenkins file list page text
 Probe-Shapes.ps1        lists all shapes in an evidence workbook (calibration aid)
+Probe-SheetFormat.ps1   read-only cell-FORMAT probe (calibration aid, v2.15.2):
+                        dumps a workbook's / one sheet's column widths, row
+                        heights and distinct format signatures (NumberFormat,
+                        font, colors as raw BGR Longs, alignment, borders)
+                        with sample addresses; optional -Json report. Use to
+                        match generated output (e.g. ProcessTime) to a
+                        delivery template. Has param() -> call via &.
 Read-ClipboardJson.ps1  polls clipboard for JSON from bookmarklet
 Read-PageText.ps1       captures visible text from foreground Edge page via clipboard
 Resolve-ExpectedTime.ps1  interactive Expected_Time column helper
@@ -426,7 +440,39 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-21 v2.15.1)
+## Current state (last bump: 2026-07-22 v2.15.2)
+
+v2.15.2 (ProcessTime: auto-derived output tags, snap-PNG OCR tier, real
+date/time cells + check formulas): driven by a real 257-row JOD office-PC
+run. **Fixed** -- (1) the `[FAIL] ... 引数の型が一致しません` on the 'Other'
+workbook followed by a contradictory `[OK]` for the same path: the workbook
+had SAVED fine -- the throw came after, from
+`@($writtenRowsByCorrel[$r.CorrelId])` in the write-bit marking loop (the
+PS 5.1 @()-over-hashtable-indexed-List[object] binder bug
+`ConvertTo-ProcessTimeBucketArray` already works around, one call site
+over), so the tag reported both FAILED and written and no write bit was
+ever set; now routed through the helper + a source-guard unit test. (2) all
+257 JOD rows piled into `処理時間(Other).xlsx`: new `ProcessTime.AutoDeriveTag`
+(default `$true`) derives the tag from the Excel_NAME's own `?XXX????`
+shape (chars 2-4: `CJODWDEJ` -> `JOD`) when no configured OutputTags entry
+matches, so an unlisted project family still gets its own workbook
+(`Get-ProcessTimeOutputTag -DeriveFromName`, unit-tested; UnclassifiedTag
+now only catches non-conforming names). **Added** -- (a) snap-PNG OCR tier:
+per-side source priority is now `snap\<Stage>_HM\<correl>.txt` -> OCR of
+`snap\<Stage>_HM\<correl>.png` (the cleaner, per-correl-named original
+screenshot; trusted like the section tier, source `ocr:snap-png`, dump
+`<side>_<correl>_snapocr.ocr.txt`) -> evidence-workbook picture OCR.
+(b) output workbook start/end are REAL Excel date/time values (OADate +
+NumberFormat set before the value) and duration a real `[h]:mm:ss` serial,
+with text fallback; new audit columns I `=E{r}-D{r}` and J
+`=IF(ROUND(F*86400,0)=ROUND(I*86400,0),"T","F")` (blank on partial rows);
+pure `ConvertTo-ProcessTimeDateTimeValue`/`ConvertTo-ProcessTimeDurationValue`
+unit-tested. (c) new standalone `Probe-SheetFormat.ps1` (see file map).
+**Notes** -- RECORDED recurring ja-OCR confusion: digit `9` read as `3`
+(JIGPC06S: page `11:19:16/11:19:28/20260701111906/29,264` -> ja
+`11:13:.../111306/23,264` while en-US read `11:19:` right); see the TODO
+below for the planned en-US digit cross-check. COM paths static-checked
+only -- confirm on an office PC against the same JOD folder.
 
 v2.15.1 (ProcessTime: template-matched worksheet formatting + code-review
 fixes): the office-PC formatting fix from the v2.15.0 follow-up (Yu Gothic
@@ -1782,6 +1828,19 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   earlier `Get-EdgeHwnd`/`Capture-Window` phantom-function risk is resolved.
 
 ## TODOs
+
+- **ProcessTime: ja-OCR digit 9->3 cross-check against en-US** (recorded
+  v2.15.2, recurring per operator) — the ja recognizer misreads digit `9`
+  as `3` on the HM font in time-of-day, 14-digit datestamp AND record-count
+  fields (JIGPC06S: real page `11:19:16 / 11:19:28 / 20260701111906 /
+  29,264`; ja read `11:13:16 / 11:13:28 / 20260701111306 / 23,264`; the
+  en-US pass of the SAME picture read `11:19:` correctly).
+  `ConvertTo-ProcessTimeCorrelKey` folds letters<->digits only, and
+  `Get-ProcessTimeDateHints` corrects only the DATE portion. Planned fix:
+  pool the en-US read's time-of-day/count digits as hints (same shape as
+  `-StartDateHints`) and adopt the en-US digits when the two recognizers
+  disagree ONLY on 3/9 positions; the new snap-PNG tier already reduces
+  incidence by OCRing the cleaner source image first.
 
 - **NEXT: ReplaceGfix duplicate-candidate confirmation** — since v2.9.18,
   `GfixLogDownload` deliberately downloads *every* GoAnywhere job matching a
