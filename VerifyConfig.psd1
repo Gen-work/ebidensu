@@ -457,8 +457,18 @@
         OcrPreprocessScale    = 2.0
         # Linear contrast factor around mid-gray (1.0 = no stretch).
         OcrPreprocessContrast = 1.3
+        # RESERVED (v2.16.0): OCR preprocessing binarization. Not wired into
+        # any logic yet -- carried through config + CLI so a later stage can
+        # turn a threshold on; toggling it today has no effect.
+        OcrPreprocessBinarize  = $false
+        OcrPreprocessThreshold = 128
         # Picture export upscale (matches EvidenceImageExport.ps1's own default).
         ExportScale     = 3.0
+        # Emit the on-sheet audit ("check") columns (I 処理時間(検算) =E-D,
+        # J チェック T/F compare, K 件数チェック record-count check) after the
+        # A..H data columns in each output workbook (v2.16.0,
+        # ProcessTimeCheck.ps1). $false writes A..H data only.
+        EmitCheckColumns = $true
     }
 
     # Align / Precheck configuration (compare work evidence vs J4 baseline)

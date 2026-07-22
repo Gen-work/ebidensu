@@ -159,8 +159,20 @@ param(
     [double]$OcrPreprocessScale = 2.0,
     # Linear contrast factor applied around mid-gray (1.0 = off).
     [double]$OcrPreprocessContrast = 1.3,
+    # RESERVED (v2.16.0): OCR preprocessing binarization. Not wired into any
+    # logic yet -- accepted, threaded from config, and documented so a later
+    # stage can turn a global/adaptive threshold on. Toggling it today has no
+    # effect on the image pipeline.
+    [bool]$OcrPreprocessBinarize = $false,
+    [int]$OcrPreprocessThreshold = 128,
     # Picture export upscale (matches EvidenceImageExport.ps1's own default).
     [double]$ExportScale = 3.0,
+    # Emit the on-sheet audit ("check") columns (I/J/K) after the A..H data
+    # columns in each output workbook -- the worksheet-side duration
+    # re-derivation (=E-D), its T/F compare against the written duration, and
+    # the record-count check (ProcessTimeCheck.ps1's Get-ProcessTimeCheckColumnSpec).
+    # $false writes A..H data only and skips the whole check-column pass.
+    [bool]$EmitCheckColumns = $true,
 
     [switch]$Force,
     [switch]$DryRun,
@@ -196,6 +208,7 @@ if (-not $helpersPath) {
 . (Join-Path $PSScriptRoot 'SnapVerify.ps1')
 . (Join-Path $PSScriptRoot 'SendMetadata.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeParse.ps1')
+. (Join-Path $PSScriptRoot 'ProcessTimeCheck.ps1')
 
 # System.Drawing backs the OCR image preprocessing (upscale + grayscale +
 # contrast). Warn-only: a load failure just disables preprocessing (the
@@ -687,25 +700,60 @@ function Get-ArchivedProcessTimePreview {
     }
 }
 
+# Set-ProcessTimeCheckColumns (COM)
+#   Writes the audit ("check") columns from ProcessTimeCheck.ps1's spec into
+#   an already-populated ProcessTime worksheet: per spec entry, the header
+#   cell (HeaderRow), a per-row formula (FirstDataRow..LastDataRow, via the
+#   pure New-ProcessTimeCheckFormula) and the column NumberFormat. The spec
+#   formulas are SELF-GUARDING (blank/text source cells -> "" in the cell),
+#   so the "a partial row stays blank" rule holds with no per-row inspection
+#   here. Value writes go through Set-RangeValue2 (same PS 5.1 COM binder
+#   hazard as the data write loop). Headers are the spec's [char]-built
+#   strings, so this stays ASCII source.
+function Set-ProcessTimeCheckColumns {
+    param($Worksheet, [int]$HeaderRow, [int]$FirstDataRow, [int]$LastDataRow, [object[]]$Spec)
+    foreach ($col in @($Spec)) {
+        $ci = [int]$col.ColIndex
+        $hc = $Worksheet.Cells.Item($HeaderRow, $ci)
+        Set-RangeValue2 $hc ([string]$col.Header) | Out-Null
+        try { $hc.Font.Bold = $true } catch {}
+        $nf       = [string]$col.NumberFormat
+        $template = [string]$col.Formula
+        for ($r = $FirstDataRow; $r -le $LastDataRow; $r++) {
+            $cell = $Worksheet.Cells.Item($r, $ci)
+            if (-not [string]::IsNullOrEmpty($nf)) {
+                try { $cell.NumberFormat = $nf } catch {}
+            }
+            $cell.Formula = (New-ProcessTimeCheckFormula -Template $template -Row $r)
+        }
+    }
+}
+
 # Writes the operator-facing, vertical layout requested for delivery:
-# No. / GIFT-GFIX / correl / start / end / duration / count / job. Each
-# correl in -Rows (the combined GIFT+GFIX shape ProcessTime.ps1 resolves,
-# cached one-per-correl in the sidecar) becomes TWO output rows here, one
+# No. / GIFT-GFIX / correl / start / end / duration / count / job (cols
+# A..H). Each -Rows entry (the combined GIFT+GFIX shape ProcessTime.ps1
+# resolves, cached per-correl in the sidecar) becomes TWO output rows, one
 # per side. Incremental (non -Force) runs retain older records; a repeated
 # (side, correl) pair REPLACES its prior row (deleted first), so a redo
 # keeps one row per (side, correl) instead of stacking duplicates.
 #
-# Cell writes go through ExcelHelpers.ps1's Set-RangeValue2, not a bare
-# Value2 assignment: column 1 (No.) writes an [int] while every other
-# column writes a [string], and PS 5.1's COM property-set binder can cache
-# a conversion rule from one Value2 call and misapply it to a later Value2
-# call with a different value type on the same worksheet -- observed on a
-# real run as "Unable to cast object of type 'System.Int32' to type
-# 'System.String'" (same root cause as FillCheckSheet.ps1's v2.10.8 date
-# write bug). Set-RangeValue2 retries via reflection on that failure.
+# The on-sheet audit ("check") columns after the data (I/J/K -- duration
+# re-derivation, T/F compare, count check) are NOT written here: when
+# -EmitCheckColumns, Set-ProcessTimeCheckColumns applies them uniformly
+# from ProcessTimeCheck.ps1's data-driven spec after all data rows exist.
+#
+# Cell writes go through ExcelHelpers.ps1's Set-RangeValue2 (not a bare
+# Value2 assign): col 1 (No.) is an [int] while others are [string], and
+# PS 5.1's COM property-set binder can cache a conversion rule from one
+# Value2 call and misapply it to a later one of a different type on the
+# same sheet ("Unable to cast ... Int32 to ... String" -- same root cause
+# as FillCheckSheet.ps1's v2.10.8 date write bug); Set-RangeValue2 retries
+# via reflection on that failure.
 function Write-ProcessTimeWorkbook {
-    param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows)
+    param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows,
+          [bool]$EmitCheckColumns = $true)
 
+    # A..H data headers only; the I/J/K check headers come from the spec.
     $headers = @(
         'No.', 'GIFT/GFIX',
         ([string][char]0x76F8 + [char]0x95A2 + 'ID'),
@@ -713,13 +761,12 @@ function Write-ProcessTimeWorkbook {
         ([string][char]0x7D42 + [char]0x4E86 + [char]0x65E5 + [char]0x6642),
         ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593),
         ([string][char]0x51E6 + [char]0x7406 + [char]0x4EF6 + [char]0x6570),
-        ([string][char]0x30B8 + [char]0x30E7 + [char]0x30D6),
-        # I: shori-jikan (kensan) -- worksheet-side re-derivation of the
-        # duration (=E-D), J: chekku -- T/F compare of the written duration
-        # vs the re-derived one, both requested as on-sheet audit columns.
-        ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593 + '(' + [char]0x691C + [char]0x7B97 + ')'),
-        ([string][char]0x30C1 + [char]0x30A7 + [char]0x30C3 + [char]0x30AF)
+        ([string][char]0x30B8 + [char]0x30E7 + [char]0x30D6)
     )
+    $checkSpec = if ($EmitCheckColumns) { @(Get-ProcessTimeCheckColumnSpec) } else { @() }
+    # Last table column: H (8 data columns) when no check columns, else the
+    # last spec column letter -- drives every A1-range the formatting uses.
+    $lastColLetter = if ($checkSpec.Count -gt 0) { [string]$checkSpec[$checkSpec.Count - 1].Col } else { 'H' }
 
     $flatRows = New-Object System.Collections.Generic.List[object]
     $jobOrder = New-Object System.Collections.Generic.List[string]
@@ -797,8 +844,8 @@ function Write-ProcessTimeWorkbook {
             # Start/End/Duration are written as REAL Excel date/time values
             # (OADate serial + NumberFormat, format set BEFORE the value per
             # the v2.10.7 FillCheckSheet lesson) so the I/J check-formula
-            # columns below can compute; an unparseable value falls back to
-            # the old plain-text write so nothing is ever lost.
+            # columns can compute; an unparseable value falls back to the old
+            # plain-text write so nothing is ever lost.
             $startDt = ConvertTo-ProcessTimeDateTimeValue $r.Start
             $endDt   = ConvertTo-ProcessTimeDateTimeValue $r.End
             $durVal  = ConvertTo-ProcessTimeDurationValue $r.Duration
@@ -823,42 +870,20 @@ function Write-ProcessTimeWorkbook {
 
             Set-RangeValue2 $ws.Cells.Item($row, 7) $r.Count | Out-Null
             Set-RangeValue2 $ws.Cells.Item($row, 8) $r.JobName | Out-Null
-
-            # Audit columns: I re-derives the duration on-sheet (=E-D) and J
-            # compares it (to the second) against the written duration F.
-            # Only written when all three source cells hold real values --
-            # a partial read (missing end time) leaves them blank, which is
-            # exactly the row the manual-check summary already flags.
-            if ($null -ne $startDt -and $null -ne $endDt -and $null -ne $durVal) {
-                try {
-                    $chkCell = $ws.Cells.Item($row, 9)
-                    try { $chkCell.NumberFormat = '[h]:mm:ss' } catch {}
-                    $chkCell.Formula = ('=E{0}-D{0}' -f $row)
-                    $ws.Cells.Item($row, 10).Formula = ('=IF(ROUND(F{0}*86400,0)=ROUND(I{0}*86400,0),"T","F")' -f $row)
-                } catch {
-                    Write-Warning ("ProcessTime workbook: check formulas failed at row {0} of '{1}': {2}" -f $row, $OutputPath, $_.Exception.Message)
-                }
-            }
             $row++
         }
         # Renumber retained + appended records and make the range filterable.
         #
-        # Current template formatting settings (reference point for future changes --
-        # TODO: this whole block belongs in a dedicated formatting module instead of
-        # inline in the phase script; kept here as-is for now):
-        #   - Header row (A1:J1): fill 10053120 (BGR, i.e. RGB #007DA0-ish teal),
-        #     font color 16777215 (white), bold, centered horizontal+vertical.
-        #   - Table body (A1:J<last>): font 'Yu Gothic' 11pt, row height 18pt,
-        #     thin borders (LineStyle=1), vertical-centered; column A additionally
-        #     horizontal-centered.
-        #   - Per-row fill by Side (col B): GIFT rows 15398626, GFIX rows 16777215
-        #     (white) -- both BGR Long values, not RGB (Excel Interior.Color order).
-        #   - Column widths (A..J): 9, 10, 14, 24, 24, 20, 14, 17, 20, 8.
-        #   - Start/End (cols D/E) are real Excel date/time values (OADate +
-        #     'yyyy/mm/dd hh:mm:ss' NumberFormat) and the duration (col F) a
-        #     real time serial ('[h]:mm:ss') since v2.15.2; cols I/J hold the
-        #     =E-D re-derivation + T/F check formulas (text fallback only for
-        #     an unparseable value).
+        # Template formatting reference (TODO: extract to a formatting module):
+        #   header A1:<last>1 fill 10053120 (BGR teal) + white bold centered;
+        #   body font 'Yu Gothic' 11pt, 18pt rows, thin borders, v-centered
+        #   (col A also h-centered); per-row fill by side (GIFT 15398626 /
+        #   GFIX 16777215 white, both BGR Longs); fixed column widths. Cols
+        #   D/E are real date/time values (OADate + 'yyyy/mm/dd hh:mm:ss') and
+        #   F a real time serial ('[h]:mm:ss'); the I/J/K audit columns and
+        #   their headers/formats are written by Set-ProcessTimeCheckColumns
+        #   from ProcessTimeCheck.ps1's spec (skipped when -EmitCheckColumns
+        #   is off, in which case the table is A..H only).
         try {
             $finalRow = [int]$ws.Cells.Item($ws.Rows.Count, 2).End($xlUp).Row
             for ($rr = 2; $rr -le $finalRow; $rr++) { Set-RangeValue2 $ws.Cells.Item($rr, 1) ($rr - 1) | Out-Null }
@@ -866,10 +891,23 @@ function Write-ProcessTimeWorkbook {
             # Worksheet.Range.  Some office-PC Excel/PowerShell combinations
             # reject the proxy overload with DISP_E_TYPEMISMATCH ("argument
             # type mismatch"), which must never prevent the workbook save.
-            $tableRange = $ws.Range(('A1:J{0}' -f $finalRow))
-            $headerRange = $ws.Range('A1:J1')
+            $tableRange = $ws.Range(('A1:{0}{1}' -f $lastColLetter, $finalRow))
+            $headerRange = $ws.Range(('A1:{0}1' -f $lastColLetter))
         } catch {
             Write-Warning ("ProcessTime workbook formatting: could not resolve table/header range for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
+
+        # Audit (check) columns I/J/K: uniform header + per-row formula +
+        # number-format pass over every data row, from ProcessTimeCheck.ps1's
+        # data-driven spec. Self-guarding formulas leave a partial row (e.g.
+        # end time not read) blank on their own, so no per-row inspection is
+        # needed here. Skipped entirely when -EmitCheckColumns is off.
+        if ($checkSpec.Count -gt 0 -and $finalRow -ge 2) {
+            try {
+                Set-ProcessTimeCheckColumns -Worksheet $ws -HeaderRow 1 -FirstDataRow 2 -LastDataRow $finalRow -Spec $checkSpec
+            } catch {
+                Write-Warning ("ProcessTime workbook formatting: check columns failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+            }
         }
 
         try {
@@ -915,7 +953,7 @@ function Write-ProcessTimeWorkbook {
                 # binder; using the branch's boxed Int32 can also produce a
                 # type mismatch on older Windows PowerShell/Excel versions.
                 [double]$fill = if ($side -eq 'GIFT') { 15398626 } else { 16777215 }
-                $ws.Range(('A{0}:J{0}' -f $rr)).Interior.Color = $fill
+                $ws.Range(('A{0}:{1}{0}' -f $rr, $lastColLetter)).Interior.Color = $fill
             }
         } catch {
             Write-Warning ("ProcessTime workbook formatting: GIFT/GFIX row fill failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
@@ -923,8 +961,12 @@ function Write-ProcessTimeWorkbook {
 
         try {
             # Fixed widths reproduce the template proportions and keep the
-            # date/time fields from changing width with different data.
-            $widths = @(9, 10, 14, 24, 24, 20, 14, 17, 20, 8)
+            # date/time fields from changing width with different data. The
+            # A..H data widths are fixed here; each check column's width comes
+            # from its spec entry so the widths track the emitted columns.
+            $widths = New-Object System.Collections.Generic.List[double]
+            foreach ($w in @(9, 10, 14, 24, 24, 20, 14, 17)) { $widths.Add([double]$w) }
+            foreach ($col in $checkSpec) { $widths.Add([double]$col.Width) }
             for ($c = 1; $c -le $widths.Count; $c++) {
                 $ws.Columns.Item($c).ColumnWidth = $widths[$c - 1]
             }
@@ -1319,7 +1361,7 @@ try {
                 $fileName = Get-ProcessTimeOutputFileName -Label $outputLabel -Tag $tag -Single ($OutputMode -eq 'Single')
                 $path = Join-Path $dir $fileName
                 try {
-                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $path -SheetName $OutputSheetName -Rows $rowsForTag
+                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $path -SheetName $OutputSheetName -Rows $rowsForTag -EmitCheckColumns $EmitCheckColumns
                     $written.Add($path)
                     $writtenCorrelCount += $rowsForTag.Count
                     # Only the rows that made it into a SUCCESSFULLY written
