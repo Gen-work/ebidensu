@@ -1803,10 +1803,14 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OutputMode))       { $args['OutputMode']      = [string]$pt.OutputMode }
             if ($pt.ContainsKey('OutputTags') -and @($pt.OutputTags).Count -gt 0) { $args['OutputTags'] = [string[]]$pt.OutputTags }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.UnclassifiedTag)) { $args['UnclassifiedTag'] = [string]$pt.UnclassifiedTag }
+            if ($pt.ContainsKey('AutoDeriveTag') -and $null -ne $pt.AutoDeriveTag) { $args['AutoDeriveTag'] = [bool]$pt.AutoDeriveTag }
             if ($pt.ContainsKey('OutputDirectoryByTag') -and $pt.OutputDirectoryByTag -is [hashtable] -and $pt.OutputDirectoryByTag.Count -gt 0) {
                 $args['OutputDirectoryByTag'] = $pt.OutputDirectoryByTag
             }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OcrLanguage))      { $args['OcrLanguage']     = [string]$pt.OcrLanguage }
+            if ($pt.ContainsKey('OcrPreprocess') -and $null -ne $pt.OcrPreprocess) { $args['OcrPreprocess'] = [bool]$pt.OcrPreprocess }
+            if ($pt.ContainsKey('OcrPreprocessScale') -and $null -ne $pt.OcrPreprocessScale) { $args['OcrPreprocessScale'] = [double]$pt.OcrPreprocessScale }
+            if ($pt.ContainsKey('OcrPreprocessContrast') -and $null -ne $pt.OcrPreprocessContrast) { $args['OcrPreprocessContrast'] = [double]$pt.OcrPreprocessContrast }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
         }
         if (-not [string]::IsNullOrWhiteSpace($State.Stage)) { $args['Stage'] = $State.Stage }

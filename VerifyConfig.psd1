@@ -423,6 +423,13 @@
         OutputTags      = @('JDL', 'JRV')
         # Bucket name for a result row matching none of OutputTags.
         UnclassifiedTag = 'Other'
+        # When no OutputTags entry matches, derive the tag from the
+        # Excel_NAME's own '?XXX????' shape (chars 2-4: CJODWDEJ -> JOD)
+        # instead of routing the row to UnclassifiedTag, so a project
+        # family missing from OutputTags still gets its own
+        # '<label>(<Tag>).xlsx'. Set $false to restore fallback-to-
+        # UnclassifiedTag-only classification.
+        AutoDeriveTag   = $true
         # Optional per-tag destination directory overrides (Split mode),
         # e.g. @{ JDS = '\\Fs-...\...\JDS' }. A tag absent here uses
         # OutputDirectory.
@@ -439,6 +446,17 @@
         # Secondary Windows OCR language pooled alongside 'en-US' when no
         # archived snap text is available (HmSnap.ps1's SnapVerify.SaveText).
         OcrLanguage     = 'ja'
+        # OCR image preprocessing (System.Drawing, v2.15.3): upscale +
+        # grayscale + contrast stretch applied to every picture before it
+        # reaches the Windows OCR engine, so thin digit strokes ('9' vs
+        # '3') get crisp pixel boundaries. Falls back to the original image
+        # on any failure. Set $false to OCR raw pixels as before.
+        OcrPreprocess         = $true
+        # Preprocessing upscale factor (auto-capped below the OCR engine's
+        # max image dimension; never downscales).
+        OcrPreprocessScale    = 2.0
+        # Linear contrast factor around mid-gray (1.0 = no stretch).
+        OcrPreprocessContrast = 1.3
         # Picture export upscale (matches EvidenceImageExport.ps1's own default).
         ExportScale     = 3.0
     }

@@ -1,3 +1,141 @@
+## 2026-07-22 - ProcessTime: code-review hardening -- strict derive regex, OCR image preprocessing, PS 5.1 guards (v2.15.3)
+
+Three code-review findings against v2.15.2, all addressed.
+
+### Changed
+- **Tag auto-derivation now requires the FULL `?XXX????` shape** before
+  trusting chars 2-4 as a project tag: `Get-ProcessTimeOutputTag
+  -DeriveFromName` matches `^[0-9A-Za-z][A-Za-z]{3}[0-9A-Za-z]{4}$`
+  (exactly 8 alphanumerics, letters in the tag slot) instead of only
+  checking the name's first 4 characters. Any name outside the shape --
+  shorter, longer, digits in the tag slot, embedded separators -- fails
+  safe to `UnclassifiedTag`, so a malformed Excel_NAME can never mint a
+  junk tag and silently route rows into a junk workbook. New unit tests
+  cover 7-char / 9-char / separator / lowercase names.
+
+### Added
+- **OCR image preprocessing (root-cause fix for the ja `9`->`3` digit
+  misreads, not a TODO)**: new `ConvertTo-ProcessTimeOcrImage`
+  (System.Drawing) runs every picture through a high-quality-bicubic
+  upscale (default 2x, auto-capped below the WinRT OCR engine's
+  MaxImageDimension so RecognizeAsync cannot fail on an oversized bitmap;
+  never downscales) plus a single ColorMatrix grayscale + linear contrast
+  stretch (default 1.3 around mid-gray) BEFORE either recognizer reads it
+  -- at the one choke point (`Read-ProcessTimeOcrLines`), so the snap-PNG
+  tier and every evidence-workbook candidate all benefit. The preprocessed
+  copy is written as `<stem>_pre.png` next to the OCR dumps (cleaned by
+  the per-run stale-artifact pass); any preprocessing failure falls back
+  to the original image with a `[WARN]` -- OCR is never blocked. New
+  config `ProcessTime.OcrPreprocess` (default `$true`) /
+  `OcrPreprocessScale` (2.0) / `OcrPreprocessContrast` (1.3), threaded
+  from VerifyTool. Design note: the reviewer's alternative (regex-validate
+  the ja timestamps, then bounding-box-crop + en-US re-read on anomaly)
+  cannot trigger on this bug -- a `9`->`3` misread yields a FORMAT-VALID
+  timestamp (`11:13:16`), so no post-hoc format check can detect it; the
+  pixels must be unambiguous before the engine sees them, which is also
+  why Snipping Tool (preprocessed rendering) reads the same page cleanly.
+- **Broader PS 5.1 static guard**: the target runtime is Windows
+  PowerShell 5.1, which this Linux dev environment cannot execute -- pwsh 7
+  results here prove parse-correctness and pure-logic behavior only, and
+  are no longer presented as evidence of 5.1 runtime safety. The unit
+  suite now bans the entire `@($var[index])` collection-wrap shape from
+  `ProcessTime.ps1` (both real-run "Argument types do not match" incidents
+  -- the v2.15.0 bucket materialization and the v2.15.2 write-bit loop --
+  were this exact pattern); enumeration of indexed collections must go
+  through `ConvertTo-ProcessTimeBucketArray`. The new v2.15.3 code was
+  additionally hand-audited against the known 5.1 divergences (array
+  unrolling, `,`-wrap returns, COM/ctor overload binding).
+
+### Notes
+- Run `Tests\Run-Tests.ps1` under Windows PS 5.1 and confirm on an office
+  PC: the strict derive regex against the real JOD mapping, the
+  preprocessed OCR quality on the JIGPC06S GFIX picture (expect `11:19:`
+  to read correctly in ja, or at least the pooled en-US line to win), and
+  that `_pre.png` artifacts appear/clean up under `snap\ProcessTime\`.
+
+## 2026-07-22 - ProcessTime: auto-derived output tags, snap-PNG OCR tier, real date/time cells + check formulas (v2.15.2)
+
+Driven by a real office-PC `-Stage Write -Force` run over a 257-row JOD
+mapping (console log + `result.json`/`.ocr.txt` artifacts supplied).
+
+### Fixed
+- **`[FAIL] ... 引数の型が一致しません` on the 'Other' workbook followed by a
+  contradictory `[OK] wrote 257 correl(s)` for the SAME path**: the workbook
+  had actually saved fine -- the exception came AFTER the save, from the
+  write-bit marking loop's `@($writtenRowsByCorrel[$r.CorrelId])`. Wrapping
+  a generic `List[object]` pulled out of a hashtable in `@()` can throw
+  "Argument types do not match" on Windows PowerShell 5.1 -- the exact
+  binder bug `ConvertTo-ProcessTimeBucketArray` was added to work around,
+  one call site over. Because the throw landed inside the per-tag try/catch,
+  the tag was reported both FAILED and written, and none of the 257 rows got
+  their `ProcessTime_Inserted` write bit set (they would all have re-written
+  next run). The loop now enumerates through
+  `ConvertTo-ProcessTimeBucketArray`; a unit-test source guard keeps the
+  `@()` pattern from coming back.
+- **257 JOD rows all routed to `処理時間(Other).xlsx`**: every Excel_NAME in
+  the run (`CJODWDEJ`, `KJODWWB5`, ...) matched neither default OutputTag
+  (JDL/JRV), so the whole project family piled into the fallback bucket.
+  New `ProcessTime.AutoDeriveTag` (default `$true`): when no configured
+  OutputTags entry matches, the tag is derived from the Excel_NAME's own
+  `?XXX????` shape (chars 2-4, letters only: `CJODWDEJ` -> `JOD`), so an
+  unlisted project family still routes to its own `<label>(JOD).xlsx`; the
+  UnclassifiedTag bucket now only catches names that don't fit the shape.
+  Derived tags print an `[INFO]` naming them (pure, unit-tested
+  `Get-ProcessTimeOutputTag -DeriveFromName`).
+
+### Added
+- **Snap-PNG OCR tier** -- the per-side source priority is now the full
+  chain the snap phases already left on disk: archived Ctrl+A text
+  (`snap\<Stage>_HM\<correl>.txt`) -> **OCR of the snap screenshot itself
+  (`snap\<Stage>_HM\<correl>.png`)** -> OCR of pictures exported from the
+  evidence workbook. The snap PNG was captured FOR that correl (per-correl
+  file name), so a full time row from it is trusted like the evidence
+  section tier (no correl-seen gate), and it is the cleaner OCR target
+  (never rescaled by the evidence paste). Its pooled OCR dump is written to
+  the per-correl export dir as `<side>_<correl>_snapocr.ocr.txt`; source is
+  tagged `ocr:snap-png` (`ocr-partial:snap-png` when only the start read).
+- **Real Excel date/time values + on-sheet check formulas** in the output
+  workbook: start/end (cols D/E) are now written as OADate serials with a
+  `yyyy/mm/dd hh:mm:ss` NumberFormat (format set BEFORE the value, the
+  v2.10.7 lesson) and the duration (col F) as a real `[h]:mm:ss` time
+  serial, with plain-text fallback for any unparseable value. Two new audit
+  columns per row: I `処理時間(検算)` = `=E{r}-D{r}` and J `チェック` =
+  `=IF(ROUND(F{r}*86400,0)=ROUND(I{r}*86400,0),"T","F")` -- left blank on a
+  partial row (missing end time), which the manual-check summary already
+  flags. New pure `ConvertTo-ProcessTimeDateTimeValue` /
+  `ConvertTo-ProcessTimeDurationValue` (unit-tested; duration hours are NOT
+  clamped to 24, matching `Get-ProcessDurationText`). Formatting ranges /
+  fills / widths extended A:H -> A:J.
+- **`Probe-SheetFormat.ps1`** (standalone, has `param()` -- call via `&`,
+  never dot-source): read-only formatting probe that dumps a target
+  workbook's / one sheet's full cell-format inventory -- column widths, row
+  heights, and distinct format signatures (NumberFormat / font name, size,
+  bold, color / Interior.Color as the raw BGR Long / alignment / border
+  line style / merged), each with cell count + sample addresses, optional
+  `-Json` report. The requested aid for matching generated output to a
+  delivery template without inspecting cells by hand (Probe-Shapes.ps1's
+  sibling, for formats instead of shapes).
+
+### Notes
+- **Recorded OCR confusion (recurring, per operator report): the ja
+  recognizer misreads digit `9` as `3`** in time-of-day, datestamp AND
+  record-count fields on the HM font -- JIGPC06S's real page reads
+  `11:19:16 / 11:19:28 / 20260701111906 / 29,264` but the ja lines read
+  `11:13:16 / 11:13:28 / 20260701111306 / 23,264`, while the en-US pass of
+  the same picture read `11:19:` correctly. `ConvertTo-ProcessTimeCorrelKey`'s
+  letter/digit folds do NOT cover digit-to-digit confusion, and
+  `Get-ProcessTimeDateHints` only corrects the DATE portion. A
+  time-of-day/count cross-check against the en-US read (adopt the en-US
+  digits when the two disagree only on 3/9 positions) is the logical next
+  step -- tracked as a TODO in CLAUDE.md; the new snap-PNG tier should also
+  reduce the incidence by OCRing the cleaner source image first.
+- Pure logic unit-tested (Tests\Test-ProcessTimeParse.ps1; full Run-Tests
+  green under portable pwsh 7 here except the 2 known Linux path-separator
+  failures in Test-EvidencePlan). The COM paths (snap-PNG tier wiring,
+  OADate writes, check formulas, Probe-SheetFormat) are static-checked only
+  -- confirm on an office PC against the same JOD work folder, and re-run
+  `Tests\Run-Tests.ps1` under Windows PS 5.1.
+
 ## 2026-07-21 - ProcessTime: template-matched worksheet formatting + code-review fixes (v2.15.1)
 
 ### Fixed

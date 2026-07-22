@@ -567,19 +567,71 @@ function Get-ProcessTimeMigratedInsertedValue {
 #   Classifies one result row's output bucket from its mapping Excel_NAME,
 #   by first-match order against -Tags (each tested as a literal substring,
 #   not a regex -- Excel_NAME letters are plain ASCII tags like 'JDL'/'JRV'/
-#   'JDS', not pattern metacharacters). Falls back to -UnclassifiedTag when
-#   no configured tag matches, instead of throwing -- an operator's mapping
-#   can legitimately contain an Excel_NAME the configured tag list does not
-#   yet cover (e.g. a new project prefix), and one such row must never abort
-#   writing every OTHER already-resolved tag's workbook.
+#   'JDS', not pattern metacharacters). When no configured tag matches and
+#   -DeriveFromName is on (ProcessTime.AutoDeriveTag, default $true), the
+#   project code is derived from the Excel_NAME's own '?XXX????' shape --
+#   one prefix character followed by the 3-letter project tag (CJODWDEJ ->
+#   JOD, KJDLWxxx -> JDL) -- so a whole project family the operator never
+#   added to OutputTags still routes to its own '<label>(<Tag>).xlsx'
+#   instead of piling into the fallback bucket (a real 257-row JOD run
+#   landed entirely in 'Other' this way).
+#
+#   Derivation is gated on a STRICT whole-name regex, not a bare substring
+#   grab: the name must match the full '?XXX????' shape (exactly 8
+#   alphanumeric characters with letters in positions 2-4) before chars 2-4
+#   are trusted as a project tag. Any name outside that shape -- shorter,
+#   longer, digits in the tag slot, embedded separators -- fails safe to
+#   -UnclassifiedTag so a malformed name can never mint a junk tag and
+#   silently route rows to a junk workbook. Never throws.
 # ---------------------------------------------------------------------------
 function Get-ProcessTimeOutputTag {
-    param([string]$ExcelName, [string[]]$Tags, [string]$UnclassifiedTag = 'Other')
+    param([string]$ExcelName, [string[]]$Tags, [string]$UnclassifiedTag = 'Other', [bool]$DeriveFromName = $false)
     foreach ($t in @($Tags)) {
         if ([string]::IsNullOrWhiteSpace($t)) { continue }
         if ($ExcelName.IndexOf($t, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return $t }
     }
+    if ($DeriveFromName -and $null -ne $ExcelName -and
+        $ExcelName -match '^[0-9A-Za-z][A-Za-z]{3}[0-9A-Za-z]{4}$') {
+        return $ExcelName.Substring(1, 3).ToUpperInvariant()
+    }
     return $UnclassifiedTag
+}
+
+# ---------------------------------------------------------------------------
+# ConvertTo-ProcessTimeDateTimeValue
+#   Parses the sidecar's formatted start/end text ('yyyy/MM/dd HH:mm:ss',
+#   Format-ProcessTimeStamp's exact shape) back into a [datetime], or $null
+#   when blank/unparseable. Used by Write-ProcessTimeWorkbook to store the
+#   start/end columns as REAL Excel date/time values (OADate + NumberFormat)
+#   instead of plain text, so the check-formula columns (=E2-D2 etc.) can
+#   actually compute.
+# ---------------------------------------------------------------------------
+function ConvertTo-ProcessTimeDateTimeValue {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    $dt = [datetime]::MinValue
+    $ok = [datetime]::TryParseExact($Text.Trim(), 'yyyy/MM/dd HH:mm:ss',
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [System.Globalization.DateTimeStyles]::None, [ref]$dt)
+    if ($ok) { return $dt }
+    return $null
+}
+
+# ---------------------------------------------------------------------------
+# ConvertTo-ProcessTimeDurationValue
+#   Parses a 'HH:mm:ss' duration text (Get-ProcessDurationText's shape --
+#   hours are NOT clamped to 24, so '25:00:00' is legal and [timespan]::Parse
+#   would reject it) into an Excel time serial (fraction of a day, [double]),
+#   or $null when blank/unparseable. Lets the duration column be written as
+#   a real time value so '=ROUND(F2*86400,0)'-style check formulas work.
+# ---------------------------------------------------------------------------
+function ConvertTo-ProcessTimeDurationValue {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    $m = [regex]::Match($Text.Trim(), '^(\d{1,4}):([0-5]?\d):([0-5]?\d)$')
+    if (-not $m.Success) { return $null }
+    $seconds = ([int]$m.Groups[1].Value) * 3600 + ([int]$m.Groups[2].Value) * 60 + ([int]$m.Groups[3].Value)
+    return ([double]$seconds / 86400.0)
 }
 
 # ---------------------------------------------------------------------------

@@ -293,6 +293,20 @@ Assert-Equal 'JDS' (Get-ProcessTimeOutputTag -ExcelName 'KJDSWD01' -Tags @('JDL'
 Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'ZZZZZZZZ' -Tags @('JDL', 'JRV')) 'an unrecognized Excel_NAME falls back to the unclassified bucket instead of throwing'
 Assert-Equal 'Misc' (Get-ProcessTimeOutputTag -ExcelName 'ZZZZZZZZ' -Tags @('JDL', 'JRV') -UnclassifiedTag 'Misc') '-UnclassifiedTag is configurable'
 
+# v2.15.2: -DeriveFromName routes an Excel_NAME missing from OutputTags to
+# the tag its own '?XXX????' shape carries (the real 257-row JOD run whose
+# rows all landed in 'Other' -- CJODWDEJ etc. must classify as JOD).
+Assert-Equal 'JOD' (Get-ProcessTimeOutputTag -ExcelName 'CJODWDEJ' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'an unlisted project tag derives from Excel_NAME chars 2-4'
+Assert-Equal 'JOD' (Get-ProcessTimeOutputTag -ExcelName 'KJODWMF2' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'derivation works for any prefix character'
+Assert-Equal 'JDL' (Get-ProcessTimeOutputTag -ExcelName 'CJDLWDFL' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a configured tag still wins over derivation'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'CJODWDEJ' -Tags @('JDL', 'JRV') -DeriveFromName $false) 'derivation off restores the fallback-bucket-only behavior'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'C1' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a too-short Excel_NAME still falls back to the unclassified bucket'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'C12DWDEJ' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a non-letter project code does not derive a junk tag'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'CJODWDE' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a 7-char name fails the strict whole-shape regex (fail-safe to Other)'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'CJODWDEJX' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a 9-char name fails the strict whole-shape regex (fail-safe to Other)'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'CJOD_DEJ' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'an embedded separator fails the strict whole-shape regex (fail-safe to Other)'
+Assert-Equal 'JOD' (Get-ProcessTimeOutputTag -ExcelName 'cjodwdej' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a lowercase conforming name derives the uppercased tag'
+
 Assert-Equal (([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593) + '(JDL).xlsx') `
     (Get-ProcessTimeOutputFileName -Label ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593) -Tag 'JDL') 'Split-mode file name carries the (Tag) suffix'
 Assert-Equal 'Label.xlsx' (Get-ProcessTimeOutputFileName -Label 'Label' -Tag 'JDL' -Single $true) 'Single mode drops the tag suffix entirely'
@@ -301,13 +315,41 @@ Assert-Equal 'C:\J4\JDS' (Resolve-ProcessTimeOutputDir -Tag 'JDS' -DirByTag @{ J
 Assert-Equal 'C:\Default' (Resolve-ProcessTimeOutputDir -Tag 'JRV' -DirByTag @{ JDS = 'C:\J4\JDS' } -DefaultDir 'C:\Default') 'a tag with no override falls back to the default directory'
 Assert-Equal 'C:\Default' (Resolve-ProcessTimeOutputDir -Tag 'JRV' -DirByTag @{ JRV = '' } -DefaultDir 'C:\Default') 'a blank per-tag override is treated as unset'
 
+# ---------------------------------------------------------------------------
+# ConvertTo-ProcessTimeDateTimeValue / ConvertTo-ProcessTimeDurationValue
+# (v2.15.2: real Excel date/time values + check-formula columns)
+# ---------------------------------------------------------------------------
+$dtVal = ConvertTo-ProcessTimeDateTimeValue '2026/07/01 11:19:16'
+Assert-True ($null -ne $dtVal) 'a formatted start/end stamp parses back to a datetime'
+Assert-Equal '2026/07/01 11:19:16' $dtVal.ToString('yyyy/MM/dd HH:mm:ss') 'the parsed datetime round-trips exactly'
+Assert-True ($null -eq (ConvertTo-ProcessTimeDateTimeValue '')) 'a blank stamp yields null (text fallback)'
+Assert-True ($null -eq (ConvertTo-ProcessTimeDateTimeValue 'not a date')) 'garbage yields null instead of throwing'
+
+Assert-Equal (12.0 / 86400.0) (ConvertTo-ProcessTimeDurationValue '00:00:12') 'a duration parses to an Excel day-fraction serial'
+Assert-Equal (90000.0 / 86400.0) (ConvertTo-ProcessTimeDurationValue '25:00:00') 'hours beyond 24 are legal (Get-ProcessDurationText is unclamped)'
+Assert-True ($null -eq (ConvertTo-ProcessTimeDurationValue '')) 'a blank duration yields null (text fallback)'
+Assert-True ($null -eq (ConvertTo-ProcessTimeDurationValue '00:99:00')) 'an impossible minutes field yields null instead of a wrong serial'
+
 # ProcessTime workbook formatting is COM-bound and cannot be executed in the
 # pure test suite.  Guard the office-PC compatibility fix statically: passing
 # two Cells COM proxies to Worksheet.Range caused DISP_E_TYPEMISMATCH on a
 # real Windows PowerShell/Excel run; A1-address Range calls avoid that binder.
 $processTimeSource = Get-Content -LiteralPath (Join-Path (Split-Path $here -Parent) 'ProcessTime.ps1') -Raw
 Assert-True ($processTimeSource -notmatch '\$ws\.Range\(\$ws\.Cells\.Item') 'ProcessTime formatting never passes Cells COM proxies to Worksheet.Range'
-Assert-True ($processTimeSource -match '\$ws\.Range\(\(''A1:H\{0\}'' -f \$finalRow\)\)') 'ProcessTime table formatting uses a COM-safe A1 address'
+# v2.15.2 regression guard: @() over a List[object] pulled out of a hashtable
+# can throw "Argument types do not match" on PS 5.1 (a real office-PC run hit
+# this in the write-bit marking loop AFTER the workbook saved, making the tag
+# report both FAILED and written). Enumeration must go through
+# ConvertTo-ProcessTimeBucketArray instead.
+Assert-True ($processTimeSource -notmatch '@\(\$writtenRowsByCorrel\[') 'ProcessTime never wraps a hashtable-indexed List[object] in @() when marking write bits'
+# Broader PS 5.1 guard (target runtime is Windows PowerShell 5.1, which this
+# Linux test environment cannot execute): ban the whole @($var[index]) wrap
+# shape in ProcessTime.ps1 -- the 5.1 binder can throw "Argument types do
+# not match" enumerating a List[object] obtained through an index, and both
+# real-run incidents (v2.15.0 buckets, v2.15.2 write bits) were this exact
+# pattern. Materialize through ConvertTo-ProcessTimeBucketArray instead.
+Assert-True ($processTimeSource -notmatch '@\(\$\w+\[') 'ProcessTime source contains no @($var[index]) collection wrap (PS 5.1 binder hazard)'
+Assert-True ($processTimeSource -match '\$ws\.Range\(\(''A1:J\{0\}'' -f \$finalRow\)\)') 'ProcessTime table formatting uses a COM-safe A1 address'
 
 # A COM formatting step failing must never be silently swallowed -- each
 # formatting try/catch block around the table write has to log a Write-Warning
