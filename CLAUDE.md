@@ -440,7 +440,28 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-22 v2.15.2)
+## Current state (last bump: 2026-07-22 v2.15.3)
+
+v2.15.3 (ProcessTime: code-review hardening): three review findings against
+v2.15.2. **Changed** -- tag auto-derivation is now gated on a STRICT
+whole-name regex (`^[0-9A-Za-z][A-Za-z]{3}[0-9A-Za-z]{4}$` -- the full
+`?XXX????` shape, exactly 8 alphanumerics with letters in the tag slot);
+any non-conforming name fails safe to UnclassifiedTag instead of minting a
+junk tag from a blind substring. **Added** -- OCR image preprocessing
+(`ConvertTo-ProcessTimeOcrImage`, System.Drawing) as the ROOT-CAUSE fix for
+the ja `9`->`3` digit misreads: every picture is upscaled (2x, auto-capped
+below the WinRT OCR MaxImageDimension) + grayscaled + contrast-stretched
+(1.3) at the single OCR choke point (`Read-ProcessTimeOcrLines`) before
+either recognizer reads it; `<stem>_pre.png` artifacts live next to the OCR
+dumps and any failure falls back to the original image. Config:
+`ProcessTime.OcrPreprocess`/`OcrPreprocessScale`/`OcrPreprocessContrast`.
+(A post-hoc regex check + bounding-box en-US re-read cannot catch this bug:
+the misread yields a format-VALID timestamp.) **PS 5.1 note** -- the target
+runtime is Windows PowerShell 5.1; pwsh 7 runs here prove parse + pure
+logic only. The unit suite now bans the whole `@($var[index])` wrap shape
+from ProcessTime.ps1 (both real "Argument types do not match" incidents
+were that pattern); indexed-collection enumeration goes through
+`ConvertTo-ProcessTimeBucketArray`. Confirm all three on an office PC.
 
 v2.15.2 (ProcessTime: auto-derived output tags, snap-PNG OCR tier, real
 date/time cells + check formulas): driven by a real 257-row JOD office-PC
@@ -1829,18 +1850,22 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
-- **ProcessTime: ja-OCR digit 9->3 cross-check against en-US** (recorded
-  v2.15.2, recurring per operator) — the ja recognizer misreads digit `9`
-  as `3` on the HM font in time-of-day, 14-digit datestamp AND record-count
-  fields (JIGPC06S: real page `11:19:16 / 11:19:28 / 20260701111906 /
-  29,264`; ja read `11:13:16 / 11:13:28 / 20260701111306 / 23,264`; the
-  en-US pass of the SAME picture read `11:19:` correctly).
-  `ConvertTo-ProcessTimeCorrelKey` folds letters<->digits only, and
-  `Get-ProcessTimeDateHints` corrects only the DATE portion. Planned fix:
-  pool the en-US read's time-of-day/count digits as hints (same shape as
-  `-StartDateHints`) and adopt the en-US digits when the two recognizers
-  disagree ONLY on 3/9 positions; the new snap-PNG tier already reduces
-  incidence by OCRing the cleaner source image first.
+- **ProcessTime: ja-OCR digit 9->3 -- ADDRESSED via image preprocessing**
+  (v2.15.3; originally recorded v2.15.2, recurring per operator) — the ja
+  recognizer misread digit `9` as `3` on the HM font in time-of-day,
+  14-digit datestamp AND record-count fields (JIGPC06S: real page
+  `11:19:16 / 11:19:28 / 20260701111906 / 29,264`; ja read `11:13:16 /
+  11:13:28 / 20260701111306 / 23,264`). Fixed at the root: every picture
+  is preprocessed (2x bicubic upscale capped below the WinRT OCR
+  MaxImageDimension + grayscale + 1.3 contrast stretch,
+  `ConvertTo-ProcessTimeOcrImage`) before either recognizer reads it. A
+  post-hoc regex check cannot catch this class of misread (the result is a
+  format-valid timestamp), so prevention-before-recognition is the only
+  clean fix. Needs office-PC confirmation on the JIGPC06S picture; if
+  misreads persist there, the fallback plan remains pooling the en-US
+  read's time-of-day/count digits as hints (same shape as
+  `-StartDateHints`) and adopting them when the recognizers disagree only
+  on 3/9 positions.
 
 - **NEXT: ReplaceGfix duplicate-candidate confirmation** — since v2.9.18,
   `GfixLogDownload` deliberately downloads *every* GoAnywhere job matching a

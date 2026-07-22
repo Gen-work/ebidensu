@@ -1808,6 +1808,9 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
                 $args['OutputDirectoryByTag'] = $pt.OutputDirectoryByTag
             }
             if (-not [string]::IsNullOrWhiteSpace([string]$pt.OcrLanguage))      { $args['OcrLanguage']     = [string]$pt.OcrLanguage }
+            if ($pt.ContainsKey('OcrPreprocess') -and $null -ne $pt.OcrPreprocess) { $args['OcrPreprocess'] = [bool]$pt.OcrPreprocess }
+            if ($pt.ContainsKey('OcrPreprocessScale') -and $null -ne $pt.OcrPreprocessScale) { $args['OcrPreprocessScale'] = [double]$pt.OcrPreprocessScale }
+            if ($pt.ContainsKey('OcrPreprocessContrast') -and $null -ne $pt.OcrPreprocessContrast) { $args['OcrPreprocessContrast'] = [double]$pt.OcrPreprocessContrast }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
         }
         if (-not [string]::IsNullOrWhiteSpace($State.Stage)) { $args['Stage'] = $State.Stage }

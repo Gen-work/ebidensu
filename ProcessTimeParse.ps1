@@ -574,8 +574,15 @@ function Get-ProcessTimeMigratedInsertedValue {
 #   JOD, KJDLWxxx -> JDL) -- so a whole project family the operator never
 #   added to OutputTags still routes to its own '<label>(<Tag>).xlsx'
 #   instead of piling into the fallback bucket (a real 257-row JOD run
-#   landed entirely in 'Other' this way). Only when the name doesn't fit
-#   that shape does the row fall back to -UnclassifiedTag; it never throws.
+#   landed entirely in 'Other' this way).
+#
+#   Derivation is gated on a STRICT whole-name regex, not a bare substring
+#   grab: the name must match the full '?XXX????' shape (exactly 8
+#   alphanumeric characters with letters in positions 2-4) before chars 2-4
+#   are trusted as a project tag. Any name outside that shape -- shorter,
+#   longer, digits in the tag slot, embedded separators -- fails safe to
+#   -UnclassifiedTag so a malformed name can never mint a junk tag and
+#   silently route rows to a junk workbook. Never throws.
 # ---------------------------------------------------------------------------
 function Get-ProcessTimeOutputTag {
     param([string]$ExcelName, [string[]]$Tags, [string]$UnclassifiedTag = 'Other', [bool]$DeriveFromName = $false)
@@ -583,7 +590,8 @@ function Get-ProcessTimeOutputTag {
         if ([string]::IsNullOrWhiteSpace($t)) { continue }
         if ($ExcelName.IndexOf($t, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return $t }
     }
-    if ($DeriveFromName -and $null -ne $ExcelName -and $ExcelName -match '^[0-9A-Za-z][A-Za-z]{3}') {
+    if ($DeriveFromName -and $null -ne $ExcelName -and
+        $ExcelName -match '^[0-9A-Za-z][A-Za-z]{3}[0-9A-Za-z]{4}$') {
         return $ExcelName.Substring(1, 3).ToUpperInvariant()
     }
     return $UnclassifiedTag

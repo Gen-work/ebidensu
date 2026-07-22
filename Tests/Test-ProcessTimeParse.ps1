@@ -302,6 +302,10 @@ Assert-Equal 'JDL' (Get-ProcessTimeOutputTag -ExcelName 'CJDLWDFL' -Tags @('JDL'
 Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'CJODWDEJ' -Tags @('JDL', 'JRV') -DeriveFromName $false) 'derivation off restores the fallback-bucket-only behavior'
 Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'C1' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a too-short Excel_NAME still falls back to the unclassified bucket'
 Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'C12DWDEJ' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a non-letter project code does not derive a junk tag'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'CJODWDE' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a 7-char name fails the strict whole-shape regex (fail-safe to Other)'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'CJODWDEJX' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a 9-char name fails the strict whole-shape regex (fail-safe to Other)'
+Assert-Equal 'Other' (Get-ProcessTimeOutputTag -ExcelName 'CJOD_DEJ' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'an embedded separator fails the strict whole-shape regex (fail-safe to Other)'
+Assert-Equal 'JOD' (Get-ProcessTimeOutputTag -ExcelName 'cjodwdej' -Tags @('JDL', 'JRV') -DeriveFromName $true) 'a lowercase conforming name derives the uppercased tag'
 
 Assert-Equal (([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593) + '(JDL).xlsx') `
     (Get-ProcessTimeOutputFileName -Label ([string][char]0x51E6 + [char]0x7406 + [char]0x6642 + [char]0x9593) -Tag 'JDL') 'Split-mode file name carries the (Tag) suffix'
@@ -338,6 +342,13 @@ Assert-True ($processTimeSource -notmatch '\$ws\.Range\(\$ws\.Cells\.Item') 'Pro
 # report both FAILED and written). Enumeration must go through
 # ConvertTo-ProcessTimeBucketArray instead.
 Assert-True ($processTimeSource -notmatch '@\(\$writtenRowsByCorrel\[') 'ProcessTime never wraps a hashtable-indexed List[object] in @() when marking write bits'
+# Broader PS 5.1 guard (target runtime is Windows PowerShell 5.1, which this
+# Linux test environment cannot execute): ban the whole @($var[index]) wrap
+# shape in ProcessTime.ps1 -- the 5.1 binder can throw "Argument types do
+# not match" enumerating a List[object] obtained through an index, and both
+# real-run incidents (v2.15.0 buckets, v2.15.2 write bits) were this exact
+# pattern. Materialize through ConvertTo-ProcessTimeBucketArray instead.
+Assert-True ($processTimeSource -notmatch '@\(\$\w+\[') 'ProcessTime source contains no @($var[index]) collection wrap (PS 5.1 binder hazard)'
 Assert-True ($processTimeSource -match '\$ws\.Range\(\(''A1:J\{0\}'' -f \$finalRow\)\)') 'ProcessTime table formatting uses a COM-safe A1 address'
 
 # A COM formatting step failing must never be silently swallowed -- each

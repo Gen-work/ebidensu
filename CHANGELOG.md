@@ -1,3 +1,58 @@
+## 2026-07-22 - ProcessTime: code-review hardening -- strict derive regex, OCR image preprocessing, PS 5.1 guards (v2.15.3)
+
+Three code-review findings against v2.15.2, all addressed.
+
+### Changed
+- **Tag auto-derivation now requires the FULL `?XXX????` shape** before
+  trusting chars 2-4 as a project tag: `Get-ProcessTimeOutputTag
+  -DeriveFromName` matches `^[0-9A-Za-z][A-Za-z]{3}[0-9A-Za-z]{4}$`
+  (exactly 8 alphanumerics, letters in the tag slot) instead of only
+  checking the name's first 4 characters. Any name outside the shape --
+  shorter, longer, digits in the tag slot, embedded separators -- fails
+  safe to `UnclassifiedTag`, so a malformed Excel_NAME can never mint a
+  junk tag and silently route rows into a junk workbook. New unit tests
+  cover 7-char / 9-char / separator / lowercase names.
+
+### Added
+- **OCR image preprocessing (root-cause fix for the ja `9`->`3` digit
+  misreads, not a TODO)**: new `ConvertTo-ProcessTimeOcrImage`
+  (System.Drawing) runs every picture through a high-quality-bicubic
+  upscale (default 2x, auto-capped below the WinRT OCR engine's
+  MaxImageDimension so RecognizeAsync cannot fail on an oversized bitmap;
+  never downscales) plus a single ColorMatrix grayscale + linear contrast
+  stretch (default 1.3 around mid-gray) BEFORE either recognizer reads it
+  -- at the one choke point (`Read-ProcessTimeOcrLines`), so the snap-PNG
+  tier and every evidence-workbook candidate all benefit. The preprocessed
+  copy is written as `<stem>_pre.png` next to the OCR dumps (cleaned by
+  the per-run stale-artifact pass); any preprocessing failure falls back
+  to the original image with a `[WARN]` -- OCR is never blocked. New
+  config `ProcessTime.OcrPreprocess` (default `$true`) /
+  `OcrPreprocessScale` (2.0) / `OcrPreprocessContrast` (1.3), threaded
+  from VerifyTool. Design note: the reviewer's alternative (regex-validate
+  the ja timestamps, then bounding-box-crop + en-US re-read on anomaly)
+  cannot trigger on this bug -- a `9`->`3` misread yields a FORMAT-VALID
+  timestamp (`11:13:16`), so no post-hoc format check can detect it; the
+  pixels must be unambiguous before the engine sees them, which is also
+  why Snipping Tool (preprocessed rendering) reads the same page cleanly.
+- **Broader PS 5.1 static guard**: the target runtime is Windows
+  PowerShell 5.1, which this Linux dev environment cannot execute -- pwsh 7
+  results here prove parse-correctness and pure-logic behavior only, and
+  are no longer presented as evidence of 5.1 runtime safety. The unit
+  suite now bans the entire `@($var[index])` collection-wrap shape from
+  `ProcessTime.ps1` (both real-run "Argument types do not match" incidents
+  -- the v2.15.0 bucket materialization and the v2.15.2 write-bit loop --
+  were this exact pattern); enumeration of indexed collections must go
+  through `ConvertTo-ProcessTimeBucketArray`. The new v2.15.3 code was
+  additionally hand-audited against the known 5.1 divergences (array
+  unrolling, `,`-wrap returns, COM/ctor overload binding).
+
+### Notes
+- Run `Tests\Run-Tests.ps1` under Windows PS 5.1 and confirm on an office
+  PC: the strict derive regex against the real JOD mapping, the
+  preprocessed OCR quality on the JIGPC06S GFIX picture (expect `11:19:`
+  to read correctly in ja, or at least the pooled en-US line to win), and
+  that `_pre.png` artifacts appear/clean up under `snap\ProcessTime\`.
+
 ## 2026-07-22 - ProcessTime: auto-derived output tags, snap-PNG OCR tier, real date/time cells + check formulas (v2.15.2)
 
 Driven by a real office-PC `-Stage Write -Force` run over a 257-row JOD

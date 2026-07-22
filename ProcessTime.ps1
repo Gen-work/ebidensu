@@ -146,6 +146,19 @@ param(
     # Empty (default) means en-US only; set e.g. 'ja' to also pool the
     # Japanese recognizer's reading of the same picture.
     [string]$OcrLanguage = '',
+    # OCR image preprocessing (System.Drawing): upscale + grayscale +
+    # contrast stretch applied to every picture BEFORE it is handed to the
+    # Windows OCR engine, so thin digit strokes ('9' vs '3') get crisp
+    # pixel boundaries instead of the recognizer eating the raw
+    # low-resolution pixels. Falls back to the original image on any
+    # preprocessing failure -- never blocks OCR.
+    [bool]$OcrPreprocess = $true,
+    # Upscale factor for preprocessing (capped so the result stays under
+    # the WinRT OCR engine's MaxImageDimension; an image already at/over
+    # the cap is only grayscaled/contrast-stretched, never downscaled).
+    [double]$OcrPreprocessScale = 2.0,
+    # Linear contrast factor applied around mid-gray (1.0 = off).
+    [double]$OcrPreprocessContrast = 1.3,
     # Picture export upscale (matches EvidenceImageExport.ps1's own default).
     [double]$ExportScale = 3.0,
 
@@ -183,6 +196,14 @@ if (-not $helpersPath) {
 . (Join-Path $PSScriptRoot 'SnapVerify.ps1')
 . (Join-Path $PSScriptRoot 'SendMetadata.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeParse.ps1')
+
+# System.Drawing backs the OCR image preprocessing (upscale + grayscale +
+# contrast). Warn-only: a load failure just disables preprocessing (the
+# original image is OCR'd as before), it never blocks the phase.
+try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch {
+    Write-Host ("[WARN] System.Drawing unavailable -- OCR image preprocessing disabled: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    $OcrPreprocess = $false
+}
 
 # -- small local helpers ---------------------------------------------
 
@@ -280,18 +301,106 @@ function Get-ProcessTimeSectionBounds {
     return @{ Top = $top; Bottom = $bottom }
 }
 
+# Preprocesses one PNG for OCR via System.Drawing: high-quality-bicubic
+# upscale (capped below the WinRT OCR engine's MaxImageDimension, ~2600 px
+# -- an oversized bitmap makes RecognizeAsync fail outright), then a single
+# ColorMatrix pass combining grayscale + linear contrast stretch around
+# mid-gray. Root-cause fix for the recurring ja-recognizer digit misreads
+# ('9' read as '3' in time-of-day / datestamp / count fields, JIGPC06S):
+# the misread yields a FORMAT-VALID timestamp, so no post-hoc regex check
+# can catch it -- the pixels themselves have to be unambiguous before the
+# engine sees them (the same reason Snipping Tool's extraction reads the
+# page cleanly). Writes '<stem>_pre.png' next to the dump files (cleaned
+# up by the per-run stale-artifact pass like every other candidate
+# artifact) and returns its path; returns the ORIGINAL path unchanged on
+# any failure or when preprocessing is off -- never blocks OCR.
+function ConvertTo-ProcessTimeOcrImage {
+    param([string]$Png, [string]$OutDir, [string]$Stem,
+          [double]$Scale = 2.0, [double]$Contrast = 1.3, [int]$MaxDimension = 2500)
+    $src = $null; $dst = $null; $g = $null; $ms = $null
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($Png)
+        $ms = New-Object System.IO.MemoryStream (,$bytes)
+        $src = [System.Drawing.Bitmap]::FromStream($ms)
+
+        $longest = [Math]::Max($src.Width, $src.Height)
+        $eff = $Scale
+        if ($longest * $eff -gt $MaxDimension) { $eff = [double]$MaxDimension / [double]$longest }
+        if ($eff -lt 1.0) { $eff = 1.0 }   # never downscale an already-large image
+
+        $w = [int][Math]::Round($src.Width * $eff)
+        $h = [int][Math]::Round($src.Height * $eff)
+        $dst = New-Object System.Drawing.Bitmap ($w, $h, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $dst.SetResolution(96, 96)
+        $g = [System.Drawing.Graphics]::FromImage($dst)
+        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $g.PixelOffsetMode   = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+
+        # One ColorMatrix = grayscale (Rec.601 luma weights) x contrast
+        # stretch around 0.5. t re-centers so mid-gray stays put.
+        $c = $Contrast
+        if ($c -le 0) { $c = 1.0 }
+        $lr = 0.299 * $c; $lg = 0.587 * $c; $lb = 0.114 * $c
+        $t = 0.5 * (1.0 - $c)
+        # ColorMatrix row i = input channel i's weight into each output
+        # column: every output RGB column gets the same luma mix, so row 0
+        # (input R) is lr across columns 0-2, row 1 (input G) lg, row 2
+        # (input B) lb; row 4 is the additive re-center term.
+        $rows = New-Object 'single[][]' 5
+        for ($i = 0; $i -lt 5; $i++) { $rows[$i] = New-Object 'single[]' 5 }
+        $rows[0][0] = $lr; $rows[0][1] = $lr; $rows[0][2] = $lr
+        $rows[1][0] = $lg; $rows[1][1] = $lg; $rows[1][2] = $lg
+        $rows[2][0] = $lb; $rows[2][1] = $lb; $rows[2][2] = $lb
+        $rows[3][3] = 1.0
+        $rows[4][0] = $t; $rows[4][1] = $t; $rows[4][2] = $t; $rows[4][4] = 1.0
+        $matrix = New-Object System.Drawing.Imaging.ColorMatrix (,$rows)
+        $attrs = New-Object System.Drawing.Imaging.ImageAttributes
+        $attrs.SetColorMatrix($matrix)
+
+        $destRect = New-Object System.Drawing.Rectangle (0, 0, $w, $h)
+        $g.DrawImage($src, $destRect, 0, 0, $src.Width, $src.Height, [System.Drawing.GraphicsUnit]::Pixel, $attrs)
+
+        $outPath = Join-Path $OutDir ($Stem + '_pre.png')
+        $dst.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
+        Write-Host ("       [OCR] preprocessed {0} -> {1} ({2}x{3} -> {4}x{5}, contrast {6})" -f `
+            (Split-Path $Png -Leaf), (Split-Path $outPath -Leaf), $src.Width, $src.Height, $w, $h, $Contrast) -ForegroundColor DarkGray
+        return $outPath
+    } catch {
+        Write-Host ("       [WARN] OCR image preprocessing failed ({0}); using the original image: {1}" -f (Split-Path $Png -Leaf), $_.Exception.Message) -ForegroundColor Yellow
+        return $Png
+    } finally {
+        if ($null -ne $g)   { try { $g.Dispose() } catch {} }
+        if ($null -ne $dst) { try { $dst.Dispose() } catch {} }
+        if ($null -ne $src) { try { $src.Dispose() } catch {} }
+        if ($null -ne $ms)  { try { $ms.Dispose() } catch {} }
+    }
+}
+
 # OCRs one exported candidate PNG with the pooled recognizer languages and
 # dumps the reconstructed rows to <png-stem>.ocr.txt next to it. Returns
-# the pooled line array (plain array; callers wrap in @()).
+# the pooled line array (plain array; callers wrap in @()). When
+# $OcrPreprocess (script param) is on, the picture is first run through
+# ConvertTo-ProcessTimeOcrImage and BOTH recognizers read the preprocessed
+# copy; the dump keeps its original stem so downstream tooling is unchanged.
 function Read-ProcessTimeOcrLines {
     param([string]$Png, [string]$SecondaryLanguage, [string]$OutDir, [string]$DumpBaseName = '')
     $langs = @('en-US', $SecondaryLanguage) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
     $pooled  = New-Object System.Collections.Generic.List[string]
     $enLines = New-Object System.Collections.Generic.List[string]
+
+    # Preprocess once; both recognizers read the same preprocessed copy.
+    # ($OcrPreprocess/-Scale/-Contrast are this script's params, visible
+    # here through PowerShell's dynamic scoping.)
+    $ocrPng = $Png
+    if ($OcrPreprocess) {
+        $preStem = if ([string]::IsNullOrWhiteSpace($DumpBaseName)) { [System.IO.Path]::GetFileNameWithoutExtension($Png) } else { $DumpBaseName }
+        $ocrPng = ConvertTo-ProcessTimeOcrImage -Png $Png -OutDir $OutDir -Stem $preStem -Scale $OcrPreprocessScale -Contrast $OcrPreprocessContrast
+    }
+
     foreach ($lang in $langs) {
         try {
-            Write-Host ("       [OCR] {0} lang={1}" -f (Split-Path $Png -Leaf), $lang) -ForegroundColor DarkGray
-            $ocr = Invoke-WinOcrFile -Path $Png -LanguageTag $lang
+            Write-Host ("       [OCR] {0} lang={1}{2}" -f (Split-Path $Png -Leaf), $lang, $(if ($ocrPng -ne $Png) { ' (preprocessed)' } else { '' })) -ForegroundColor DarkGray
+            $ocr = Invoke-WinOcrFile -Path $ocrPng -LanguageTag $lang
             $rowLines = @(ConvertTo-SendRowLines $ocr.Lines)
             foreach ($ln in $rowLines) { $pooled.Add($ln) }
             # Keep the en-US rows separately: the Latin-digit recognizer reads
