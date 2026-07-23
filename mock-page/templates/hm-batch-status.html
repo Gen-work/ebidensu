@@ -1,0 +1,83 @@
+<!--
+  Mock of the Honda HM batch-processing status page (I???XA041.jsp,
+  バッチ処理状況一覧) used by the ProcessTime phase.
+
+  This is a FIRST-DRAFT layout drawn from the fields the parser already reads
+  (ProcessTimeParse.ps1 / SnapVerify.ps1): correl id, 開始日時 / 終了日時,
+  状態 (正常終了 / 異常終了), データ作成日 (14-digit yyyyMMddHHmmss) and
+  処理件数 (comma-grouped). The exact column set, header colour, font and
+  widths must be CALIBRATED against a real screenshot before the rendered
+  digits are a faithful stand-in for the office-PC Edge capture -- see
+  README.md "Calibration". Anything marked /* CALIBRATE */ is a guess.
+
+  Token {{ROWS}} is replaced by gen.mjs with generated <tr> rows.
+  Token {{TITLE}} / {{META}} are replaced with the page heading / sub-line.
+-->
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  /* CALIBRATE: the real page font decides how 9 vs 3 render -- the whole
+     point of this mock. Replace this stack with the real HM page font once
+     the operator supplies it. */
+  :root {
+    --hm-font: "MS PGothic", "Yu Gothic", "Meiryo", monospace; /* CALIBRATE */
+    --hm-header-bg: #1f7a8c;   /* CALIBRATE: teal header */
+    --hm-header-fg: #ffffff;
+    --hm-alt-row: #eef4f6;     /* CALIBRATE: alt-row shading */
+    --hm-border: #9bb3bd;
+    --hm-font-size: 13px;      /* CALIBRATE */
+  }
+  html, body { margin: 0; padding: 0; background: #ffffff; }
+  body { font-family: var(--hm-font); font-size: var(--hm-font-size); color: #101010; }
+  .page { padding: 10px 14px; }
+  .page-title { font-size: 15px; font-weight: bold; margin: 4px 0 2px; }
+  .page-meta  { font-size: 12px; color: #333; margin: 0 0 8px; }
+  table.batch { border-collapse: collapse; width: auto; }
+  table.batch th, table.batch td {
+    border: 1px solid var(--hm-border);
+    padding: 2px 8px;
+    white-space: nowrap;
+    text-align: left;
+  }
+  table.batch thead th {
+    background: var(--hm-header-bg);
+    color: var(--hm-header-fg);
+    font-weight: normal;
+    text-align: center;
+  }
+  table.batch tbody tr:nth-child(even) { background: var(--hm-alt-row); }
+  /* numeric columns right-align in the real page */
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.dt  { font-variant-numeric: tabular-nums; }
+  .status-ok { }
+  .status-ng { color: #b00000; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-title">{{TITLE}}</div>
+    <div class="page-meta">{{META}}</div>
+    <table class="batch">
+      <thead>
+        <tr>
+          <th>No.</th>
+          <th>相関ID</th>
+          <th>システム</th>
+          <th>ジョブ名</th>
+          <th>開始日時</th>
+          <th>終了日時</th>
+          <th>状態</th>
+          <th>データ作成日</th>
+          <th>処理件数</th>
+          <th>RC</th>
+        </tr>
+      </thead>
+      <tbody>
+{{ROWS}}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

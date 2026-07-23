@@ -1,0 +1,51 @@
+{
+  "title": "バッチ処理状況一覧",
+  "meta": "I???XA041  (mock)  ページ 1 / 1",
+  "note": "3/9-dense sample. 'status' is normal|abend. All values are GROUND TRUTH: the digits below are what the OCR must read back. Deliberately packed with 9s and 3s in the time / datestamp / count fields where the ja recognizer confuses 9<->3.",
+  "rows": [
+    {
+      "correlId": "JIGPC06S",
+      "system": "JIG",
+      "jobName": "JIGPC06SXA",
+      "start": "2026/07/01 11:19:16",
+      "end": "2026/07/01 11:19:28",
+      "status": "normal",
+      "datestamp": "20260701111906",
+      "count": "29,264",
+      "rc": "0000"
+    },
+    {
+      "correlId": "JODWDEJ9",
+      "system": "JOD",
+      "jobName": "JODWDEJ9XA",
+      "start": "2026/07/01 09:39:39",
+      "end": "2026/07/01 09:43:03",
+      "status": "normal",
+      "datestamp": "20260701093939",
+      "count": "3,939",
+      "rc": "0000"
+    },
+    {
+      "correlId": "JRVLK93S",
+      "system": "JRV",
+      "jobName": "JRVLK93SXA",
+      "start": "2026/07/01 13:03:39",
+      "end": "2026/07/01 13:09:33",
+      "status": "normal",
+      "datestamp": "20260701130339",
+      "count": "993",
+      "rc": "0000"
+    },
+    {
+      "correlId": "JDLXA391",
+      "system": "JDL",
+      "jobName": "JDLXA391XA",
+      "start": "2026/07/01 19:33:09",
+      "end": "2026/07/01 19:39:39",
+      "status": "abend",
+      "datestamp": "20260701193309",
+      "count": "0",
+      "rc": "0008"
+    }
+  ]
+}
