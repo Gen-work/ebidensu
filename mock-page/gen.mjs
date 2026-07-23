@@ -26,7 +26,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(argv) {
   const a = { truth: join(HERE, 'samples', 'sample-truth.json'), out: join(HERE, 'out'),
-              name: null, scale: 2, full: false };
+              name: null, scale: 2, full: false, snap: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--truth') a.truth = argv[++i];
@@ -34,6 +34,7 @@ function parseArgs(argv) {
     else if (k === '--name') a.name = argv[++i];
     else if (k === '--scale') a.scale = Number(argv[++i]);
     else if (k === '--full') a.full = true;
+    else if (k === '--snap') a.snap = true;
     else throw new Error(`unknown argument: ${k}`);
   }
   return a;
@@ -57,25 +58,28 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-const STATUS_TEXT = { normal: '正常終了', abend: '異常終了' };
+const STATUS_TEXT = { normal: '正常終了', abend: '異常終了', processing: '処理中' };
+const FW_SPACE = '　'; // full-width space: real page shows this when データ作成日 is blank
 
 function buildRowsHtml(rows) {
   return rows.map((r, i) => {
     const statusKey = (r.status || 'normal').toLowerCase();
     const statusText = STATUS_TEXT[statusKey] || esc(r.status);
-    const statusCls = statusKey === 'abend' ? 'status-ng' : 'status-ok';
+    const rowCls = (i % 2 === 0) ? 'unevenrow' : 'evenrow'; // real page: first data row is unevenrow
+    const datestamp = r.datestamp ? esc(r.datestamp) : FW_SPACE;
+    const diamondTitle = r.resultTitle ? ` title="${esc(r.resultTitle)}"` : '';
     return [
-      '        <tr>',
-      `          <td class="num">${i + 1}</td>`,
-      `          <td>${esc(r.correlId)}</td>`,
-      `          <td>${esc(r.system)}</td>`,
-      `          <td>${esc(r.jobName)}</td>`,
-      `          <td class="dt">${esc(r.start)}</td>`,
-      `          <td class="dt">${esc(r.end)}</td>`,
-      `          <td class="${statusCls}">${statusText}</td>`,
-      `          <td class="dt">${esc(r.datestamp)}</td>`,
-      `          <td class="num">${esc(r.count)}</td>`,
-      `          <td class="num">${esc(r.rc)}</td>`,
+      `        <tr class="${rowCls}">`,
+      `          <td class="center">${esc(r.start)}</td>`,
+      `          <td class="center">${esc(r.end)}</td>`,
+      `          <td class="center">${esc(r.duration)}</td>`,
+      `          <td class="center">${esc(r.batchId)}</td>`,
+      `          <td class="center">${esc(r.ss)}</td>`,
+      `          <td class="center">${statusText}</td>`,
+      `          <td class="center">${datestamp}</td>`,
+      `          <td class="right">${esc(r.count)}</td>`,
+      `          <td class="center"><a class="diamond"${diamondTitle}>◆</a></td>`,
+      `          <td class="center"><a class="dl">${esc(r.correlId)}</a></td>`,
       '        </tr>',
     ].join('\n');
   }).join('\n');
@@ -93,6 +97,7 @@ async function main() {
   const html = template
     .replaceAll('{{TITLE}}', esc(truth.title || 'バッチ処理状況一覧'))
     .replaceAll('{{META}}', esc(truth.meta || ''))
+    .replaceAll('{{LISTCLASS}}', args.snap ? 'listView6' : 'listView-all')
     .replaceAll('{{ROWS}}', buildRowsHtml(rows));
 
   if (!existsSync(args.out)) mkdirSync(args.out, { recursive: true });
@@ -105,7 +110,7 @@ async function main() {
     if (args.full) {
       await page.screenshot({ path: pngPath, fullPage: true });
     } else {
-      const el = await page.$('table.batch');
+      const el = await page.$('.page');
       await (el || page).screenshot({ path: pngPath });
     }
 
@@ -121,8 +126,11 @@ async function main() {
         side: r.side || null,
         start: r.start,
         end: r.end,
+        duration: r.duration,
+        batchId: r.batchId,
+        ss: r.ss,
         status: STATUS_TEXT[(r.status || 'normal').toLowerCase()] || r.status,
-        datestamp: r.datestamp,
+        datestamp: r.datestamp || '',
         count: r.count,
       })),
     };
