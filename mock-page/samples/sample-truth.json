@@ -1,0 +1,17 @@
+{
+  "title": "バッチ処理状況一覧",
+  "meta": "IGPXA041  test   （日付はYYYYMMDDで指定）",
+  "note": "Rows transcribed from a real IGPXA041 screenshot (2026/07/23). Every value is GROUND TRUTH -- what OCR must read back. The 開始/終了/処理時間 times, データ作成日 14-digit datestamps and 処理件数 counts are naturally 9/3-dense, which is exactly where the ja recognizer confuses 9<->3. status: normal|abend|processing. Blank datestamp -> full-width space on the page.",
+  "rows": [
+    { "start": "2026/07/23 08:03:41", "end": "2026/07/23 08:03:41", "duration": "00:00:00", "batchId": "IGPLB013", "ss": "U", "status": "normal", "datestamp": "", "count": "0", "correlId": "JIGPU05S" },
+    { "start": "2026/07/23 03:59:07", "end": "2026/07/23 03:59:52", "duration": "00:00:45", "batchId": "IGPLB073", "ss": "S", "status": "normal", "datestamp": "20260723035907", "count": "59,476", "correlId": "JIGPB1S" },
+    { "start": "2026/07/23 03:56:55", "end": "2026/07/23 03:57:14", "duration": "00:00:19", "batchId": "IGPLB073", "ss": "C", "status": "normal", "datestamp": "20260723035655", "count": "23,390", "correlId": "JIGPCB1S" },
+    { "start": "2026/07/23 03:55:53", "end": "2026/07/23 03:56:52", "duration": "00:00:59", "batchId": "IGPLB073", "ss": "J", "status": "normal", "datestamp": "20260723035553", "count": "73,566", "correlId": "JIGPLB1S" },
+    { "start": "2026/07/23 03:54:00", "end": "2026/07/23 03:55:34", "duration": "00:01:34", "batchId": "IGPLB073", "ss": "K", "status": "normal", "datestamp": "20260723035400", "count": "136,045", "correlId": "JIGPKB1S" },
+    { "start": "2026/07/23 03:50:22", "end": "2026/07/23 03:50:22", "duration": "00:00:00", "batchId": "IGPLB073", "ss": "S", "status": "normal", "datestamp": "", "count": "0", "correlId": "JIGPS03S" },
+    { "start": "2026/07/23 03:50:10", "end": "2026/07/23 03:50:47", "duration": "00:00:37", "batchId": "IGPLB073", "ss": "S", "status": "normal", "datestamp": "20260723035010", "count": "1,971", "correlId": "JIGPS49S" },
+    { "start": "2026/07/23 03:49:59", "end": "2026/07/23 03:49:59", "duration": "00:00:00", "batchId": "IGPXC033", "ss": "S", "status": "normal", "datestamp": "20260723034959", "count": "0", "correlId": "JIGPSA5S" },
+    { "start": "2026/07/23 03:47:23", "end": "2026/07/23 03:47:32", "duration": "00:00:09", "batchId": "IGPLB073", "ss": "M", "status": "normal", "datestamp": "20260723034723", "count": "15,491", "correlId": "JIGPMB1S" },
+    { "start": "2026/07/23 03:47:02", "end": "2026/07/23 03:47:07", "duration": "00:00:05", "batchId": "IGPLB073", "ss": "Q", "status": "normal", "datestamp": "20260723034702", "count": "6,802", "correlId": "JIGPQB1S" }
+  ]
+}

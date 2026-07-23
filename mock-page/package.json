@@ -1,0 +1,15 @@
+{
+  "name": "verifytool-mock-page",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stand-alone mock-page generator: renders faithful HTML stand-ins for the Honda HM/MQ/Jenkins snap pages and screenshots them to PNG, so ProcessTime OCR / snap-parse logic can be exercised and benchmarked in a Linux/CI environment without an office PC. See README.md.",
+  "scripts": {
+    "gen": "node gen.mjs",
+    "compare": "node compare.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "playwright-core": "^1.48.0"
+  }
+}

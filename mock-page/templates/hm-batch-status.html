@@ -1,0 +1,103 @@
+<!--
+  Mock of the Honda HM batch-processing status page
+  (bizver.hm.jp.honda.com/igp29a21/x/xa/IGPXA041.do, バッチ処理状況一覧) used
+  by the ProcessTime phase.
+
+  Structure, column widths, classes, colours and font are CALIBRATED from the
+  real saved page (ids.css + the list markup): a fixed titlerow header table and
+  a scrolling body table, both width=970, columns
+  開始日時150 / 終了日時150 / 処理時間80 / バッチID80 / ＳＳ40 / 処理状態80 /
+  データ作成日130 / 処理件数70 / 処理結果70 / 相関ID100.
+
+  FONT NOTE: the real page uses "ＭＳ ゴシック" (MS Gothic) 10pt -- the exact
+  font whose digit glyphs drive the ja OCR 9<->3 misread. MS Gothic is Windows-
+  only, so an office-PC Edge render of this file is production-identical, while a
+  Linux/Chromium render falls back to another CJK font (faithful LAYOUT, not
+  faithful digit glyphs). Run the real OCR benchmark on the office PC.
+
+  gen.mjs replaces {{TITLE}}, {{META}} and {{ROWS}} (note: replaceAll -- these
+  tokens are also named in this comment).
+-->
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  /* --- calibrated from the real ids.css --- */
+  html, body { margin: 0; padding: 0; background: #ffffff; }
+  body {
+    color: #000000;
+    font-size: 10pt;                                   /* ids.css body */
+    font-family: "ＭＳ ゴシック", "MS Gothic", monospace;  /* ids.css body */
+  }
+  td, th { font-size: 10pt; }                          /* ids.css td,th */
+
+  .page { padding: 6px 8px; display: inline-block; } /* fit-content -> tight screenshot crop */
+  /* title strip (approximated; not OCR-relevant, kept for visual framing) */
+  .page-title {
+    color: #ffffff; background-color: #4b4b7a;
+    font-weight: bold; font-style: italic;
+    padding: 3px 8px; width: 970px; box-sizing: border-box;
+  }
+  .page-meta { font-size: 9pt; color: #3333ff; margin: 2px 0 6px; }
+
+  /* the real list uses border="1" attribute tables, which MSHTML/Edge renders
+     as raised 3D (outset) gray cells. Reproduce the bevel with outset borders +
+     separated cells (works in Chromium too -- the bevel is CSS, not the font). */
+  table.hmlist { border-collapse: separate; border-spacing: 0;
+                 width: 970px; table-layout: fixed; }
+  table.hmlist td { border: 2px outset #d6d6d6; padding: 0 2px; height: 20px;
+                    overflow: hidden; white-space: nowrap; }
+
+  /* header row .titlerow (ids.css: #778899, white, centered, 20px) */
+  table.hmlist.titlerow td { background-color: #778899; color: #ffffff;
+                             border: 2px outset #97a3b4;
+                             text-align: center; height: 20px; }
+
+  /* body row shading (ids.css .unevenrow/.evenrow) */
+  tr.unevenrow td { background-color: #eeffee; font-size: 12px; }  /* light green */
+  tr.evenrow   td { background-color: #ffffff; font-size: 12px; }
+
+  td.center { text-align: center; }
+  td.right  { text-align: right; }
+  /* scrolling body area (ids.css .listView6: width 985, height 500, y-scroll).
+     --snap uses this for the real window-clipped look; the benchmark default
+     (.listView-all) shows every ground-truth row in one image. */
+  .listView6 { width: 985px; height: 500px; overflow-y: scroll; }
+  .listView-all { width: 985px; overflow: visible; }
+  a.dl { color: blue; text-decoration: underline; cursor: pointer; }
+  a.diamond { color: #000000; text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-title">{{TITLE}}</div>
+    <div class="page-meta">{{META}}</div>
+
+    <!-- fixed header table -->
+    <table class="hmlist titlerow" border="1" cellpadding="0" cellspacing="0">
+      <colgroup>
+        <col width="150"><col width="150"><col width="80"><col width="80"><col width="40">
+        <col width="80"><col width="130"><col width="70"><col width="70"><col width="100">
+      </colgroup>
+      <tbody><tr>
+        <td>開始日時</td><td>終了日時</td><td>処理時間</td><td>バッチID</td><td>ＳＳ</td>
+        <td>処理状態</td><td>データ作成日</td><td>処理件数</td><td>処理結果</td><td>相関ID</td>
+      </tr></tbody>
+    </table>
+
+    <!-- scrolling body table -->
+    <div class="{{LISTCLASS}}">
+      <table class="hmlist" border="1" cellpadding="0" cellspacing="0">
+        <colgroup>
+          <col width="150"><col width="150"><col width="80"><col width="80"><col width="40">
+          <col width="80"><col width="130"><col width="70"><col width="70"><col width="100">
+        </colgroup>
+        <tbody>
+{{ROWS}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
