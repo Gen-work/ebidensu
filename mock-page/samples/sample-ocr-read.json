@@ -1,0 +1,15 @@
+{
+  "note": "SIMULATED OCR read of sample-truth.png, keyed by correlId, for testing compare.mjs. Two rows carry deliberate digit errors that mimic the ja recognizer: JIGPB1S has 9->3 misreads (03:59->03:53, datestamp ...5907->...5307, 59,476->53,476); JIGPKB1S has one 3->9 (count 136,045->196,045). Everything else is read correctly. On an office PC this file is replaced by the real Windows.Media.Ocr output.",
+  "rows": [
+    { "correlId": "JIGPU05S", "start": "2026/07/23 08:03:41", "end": "2026/07/23 08:03:41", "duration": "00:00:00", "datestamp": "", "count": "0" },
+    { "correlId": "JIGPB1S",  "start": "2026/07/23 03:53:07", "end": "2026/07/23 03:53:52", "duration": "00:00:45", "datestamp": "20260723035307", "count": "53,476" },
+    { "correlId": "JIGPCB1S", "start": "2026/07/23 03:56:55", "end": "2026/07/23 03:57:14", "duration": "00:00:19", "datestamp": "20260723035655", "count": "23,390" },
+    { "correlId": "JIGPLB1S", "start": "2026/07/23 03:55:53", "end": "2026/07/23 03:56:52", "duration": "00:00:59", "datestamp": "20260723035553", "count": "73,566" },
+    { "correlId": "JIGPKB1S", "start": "2026/07/23 03:54:00", "end": "2026/07/23 03:55:34", "duration": "00:01:34", "datestamp": "20260723035400", "count": "196,045" },
+    { "correlId": "JIGPS03S", "start": "2026/07/23 03:50:22", "end": "2026/07/23 03:50:22", "duration": "00:00:00", "datestamp": "", "count": "0" },
+    { "correlId": "JIGPS49S", "start": "2026/07/23 03:50:10", "end": "2026/07/23 03:50:47", "duration": "00:00:37", "datestamp": "20260723035010", "count": "1,971" },
+    { "correlId": "JIGPSA5S", "start": "2026/07/23 03:49:59", "end": "2026/07/23 03:49:59", "duration": "00:00:00", "datestamp": "20260723034959", "count": "0" },
+    { "correlId": "JIGPMB1S", "start": "2026/07/23 03:47:23", "end": "2026/07/23 03:47:32", "duration": "00:00:09", "datestamp": "20260723034723", "count": "15,491" },
+    { "correlId": "JIGPQB1S", "start": "2026/07/23 03:47:02", "end": "2026/07/23 03:47:07", "duration": "00:00:05", "datestamp": "20260723034702", "count": "6,802" }
+  ]
+}

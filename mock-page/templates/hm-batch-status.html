@@ -41,13 +41,17 @@
   }
   .page-meta { font-size: 9pt; color: #3333ff; margin: 2px 0 6px; }
 
-  /* the list uses border="1" attribute tables; reproduce with collapsed 1px */
-  table.hmlist { border-collapse: collapse; width: 970px; table-layout: fixed; }
-  table.hmlist td { border: 1px solid #808080; padding: 0 2px; height: 20px;
+  /* the real list uses border="1" attribute tables, which MSHTML/Edge renders
+     as raised 3D (outset) gray cells. Reproduce the bevel with outset borders +
+     separated cells (works in Chromium too -- the bevel is CSS, not the font). */
+  table.hmlist { border-collapse: separate; border-spacing: 0;
+                 width: 970px; table-layout: fixed; }
+  table.hmlist td { border: 2px outset #d6d6d6; padding: 0 2px; height: 20px;
                     overflow: hidden; white-space: nowrap; }
 
   /* header row .titlerow (ids.css: #778899, white, centered, 20px) */
   table.hmlist.titlerow td { background-color: #778899; color: #ffffff;
+                             border: 2px outset #97a3b4;
                              text-align: center; height: 20px; }
 
   /* body row shading (ids.css .unevenrow/.evenrow) */

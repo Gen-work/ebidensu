@@ -62,6 +62,32 @@ Flags: `--truth <file>` `--out <dir>` `--name <stem>` `--scale <dpi factor>` `--
 Default capture shows **every** ground-truth row in one image; `--snap` reproduces
 the real scrolled-window clip.
 
+### Scoring an OCR read (`compare.mjs`)
+
+The manifest is the correct answer. Score an OCR read against it:
+
+```bash
+node compare.mjs                       # scores samples/sample-ocr-read.json vs out/sample-truth.manifest.json
+node compare.mjs --manifest <m> --read <r> [--json]
+```
+
+It matches rows by `correlId` and reports per-field digit accuracy and a
+**3↔9 confusion matrix** — the ruler for the OCR problem. Example output:
+
+```
+field      exactRows  digitAcc  9->3  3->9  other
+start      9/10       99.3%     1     0     0
+...
+OVERALL digit accuracy: 484/489 (99.0%)
+3<->9 confusion: 9->3 = 4, 3->9 = 1, other digit swaps = 0
+```
+
+The `--read` file lists `{ correlId, start, end, duration, datestamp, count }`
+per row. Here it's a hand-made fixture with injected errors; **on an office PC it
+is the real `Windows.Media.Ocr` output** dumped to JSON. The scorer is pure
+(string compare + counting), unit-tested with `node --test` (`tests/`), so it
+runs in CI with no OCR/Windows/Excel.
+
 ## Ground-truth JSON schema (`samples/*.json`)
 
 ```jsonc
@@ -112,10 +138,14 @@ the primary real-snap ground truth.
 
 ## Next steps
 
-- Build the `*.manifest.json` consumer: a pure comparator (OCR-read vs
-  ground-truth) that emits a 3↔9 confusion matrix, per-field accuracy and
-  pass/fail — the `Compare-OcrDigits` / `Get-OcrBenchmarkScore` helpers in the
-  benchmark plan (CI-unit-testable; the Windows OCR read feeds it).
-- On an office PC: render this template in Edge and run the real
-  `Windows.Media.Ocr` over the PNGs to get true 3/9 numbers.
+- **Office PC:** render this template in Edge, run the real `Windows.Media.Ocr`
+  over the PNGs, dump the read to a `--read` JSON, and run `compare.mjs` to get
+  true 3/9 numbers against production font rendering.
+- **PS port for the production pipeline:** mirror `compareDigits` /
+  `scoreBenchmark` into `../ProcessTimeParse.ps1` as `Compare-OcrDigits` /
+  `Get-OcrBenchmarkScore` (per the benchmark plan) so the ProcessTime OCR path
+  can self-score; validate on the office PC (no pwsh in this container).
+- **Per-row integrity check (replaces the dropped datestamp repair):**
+  `処理時間 == 終了 − 開始` holds on *every* row (unlike データ作成日, which is
+  often blank), so it can gate/flag a misread row without a second OCR pass.
 - Add MQ and Jenkins page templates once HM is proven.
