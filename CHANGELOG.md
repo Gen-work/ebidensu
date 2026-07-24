@@ -1,3 +1,24 @@
+## 2026-07-24 - Jenkins file-list: fix single-digit-hour false NG (v2.16.1)
+
+`JenkinsSnap.ps1`'s GfixRecv (F3) check was flagging files as `file not in
+list` even though they were visibly present on the Jenkins page. Root cause:
+Jenkins renders morning timestamps with a single-digit hour and no leading
+zero (e.g. `2026/07/24 9:50:03`), but the list-page parser required an
+exactly-2-digit hour, so those rows silently failed to parse and were
+dropped from the result set before the "is this file in the list" check
+ever saw them.
+
+### Fixed
+- `SnapVerify.ps1` (`ConvertFrom-JenkinsListText`) and the standalone
+  `Parse-JenkinsList.ps1` now match `\d{1,2}` for the hour and parse with
+  the single-character `H` format specifier (`'yyyy/MM/dd H:mm:ss'`),
+  which accepts both `9:50:03` and `09:50:03` on input.
+
+### Notes
+- Added a single-digit-hour regression row to `Tests\Test-SnapVerify.ps1`.
+  Pure logic, unit-tested -- no COM/Excel involved, no operator-facing
+  workflow change.
+
 ## 2026-07-22 - ProcessTime: check-formula module + unified generation (v2.16.0)
 
 Pure refactor of the ProcessTime output workbook's on-sheet audit ("check")
