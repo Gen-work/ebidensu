@@ -469,6 +469,41 @@
         # A..H data columns in each output workbook (v2.16.0,
         # ProcessTimeCheck.ps1). $false writes A..H data only.
         EmitCheckColumns = $true
+
+        # Old-snap 9->3 hand-verification (docs/ProcessTime-OldSnap-Verify-
+        # Plan.md). Triage the finite backlog of OLD snaps that have only a
+        # low-res PNG (no immune Ctrl+A .txt) and so fell back to OCR, where
+        # the ja recognizer misreads MS Gothic '9' as '3'. Auto-confirm the
+        # confident majority (deterministic checks) and route the rest to a
+        # fast human check via a correl-id -> snap-image hyperlink.
+        OldSnapVerify = @{
+            # Master gate. $false disables the whole feature (no verify column,
+            # no hyperlink), leaving the output workbook exactly as before.
+            Enabled       = $true
+            # D1: make each output row's correl-id cell a clickable hyperlink
+            # to that correl's snap image, so a flagged row is one click from
+            # human review. Robust floor -- ships regardless of the image check.
+            EmitHyperlink = $true
+            # The 検証 (Verify) verdict column appended after the audit columns:
+            # 'txt' (trusted .txt tier) / 'OCR-OK' (auto-confirmed) / 要確認
+            # (needs check) / 画像なし (no snap image).
+            EmitVerifyColumn = $true
+            # {0} = side stage (GIFT/GFIX). Matches the snap layout HmSnap.ps1
+            # writes (snap\GIFT_HM\<correl>.png / snap\GFIX_HM\<correl>.png).
+            SnapDirPattern = 'snap\{0}_HM'
+            # D2 per-digit 3/9 image discrimination. OFF until the Phase-0
+            # separability gate passes (mock-page/pixeldiff prototype); the
+            # COM/GDI wiring is static-checked only, confirmed on an office PC.
+            PixelDiff = @{
+                Enabled   = $false
+                Threshold = 0.15
+            }
+            # Font the D2 3/9 templates are rendered in (the HM page font).
+            RenderFont = 'MS Gothic'
+            # Optional cross-engine (en-US vs ja) digit-disagreement flag.
+            # Reserved; OFF by default (en drops many fields -- weak but free).
+            CrossEngine = @{ Enabled = $false }
+        }
     }
 
     # Align / Precheck configuration (compare work evidence vs J4 baseline)

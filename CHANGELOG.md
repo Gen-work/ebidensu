@@ -1,3 +1,63 @@
+## 2026-07-24 - ProcessTime old-snap 9->3 hand-verification: D1 + deterministic triage + D2 (v2.17.0)
+
+Implements `docs/ProcessTime-OldSnap-Verify-Plan.md`. The ja Windows OCR
+misreads MS Gothic digit `9` as `3` on the HM batch page when the capture
+resolution is low; new snaps carry an immune Ctrl+A `.txt`, but a finite
+backlog of OLD snaps have only a low-res PNG and fall back to OCR. This
+triages that backlog into the `処理時間(*).xlsx` output: auto-confirm the
+confident majority, route the rest to a fast human check.
+
+### Added
+- **D1 -- correl-ID -> snap hyperlink (always-on floor).** Each output row's
+  相関ID cell becomes a clickable hyperlink to that correl's snap image
+  (`snap\<GIFT|GFIX>_HM\<correl>.png`), so any row is one click from human
+  confirmation. Gated by `ProcessTime.OldSnapVerify.EmitHyperlink` (default
+  `$true`).
+- **検証 (Verify) verdict column** appended after the I/J/K audit columns:
+  `txt` (from the immune `.txt` tier, trusted) / `OCR-OK` (auto-confirmed) /
+  `要確認` (needs check) / `画像なし` (no snap image). Gated by
+  `OldSnapVerify.EmitVerifyColumn`; an end-of-write line reports the `要確認`
+  count.
+- **Deterministic checks (plan 4.3), the robust floor:** a PS-side duration
+  arithmetic check (`Test-OldSnapDurationArithmetic`, mirrors the J column)
+  and `Repair-ProcessTimeStartFromStamp` (adopt the clean 14-digit datestamp
+  HH:mm when it differs from the OCR'd start by ONLY a 3<->9 swap). Both pure,
+  unit-tested.
+- **Phase-0 separability gate (node/CI): GO.** New `mock-page/pixeldiff.mjs`
+  implements the D2 metric (grayscale ink -> binarize -> trim -> average-pool
+  to a 16x24 grid -> normalized cross-correlation), unit-tested pure
+  (`mock-page/tests/pixeldiff.test.mjs`, `node --test`). A Chromium render
+  harness proves 3 vs 9 separates with a comfortable margin (worst-case 0.41
+  at HM-cell size, 0 wrong picks; still separable and 0 wrong down to px=8),
+  tolerant to anti-aliasing + sub-pixel offset. Decision recorded in the plan.
+- **D2 -- per-digit 3/9 image discrimination** (Phase-0 passed, so implemented):
+  pure scoring ported to `PixelDigitMatch.ps1` (unit-tested); GDI+ glue
+  (`OldSnapPixelVerify.ps1`, no `param()`, dot-sourceable) renders MS Gothic
+  3/9 templates, crops each 3/9 digit from the snap, and drives the scorer to
+  a per-digit/row `ok`/`ng`/`''` verdict feeding the 検証 column. **Disabled
+  by default** (`OldSnapVerify.PixelDiff.Enabled = $false`) until the crop
+  GEOMETRY per snap-window size is calibrated on an office PC (plan 9); until
+  then D1 + the deterministic checks are the always-on floor.
+- Config: new `ProcessTime.OldSnapVerify` section (`Enabled` / `EmitHyperlink`
+  / `EmitVerifyColumn` / `SnapDirPattern` / `PixelDiff.{Enabled,Threshold}` /
+  `RenderFont` / `CrossEngine.Enabled`), threaded through `VerifyTool.ps1` and
+  documented in `ConfigOverlay.ps1`'s README (nested under the already-grouped
+  `ProcessTime`, so the schema-drift guard stays satisfied).
+
+### Notes
+- Pure logic (`OldSnapVerify.ps1`, `PixelDigitMatch.ps1`) is unit-tested via
+  `Tests\Run-Tests.ps1` (`Test-OldSnapVerify.ps1` 50 cases, `Test-Pixel
+  DigitMatch.ps1` 26 cases) and the node prototype via `node --test`. The COM
+  hyperlink/verify-column write path and the GDI+/`System.Drawing` D2 glue are
+  **static-checked only** (no PowerShell/Excel/MS Gothic in this dev env) --
+  confirm on an office PC: (a) hyperlinks open the right snap, (b) a known
+  9->3 row is flagged `要確認` not auto-confirmed, (c) a known-good row
+  auto-confirms, (d) calibrate the D2 crop geometry + threshold on real
+  captures before turning `PixelDiff.Enabled` on.
+- `Resolve-OldSnapImagePath` uses `[System.IO.Path]::Combine` (not `Join-Path`)
+  so a rooted Windows test path does not trip Join-Path's drive-qualifier
+  resolution on a non-Windows CI host.
+
 ## 2026-07-24 - DfSnap: check file existence before isZip unzip attempt (v2.16.2)
 
 An `isZip=1` mapping row whose GIFT/GFIX side had no data file at all

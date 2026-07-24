@@ -174,6 +174,29 @@ param(
     # $false writes A..H data only and skips the whole check-column pass.
     [bool]$EmitCheckColumns = $true,
 
+    # -- Old-snap 9->3 hand-verification (docs/ProcessTime-OldSnap-Verify-Plan.md) --
+    # D1 + deterministic triage of the finite backlog of OLD snaps that have
+    # only a low-res PNG (no immune Ctrl+A .txt) and so fall back to OCR.
+    # Master gate; when $false none of the below has any effect.
+    [bool]$OldSnapVerifyEnabled = $true,
+    # D1: make each output row's correl-id cell a clickable hyperlink to that
+    # correl's snap image, so any flagged row is one click from human review.
+    [bool]$OldSnapEmitHyperlink = $true,
+    # The kenshou (Verify) verdict column appended after the audit columns:
+    # 'txt' (trusted) / 'OCR-OK' (auto-confirmed) / needs-check / no-image.
+    [bool]$OldSnapEmitVerifyColumn = $true,
+    # D2 per-digit 3/9 image discrimination. Default OFF until the Phase-0
+    # separability gate passes (mock-page/pixeldiff prototype); the COM/GDI
+    # wiring is static-checked only and confirmed on an office PC.
+    [bool]$OldSnapPixelDiff = $false,
+    [double]$OldSnapPixelThreshold = 0.15,
+    [string]$OldSnapRenderFont = 'MS Gothic',
+    # {0} = side stage (GIFT/GFIX); matches the snap layout HmSnap.ps1 writes.
+    [string]$OldSnapDirPattern = 'snap\{0}_HM',
+    # Optional cross-engine (en-US vs ja) digit disagreement flag. Reserved;
+    # default OFF (en drops many fields -- weak but free when it does read).
+    [bool]$OldSnapCrossEngine = $false,
+
     [switch]$Force,
     [switch]$DryRun,
     [string]$ExcelHelpersScript = ''
@@ -209,6 +232,9 @@ if (-not $helpersPath) {
 . (Join-Path $PSScriptRoot 'SendMetadata.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeParse.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeCheck.ps1')
+. (Join-Path $PSScriptRoot 'OldSnapVerify.ps1')
+. (Join-Path $PSScriptRoot 'PixelDigitMatch.ps1')
+. (Join-Path $PSScriptRoot 'OldSnapPixelVerify.ps1')
 
 # System.Drawing backs the OCR image preprocessing (upscale + grayscale +
 # contrast). Warn-only: a load failure just disables preprocessing (the
@@ -749,9 +775,21 @@ function Set-ProcessTimeCheckColumns {
 # same sheet ("Unable to cast ... Int32 to ... String" -- same root cause
 # as FillCheckSheet.ps1's v2.10.8 date write bug); Set-RangeValue2 retries
 # via reflection on that failure.
+# A..Z worksheet column letter for a 1-based index (the ProcessTime table
+# never exceeds a couple of dozen columns, so single-letter is enough).
+function Get-ProcessTimeColLetter {
+    param([int]$Index)
+    return [string][char]([int][char]'A' + $Index - 1)
+}
+
 function Write-ProcessTimeWorkbook {
     param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows,
-          [bool]$EmitCheckColumns = $true)
+          [bool]$EmitCheckColumns = $true,
+          # Old-snap 9->3 hand-verification (D1 hyperlink + kenshou verify column).
+          [bool]$EmitVerifyColumn = $false, [bool]$EmitHyperlink = $false,
+          [string]$WorkDir = '', [string]$SnapDirPattern = 'snap\{0}_HM',
+          [bool]$PixelEnabled = $false, [string]$PixelFont = 'MS Gothic',
+          [double]$PixelMinMargin = 0.04, [hashtable]$PixelGeometry = $null)
 
     # A..H data headers only; the I/J/K check headers come from the spec.
     $headers = @(
@@ -764,9 +802,16 @@ function Write-ProcessTimeWorkbook {
         ([string][char]0x30B8 + [char]0x30E7 + [char]0x30D6)
     )
     $checkSpec = if ($EmitCheckColumns) { @(Get-ProcessTimeCheckColumnSpec) } else { @() }
-    # Last table column: H (8 data columns) when no check columns, else the
-    # last spec column letter -- drives every A1-range the formatting uses.
-    $lastColLetter = if ($checkSpec.Count -gt 0) { [string]$checkSpec[$checkSpec.Count - 1].Col } else { 'H' }
+    # Column layout: 8 data columns (A..H), then the check columns (I/J/K when
+    # emitted), then the single kenshou verify column (old-snap triage) when
+    # emitted. The verify column's index is positional, so it is computed here
+    # rather than baked into a spec.
+    $dataColCount   = 8
+    $verifySpec     = if ($EmitVerifyColumn) { Get-OldSnapVerifyColumnSpec } else { $null }
+    $verifyColIndex = if ($EmitVerifyColumn) { $dataColCount + $checkSpec.Count + 1 } else { 0 }
+    $lastColIndex   = $dataColCount + $checkSpec.Count + $(if ($EmitVerifyColumn) { 1 } else { 0 })
+    # Drives every A1-range the formatting uses.
+    $lastColLetter  = Get-ProcessTimeColLetter $lastColIndex
 
     $flatRows = New-Object System.Collections.Generic.List[object]
     $jobOrder = New-Object System.Collections.Generic.List[string]
@@ -786,6 +831,7 @@ function Write-ProcessTimeWorkbook {
                     End = [string]$(if ($isGift) { $r.GiftEnd } else { $r.GfixEnd })
                     Duration = [string]$(if ($isGift) { $r.GiftDuration } else { $r.GfixDuration })
                     Count = [string]$(if ($isGift) { $r.GiftCount } else { $r.GfixCount })
+                    Source = [string]$(if ($isGift) { $r.GiftSource } else { $r.GfixSource })
                 })
             }
         }
@@ -814,6 +860,22 @@ function Write-ProcessTimeWorkbook {
             $lastRow = 1
         }
 
+        # kenshou (Verify) column header -- written even on an existing workbook
+        # whose earlier run predated this feature, so the column is always
+        # labelled. Its index sits after the audit columns (positional).
+        if ($EmitVerifyColumn -and $verifyColIndex -gt 0) {
+            try {
+                $vh = $ws.Cells.Item(1, $verifyColIndex)
+                Set-RangeValue2 $vh ([string]$verifySpec.Header) | Out-Null
+                $vh.Font.Bold = $true
+                if (-not [string]::IsNullOrEmpty([string]$verifySpec.NumberFormat)) {
+                    try { $ws.Columns.Item($verifyColIndex).NumberFormat = [string]$verifySpec.NumberFormat } catch {}
+                }
+            } catch {
+                Write-Warning ("ProcessTime workbook formatting: verify header failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+            }
+        }
+
         # Replace-in-place by (GIFT/GFIX, correl).
         if ($lastRow -gt 1) {
             $keys = @{}
@@ -835,11 +897,45 @@ function Write-ProcessTimeWorkbook {
             }
         }
 
+        $verifyNeedsCheck = 0   # count of rows this write flagged you-kaku-nin (needs check)
         $row = $lastRow + 1
         foreach ($r in $flatRows) {
             Set-RangeValue2 $ws.Cells.Item($row, 1) ($row - 1) | Out-Null
             Set-RangeValue2 $ws.Cells.Item($row, 2) $r.Side | Out-Null
-            Set-RangeValue2 $ws.Cells.Item($row, 3) $r.CorrelId | Out-Null
+            $correlCell = $ws.Cells.Item($row, 3)
+            Set-RangeValue2 $correlCell $r.CorrelId | Out-Null
+
+            # -- Old-snap 9->3 hand-verification (D1 hyperlink + kenshou verdict) --
+            # Both are per NEW row; retained rows keep whatever a prior run
+            # wrote. The snap-path existence check (I/O) lives here on the COM
+            # side; the path build + verdict are pure (OldSnapVerify.ps1).
+            if ($EmitVerifyColumn -or $EmitHyperlink) {
+                $snapPath = Resolve-OldSnapImagePath -WorkDir $WorkDir -Side $r.Side -CorrelId $r.CorrelId -DirPattern $SnapDirPattern
+                $snapExists = (-not [string]::IsNullOrWhiteSpace($snapPath)) -and (Test-Path -LiteralPath $snapPath)
+                if ($EmitHyperlink -and $snapExists) {
+                    try { $ws.Hyperlinks.Add($correlCell, $snapPath) | Out-Null } catch {}
+                }
+                if ($EmitVerifyColumn -and $verifyColIndex -gt 0) {
+                    $arith = Test-OldSnapDurationArithmetic -Start $r.Start -End $r.End -Duration $r.Duration
+                    # D2 per-digit 3/9 image check (only when enabled AND a snap
+                    # exists). The crop geometry per field is office-PC-calibrated
+                    # (PixelGeometry); without it Get-OldSnapRowPixelVerdict
+                    # returns '' -> the verdict falls back to a conservative flag.
+                    $pixelResult = ''
+                    if ($PixelEnabled -and $snapExists) {
+                        $fields = @(
+                            @{ Text = $r.Start;    Geometry = $(if ($null -ne $PixelGeometry) { $PixelGeometry['Start'] } else { $null }) },
+                            @{ Text = $r.End;      Geometry = $(if ($null -ne $PixelGeometry) { $PixelGeometry['End'] } else { $null }) },
+                            @{ Text = $r.Duration; Geometry = $(if ($null -ne $PixelGeometry) { $PixelGeometry['Duration'] } else { $null }) }
+                        )
+                        $pixelResult = Get-OldSnapRowPixelVerdict -SnapPath $snapPath -Fields $fields -FontName $PixelFont -MinMargin $PixelMinMargin
+                    }
+                    $verdict = Get-OldSnapVerifyVerdict -Source $r.Source -SnapExists $snapExists `
+                        -ArithmeticOk $arith -PixelResult $pixelResult -PixelEnabled $PixelEnabled
+                    if ($verdict -eq 'NeedsCheck') { $verifyNeedsCheck++ }
+                    Set-RangeValue2 $ws.Cells.Item($row, $verifyColIndex) (Get-OldSnapVerifyLabel $verdict) | Out-Null
+                }
+            }
 
             # Start/End/Duration are written as REAL Excel date/time values
             # (OADate serial + NumberFormat, format set BEFORE the value per
@@ -967,11 +1063,17 @@ function Write-ProcessTimeWorkbook {
             $widths = New-Object System.Collections.Generic.List[double]
             foreach ($w in @(9, 10, 14, 24, 24, 20, 14, 17)) { $widths.Add([double]$w) }
             foreach ($col in $checkSpec) { $widths.Add([double]$col.Width) }
+            if ($EmitVerifyColumn -and $null -ne $verifySpec) { $widths.Add([double]$verifySpec.Width) }
             for ($c = 1; $c -le $widths.Count; $c++) {
                 $ws.Columns.Item($c).ColumnWidth = $widths[$c - 1]
             }
         } catch {
             Write-Warning ("ProcessTime workbook formatting: column widths failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
+
+        if ($EmitVerifyColumn -and $verifyNeedsCheck -gt 0) {
+            $lblNeeds = Get-OldSnapVerifyLabel 'NeedsCheck'
+            Write-Host ("  [OldSnapVerify] {0} row(s) flagged '{1}' in {2}" -f $verifyNeedsCheck, $lblNeeds, (Split-Path $OutputPath -Leaf)) -ForegroundColor Yellow
         }
 
         if ($isNew) { $wb.SaveAs($OutputPath, 51) } else { $wb.Save() }   # 51 = xlOpenXMLWorkbook (.xlsx)
@@ -1361,7 +1463,12 @@ try {
                 $fileName = Get-ProcessTimeOutputFileName -Label $outputLabel -Tag $tag -Single ($OutputMode -eq 'Single')
                 $path = Join-Path $dir $fileName
                 try {
-                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $path -SheetName $OutputSheetName -Rows $rowsForTag -EmitCheckColumns $EmitCheckColumns
+                    Write-ProcessTimeWorkbook -Excel $excel -OutputPath $path -SheetName $OutputSheetName -Rows $rowsForTag -EmitCheckColumns $EmitCheckColumns `
+                        -EmitVerifyColumn ($OldSnapVerifyEnabled -and $OldSnapEmitVerifyColumn) `
+                        -EmitHyperlink ($OldSnapVerifyEnabled -and $OldSnapEmitHyperlink) `
+                        -WorkDir $WorkDir -SnapDirPattern $OldSnapDirPattern `
+                        -PixelEnabled ($OldSnapVerifyEnabled -and $OldSnapPixelDiff) `
+                        -PixelFont $OldSnapRenderFont -PixelMinMargin $OldSnapPixelThreshold
                     $written.Add($path)
                     $writtenCorrelCount += $rowsForTag.Count
                     # Only the rows that made it into a SUCCESSFULLY written
