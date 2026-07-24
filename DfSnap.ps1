@@ -330,13 +330,20 @@ function Expand-DfZip([string]$zipPath, [string]$unzipDir, [string]$correlIdS) {
 # For an isZip row: find the correl's zip in $baseDir, extract it under
 # $baseDir\unzip and return the extracted file path so df.exe compares the
 # unzipped data. Falls back to the plain data file (with a warning) when the
-# row is flagged isZip but no readable zip actually exists on that side.
+# row is flagged isZip but the file that IS there does not open as a zip.
+# Checks existence FIRST: when no file at all is present for this correl on
+# this side, returns $null right away (no zip attempt, no fallback warning)
+# so the caller's normal "data file not found" fail message is the only log
+# line -- previously the zip-not-found warning printed even when there was
+# no file whatsoever, misleadingly suggesting unzip had been tried and failed.
 function Resolve-DfCompareFile([string]$baseDir, [string]$correlIdS, [string]$side) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+    $anyFile = Find-DataFile $baseDir $correlIdS
+    if ($null -eq $anyFile) { return $null }
     $zip = Find-DfZipFile $baseDir $correlIdS
     if ($null -eq $zip) {
-        Write-Host ("    [WARN] isZip=1 but no readable {0} zip found for {1}; using the plain data file" -f $side, $correlIdS) -ForegroundColor Yellow
-        return (Find-DataFile $baseDir $correlIdS)
+        Write-Host ("    [WARN] isZip=1 but {0} file for {1} is not a readable zip; using the plain data file" -f $side, $correlIdS) -ForegroundColor Yellow
+        return $anyFile
     }
     $out = Expand-DfZip $zip (Join-Path $baseDir 'unzip') $correlIdS
     Write-Host ("    [ZIP] {0} -> {1}" -f $zip, $out) -ForegroundColor DarkGray

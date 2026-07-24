@@ -1,3 +1,44 @@
+## 2026-07-24 - DfSnap: check file existence before isZip unzip attempt (v2.16.2)
+
+An `isZip=1` mapping row whose GIFT/GFIX side had no data file at all
+(neither a zip nor a plain file) still printed a "no readable zip found;
+using the plain data file" warning right before the real "data file not
+found" failure -- misleading, since no unzip was ever actually attempted.
+
+### Fixed
+- `DfSnap.ps1`'s `Resolve-DfCompareFile` now checks whether ANY file exists
+  for the correl id first. If none does, it returns immediately with no
+  zip-related warning, so the caller's existing "data file not found" fail
+  line is the only log output for that case. It only attempts to open the
+  file as a zip -- and only warns about falling back to the plain file --
+  when a file is actually present but not a readable zip archive.
+
+### Notes
+- COM-adjacent phase script; no unit tests per project convention (static
+  analysis only in this dev environment) -- confirm the log output on an
+  office PC.
+
+## 2026-07-24 - Jenkins file-list: fix single-digit-hour false NG (v2.16.1)
+
+`JenkinsSnap.ps1`'s GfixRecv (F3) check was flagging files as `file not in
+list` even though they were visibly present on the Jenkins page. Root cause:
+Jenkins renders morning timestamps with a single-digit hour and no leading
+zero (e.g. `2026/07/24 9:50:03`), but the list-page parser required an
+exactly-2-digit hour, so those rows silently failed to parse and were
+dropped from the result set before the "is this file in the list" check
+ever saw them.
+
+### Fixed
+- `SnapVerify.ps1` (`ConvertFrom-JenkinsListText`) and the standalone
+  `Parse-JenkinsList.ps1` now match `\d{1,2}` for the hour and parse with
+  the single-character `H` format specifier (`'yyyy/MM/dd H:mm:ss'`),
+  which accepts both `9:50:03` and `09:50:03` on input.
+
+### Notes
+- Added a single-digit-hour regression row to `Tests\Test-SnapVerify.ps1`.
+  Pure logic, unit-tested -- no COM/Excel involved, no operator-facing
+  workflow change.
+
 ## 2026-07-22 - ProcessTime: check-formula module + unified generation (v2.16.0)
 
 Pure refactor of the ProcessTime output workbook's on-sheet audit ("check")

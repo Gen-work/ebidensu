@@ -322,12 +322,12 @@ function ConvertFrom-JenkinsListText {
 
     foreach ($rawLine in ($Text -split "`r?`n")) {
         $line = $rawLine.Trim()
-        if ($line -match ('^(\S+)\s+(\d{4}/\d{2}/\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.+?)\s+' + $refWord + '$')) {
+        if ($line -match ('^(\S+)\s+(\d{4}/\d{2}/\d{2})\s+(\d{1,2}:\d{2}:\d{2})\s+(.+?)\s+' + $refWord + '$')) {
             $dt = $null
             try {
                 $dt = [datetime]::ParseExact(
                     ("{0} {1}" -f $Matches[2], $Matches[3]),
-                    'yyyy/MM/dd HH:mm:ss', $culture)
+                    'yyyy/MM/dd H:mm:ss', $culture)
             } catch {}
             $results.Add([PSCustomObject]@{
                 Name     = $Matches[1]

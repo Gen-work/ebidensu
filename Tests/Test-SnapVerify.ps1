@@ -227,6 +227,15 @@ Assert-Equal '2026/06/12 10:35:21' ($jkFiles[0].DateTime.ToString('yyyy/MM/dd HH
 $jkEmpty = @(ConvertFrom-JenkinsListText '')
 Assert-Equal 0 $jkEmpty.Count 'Jenkins: empty text -> 0 files'
 
+# Single-digit hour (no leading zero), as Jenkins renders morning timestamps:
+# "JIGPR01S 2026/07/24 9:50:03 292 B <ref>" -- must still parse, not be dropped.
+$jkRowSingleHour = "JIGPR01S 2026/07/24 9:50:03 292 B ${ref}"
+$jkSingleHourFiles = @(ConvertFrom-JenkinsListText $jkRowSingleHour)
+Assert-Equal 1 $jkSingleHourFiles.Count 'Jenkins: single-digit hour row still parses'
+Assert-Equal 'JIGPR01S' $jkSingleHourFiles[0].Name 'Jenkins: single-digit hour row name'
+Assert-True ($null -ne $jkSingleHourFiles[0].DateTime) 'Jenkins: single-digit hour DateTime parsed'
+Assert-Equal '2026/07/24 09:50:03' ($jkSingleHourFiles[0].DateTime.ToString('yyyy/MM/dd HH:mm:ss')) 'Jenkins: single-digit hour DateTime value'
+
 # ===========================================================================
 # Test-JenkinsFile
 # ===========================================================================
