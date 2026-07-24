@@ -459,7 +459,23 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-24 v2.16.1)
+## Current state (last bump: 2026-07-24 v2.16.2)
+
+v2.16.2 (DfSnap: check file existence before the isZip unzip attempt): an
+isZip=1 row whose GIFT/GFIX side had NO data file at all (neither zip nor
+plain) was still printing `[WARN] isZip=1 but no readable <side> zip found
+for <correl>; using the plain data file` before the real
+`[FAIL] <side> data file not found for <correl>`, which read like unzip had
+been attempted and failed when in fact the file was simply missing.
+**Fixed** -- `Resolve-DfCompareFile` now checks for ANY file matching the
+correl id first (`Find-DataFile`, reused from the existing glob lookup); if
+none exists it returns `$null` immediately with no zip-related warning at
+all, leaving the caller's normal "data file not found" fail line as the
+only log output. Only when a file IS present does it then try to open it as
+a zip, warning (and falling back to the plain file) solely when that file
+exists but is not a readable zip archive. No unit tests (COM-adjacent phase
+script, static-checked only per project convention) -- confirm the log
+output on an office PC against a correl id with no data file on one side.
 
 v2.16.1 (SnapVerify/Jenkins: fix single-digit-hour false NG in GfixRecv file-
 list matching): `JenkinsSnap.ps1`'s F3 GfixRecv detection was reporting

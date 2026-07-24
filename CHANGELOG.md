@@ -1,3 +1,23 @@
+## 2026-07-24 - DfSnap: check file existence before isZip unzip attempt (v2.16.2)
+
+An `isZip=1` mapping row whose GIFT/GFIX side had no data file at all
+(neither a zip nor a plain file) still printed a "no readable zip found;
+using the plain data file" warning right before the real "data file not
+found" failure -- misleading, since no unzip was ever actually attempted.
+
+### Fixed
+- `DfSnap.ps1`'s `Resolve-DfCompareFile` now checks whether ANY file exists
+  for the correl id first. If none does, it returns immediately with no
+  zip-related warning, so the caller's existing "data file not found" fail
+  line is the only log output for that case. It only attempts to open the
+  file as a zip -- and only warns about falling back to the plain file --
+  when a file is actually present but not a readable zip archive.
+
+### Notes
+- COM-adjacent phase script; no unit tests per project convention (static
+  analysis only in this dev environment) -- confirm the log output on an
+  office PC.
+
 ## 2026-07-24 - Jenkins file-list: fix single-digit-hour false NG (v2.16.1)
 
 `JenkinsSnap.ps1`'s GfixRecv (F3) check was flagging files as `file not in
