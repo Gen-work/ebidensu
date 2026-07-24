@@ -134,6 +134,37 @@ ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         RecordCount falls back to the count immediately before
                         the result diamond when no datestamp anchors it (JDL).
                         No Excel/OCR. Unit-tested (Tests\Test-ProcessTimeParse.ps1).
+OldSnapVerify.ps1       pure old-snap 9->3 hand-verification helpers (dot-source,
+                        no param(), no COM): Resolve-OldSnapImagePath (build the
+                        snap\<GIFT|GFIX>_HM\<correl>.png path via
+                        [IO.Path]::Combine so a rooted Windows path is
+                        CI-testable), Test-OldSnapDurationArithmetic (dur == end
+                        - start, the J-column mirror), Repair-ProcessTimeStart
+                        FromStamp (adopt the clean 14-digit datestamp HH:mm on a
+                        pure 3<->9 swap), Get-OldSnapVerifyVerdict (the
+                        conservative Txt/OcrOk/NeedsCheck/NoSnap decision) +
+                        Get-OldSnapVerifyLabel / Get-OldSnapVerifyColumnSpec (the
+                        検証 column). Japanese via [char]. Unit-tested
+                        (Tests\Test-OldSnapVerify.ps1). v2.17.0.
+PixelDigitMatch.ps1     pure D2 per-digit 3/9 image scorer (dot-source, no
+                        param(), no COM/GDI): grayscale ink -> binarize -> trim
+                        bbox -> average-pool to a normalized grid -> normalized
+                        cross-correlation (ConvertTo-DigitInk, Get-DigitInkBBox,
+                        ConvertTo-DigitNormalizedGrid, Get-DigitNcc, Get-Digit
+                        Similarity, Compare-DigitCandidate, Get-DigitPixelVerdict,
+                        Merge-DigitPixelVerdicts). The PS port of the Phase-0
+                        GO-proven mock-page/pixeldiff.mjs metric. Unit-tested
+                        (Tests\Test-PixelDigitMatch.ps1). v2.17.0.
+OldSnapPixelVerify.ps1  NON-pure GDI+ glue for D2 (dot-source, no param();
+                        static-checked only). New-DigitTemplateGray (render MS
+                        Gothic 3/9), Get-BitmapGrayRegion (crop a snap digit
+                        box), Get-OldSnapDigitVerdict, Resolve-OldSnapTimeDigit
+                        Rects (per-digit rects from calibrated cell geometry --
+                        the one office-PC-calibrated input; empty until then ->
+                        conservative '') and Get-OldSnapRowPixelVerdict. Drives
+                        PixelDigitMatch. Every entry point swallows errors ->
+                        '' so an image check never blocks the write. Off by
+                        default (OldSnapVerify.PixelDiff.Enabled). v2.17.0.
 ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
                         module (dot-source, no param(), no COM): Get-ProcessTime
                         CheckColumnSpec returns the data-driven spec for the
@@ -304,7 +335,8 @@ Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
 `AlignCompare.ps1`, `ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`,
 `SendMetadata.ps1`, `OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`,
 `SnapLocalize.ps1`, `OwnerFilter.ps1`, `Find-ActiveHighlightRow.ps1`,
-`ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. All phase scripts have
+`ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`, `OldSnapVerify.ps1`,
+`PixelDigitMatch.ps1`, `OldSnapPixelVerify.ps1`. All phase scripts have
 `param()` and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
@@ -459,7 +491,32 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-24 v2.16.2)
+## Current state (last bump: 2026-07-24 v2.17.0)
+
+v2.17.0 (ProcessTime old-snap 9->3 hand-verification: D1 + deterministic
+triage + D2): triages the finite backlog of OLD HM snaps that have only a
+low-res PNG (no immune Ctrl+A `.txt`) and so fell back to OCR, where the ja
+recognizer misreads MS Gothic `9` as `3`. **D1** -- each `処理時間(*).xlsx`
+output row's 相関ID cell hyperlinks to its snap image (one click to human
+review). **検証 column** -- `txt` (trusted) / `OCR-OK` (auto-confirmed) /
+`要確認` / `画像なし`, from a conservative pure verdict
+(`Get-OldSnapVerifyVerdict`, `OldSnapVerify.ps1`): never auto-confirm unless
+every enabled check passes -- deterministic duration arithmetic
+(`Test-OldSnapDurationArithmetic`) + a 3<->9 datestamp cross-check
+(`Repair-ProcessTimeStartFromStamp`), plus (when on) the D2 image check.
+**Phase 0** (node/CI, `mock-page/pixeldiff.mjs` + `node --test`) proved the
+3/9 pixel metric separable with margin -- **GO** -- so **D2** is implemented:
+pure scorer `PixelDigitMatch.ps1` (unit-tested) + GDI+ glue
+`OldSnapPixelVerify.ps1` (static-checked), OFF by default
+(`ProcessTime.OldSnapVerify.PixelDiff.Enabled`) until the crop geometry per
+snap-window size is calibrated on an office PC. New config section
+`ProcessTime.OldSnapVerify` (nested under the already-grouped ProcessTime, so
+the ConfigOverlay schema-drift guard stays satisfied). Pure logic
+unit-tested (`Test-OldSnapVerify.ps1` 50, `Test-PixelDigitMatch.ps1` 26); the
+COM hyperlink/verify write path + the GDI+ D2 glue are static-checked only --
+confirm on an office PC (hyperlinks open the right snap; a known 9->3 row
+flags `要確認` not auto-confirm; calibrate D2 geometry+threshold before
+enabling `PixelDiff`).
 
 v2.16.2 (DfSnap: check file existence before the isZip unzip attempt): an
 isZip=1 row whose GIFT/GFIX side had NO data file at all (neither zip nor

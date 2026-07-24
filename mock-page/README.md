@@ -91,6 +91,28 @@ is the real `Windows.Media.Ocr` output** dumped to JSON. The scorer is pure
 (string compare + counting), unit-tested with `node --test` (`tests/`), so it
 runs in CI with no OCR/Windows/Excel.
 
+### Phase-0 3/9 separability gate (`pixeldiff.mjs`)
+
+The GO/NO-GO gate for the old-snap hand-verification plan's D2 image check
+(`docs/ProcessTime-OldSnap-Verify-Plan.md` §4.1). It implements the exact D2
+comparison — grayscale ink → binarize → trim bbox → average-pool to a
+normalized grid → normalized cross-correlation — and asks whether a 3 can be
+told from a 9 with a safe, AA/offset-tolerant margin.
+
+```bash
+node pixeldiff.mjs                     # render digits with Chromium, print margins + GO/NO-GO
+node pixeldiff.mjs --px 8 --jitter 4   # stress a tiny glyph size / more sub-pixel offsets
+node pixeldiff.mjs --font "MS Gothic"  # on a Windows box: render the production glyphs
+```
+
+The pure scoring functions are unit-tested (`tests/pixeldiff.test.mjs`,
+`node --test`); the render harness uses the pre-installed Chromium. **DECISION
+(2026-07-24): GO** — 3↔9 separates with margin (worst-case 0.41 at HM-cell
+size, 0 wrong picks; still separable at px=8). Same font caveat as `gen.mjs`:
+this proves the *method* on Chromium's font; confirm the *absolute* margin on
+real MS Gothic captures on an office PC. The PS port lives in
+`../PixelDigitMatch.ps1` (pure, unit-tested).
+
 ## Ground-truth JSON schema (`samples/*.json`)
 
 ```jsonc

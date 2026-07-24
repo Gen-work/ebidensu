@@ -1815,6 +1815,21 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($pt.ContainsKey('OcrPreprocessThreshold') -and $null -ne $pt.OcrPreprocessThreshold) { $args['OcrPreprocessThreshold'] = [int]$pt.OcrPreprocessThreshold }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
             if ($pt.ContainsKey('EmitCheckColumns') -and $null -ne $pt.EmitCheckColumns) { $args['EmitCheckColumns'] = [bool]$pt.EmitCheckColumns }
+            if ($pt.ContainsKey('OldSnapVerify') -and $pt.OldSnapVerify -is [hashtable]) {
+                $osv = $pt.OldSnapVerify
+                if ($osv.ContainsKey('Enabled') -and $null -ne $osv.Enabled) { $args['OldSnapVerifyEnabled'] = [bool]$osv.Enabled }
+                if ($osv.ContainsKey('EmitHyperlink') -and $null -ne $osv.EmitHyperlink) { $args['OldSnapEmitHyperlink'] = [bool]$osv.EmitHyperlink }
+                if ($osv.ContainsKey('EmitVerifyColumn') -and $null -ne $osv.EmitVerifyColumn) { $args['OldSnapEmitVerifyColumn'] = [bool]$osv.EmitVerifyColumn }
+                if (-not [string]::IsNullOrWhiteSpace([string]$osv.SnapDirPattern)) { $args['OldSnapDirPattern'] = [string]$osv.SnapDirPattern }
+                if (-not [string]::IsNullOrWhiteSpace([string]$osv.RenderFont)) { $args['OldSnapRenderFont'] = [string]$osv.RenderFont }
+                if ($osv.ContainsKey('PixelDiff') -and $osv.PixelDiff -is [hashtable]) {
+                    if ($osv.PixelDiff.ContainsKey('Enabled') -and $null -ne $osv.PixelDiff.Enabled) { $args['OldSnapPixelDiff'] = [bool]$osv.PixelDiff.Enabled }
+                    if ($osv.PixelDiff.ContainsKey('Threshold') -and $null -ne $osv.PixelDiff.Threshold) { $args['OldSnapPixelThreshold'] = [double]$osv.PixelDiff.Threshold }
+                }
+                if ($osv.ContainsKey('CrossEngine') -and $osv.CrossEngine -is [hashtable] -and $osv.CrossEngine.ContainsKey('Enabled') -and $null -ne $osv.CrossEngine.Enabled) {
+                    $args['OldSnapCrossEngine'] = [bool]$osv.CrossEngine.Enabled
+                }
+            }
         }
         if (-not [string]::IsNullOrWhiteSpace($State.Stage)) { $args['Stage'] = $State.Stage }
         if ($State.TargetIds.Count -gt 0) { $args['TargetIds'] = $State.TargetIds }

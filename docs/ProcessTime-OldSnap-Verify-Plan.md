@@ -88,6 +88,29 @@ existing `mock-page` renderer + `node --test`:
 - **GO/NO-GO gate:** if separation is not robust, ship **D1 + the deterministic
   checks (§4.3) only** and drop the image comparison. Record the decision here.
 
+- **DECISION (2026-07-24): GO.** `mock-page/pixeldiff.mjs` implements the exact
+  D2 metric (grayscale ink → binarize → trim bbox → average-pool to a 16×24
+  normalized grid → normalized cross-correlation), unit-tested pure in
+  `mock-page/tests/pixeldiff.test.mjs` (`node --test`, 17 cases). The render
+  harness rasterizes digits 0–9 with Chromium at an HM-cell-like size, jitters
+  sub-pixel offsets (AA/offset tolerance), and classifies each 3/9 candidate
+  against 3- and 9-templates. Results (Linux/Chromium font — see caveat):
+  - `px=13, jitter=3`: 3↔9 worst-case correct margin **0.409**, **0 wrong
+    picks / 18**; controls (8v9, 3v8, 0v8, 5v6) also 0 wrong.
+  - Stress `jitter=4` at shrinking glyph size — margin degrades gracefully but
+    stays separable with **0 wrong picks**: `px=13` → 0.374, `px=10` → 0.166,
+    `px=8` → 0.097 — all above the 0.04 GO threshold.
+  The method separates 3 from 9 with a comfortable margin, tolerant to AA and
+  sub-pixel offset, so **D2's per-digit discrimination is implemented** (pure
+  scoring ported to `PixelDigitMatch.ps1`, unit-tested; the GDI+ template
+  render + digit-crop glue in `OldSnapPixelVerify.ps1` is static-checked only).
+  **CAVEAT / office-PC gate:** the harness uses Chromium's font fallback, not
+  MS Gothic (Windows-only, the actual misread font). This proves the *method*
+  and its AA/offset tolerance; the *absolute* margin on real MS Gothic captures
+  must be confirmed on an office PC, where `ProcessTime.OldSnapVerify.PixelDiff`
+  is calibrated (crop geometry per snap-window size, §9) and turned on. Until
+  then D2 ships **disabled by default**; D1 + §4.3 are the always-on floor.
+
 ### 4.2 Phase 1 — office-PC implementation (COM/GDI; static-checked in cloud)
 
 **Recommended comparison method — per-digit 3/9 disambiguation (sharper &
