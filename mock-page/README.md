@@ -58,9 +58,12 @@ node gen.mjs --snap    # real window-clipped body (height 500, scroll) instead o
 node gen.mjs --full    # whole-page screenshot instead of a tight crop
 ```
 
-Flags: `--truth <file>` `--out <dir>` `--name <stem>` `--scale <dpi factor>` `--snap` `--full`.
+Flags: `--truth <file>` `--out <dir>` `--name <stem>` `--scale <dpi factor>` `--snap` `--full` `--html-only`.
 Default capture shows **every** ground-truth row in one image; `--snap` reproduces
-the real scrolled-window clip.
+the real scrolled-window clip. `--html-only` writes the filled HTML (no browser)
+so it can be opened in **Edge on a Windows/MS Gothic box** for a production-faithful
+render — the office-PC path (no Node needed to view). Pre-built samples live in
+`prebuilt/`; see `prebuilt/OFFICE-PC-TEST.md`.
 
 ### Scoring an OCR read (`compare.mjs`)
 
