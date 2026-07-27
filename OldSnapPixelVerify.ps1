@@ -6,6 +6,17 @@
 #  Verify-Plan.md section 4.2). NO Excel COM, NO param() block (safe to
 #  dot-source), ASCII source.
 #
+#  SUPERSEDED (2026-07-27) by docs/ProcessTime-OldSnap-MockMatch-Plan.md,
+#  which renders the reference from the mock page in EDGE on the office PC
+#  -- same rasteriser, same MS Gothic, same calibrated CSS as the snap
+#  itself -- and template-matches whole fields, removing both of this
+#  approach's weaknesses (GDI+ rasterises differently from the Edge snap,
+#  and per-digit crop rects are fragile to calibrate). Kept, not deleted:
+#  the pure scorer it drives (PixelDigitMatch.ps1) stays useful as the
+#  fallback metric if tolerance matching proves too brittle. Do NOT run two
+#  competing D2 paths -- leave PixelDiff.Enabled $false unless you are
+#  deliberately testing this one.
+#
 #  STATIC-CHECKED ONLY: there is no System.Drawing, no MS Gothic, and no real
 #  HM snap in the Linux/CI dev environment, so every function here is
 #  confirmed by parse-check + the PURE core's unit tests, and must be

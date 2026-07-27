@@ -115,4 +115,69 @@ Assert-Equal $hdrVerify $spec.Header 'verify column header is kenshou'
 Assert-Equal '@' $spec.NumberFormat 'verify column is text-formatted'
 Assert-True ($spec.Width -gt 0) 'verify column has a positive width'
 
+# ---------------------------------------------------------------------------
+# Resolve-OldSnapExportImageDir : the per-correl ProcessTime export folder
+# (D1's fallback image source when there is no standalone snap PNG).
+# ---------------------------------------------------------------------------
+# Asserted with -like (not an exact string) for the same reason as
+# Resolve-OldSnapImagePath above: [IO.Path]::Combine emits the HOST's
+# separator, so a Linux CI run yields '/' where the office PC yields '\'.
+$expDir = Resolve-OldSnapExportImageDir -WorkDir 'C:\work' -CorrelId 'JIGPC06S'
+Assert-True ($expDir -like '*C:\work*') 'export dir starts at the work folder'
+Assert-True ($expDir -like '*ProcessTime*JIGPC06S') 'export dir defaults to snap\ProcessTime\<correl>'
+Assert-True ((Resolve-OldSnapExportImageDir -WorkDir 'C:\work' -CorrelId 'JIGPC06S' -ExportRoot 'alt') -like '*alt*JIGPC06S') `
+    'a custom export root is honored'
+Assert-True ((Resolve-OldSnapExportImageDir -WorkDir 'C:\work' -CorrelId 'JIGPC06S' -ExportRoot '') -like '*ProcessTime*JIGPC06S') `
+    'a blank export root falls back to the default layout'
+Assert-True ($null -eq (Resolve-OldSnapExportImageDir -WorkDir '' -CorrelId 'JIGPC06S')) 'blank WorkDir -> null'
+Assert-True ($null -eq (Resolve-OldSnapExportImageDir -WorkDir 'C:\work' -CorrelId '')) 'blank correl -> null'
+
+# ---------------------------------------------------------------------------
+# Select-OldSnapFallbackImageName : which exported picture to hyperlink.
+# ---------------------------------------------------------------------------
+$names = @(
+    'GIFT_JIGPC06S_belowlabel_01.png',
+    'GIFT_JIGPC06S_02.png',
+    'GIFT_JIGPC06S_01.png',
+    'GIFT_JIGPC06S_01_pre.png',
+    'GIFT_JIGPC06S_01.ocr.txt',
+    'GFIX_JIGPC06S_01.png'
+)
+Assert-Equal 'GIFT_JIGPC06S_01.png' (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names $names) `
+    'the trusted section tier, lowest index, wins'
+Assert-Equal 'GFIX_JIGPC06S_01.png' (Select-OldSnapFallbackImageName -Side 'GFIX' -CorrelId 'JIGPC06S' -Names $names) `
+    'the other side picks its own picture'
+Assert-Equal 'GIFT_JIGPC06S_01.png' (Select-OldSnapFallbackImageName -Side 'gift' -CorrelId 'JIGPC06S' -Names $names) `
+    'the side argument is case-insensitive'
+
+Assert-Equal 'GIFT_JIGPC06S_belowlabel_01.png' `
+    (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @('GIFT_JIGPC06S_abovelabel_01.png', 'GIFT_JIGPC06S_belowlabel_01.png')) `
+    'below-label outranks above-label (the OCR tiers own trust order)'
+Assert-Equal 'GIFT_JIGPC06S_wholesheet_01.png' `
+    (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @('GIFT_JIGPC06S_abovelabel_01.png', 'GIFT_JIGPC06S_wholesheet_01.png')) `
+    'whole-sheet outranks above-label'
+Assert-Equal 'GIFT_JIGPC06S_belowlabel_01.png' `
+    (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @('GIFT_JIGPC06S_belowlabel_02.png', 'GIFT_JIGPC06S_belowlabel_01.png')) `
+    'within a tier the lowest picture index wins'
+
+Assert-True ($null -eq (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @('GIFT_JIGPC06S_01_pre.png'))) `
+    'the preprocessed OCR derivative is never linked -- a human must see the original pixels'
+Assert-True ($null -eq (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @('GIFT_JIGPC06S_snapocr_pre.png'))) `
+    'the snap-OCR preprocessed dump is never linked either'
+Assert-True ($null -eq (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @('GIFT_JIGPC06SX_01.png'))) `
+    'a longer correl id sharing this prefix is not accepted'
+Assert-True ($null -eq (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @())) 'no candidates -> null'
+Assert-True ($null -eq (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names $null)) 'null candidate list -> null'
+Assert-True ($null -eq (Select-OldSnapFallbackImageName -Side 'DF' -CorrelId 'JIGPC06S' -Names $names)) 'an unknown side -> null'
+Assert-True ($null -eq (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId '' -Names $names)) 'a blank correl -> null'
+Assert-Equal 'GIFT_JIGPC06S.png' (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @('GIFT_JIGPC06S.png')) `
+    'an un-indexed section picture is still accepted'
+
+# A fallback image makes the row verifiable rather than 'no image': the
+# deterministic checks never depended on WHICH image exists.
+Assert-Equal 'OcrOk' (Get-OldSnapVerifyVerdict -Source 'ocr:section' -SnapExists $true -ArithmeticOk $true) `
+    'a row backed only by the exported evidence picture is triaged like any other OCR row'
+Assert-Equal 'NeedsCheck' (Get-OldSnapVerifyVerdict -Source 'ocr:section' -SnapExists $true -ArithmeticOk $true -PixelEnabled $true -PixelResult '') `
+    'with the pixel check on, a fallback-image row (no calibrated snap -> no pixel result) still flags'
+
 exit (Complete-Tests)

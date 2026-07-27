@@ -470,6 +470,48 @@
         # ProcessTimeCheck.ps1). $false writes A..H data only.
         EmitCheckColumns = $true
 
+        # 件数チェック reference lookup (v2.18.0). The record-count check is
+        # really "does the OCR'd count match the count the project's monthly
+        # sheet lists for this job" -- the operator does it by hand with an
+        # INDEX/MATCH into that workbook. Turning this on emits that formula:
+        #   K 件数(参照)   =IFERROR(INDEX(<ValueColumn>,MATCH(LEFT(C行,KeyLength)&"*",<KeyColumn>,0)),"")
+        #   L 件数チェック =IF(OR(TRIM(G行)="",K行=""),"",IF(件数=K行,"T","F"))
+        # Enabled = $false keeps the previous self-contained K check
+        # ("count parses to a positive number"), so an untouched config is
+        # unaffected. FileName / SheetName accept two tokens:
+        #   {Tag}    this output workbook's tag (JOD / JRV / ...)
+        #   {Month}  CLI -CountReferenceMonth, else the current month number
+        # A {Tag} template under OutputMode 'Single' (no tag) disables the
+        # lookup for that run rather than emitting a half-expanded path.
+        # Directory blank -> the short '[Book.xlsx]Sheet'!... form, which
+        # only resolves while that workbook is OPEN in the same Excel; set
+        # the folder to reference a CLOSED workbook. FirstRow/LastRow bound
+        # the lookup ranges (whole-column external references to a closed
+        # workbook are unreliable); set both to 0 for whole columns.
+        # NOTE turning this on adds a column, which shifts the 検証 column one
+        # to the right in an EXISTING output workbook: rows retained from an
+        # earlier run keep their verdict in the old position (now overwritten
+        # by 件数チェック). Rerun that workbook's rows with -Force (or delete
+        # the file first) so every row is rewritten in the new layout.
+        CountReference = @{
+            Enabled     = $false
+            Directory   = ''
+            FileName    = 'GPCS({Tag})_{Month}月.xlsx'
+            SheetName   = '{Tag}'
+            # Reference sheet column holding the job key matched against the
+            # first KeyLength characters of the 相関ID (column C).
+            KeyColumn   = 'G'
+            # Reference sheet column holding the expected record count.
+            ValueColumn = 'O'
+            KeyLength   = 7
+            FirstRow    = 1
+            LastRow     = 20000
+            # {Month} value. Blank -> the month the run happens in, so a
+            # monthly reference workbook needs no per-run input; set it to
+            # pin an older month (e.g. '6' while finishing June's evidence).
+            Month       = ''
+        }
+
         # Old-snap 9->3 hand-verification (docs/ProcessTime-OldSnap-Verify-
         # Plan.md). Triage the finite backlog of OLD snaps that have only a
         # low-res PNG (no immune Ctrl+A .txt) and so fell back to OCR, where
@@ -491,6 +533,16 @@
             # {0} = side stage (GIFT/GFIX). Matches the snap layout HmSnap.ps1
             # writes (snap\GIFT_HM\<correl>.png / snap\GFIX_HM\<correl>.png).
             SnapDirPattern = 'snap\{0}_HM'
+            # D1 fallback (v2.18.0): a correl whose HM page was only ever
+            # captured INSIDE the evidence workbook has no standalone snap
+            # PNG, so its row used to get no hyperlink at all -- exactly the
+            # row a human most needs to open. When $true the row links the
+            # picture this phase exported out of the workbook instead
+            # (snap\ProcessTime\<correl>\<SIDE>_<correl>_NN.png), and the
+            # 検証 verdict treats that row as having an image (it still never
+            # counts as the D2 pixel check's calibrated snap, so with
+            # PixelDiff on it lands on 要確認). $false = snap PNG only.
+            FallbackImage = $true
             # D2 per-digit 3/9 image discrimination. OFF until the Phase-0
             # separability gate passes (mock-page/pixeldiff prototype); the
             # COM/GDI wiring is static-checked only, confirmed on an office PC.

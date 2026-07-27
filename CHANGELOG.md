@@ -1,3 +1,91 @@
+## 2026-07-27 - ProcessTime: reference-workbook count check + D1 fallback image (v2.18.0)
+
+Two fixes from the operator's first real run of the non-pixel ProcessTime
+build, plus the mock-render plan that replaces v2.17.0's GDI+ D2.
+
+### Added
+- **件数チェック against the project's reference workbook**
+  (`ProcessTime.CountReference`, default OFF). The K count check shipped in
+  v2.16.0 only asserted that the OCR-read count parses to a positive number
+  -- but the check the operator actually does by hand is "does this count
+  match the number the project's monthly sheet lists for this job", with an
+  INDEX/MATCH into that workbook. Enabling the reference emits exactly that:
+  a new **K 件数(参照)**
+  `=IFERROR(INDEX(<ValueColumn>,MATCH(LEFT(C行,KeyLength)&"*",<KeyColumn>,0)),"")`
+  and an **L 件数チェック** T/F compare of the OCR-read count (col G,
+  thousands commas stripped) against it. `FileName`/`SheetName` accept a
+  `{Tag}` token (this output workbook's JOD/JRV/... tag) and a `{Month}`
+  token (config `Month`, else the run's month number), so `GPCS({Tag})_
+  {Month}月.xlsx` resolves per output workbook -- each tag looks its counts
+  up in its own sheet. A miss is `""` (IFERROR), never `#N/A`, and L stays
+  blank when either side is blank, so an unlisted job or a partial row does
+  not read as a failure. Leaving `Enabled = $false` keeps the exact 3-column
+  I/J/K layout, so an untouched config is unaffected.
+  Pure + unit-tested (`Resolve-ProcessTimeCountReference`,
+  `New-ProcessTimeExternalRange`, `New-ProcessTimeCountLookupFormula`,
+  `Get-ProcessTimeCheckColumnSpec -CountReference`, `ProcessTimeCheck.ps1`).
+- **D1 hyperlink fallback to the exported evidence picture**
+  (`ProcessTime.OldSnapVerify.FallbackImage`, default ON). A correl whose HM
+  page was only ever captured INSIDE the evidence workbook has no standalone
+  `snap\<Stage>_HM\<correl>.png`, so v2.17.0 left its row with no hyperlink
+  at all -- exactly the rows a human most needs to open, and they read
+  `画像なし`. Those rows now link the picture this phase already exported out
+  of the workbook for the same correl and side
+  (`snap\ProcessTime\<correl>\<SIDE>_<correl>_NN.png`), ranked by the OCR
+  tiers' own trust order (section > below-label > whole-sheet > above-label,
+  lowest picture index first). The upscaled/contrast-stretched `*_pre.png`
+  OCR derivatives are never linked -- a human must see the original pixels.
+  Pure + unit-tested (`Select-OldSnapFallbackImageName`,
+  `Resolve-OldSnapExportImageDir`, `OldSnapVerify.ps1`); the directory
+  listing and the `Hyperlinks.Add` call are COM/IO glue in `ProcessTime.ps1`.
+
+### Changed
+- The 検証 verdict's `SnapExists` input now accepts EITHER image, so a
+  fallback-image row is triaged like any other OCR row instead of always
+  reading `画像なし`. This does not loosen anything: the deterministic checks
+  (duration arithmetic, 3<->9 datestamp cross-check) never depended on which
+  image exists. The D2 pixel check stays gated on the REAL snap PNG, whose
+  crop geometry is what gets calibrated -- so once `PixelDiff` is on, a
+  fallback-image row has no pixel result and lands on `要確認`, matching the
+  plan's conservative rule for workbook-only snaps.
+- `Write-ProcessTimeWorkbook` takes the resolved count reference and the
+  fallback-image settings; the per-correl export root is now one constant
+  (`$exportRootRel`) shared by the sidecar path and the fallback lookup.
+
+### Docs
+- `docs/ProcessTime-OldSnap-MockMatch-Plan.md` (PLANNED, not implemented):
+  replaces v2.17.0's D2 layer. Instead of rendering MS Gothic `3`/`9`
+  templates with GDI+ -- a different rasteriser than the Edge/DirectWrite
+  snap, needing per-digit calibration -- render the reference row from the
+  existing mock page in Edge on the office PC (same engine, same font, same
+  calibrated CSS) and template-match the whole field. Pure PowerShell +
+  Edge, no node on the office PC. Includes an evaluation section with the
+  scale-alignment gate that must pass before anything downstream matters.
+
+### Notes
+- Turning `CountReference` on adds a column, which shifts the 検証 column one
+  to the right in an EXISTING output workbook: rows retained from an earlier
+  run keep their verdict in the old position (now overwritten by 件数
+  チェック). Rerun those rows with `-Force` (or delete the workbook) so the
+  whole sheet is rewritten in the new layout.
+- A blank `Directory` emits Excel's short `'[Book.xlsx]Sheet'!...` form,
+  which only resolves while that workbook is OPEN in the same Excel; set the
+  folder to reference a closed workbook. Lookup ranges are bounded
+  (`FirstRow`/`LastRow`, default 1..20000) because whole-column external
+  references to a closed workbook are unreliable.
+- The fallback only ever fires for rows read from an evidence-workbook
+  picture (a row with a snap `.txt` or snap `.png` already has its own
+  source). Those exported pictures are cleared and re-created by each OCR
+  run for that correl, so a fallback hyperlink written in an earlier run can
+  go stale if a later `-Stage Ocr` run picks different candidate pictures --
+  rerun the write for that correl if the link stops resolving.
+- Pure logic is unit-tested (`Test-ProcessTimeCheck.ps1` 70,
+  `Test-OldSnapVerify.ps1` 72; full suite green apart from the 2 known
+  Linux-only path-separator cases in `Test-EvidencePlan.ps1`). The COM
+  write path -- the K/L formulas evaluating in real Excel against a real
+  reference workbook, and the fallback hyperlink opening the right picture
+  -- is static-checked only: confirm on an office PC.
+
 ## 2026-07-24 - ProcessTime old-snap 9->3 hand-verification: D1 + deterministic triage + D2 (v2.17.0)
 
 Implements `docs/ProcessTime-OldSnap-Verify-Plan.md`. The ja Windows OCR
