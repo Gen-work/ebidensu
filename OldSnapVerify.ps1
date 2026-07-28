@@ -80,6 +80,23 @@ function Resolve-OldSnapExportImageDir {
 }
 
 # ---------------------------------------------------------------------------
+# Resolve-OldSnapPromotionMarkerPath
+#   Path of the marker written beside a snap PNG that was PROMOTED out of the
+#   evidence workbook rather than captured from the screen
+#   (ProcessTime.ps1's Save-ProcessTimeIdentifiedSnap): '<snap>.promoted.json'.
+#   The marker has to live on disk, not just in the run's result object,
+#   because from the NEXT run on that file is read through the ordinary
+#   snap-PNG path and would otherwise be indistinguishable from a real
+#   capture -- and only a real capture has the geometry the pixel check is
+#   calibrated against. Returns $null for a blank path (pure, no I/O).
+# ---------------------------------------------------------------------------
+function Resolve-OldSnapPromotionMarkerPath {
+    param([string]$SnapPath)
+    if ([string]::IsNullOrWhiteSpace($SnapPath)) { return $null }
+    return ($SnapPath + '.promoted.json')
+}
+
+# ---------------------------------------------------------------------------
 # Select-OldSnapFallbackImageName
 #   Picks the best exported picture to hyperlink for one output row, from a
 #   plain list of file NAMES in that correl's ProcessTime export folder

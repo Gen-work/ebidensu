@@ -173,6 +173,15 @@ Assert-True ($null -eq (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId '
 Assert-Equal 'GIFT_JIGPC06S.png' (Select-OldSnapFallbackImageName -Side 'GIFT' -CorrelId 'JIGPC06S' -Names @('GIFT_JIGPC06S.png')) `
     'an un-indexed section picture is still accepted'
 
+# ---------------------------------------------------------------------------
+# Resolve-OldSnapPromotionMarkerPath : marks a snap PNG as a promoted copy.
+# ---------------------------------------------------------------------------
+Assert-Equal 'C:\work\snap\GIFT_HM\A.png.promoted.json' `
+    (Resolve-OldSnapPromotionMarkerPath -SnapPath 'C:\work\snap\GIFT_HM\A.png') `
+    'the marker sits beside the snap it describes'
+Assert-True ($null -eq (Resolve-OldSnapPromotionMarkerPath -SnapPath '')) 'blank snap path -> null'
+Assert-True ($null -eq (Resolve-OldSnapPromotionMarkerPath -SnapPath $null)) 'null snap path -> null'
+
 # A fallback image makes the row verifiable rather than 'no image': the
 # deterministic checks never depended on WHICH image exists.
 Assert-Equal 'OcrOk' (Get-OldSnapVerifyVerdict -Source 'ocr:section' -SnapExists $true -ArithmeticOk $true) `

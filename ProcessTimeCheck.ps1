@@ -48,30 +48,32 @@
 #        produces a #VALUE error.
 #     J  chekku -- T/F compare of the written duration (F) against the
 #        re-derived one (I), to the second. Guarded on I and F being real.
-#     K  kensu-check -- formalizes the operator's manual "count check". FIRST
-#        VERSION criterion (documented so the office-PC pass can validate
-#        it): the per-row record count (col G) parses to a POSITIVE number
-#        once any thousands commas are stripped. Blank G leaves the cell
-#        blank (partial row); a zero or non-numeric count reads "NG".
+#     K  kensu (sanshou) -- the EXPECTED record count for this row's job,
+#        pulled out of the project's monthly reference workbook with the
+#        operator's own lookup:
+#          INDEX(<value column>, MATCH(LEFT(C{0},<KeyLength>)&"*", <key column>, 0))
+#        A miss yields "" (IFERROR), never #N/A. When no reference is
+#        configured the column is still emitted, but as an inert PLACEHOLDER
+#        (the same formula with <DIR>/<BOOK>/<SHEET> tokens, written as TEXT
+#        so Excel never tries to resolve a bogus external link): the operator
+#        can fill the real path in later with a search-and-replace instead of
+#        rebuilding the formula from scratch. -CountReference @{...} with
+#        PlaceholderWhenUnset = $false leaves the cells blank instead.
+#     L  kensu-chekku -- the count check itself, "OK" / "NG" / blank:
+#          * against K when K has a value (the reference is authoritative);
+#          * otherwise against the SAME correl's other side -- the GIFT row is
+#            compared with its GFIX row and vice versa. This is the check that
+#            always works, with or without a reference workbook.
+#          * EQUAL counts read OK -- including 0 vs 0. A zero count is a
+#            legitimate result (an interface with no data that day); only a
+#            DISAGREEMENT between the two sides is a finding.
+#          * blank whenever the value being compared against is missing (a
+#            partial row, an unlisted job, or a correl with only one side),
+#            so "not checkable" never reads as a failure.
+#        The paired row is not at a fixed offset -- the layout groups all GIFT
+#        rows then all GFIX rows per job -- so the COM writer resolves it per
+#        row (Get-ProcessTimeCountPairMap) and fills the template's {1}.
 #
-#   -CountReference (v2.18.0) upgrades that self-contained K check into the
-#   real one the operator does by hand: look the EXPECTED record count up in
-#   an external reference workbook (the monthly per-project sheet that lists
-#   each job's row count) and compare. When a resolved, enabled reference is
-#   supplied the spec grows to FOUR columns:
-#     K  kensu (sanshou)  -- the expected count, pulled with
-#        INDEX(<value column>, MATCH(LEFT(C{0},<KeyLength>)&"*", <key column>, 0)),
-#        the operator's own formula. A miss yields "" (IFERROR), never #N/A.
-#     L  kensu-check      -- T/F compare of the OCR'd count (col G, thousands
-#        commas stripped) against K. Blank when either side is blank, so a
-#        partial row or an unlisted job stays blank instead of reading NG.
-#   Without a reference the 3-column layout above is unchanged, so an
-#   existing config keeps its exact current output.
-#
-#   A stricter GIFT-vs-GFIX cross-row equality check remains a deliberate
-#   follow-up, NOT done here: the output layout groups all GIFT rows then all
-#   GFIX rows per job, so a GIFT row's paired GFIX row is not at a fixed
-#   offset a single-row formula template can reference.
 # ---------------------------------------------------------------------------
 function Get-ProcessTimeCheckColumnSpec {
     param([hashtable]$CountReference = $null)
@@ -95,24 +97,34 @@ function Get-ProcessTimeCheckColumnSpec {
         }
     )
 
-    if (Test-ProcessTimeCountReference $CountReference) {
-        $spec += @{
-            Col = 'K'; ColIndex = 11; Header = $hRef; NumberFormat = ''; Width = 14.0
-            Formula = (New-ProcessTimeCountLookupFormula -Reference $CountReference)
-        }
-        $spec += @{
-            Col = 'L'; ColIndex = 12; Header = $hCount; NumberFormat = ''; Width = 12.0
-            # Blank when either side is blank (partial row / job not listed in
-            # the reference sheet); otherwise a plain T/F equality on the
-            # numeric counts. IFERROR keeps a non-numeric cell on either side
-            # from showing #VALUE! -- it is simply a mismatch.
-            Formula = '=IF(OR(TRIM(G{0})="",K{0}=""),"",IFERROR(IF(VALUE(SUBSTITUTE(G{0},",",""))=VALUE(K{0}),"T","F"),"F"))'
-        }
-    } else {
-        $spec += @{
-            Col = 'K'; ColIndex = 11; Header = $hCount; NumberFormat = ''; Width = 12.0
-            Formula = '=IF(TRIM(G{0})="","",IF(ISNUMBER(VALUE(SUBSTITUTE(G{0},",",""))),IF(VALUE(SUBSTITUTE(G{0},",",""))>0,"OK","NG"),"NG"))'
-        }
+    $refOk = Test-ProcessTimeCountReference $CountReference
+    $emitPlaceholder = $true
+    if ($null -ne $CountReference -and $CountReference -is [hashtable] -and
+        $CountReference.ContainsKey('PlaceholderWhenUnset')) {
+        $emitPlaceholder = [bool]$CountReference['PlaceholderWhenUnset']
+    }
+
+    # K -- the reference lookup. Live formula when configured; otherwise an
+    # inert text placeholder (or nothing, when the operator turned that off).
+    $kEntry = @{ Col = 'K'; ColIndex = 11; Header = $hRef; NumberFormat = ''; Width = 14.0; Formula = ''; IsText = $false }
+    if ($refOk) {
+        $kEntry.Formula = (New-ProcessTimeCountLookupFormula -Reference $CountReference)
+    } elseif ($emitPlaceholder) {
+        $kEntry.Formula = (New-ProcessTimeCountPlaceholderFormula)
+        $kEntry.IsText  = $true          # written as text, never evaluated
+        $kEntry.NumberFormat = '@'
+    }
+    $spec += $kEntry
+
+    # L -- the count check. Uses K when it holds a value, else the same
+    # correl's other side ({1} = that row, filled in by the COM writer).
+    $spec += @{
+        Col = 'L'; ColIndex = 12; Header = $hCount; NumberFormat = ''; Width = 12.0
+        NeedsPair = $true
+        Formula = '=IF(TRIM(G{0})="","",IF(K{0}<>"",IFERROR(IF(VALUE(SUBSTITUTE(G{0},",",""))=VALUE(K{0}),"OK","NG"),"NG"),IF(TRIM(G{1})="","",IFERROR(IF(VALUE(SUBSTITUTE(G{0},",",""))=VALUE(SUBSTITUTE(G{1},",","")),"OK","NG"),"NG"))))'
+        # No paired row for this correl (only one side present): the only
+        # comparison left is the reference one.
+        FormulaNoPair = '=IF(OR(TRIM(G{0})="",K{0}=""),"",IFERROR(IF(VALUE(SUBSTITUTE(G{0},",",""))=VALUE(K{0}),"OK","NG"),"NG"))'
     }
     return $spec
 }
@@ -127,9 +139,83 @@ function Get-ProcessTimeCheckColumnSpec {
 function New-ProcessTimeCheckFormula {
     param(
         [Parameter(Mandatory = $true)][string]$Template,
-        [Parameter(Mandatory = $true)][int]$Row
+        [Parameter(Mandatory = $true)][int]$Row,
+        # '{1}' -- the row holding the SAME correl's other side (GIFT <-> GFIX).
+        # Only the count-check template uses it; 0 means "no paired row", and
+        # the caller should have picked FormulaNoPair instead.
+        [int]$PairRow = 0
     )
-    return ($Template -f $Row)
+    return ($Template -f $Row, $PairRow)
+}
+
+# ---------------------------------------------------------------------------
+# Get-ProcessTimeCountPairMap
+#   Maps each data row to the row holding the SAME correl's other side, so the
+#   count check can compare GIFT against GFIX. The output layout groups all
+#   GIFT rows then all GFIX rows per job, so the pair is NOT at a fixed
+#   offset -- and rows retained from an earlier run sit wherever that run left
+#   them. The COM caller therefore reads (row, side, correl) off the sheet and
+#   hands it here; this stays pure and unit-testable.
+#
+#   -Rows: objects/hashtables with Row (int), Side ('GIFT'/'GFIX') and
+#   CorrelId. Returns a hashtable rowNumber -> paired rowNumber, containing
+#   only rows that actually HAVE a partner. A correl with two rows on the same
+#   side (a duplicate) is left unpaired rather than guessing.
+# ---------------------------------------------------------------------------
+function Get-ProcessTimeCountPairMap {
+    param($Rows)
+    $map = @{}
+    if ($null -eq $Rows) { return $map }
+    $bySideCorrel = @{}
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $side = ([string]$r.Side).Trim().ToUpperInvariant()
+        $correl = ([string]$r.CorrelId).Trim()
+        if ([string]::IsNullOrWhiteSpace($correl)) { continue }
+        if ($side -ne 'GIFT' -and $side -ne 'GFIX') { continue }
+        $key = ('{0}|{1}' -f $side, $correl)
+        if ($bySideCorrel.ContainsKey($key)) { $bySideCorrel[$key] = 0 }   # duplicate -> unusable
+        else { $bySideCorrel[$key] = [int]$r.Row }
+    }
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $side = ([string]$r.Side).Trim().ToUpperInvariant()
+        $correl = ([string]$r.CorrelId).Trim()
+        if ([string]::IsNullOrWhiteSpace($correl)) { continue }
+        $other = if ($side -eq 'GIFT') { 'GFIX' } elseif ($side -eq 'GFIX') { 'GIFT' } else { continue }
+        # This row's own side must itself be unambiguous: a correl listed
+        # twice on one side gives no single "the other row" to compare with.
+        $selfKey = ('{0}|{1}' -f $side, $correl)
+        if (-not $bySideCorrel.ContainsKey($selfKey) -or [int]$bySideCorrel[$selfKey] -le 0) { continue }
+        $key = ('{0}|{1}' -f $other, $correl)
+        if (-not $bySideCorrel.ContainsKey($key)) { continue }
+        $pair = [int]$bySideCorrel[$key]
+        if ($pair -le 0) { continue }
+        $self = [int]$r.Row
+        if ($self -le 0 -or $self -eq $pair) { continue }
+        $map[$self] = $pair
+    }
+    return $map
+}
+
+# ---------------------------------------------------------------------------
+# New-ProcessTimeCountPlaceholderFormula
+#   The K-column lookup with the reference workbook left as obvious tokens,
+#   for the case where no reference is configured yet. It is written into the
+#   sheet as TEXT (never evaluated), so a bogus external link can neither
+#   prompt for updates nor show #REF -- the operator replaces <DIR>, <BOOK>
+#   and <SHEET>, then converts the column back to formulas (select column ->
+#   Data -> Text to Columns -> Finish) once the real path is known.
+#   ASCII tokens on purpose: they survive any codepage and are unambiguous
+#   targets for a search-and-replace.
+# ---------------------------------------------------------------------------
+function New-ProcessTimeCountPlaceholderFormula {
+    param([int]$KeyLength = 7)
+    $ref = @{
+        Enabled = $true; Directory = '<DIR>'; FileName = '<BOOK>.xlsx'; SheetName = '<SHEET>'
+        KeyColumn = 'G'; ValueColumn = 'O'; KeyLength = $KeyLength; FirstRow = 1; LastRow = 20000
+    }
+    return (New-ProcessTimeCountLookupFormula -Reference $ref)
 }
 
 # ---------------------------------------------------------------------------
@@ -173,7 +259,13 @@ function Resolve-ProcessTimeCountReference {
         [string]$Tag = '',
         [string]$Month = ''
     )
-    $off = @{ Enabled = $false }
+    # A disabled result still carries PlaceholderWhenUnset: the K column is
+    # emitted either way, and that flag decides whether it gets the inert
+    # placeholder lookup or stays empty.
+    $off = @{ Enabled = $false; PlaceholderWhenUnset = $true }
+    if ($null -ne $Reference -and $Reference -is [hashtable] -and $Reference.ContainsKey('PlaceholderWhenUnset')) {
+        $off['PlaceholderWhenUnset'] = [bool]$Reference['PlaceholderWhenUnset']
+    }
     if ($null -eq $Reference -or $Reference -isnot [hashtable]) { return $off }
     if (-not $Reference.ContainsKey('Enabled') -or -not [bool]$Reference['Enabled']) { return $off }
 
@@ -212,6 +304,7 @@ function Resolve-ProcessTimeCountReference {
 
     return @{
         Enabled     = $true
+        PlaceholderWhenUnset = [bool]$off['PlaceholderWhenUnset']
         Directory   = [string]$Reference['Directory']
         FileName    = $fileName
         SheetName   = $sheetName
