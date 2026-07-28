@@ -1815,12 +1815,22 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($pt.ContainsKey('OcrPreprocessThreshold') -and $null -ne $pt.OcrPreprocessThreshold) { $args['OcrPreprocessThreshold'] = [int]$pt.OcrPreprocessThreshold }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
             if ($pt.ContainsKey('EmitCheckColumns') -and $null -ne $pt.EmitCheckColumns) { $args['EmitCheckColumns'] = [bool]$pt.EmitCheckColumns }
+            # Expected-record-count lookup: the whole block is passed through
+            # as-is; ProcessTime.ps1 expands its {Tag}/{Month} tokens per
+            # output workbook (Resolve-ProcessTimeCountReference).
+            if ($pt.ContainsKey('CountReference') -and $pt.CountReference -is [hashtable]) {
+                $args['CountReference'] = $pt.CountReference
+                if ($pt.CountReference.ContainsKey('Month') -and -not [string]::IsNullOrWhiteSpace([string]$pt.CountReference.Month)) {
+                    $args['CountReferenceMonth'] = [string]$pt.CountReference.Month
+                }
+            }
             if ($pt.ContainsKey('OldSnapVerify') -and $pt.OldSnapVerify -is [hashtable]) {
                 $osv = $pt.OldSnapVerify
                 if ($osv.ContainsKey('Enabled') -and $null -ne $osv.Enabled) { $args['OldSnapVerifyEnabled'] = [bool]$osv.Enabled }
                 if ($osv.ContainsKey('EmitHyperlink') -and $null -ne $osv.EmitHyperlink) { $args['OldSnapEmitHyperlink'] = [bool]$osv.EmitHyperlink }
                 if ($osv.ContainsKey('EmitVerifyColumn') -and $null -ne $osv.EmitVerifyColumn) { $args['OldSnapEmitVerifyColumn'] = [bool]$osv.EmitVerifyColumn }
                 if (-not [string]::IsNullOrWhiteSpace([string]$osv.SnapDirPattern)) { $args['OldSnapDirPattern'] = [string]$osv.SnapDirPattern }
+                if ($osv.ContainsKey('FallbackImage') -and $null -ne $osv.FallbackImage) { $args['OldSnapFallbackImage'] = [bool]$osv.FallbackImage }
                 if (-not [string]::IsNullOrWhiteSpace([string]$osv.RenderFont)) { $args['OldSnapRenderFont'] = [string]$osv.RenderFont }
                 if ($osv.ContainsKey('PixelDiff') -and $osv.PixelDiff -is [hashtable]) {
                     if ($osv.PixelDiff.ContainsKey('Enabled') -and $null -ne $osv.PixelDiff.Enabled) { $args['OldSnapPixelDiff'] = [bool]$osv.PixelDiff.Enabled }

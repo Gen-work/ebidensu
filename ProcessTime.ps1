@@ -173,6 +173,15 @@ param(
     # the record-count check (ProcessTimeCheck.ps1's Get-ProcessTimeCheckColumnSpec).
     # $false writes A..H data only and skips the whole check-column pass.
     [bool]$EmitCheckColumns = $true,
+    # Expected-record-count lookup for the count check column
+    # (ProcessTime.CountReference; see ProcessTimeCheck.ps1). The raw config
+    # block -- Resolve-ProcessTimeCountReference expands its {Tag}/{Month}
+    # tokens per output workbook. $null / Enabled=$false keeps the
+    # self-contained "count is a positive number" check.
+    [hashtable]$CountReference = $null,
+    # {Month} token value. Blank -> the current month number, so the default
+    # config points at this month's reference workbook with no per-run input.
+    [string]$CountReferenceMonth = '',
 
     # -- Old-snap 9->3 hand-verification (docs/ProcessTime-OldSnap-Verify-Plan.md) --
     # D1 + deterministic triage of the finite backlog of OLD snaps that have
@@ -193,6 +202,12 @@ param(
     [string]$OldSnapRenderFont = 'MS Gothic',
     # {0} = side stage (GIFT/GFIX); matches the snap layout HmSnap.ps1 writes.
     [string]$OldSnapDirPattern = 'snap\{0}_HM',
+    # D1 fallback: when a row has NO standalone snap\<Stage>_HM\<correl>.png,
+    # hyperlink the picture this phase exported OUT of the evidence workbook
+    # for that same correl (snap\ProcessTime\<correl>\<SIDE>_<correl>_NN.png)
+    # instead of leaving the row unclickable. $false restores the old
+    # snap-PNG-only behavior.
+    [bool]$OldSnapFallbackImage = $true,
     # Optional cross-engine (en-US vs ja) digit disagreement flag. Reserved;
     # default OFF (en drops many fields -- weak but free when it does read).
     [bool]$OldSnapCrossEngine = $false,
@@ -785,9 +800,14 @@ function Get-ProcessTimeColLetter {
 function Write-ProcessTimeWorkbook {
     param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows,
           [bool]$EmitCheckColumns = $true,
+          # Resolved ProcessTime.CountReference for THIS workbook's tag
+          # (Resolve-ProcessTimeCountReference); $null / disabled keeps the
+          # self-contained K count check.
+          [hashtable]$CountReference = $null,
           # Old-snap 9->3 hand-verification (D1 hyperlink + kenshou verify column).
           [bool]$EmitVerifyColumn = $false, [bool]$EmitHyperlink = $false,
           [string]$WorkDir = '', [string]$SnapDirPattern = 'snap\{0}_HM',
+          [bool]$FallbackImage = $true, [string]$ExportRoot = 'snap\ProcessTime',
           [bool]$PixelEnabled = $false, [string]$PixelFont = 'MS Gothic',
           [double]$PixelMinMargin = 0.04, [hashtable]$PixelGeometry = $null)
 
@@ -801,7 +821,7 @@ function Write-ProcessTimeWorkbook {
         ([string][char]0x51E6 + [char]0x7406 + [char]0x4EF6 + [char]0x6570),
         ([string][char]0x30B8 + [char]0x30E7 + [char]0x30D6)
     )
-    $checkSpec = if ($EmitCheckColumns) { @(Get-ProcessTimeCheckColumnSpec) } else { @() }
+    $checkSpec = if ($EmitCheckColumns) { @(Get-ProcessTimeCheckColumnSpec -CountReference $CountReference) } else { @() }
     # Column layout: 8 data columns (A..H), then the check columns (I/J/K when
     # emitted), then the single kenshou verify column (old-snap triage) when
     # emitted. The verify column's index is positional, so it is computed here
@@ -898,6 +918,10 @@ function Write-ProcessTimeWorkbook {
         }
 
         $verifyNeedsCheck = 0   # count of rows this write flagged you-kaku-nin (needs check)
+        $fallbackLinked   = 0   # rows hyperlinked to an exported evidence picture
+        # One directory listing per correl, shared by that correl's GIFT and
+        # GFIX rows (the fallback lookup below runs per row).
+        $exportNamesByCorrel = @{}
         $row = $lastRow + 1
         foreach ($r in $flatRows) {
             Set-RangeValue2 $ws.Cells.Item($row, 1) ($row - 1) | Out-Null
@@ -912,8 +936,40 @@ function Write-ProcessTimeWorkbook {
             if ($EmitVerifyColumn -or $EmitHyperlink) {
                 $snapPath = Resolve-OldSnapImagePath -WorkDir $WorkDir -Side $r.Side -CorrelId $r.CorrelId -DirPattern $SnapDirPattern
                 $snapExists = (-not [string]::IsNullOrWhiteSpace($snapPath)) -and (Test-Path -LiteralPath $snapPath)
-                if ($EmitHyperlink -and $snapExists) {
-                    try { $ws.Hyperlinks.Add($correlCell, $snapPath) | Out-Null } catch {}
+                # Fallback image: correls whose HM page was only ever captured
+                # INSIDE the evidence workbook have no standalone snap PNG, so
+                # the row would get no hyperlink at all -- and those are the
+                # rows a human most needs to open. Link the picture this phase
+                # already exported out of the workbook for the same correl and
+                # side. The listing is pure I/O here; the pick is pure logic
+                # (Select-OldSnapFallbackImageName, OldSnapVerify.ps1).
+                $linkPath = if ($snapExists) { $snapPath } else { '' }
+                if (-not $snapExists -and $FallbackImage) {
+                    $exportDir = Resolve-OldSnapExportImageDir -WorkDir $WorkDir -CorrelId $r.CorrelId -ExportRoot $ExportRoot
+                    if (-not [string]::IsNullOrWhiteSpace($exportDir)) {
+                        if (-not $exportNamesByCorrel.ContainsKey($r.CorrelId)) {
+                            $names = @()
+                            if (Test-Path -LiteralPath $exportDir) {
+                                try {
+                                    $names = @(Get-ChildItem -LiteralPath $exportDir -Filter '*.png' -File -ErrorAction SilentlyContinue |
+                                        ForEach-Object { [string]$_.Name })
+                                } catch { $names = @() }
+                            }
+                            # Stored already typed: passing the hashtable value
+                            # straight through avoids the PS 5.1 @()-over-
+                            # hashtable-indexed-collection binder hazard.
+                            $exportNamesByCorrel[$r.CorrelId] = [string[]]$names
+                        }
+                        $pick = Select-OldSnapFallbackImageName -Side $r.Side -CorrelId $r.CorrelId -Names $exportNamesByCorrel[$r.CorrelId]
+                        if (-not [string]::IsNullOrWhiteSpace($pick)) {
+                            $linkPath = [System.IO.Path]::Combine($exportDir, $pick)
+                            $fallbackLinked++
+                        }
+                    }
+                }
+                $imageExists = -not [string]::IsNullOrWhiteSpace($linkPath)
+                if ($EmitHyperlink -and $imageExists) {
+                    try { $ws.Hyperlinks.Add($correlCell, $linkPath) | Out-Null } catch {}
                 }
                 if ($EmitVerifyColumn -and $verifyColIndex -gt 0) {
                     $arith = Test-OldSnapDurationArithmetic -Start $r.Start -End $r.End -Duration $r.Duration
@@ -930,7 +986,15 @@ function Write-ProcessTimeWorkbook {
                         )
                         $pixelResult = Get-OldSnapRowPixelVerdict -SnapPath $snapPath -Fields $fields -FontName $PixelFont -MinMargin $PixelMinMargin
                     }
-                    $verdict = Get-OldSnapVerifyVerdict -Source $r.Source -SnapExists $snapExists `
+                    # SnapExists takes EITHER image: a row with only the
+                    # exported evidence picture is now triaged normally
+                    # (its deterministic checks never depended on the image)
+                    # instead of always reading 'no image'. The D2 pixel
+                    # check above stays gated on the REAL snap PNG, whose
+                    # geometry is what gets calibrated -- so with PixelEnabled
+                    # a fallback-image row keeps PixelResult '' and lands on
+                    # 'needs check', per the plan's conservative rule.
+                    $verdict = Get-OldSnapVerifyVerdict -Source $r.Source -SnapExists $imageExists `
                         -ArithmeticOk $arith -PixelResult $pixelResult -PixelEnabled $PixelEnabled
                     if ($verdict -eq 'NeedsCheck') { $verifyNeedsCheck++ }
                     Set-RangeValue2 $ws.Cells.Item($row, $verifyColIndex) (Get-OldSnapVerifyLabel $verdict) | Out-Null
@@ -1075,6 +1139,9 @@ function Write-ProcessTimeWorkbook {
             $lblNeeds = Get-OldSnapVerifyLabel 'NeedsCheck'
             Write-Host ("  [OldSnapVerify] {0} row(s) flagged '{1}' in {2}" -f $verifyNeedsCheck, $lblNeeds, (Split-Path $OutputPath -Leaf)) -ForegroundColor Yellow
         }
+        if ($fallbackLinked -gt 0) {
+            Write-Host ("  [OldSnapVerify] {0} row(s) had no standalone snap PNG -- linked the exported evidence picture instead" -f $fallbackLinked) -ForegroundColor DarkGray
+        }
 
         if ($isNew) { $wb.SaveAs($OutputPath, 51) } else { $wb.Save() }   # 51 = xlOpenXMLWorkbook (.xlsx)
     } finally {
@@ -1156,7 +1223,17 @@ if ($migratedCount -gt 0) {
     Write-Host ("  [INFO] migrated {0} legacy ProcessTime_Inserted flag(s) (1 -> 3; bitmask: 1=OCR'd, 2=written)" -f $migratedCount) -ForegroundColor DarkGray
 }
 
-$exportRoot = Join-Path $WorkDir 'snap\ProcessTime'
+# Per-correl OCR working folder: the sidecar cache, the exported candidate
+# pictures and the OCR dumps all live under <WorkDir>\<$exportRootRel>\<correl>.
+# The relative form is passed to Write-ProcessTimeWorkbook too, so D1's
+# fallback hyperlink resolves the same folder from the same constant.
+$exportRootRel = 'snap\ProcessTime'
+$exportRoot = Join-Path $WorkDir $exportRootRel
+
+# {Month} for the count-reference file/sheet names. Blank config -> this run's
+# month, so a monthly reference workbook needs no per-run input.
+$countRefMonth = $CountReferenceMonth
+if ([string]::IsNullOrWhiteSpace($countRefMonth)) { $countRefMonth = [string](Get-Date).Month }
 $targets = @(ConvertTo-TargetIdList $TargetIds)
 
 # Per-row plan: which stage(s) THIS run still needs, resolved from -Stage
@@ -1462,11 +1539,20 @@ try {
                 if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
                 $fileName = Get-ProcessTimeOutputFileName -Label $outputLabel -Tag $tag -Single ($OutputMode -eq 'Single')
                 $path = Join-Path $dir $fileName
+                # Expected-record-count lookup, resolved PER TAG: the reference
+                # workbook / sheet names carry {Tag} (and {Month}), so each
+                # output workbook points at its own project's monthly sheet.
+                # A blank tag (OutputMode 'Single') or an unexpandable token
+                # resolves to disabled -> the self-contained K count check.
+                $countRef = Resolve-ProcessTimeCountReference -Reference $CountReference `
+                    -Tag $(if ($OutputMode -eq 'Single') { '' } else { $tag }) -Month $countRefMonth
                 try {
                     Write-ProcessTimeWorkbook -Excel $excel -OutputPath $path -SheetName $OutputSheetName -Rows $rowsForTag -EmitCheckColumns $EmitCheckColumns `
+                        -CountReference $countRef `
                         -EmitVerifyColumn ($OldSnapVerifyEnabled -and $OldSnapEmitVerifyColumn) `
                         -EmitHyperlink ($OldSnapVerifyEnabled -and $OldSnapEmitHyperlink) `
                         -WorkDir $WorkDir -SnapDirPattern $OldSnapDirPattern `
+                        -FallbackImage ($OldSnapVerifyEnabled -and $OldSnapFallbackImage) -ExportRoot $exportRootRel `
                         -PixelEnabled ($OldSnapVerifyEnabled -and $OldSnapPixelDiff) `
                         -PixelFont $OldSnapRenderFont -PixelMinMargin $OldSnapPixelThreshold
                     $written.Add($path)

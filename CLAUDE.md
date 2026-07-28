@@ -144,7 +144,15 @@ OldSnapVerify.ps1       pure old-snap 9->3 hand-verification helpers (dot-source
                         pure 3<->9 swap), Get-OldSnapVerifyVerdict (the
                         conservative Txt/OcrOk/NeedsCheck/NoSnap decision) +
                         Get-OldSnapVerifyLabel / Get-OldSnapVerifyColumnSpec (the
-                        検証 column). Japanese via [char]. Unit-tested
+                        検証 column). v2.18.0 adds the D1 FALLBACK image
+                        helpers: Resolve-OldSnapExportImageDir (the per-correl
+                        snap\ProcessTime\<correl> export folder) and
+                        Select-OldSnapFallbackImageName (rank the pictures this
+                        phase exported OUT of the evidence workbook -- section >
+                        below-label > whole-sheet > above-label, lowest index
+                        first; *_pre.png OCR derivatives never linked) so a
+                        correl with no standalone snap PNG still gets a
+                        clickable image. Japanese via [char]. Unit-tested
                         (Tests\Test-OldSnapVerify.ps1). v2.17.0.
 PixelDigitMatch.ps1     pure D2 per-digit 3/9 image scorer (dot-source, no
                         param(), no COM/GDI): grayscale ink -> binarize -> trim
@@ -155,7 +163,10 @@ PixelDigitMatch.ps1     pure D2 per-digit 3/9 image scorer (dot-source, no
                         Merge-DigitPixelVerdicts). The PS port of the Phase-0
                         GO-proven mock-page/pixeldiff.mjs metric. Unit-tested
                         (Tests\Test-PixelDigitMatch.ps1). v2.17.0.
-OldSnapPixelVerify.ps1  NON-pure GDI+ glue for D2 (dot-source, no param();
+OldSnapPixelVerify.ps1  SUPERSEDED by docs/ProcessTime-OldSnap-MockMatch-
+                        Plan.md (kept, off by default -- do not run two
+                        competing D2 paths).
+                        NON-pure GDI+ glue for D2 (dot-source, no param();
                         static-checked only). New-DigitTemplateGray (render MS
                         Gothic 3/9), Get-BitmapGrayRegion (crop a snap digit
                         box), Get-OldSnapDigitVerdict, Resolve-OldSnapTimeDigit
@@ -173,7 +184,17 @@ ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
                         duration), K 件数チェック (record-count check; first
                         version flags a blank/zero/non-numeric count) -- and
                         New-ProcessTimeCheckFormula fills a formula template's
-                        {0} with a row number. ProcessTime.ps1's COM-side
+                        {0} with a row number. v2.18.0: pass -CountReference
+                        (Resolve-ProcessTimeCountReference expands {Tag}/
+                        {Month} in the reference workbook/sheet names;
+                        New-ProcessTimeExternalRange builds the
+                        'dir\[Book.xlsx]Sheet'!$O$1:$O$20000 qualifier;
+                        New-ProcessTimeCountLookupFormula emits the operator's
+                        INDEX/MATCH) and the spec grows to four columns --
+                        K 件数(参照) pulls the EXPECTED count out of the
+                        project's monthly workbook and L 件数チェック compares
+                        it against the OCR-read count. Without a reference the
+                        3-column I/J/K layout is unchanged. ProcessTime.ps1's COM-side
                         Set-ProcessTimeCheckColumns walks the spec to write the
                         headers/formulas/number-formats uniformly after the
                         data rows. Japanese headers via [char]. Unit-tested
@@ -267,6 +288,14 @@ Validate.ps1            Phase Validate (read-only diagnostic)
 Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
 Check-Encoding.ps1      read-only encoding policy checker + label self-test
 Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1
+docs/ProcessTime-OldSnap-MockMatch-Plan.md
+                        PLANNED replacement for v2.17.0's D2 image check:
+                        render the reference row from mock-page in Edge on
+                        the office PC (same engine/font/CSS as the snap) and
+                        whole-field template-match it via Locate-ByImage,
+                        instead of GDI+ per-digit templates. Pure PowerShell
+                        + Edge (no node on the office PC). Section 10 holds
+                        the 2026-07-27 review + landing order.
 docs/ProcessTime-OcrBenchmark-Plan.md
                         Phase 2/3 design: OCR benchmark test set + 3/9 fix
                         (real-snap + synthetic-HTML ground truth, runner,
@@ -491,7 +520,36 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-24 v2.17.0)
+## Current state (last bump: 2026-07-27 v2.18.0)
+
+v2.18.0 (ProcessTime: reference-workbook 件数チェック + D1 fallback image):
+two fixes from the operator's first real run of the non-pixel build.
+**件数チェック against the project's reference workbook** -- new
+`ProcessTime.CountReference` (default OFF) replaces the v2.16.0 "count is a
+positive number" K check with the one the operator actually does by hand:
+K 件数(参照) pulls the EXPECTED count out of the project's monthly workbook
+(`=IFERROR(INDEX(<Value>,MATCH(LEFT(C行,KeyLength)&"*",<Key>,0)),"")`) and
+L 件数チェック compares it T/F against the OCR-read count. The file/sheet
+names take a `{Tag}` token (this workbook's JOD/JRV/... tag) and a `{Month}`
+token, so `GPCS({Tag})_{Month}月.xlsx` resolves per output workbook; a miss
+or a partial row leaves the check blank, never `#N/A`/NG. **D1 fallback
+image** -- `OldSnapVerify.FallbackImage` (default ON): a correl whose HM page
+was only ever captured INSIDE the evidence workbook has no standalone
+`snap\<Stage>_HM\<correl>.png`, so v2.17.0 left its row with no hyperlink at
+all (and 画像なし) -- exactly the rows a human most needs to open. Those rows
+now link the picture this phase exported out of the workbook
+(`snap\ProcessTime\<correl>\<SIDE>_<correl>_NN.png`), and 検証's
+`SnapExists` accepts either image, so they are triaged like any other OCR row
+(the deterministic checks never depended on which image exists). The D2 pixel
+check stays gated on the REAL snap PNG, so with `PixelDiff` on a
+fallback-image row still lands on 要確認. Pure logic unit-tested
+(`Test-ProcessTimeCheck.ps1` 70, `Test-OldSnapVerify.ps1` 72); the K/L
+formulas evaluating in real Excel and the fallback hyperlink are
+static-checked only -- confirm on an office PC. Also lands
+`docs/ProcessTime-OldSnap-MockMatch-Plan.md` (PLANNED): render the D2
+reference row from the mock page in Edge on the office PC instead of GDI+,
+and whole-field template-match it.
+
 
 v2.17.0 (ProcessTime old-snap 9->3 hand-verification: D1 + deterministic
 triage + D2): triages the finite backlog of OLD HM snaps that have only a

@@ -57,6 +57,89 @@ function Resolve-OldSnapImagePath {
 }
 
 # ---------------------------------------------------------------------------
+# Resolve-OldSnapExportImageDir
+#   Builds (no I/O) the per-correl ProcessTime export folder,
+#   <WorkDir>\<ExportRoot>\<correl> -- the folder Resolve-ProcessTimeSide
+#   already writes its OCR candidate pictures and dumps into. This is the
+#   FALLBACK image source for D1's hyperlink: some correls have no
+#   standalone snap\<Stage>_HM\<correl>.png at all (the evidence workbook's
+#   embedded picture is the only copy of that HM page), and those rows used
+#   to get no hyperlink at all -- exactly the rows a human most needs to
+#   open. [IO.Path]::Combine for the same reason as Resolve-OldSnapImagePath.
+# ---------------------------------------------------------------------------
+function Resolve-OldSnapExportImageDir {
+    param(
+        [string]$WorkDir,
+        [string]$CorrelId,
+        [string]$ExportRoot = 'snap\ProcessTime'
+    )
+    if ([string]::IsNullOrWhiteSpace($WorkDir)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($CorrelId)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($ExportRoot)) { $ExportRoot = 'snap\ProcessTime' }
+    return [System.IO.Path]::Combine($WorkDir, $ExportRoot, $CorrelId)
+}
+
+# ---------------------------------------------------------------------------
+# Select-OldSnapFallbackImageName
+#   Picks the best exported picture to hyperlink for one output row, from a
+#   plain list of file NAMES in that correl's ProcessTime export folder
+#   (the caller does the directory listing; this stays pure and testable).
+#
+#   Naming comes from Resolve-ProcessTimeSide / Export-SheetPicturesToPng:
+#     <SIDE>_<correl>_NN.png              trusted 'section' tier
+#     <SIDE>_<correl>_belowlabel_NN.png   widened searches, in the order the
+#     <SIDE>_<correl>_wholesheet_NN.png   OCR tiers themselves are tried
+#     <SIDE>_<correl>_abovelabel_NN.png
+#     <SIDE>_<correl>_*_pre.png           PREPROCESSED derivative (upscaled /
+#                                         contrast-stretched for the OCR
+#                                         engine) -- never linked: a human
+#                                         must see the original pixels.
+#   Ranking mirrors that trust order, then the lowest picture index within a
+#   tier. Returns $null when nothing matches (caller leaves the row without a
+#   hyperlink, exactly as before).
+# ---------------------------------------------------------------------------
+function Select-OldSnapFallbackImageName {
+    param(
+        [string]$Side,
+        [string]$CorrelId,
+        [string[]]$Names
+    )
+    if ([string]::IsNullOrWhiteSpace($CorrelId)) { return $null }
+    $s = ([string]$Side).Trim().ToUpperInvariant()
+    if ($s -ne 'GIFT' -and $s -ne 'GFIX') { return $null }
+    if ($null -eq $Names -or @($Names).Count -eq 0) { return $null }
+
+    $prefix = ('{0}_{1}' -f $s, $CorrelId)
+    $tierRank = @{ '' = 0; 'BELOWLABEL' = 1; 'WHOLESHEET' = 2; 'ABOVELABEL' = 3 }
+    $best = $null; $bestRank = [int]::MaxValue; $bestIdx = [int]::MaxValue
+
+    foreach ($n in @($Names)) {
+        $name = [string]$n
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        if ($name -notmatch '(?i)\.png$') { continue }
+        if ($name -match '(?i)_pre\.png$') { continue }
+        if (-not $name.ToUpperInvariant().StartsWith($prefix.ToUpperInvariant())) { continue }
+
+        # Everything between the '<SIDE>_<correl>' prefix and the '.png' suffix:
+        # '' (bare), '_01', '_belowlabel_01', ...
+        $tail = $name.Substring($prefix.Length)
+        $tail = $tail.Substring(0, $tail.Length - 4)
+        $tier = ''
+        $idx  = 0
+        $m = [regex]::Match($tail, '^(?:_(?<tier>[A-Za-z]+))?(?:_(?<idx>\d+))?$')
+        if (-not $m.Success) { continue }
+        if ($m.Groups['tier'].Success) { $tier = $m.Groups['tier'].Value.ToUpperInvariant() }
+        if ($m.Groups['idx'].Success)  { $idx  = [int]$m.Groups['idx'].Value }
+        $rank = if ($tierRank.ContainsKey($tier)) { [int]$tierRank[$tier] } else { 9 }
+
+        if ($rank -lt $bestRank -or ($rank -eq $bestRank -and $idx -lt $bestIdx)) {
+            $best = $name; $bestRank = $rank; $bestIdx = $idx
+        }
+    }
+    return $best
+}
+
+# ---------------------------------------------------------------------------
 # ConvertTo-OldSnapDurationSeconds
 #   Parses an 'HH:mm:ss' duration string (HH not clamped to 24 -- a run can
 #   span more than a day, matching Get-ProcessDurationText) into a whole
