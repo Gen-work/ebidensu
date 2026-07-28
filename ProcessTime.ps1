@@ -208,6 +208,13 @@ param(
     # instead of leaving the row unclickable. $false restores the old
     # snap-PNG-only behavior.
     [bool]$OldSnapFallbackImage = $true,
+    # Once OCR has identified WHICH exported evidence picture belongs to this
+    # correl, save it under the canonical snap name
+    # (snap\<Stage>_HM\<correl>.png) when no real snap exists there yet, so
+    # D1, the verify column and this phase's own fast OCR tier all find it
+    # where they already look. Never overwrites a real capture, and never
+    # writes a <correl>.txt (see Save-ProcessTimeIdentifiedSnap).
+    [bool]$OldSnapPromoteIdentified = $true,
     # Optional cross-engine (en-US vs ja) digit disagreement flag. Reserved;
     # default OFF (en drops many fields -- weak but free when it does read).
     [bool]$OldSnapCrossEngine = $false,
@@ -512,9 +519,23 @@ function Read-ProcessTimeOcrLines {
 function Resolve-ProcessTimeSide {
     param($Workbook, [string]$SheetName, [string]$CorrelId, [string]$SnapTextPath,
           [string]$OutDir, [int]$AnchorCol, [string]$SecondaryLanguage, [double]$Scale,
-          [string]$ExportBaseName = '', [string]$SnapPngPath = '')
+          [string]$ExportBaseName = '', [string]$SnapPngPath = '',
+          # Promotion of an identified evidence picture into the canonical
+          # snap name (Save-ProcessTimeIdentifiedSnap). Needs the side + work
+          # folder to build that path; skipped when either is blank.
+          [string]$WorkDir = '', [string]$Side = '', [string]$SnapDirPattern = 'snap\{0}_HM',
+          [bool]$PromoteIdentifiedSnap = $true)
 
-    $result = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = ''; RecordCount = ''; Note = '' }
+    # ImagePath = the picture the ACCEPTED reading actually came from (empty
+    # for the archived-text tier, which reads no image at all). It is what D1
+    # hyperlinks, so a flagged row opens the exact page the numbers were read
+    # off -- not a heuristic guess at which exported picture "looks right".
+    # ImagePromoted marks that this picture was copied out of the evidence
+    # workbook into the snap folder (Save-ProcessTimeIdentifiedSnap below):
+    # it is a re-scaled workbook copy, NOT an original screen capture, so the
+    # pixel check must keep treating it as unverifiable.
+    $result = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = ''; RecordCount = ''; Note = ''
+                 ImagePath = ''; ImagePromoted = $false }
 
     # Tier 1: archived Ctrl+A snap text (fast, exact).
     if (-not [string]::IsNullOrWhiteSpace($SnapTextPath) -and (Test-Path -LiteralPath $SnapTextPath)) {
@@ -529,6 +550,7 @@ function Resolve-ProcessTimeSide {
                     Duration = (Get-ProcessDurationText $best.StartTime $best.EndTime)
                     RecordCount = $(if ($best.PSObject.Properties['RecordCount']) { [string]$best.RecordCount } else { '' })
                     Note = ''
+                    ImagePath = ''; ImagePromoted = $false
                 }
             }
         } catch {
@@ -553,8 +575,8 @@ function Resolve-ProcessTimeSide {
         }
     }
 
-    $accepted = $null; $acceptedTag = ''
-    $fallbackRow = $null; $fallbackRank = -1; $fallbackTag = ''
+    $accepted = $null; $acceptedTag = ''; $acceptedPng = ''
+    $fallbackRow = $null; $fallbackRank = -1; $fallbackTag = ''; $fallbackPng = ''
     $candTotal = 0
     $sectionHadPicture = $false
     $missNotes = New-Object System.Collections.Generic.List[string]
@@ -575,9 +597,9 @@ function Resolve-ProcessTimeSide {
         if ($null -ne $sel) {
             $rank = Get-ProcessTimeRowRank $sel
             if ($rank -ge 2) {
-                $accepted = $sel; $acceptedTag = 'snap-png'
+                $accepted = $sel; $acceptedTag = 'snap-png'; $acceptedPng = $SnapPngPath
             } elseif ($rank -gt $fallbackRank) {
-                $fallbackRow = $sel; $fallbackRank = $rank; $fallbackTag = 'snap-png'
+                $fallbackRow = $sel; $fallbackRank = $rank; $fallbackTag = 'snap-png'; $fallbackPng = $SnapPngPath
             }
         }
         if ($null -eq $accepted) {
@@ -668,9 +690,9 @@ function Resolve-ProcessTimeSide {
             # Accept: full row + correl seen anywhere; a full row on position
             # alone only inside the trusted section tier.
             if ($rank -ge 3 -or ($tier.Tag -eq 'section' -and $rank -ge 2)) {
-                $accepted = $sel; $acceptedTag = $tier.Tag; break
+                $accepted = $sel; $acceptedTag = $tier.Tag; $acceptedPng = $png; break
             }
-            if ($rank -gt $fallbackRank) { $fallbackRow = $sel; $fallbackRank = $rank; $fallbackTag = $tier.Tag }
+            if ($rank -gt $fallbackRank) { $fallbackRow = $sel; $fallbackRank = $rank; $fallbackTag = $tier.Tag; $fallbackPng = $png }
         }
         if ($null -ne $accepted) { break }
     }
@@ -678,7 +700,7 @@ function Resolve-ProcessTimeSide {
     $row = $accepted; $tag = $acceptedTag
     $notes = New-Object System.Collections.Generic.List[string]
     if ($null -eq $row -and $null -ne $fallbackRow) {
-        $row = $fallbackRow; $tag = $fallbackTag
+        $row = $fallbackRow; $tag = $fallbackTag; $acceptedPng = $fallbackPng
         $seen = $row.PSObject.Properties['CorrelSeen'] -and [bool]$row.CorrelSeen
         if (-not $seen) { $notes.Add('correl id not seen in OCR text -- verify the picture') }
     }
@@ -721,8 +743,88 @@ function Resolve-ProcessTimeSide {
     $srcTag = if ($result.Matched) { 'ocr' } else { 'ocr-partial' }
     if ($tag -ne 'section' -and -not [string]::IsNullOrWhiteSpace($tag)) { $srcTag = ('{0}:{1}' -f $srcTag, $tag) }
     $result.Source = $srcTag
+
+    # The picture this reading came from -- what D1 hyperlinks. When it is an
+    # evidence-workbook export (i.e. this correl has no standalone snap PNG),
+    # promote it to the canonical snap name so every later run, and every
+    # other consumer, finds it where they already look.
+    $result.ImagePath = $acceptedPng
+    if ($PromoteIdentifiedSnap -and $tag -ne 'snap-png' -and
+        -not [string]::IsNullOrWhiteSpace($acceptedPng) -and
+        -not [string]::IsNullOrWhiteSpace($WorkDir) -and -not [string]::IsNullOrWhiteSpace($Side)) {
+        $promoted = Save-ProcessTimeIdentifiedSnap -SourcePng $acceptedPng -WorkDir $WorkDir -Side $Side `
+            -CorrelId $CorrelId -DirPattern $SnapDirPattern
+        if (-not [string]::IsNullOrWhiteSpace($promoted)) {
+            $result.ImagePath = $promoted
+            $result.ImagePromoted = $true
+        }
+    }
     $result.Note = ($notes -join '; ')
     return $result
+}
+
+# ---------------------------------------------------------------------------
+# Save-ProcessTimeIdentifiedSnap
+#   Promotes the picture an OCR read was ACCEPTED from into the canonical
+#   per-correl snap name, snap\<Stage>_HM\<correl>.png.
+#
+#   Why: a correl whose HM page was only ever captured INSIDE the evidence
+#   workbook has no standalone snap PNG. Everything downstream keys off that
+#   file -- D1's hyperlink, the kenshou verdict's image gate, and this phase's own
+#   fast tier-1.5 OCR path -- so those correls stayed second-class: no
+#   clickable image, and every rerun had to reopen the workbook. Once OCR has
+#   IDENTIFIED which exported picture belongs to this correl (the correl id
+#   read out of the picture's own text, or the trusted section position), that
+#   picture is exactly the missing snap, so it is copied into place under the
+#   name the rest of the tool already expects.
+#
+#   Deliberately conservative:
+#     * NEVER overwrites an existing snap PNG -- a real screen capture always
+#       wins over a re-scaled workbook copy.
+#     * NEVER writes a <correl>.txt. That tier means "exact Ctrl+A page text,
+#       immune to the 9->3 OCR misread" and is trusted absolutely by
+#       Get-OldSnapVerifyVerdict; filling it with OCR output would launder an
+#       unverified read into a trusted one. The .txt can only ever come from a
+#       real page copy (HmSnap's SnapVerify.SaveText).
+#     * Reports promotion back to the caller so the pixel check can keep
+#       treating the copy as unverifiable geometry.
+#   Returns the promoted path, or '' when nothing was promoted (any failure is
+#   swallowed: a missing hyperlink must never fail the run).
+# ---------------------------------------------------------------------------
+function Save-ProcessTimeIdentifiedSnap {
+    param(
+        [string]$SourcePng,
+        [string]$WorkDir,
+        [string]$Side,
+        [string]$CorrelId,
+        [string]$DirPattern = 'snap\{0}_HM'
+    )
+    if ([string]::IsNullOrWhiteSpace($SourcePng) -or -not (Test-Path -LiteralPath $SourcePng)) { return '' }
+    $target = Resolve-OldSnapImagePath -WorkDir $WorkDir -Side $Side -CorrelId $CorrelId -DirPattern $DirPattern
+    if ([string]::IsNullOrWhiteSpace($target)) { return '' }
+    if (Test-Path -LiteralPath $target) { return '' }   # a real snap already exists -- never overwrite
+    try {
+        $dir = Split-Path -Parent $target
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        Copy-Item -LiteralPath $SourcePng -Destination $target -Force -ErrorAction Stop
+        # Marker: from the next run on, this file is read through the ordinary
+        # snap-PNG path and would otherwise look like a real screen capture.
+        $marker = Resolve-OldSnapPromotionMarkerPath -SnapPath $target
+        if (-not [string]::IsNullOrWhiteSpace($marker)) {
+            try {
+                ([pscustomobject]@{
+                    PromotedFrom = [string]$SourcePng
+                    PromotedAt   = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                    Note         = 'Copied out of the evidence workbook by ProcessTime; re-scaled by the paste, so not usable for pixel comparison.'
+                } | ConvertTo-Json -Depth 3) | Set-Content -LiteralPath $marker -Encoding UTF8
+            } catch {}
+        }
+        Write-Host ("       [SNAP] {0} {1}: identified evidence picture saved as {2}" -f $Side, $CorrelId, (Split-Path $target -Leaf)) -ForegroundColor DarkGray
+        return $target
+    } catch {
+        Write-Host ("       [WARN] could not save the identified picture as {0}: {1}" -f $target, $_.Exception.Message) -ForegroundColor Yellow
+        return ''
+    }
 }
 
 # Tier-1-only preview for -DryRun (no Excel/OCR opened).
@@ -753,6 +855,25 @@ function Get-ArchivedProcessTimePreview {
 #   strings, so this stays ASCII source.
 function Set-ProcessTimeCheckColumns {
     param($Worksheet, [int]$HeaderRow, [int]$FirstDataRow, [int]$LastDataRow, [object[]]$Spec)
+
+    # The count check compares a row against the SAME correl's other side,
+    # which is not at a fixed offset (all GIFT rows then all GFIX rows per
+    # job, plus whatever earlier runs left in place). Read (row, side,
+    # correl) off the sheet -- so retained rows pair up too -- and let the
+    # pure Get-ProcessTimeCountPairMap resolve the partners.
+    $pairMap = @{}
+    if (@($Spec | Where-Object { $_.ContainsKey('NeedsPair') -and [bool]$_.NeedsPair }).Count -gt 0) {
+        $sheetRows = New-Object System.Collections.Generic.List[object]
+        for ($r = $FirstDataRow; $r -le $LastDataRow; $r++) {
+            $sheetRows.Add([pscustomobject]@{
+                Row      = $r
+                Side     = [string]$Worksheet.Cells.Item($r, 2).Value2
+                CorrelId = [string]$Worksheet.Cells.Item($r, 3).Value2
+            })
+        }
+        $pairMap = Get-ProcessTimeCountPairMap -Rows (ConvertTo-ProcessTimeBucketArray -Bucket $sheetRows)
+    }
+
     foreach ($col in @($Spec)) {
         $ci = [int]$col.ColIndex
         $hc = $Worksheet.Cells.Item($HeaderRow, $ci)
@@ -760,12 +881,25 @@ function Set-ProcessTimeCheckColumns {
         try { $hc.Font.Bold = $true } catch {}
         $nf       = [string]$col.NumberFormat
         $template = [string]$col.Formula
+        $noPairTemplate = if ($col.ContainsKey('FormulaNoPair')) { [string]$col.FormulaNoPair } else { $template }
+        $isText   = $col.ContainsKey('IsText') -and [bool]$col.IsText
         for ($r = $FirstDataRow; $r -le $LastDataRow; $r++) {
             $cell = $Worksheet.Cells.Item($r, $ci)
             if (-not [string]::IsNullOrEmpty($nf)) {
                 try { $cell.NumberFormat = $nf } catch {}
             }
-            $cell.Formula = (New-ProcessTimeCheckFormula -Template $template -Row $r)
+            $pair = if ($pairMap.ContainsKey($r)) { [int]$pairMap[$r] } else { 0 }
+            $tpl  = if ($pair -gt 0) { $template } else { $noPairTemplate }
+            if ([string]::IsNullOrEmpty($tpl)) { continue }   # column emitted with no content
+            $text = New-ProcessTimeCheckFormula -Template $tpl -Row $r -PairRow $pair
+            if ($isText) {
+                # A placeholder: written as a VALUE with the column already
+                # formatted as text, so Excel stores the string instead of
+                # trying to resolve a reference that does not exist yet.
+                Set-RangeValue2 $cell $text | Out-Null
+            } else {
+                $cell.Formula = $text
+            }
         }
     }
 }
@@ -795,6 +929,16 @@ function Set-ProcessTimeCheckColumns {
 function Get-ProcessTimeColLetter {
     param([int]$Index)
     return [string][char]([int][char]'A' + $Index - 1)
+}
+
+# Reads one property off a result row, tolerating its absence: rows rebuilt
+# from a sidecar written by an older version simply do not have the newer
+# fields, and Set-StrictMode makes a bare $row.Missing throw.
+function Get-ProcessTimeRowField {
+    param($Row, [string]$Name)
+    if ($null -eq $Row) { return $null }
+    if (-not $Row.PSObject.Properties[$Name]) { return $null }
+    return $Row.$Name
 }
 
 function Write-ProcessTimeWorkbook {
@@ -852,6 +996,11 @@ function Write-ProcessTimeWorkbook {
                     Duration = [string]$(if ($isGift) { $r.GiftDuration } else { $r.GfixDuration })
                     Count = [string]$(if ($isGift) { $r.GiftCount } else { $r.GfixCount })
                     Source = [string]$(if ($isGift) { $r.GiftSource } else { $r.GfixSource })
+                    # The picture the reading actually came from. Absent on
+                    # sidecars written before v2.19.0 -- those rows fall back
+                    # to the snap-path lookup in the write loop.
+                    ImagePath = [string](Get-ProcessTimeRowField $r $(if ($isGift) { 'GiftImage' } else { 'GfixImage' }))
+                    ImagePromoted = [bool](Get-ProcessTimeRowField $r $(if ($isGift) { 'GiftImagePromoted' } else { 'GfixImagePromoted' }))
                 })
             }
         }
@@ -936,15 +1085,20 @@ function Write-ProcessTimeWorkbook {
             if ($EmitVerifyColumn -or $EmitHyperlink) {
                 $snapPath = Resolve-OldSnapImagePath -WorkDir $WorkDir -Side $r.Side -CorrelId $r.CorrelId -DirPattern $SnapDirPattern
                 $snapExists = (-not [string]::IsNullOrWhiteSpace($snapPath)) -and (Test-Path -LiteralPath $snapPath)
-                # Fallback image: correls whose HM page was only ever captured
-                # INSIDE the evidence workbook have no standalone snap PNG, so
-                # the row would get no hyperlink at all -- and those are the
-                # rows a human most needs to open. Link the picture this phase
-                # already exported out of the workbook for the same correl and
-                # side. The listing is pure I/O here; the pick is pure logic
-                # (Select-OldSnapFallbackImageName, OldSnapVerify.ps1).
-                $linkPath = if ($snapExists) { $snapPath } else { '' }
-                if (-not $snapExists -and $FallbackImage) {
+                # Which image this row links, in order of how well we KNOW it
+                # is the right one:
+                #   1. ImagePath -- the picture the accepted OCR read actually
+                #      came from (recorded by Resolve-ProcessTimeSide, and
+                #      normally already promoted to the canonical snap name).
+                #      This is the only source that cannot pick the wrong
+                #      picture, so it wins even over an existing snap PNG.
+                #   2. the standalone snap PNG.
+                #   3. a ranked guess among this correl's exported pictures --
+                #      only for rows whose sidecar predates ImagePath.
+                $recordedImage = [string]$r.ImagePath
+                $recordedOk = (-not [string]::IsNullOrWhiteSpace($recordedImage)) -and (Test-Path -LiteralPath $recordedImage)
+                $linkPath = if ($recordedOk) { $recordedImage } elseif ($snapExists) { $snapPath } else { '' }
+                if (-not $recordedOk -and -not $snapExists -and $FallbackImage) {
                     $exportDir = Resolve-OldSnapExportImageDir -WorkDir $WorkDir -CorrelId $r.CorrelId -ExportRoot $ExportRoot
                     if (-not [string]::IsNullOrWhiteSpace($exportDir)) {
                         if (-not $exportNamesByCorrel.ContainsKey($r.CorrelId)) {
@@ -977,8 +1131,16 @@ function Write-ProcessTimeWorkbook {
                     # exists). The crop geometry per field is office-PC-calibrated
                     # (PixelGeometry); without it Get-OldSnapRowPixelVerdict
                     # returns '' -> the verdict falls back to a conservative flag.
+                    # Only a REAL screen capture has the calibrated geometry
+                    # the pixel check needs: an evidence-workbook copy
+                    # promoted into the snap name is re-scaled by the paste,
+                    # so it is excluded even though it now sits at $snapPath.
+                    $promotedMarker = Resolve-OldSnapPromotionMarkerPath -SnapPath $snapPath
+                    $wasPromoted = [bool]$r.ImagePromoted -or
+                        ((-not [string]::IsNullOrWhiteSpace($promotedMarker)) -and (Test-Path -LiteralPath $promotedMarker))
+                    $pixelUsable = $snapExists -and -not $wasPromoted
                     $pixelResult = ''
-                    if ($PixelEnabled -and $snapExists) {
+                    if ($PixelEnabled -and $pixelUsable) {
                         $fields = @(
                             @{ Text = $r.Start;    Geometry = $(if ($null -ne $PixelGeometry) { $PixelGeometry['Start'] } else { $null }) },
                             @{ Text = $r.End;      Geometry = $(if ($null -ne $PixelGeometry) { $PixelGeometry['End'] } else { $null }) },
@@ -1230,6 +1392,11 @@ if ($migratedCount -gt 0) {
 $exportRootRel = 'snap\ProcessTime'
 $exportRoot = Join-Path $WorkDir $exportRootRel
 
+# Promotion of an OCR-identified evidence picture into the canonical snap
+# name is part of the old-snap verification feature, so its master gate
+# applies (OldSnapVerify.Enabled).
+$promoteIdentifiedSnap = ($OldSnapVerifyEnabled -and $OldSnapPromoteIdentified)
+
 # {Month} for the count-reference file/sheet names. Blank config -> this run's
 # month, so a monthly reference workbook needs no per-run input.
 $countRefMonth = $CountReferenceMonth
@@ -1388,10 +1555,12 @@ try {
 
                     $giftResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGiftRecv -CorrelId $correlId `
                         -SnapTextPath $giftTxt -SnapPngPath $giftPng -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
-                        -ExportBaseName ("GIFT_{0}" -f $correlId)
+                        -ExportBaseName ("GIFT_{0}" -f $correlId) `
+                        -WorkDir $WorkDir -Side 'GIFT' -SnapDirPattern $OldSnapDirPattern -PromoteIdentifiedSnap $promoteIdentifiedSnap
                     $gfixResult = Resolve-ProcessTimeSide -Workbook $wb -SheetName $sheetGfixRecv -CorrelId $correlId `
                         -SnapTextPath $gfixTxt -SnapPngPath $gfixPng -OutDir $exportDir -AnchorCol $AnchorCol -SecondaryLanguage $OcrLanguage -Scale $ExportScale `
-                        -ExportBaseName ("GFIX_{0}" -f $correlId)
+                        -ExportBaseName ("GFIX_{0}" -f $correlId) `
+                        -WorkDir $WorkDir -Side 'GFIX' -SnapDirPattern $OldSnapDirPattern -PromoteIdentifiedSnap $promoteIdentifiedSnap
 
                     $row.GIFT_ProcessTime = if ($giftResult.Matched) { '1' } else { '2' }
                     $row.GFIX_ProcessTime = if ($gfixResult.Matched) { '1' } else { '2' }
@@ -1421,11 +1590,15 @@ try {
                         GiftDuration = $giftResult.Duration
                         GiftCount    = $giftResult.RecordCount
                         GiftSource   = $giftResult.Source
+                        GiftImage    = $giftResult.ImagePath
+                        GiftImagePromoted = [bool]$giftResult.ImagePromoted
                         GfixStart    = (Format-ProcessTimeStamp $gfixResult.StartTime)
                         GfixEnd      = (Format-ProcessTimeStamp $gfixResult.EndTime)
                         GfixDuration = $gfixResult.Duration
                         GfixCount    = $gfixResult.RecordCount
                         GfixSource   = $gfixResult.Source
+                        GfixImage    = $gfixResult.ImagePath
+                        GfixImagePromoted = [bool]$gfixResult.ImagePromoted
                     }
                     $payload = [pscustomobject]@{
                         SchemaVersion = 1

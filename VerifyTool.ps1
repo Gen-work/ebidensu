@@ -1831,6 +1831,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
                 if ($osv.ContainsKey('EmitVerifyColumn') -and $null -ne $osv.EmitVerifyColumn) { $args['OldSnapEmitVerifyColumn'] = [bool]$osv.EmitVerifyColumn }
                 if (-not [string]::IsNullOrWhiteSpace([string]$osv.SnapDirPattern)) { $args['OldSnapDirPattern'] = [string]$osv.SnapDirPattern }
                 if ($osv.ContainsKey('FallbackImage') -and $null -ne $osv.FallbackImage) { $args['OldSnapFallbackImage'] = [bool]$osv.FallbackImage }
+                if ($osv.ContainsKey('PromoteIdentifiedSnap') -and $null -ne $osv.PromoteIdentifiedSnap) { $args['OldSnapPromoteIdentified'] = [bool]$osv.PromoteIdentifiedSnap }
                 if (-not [string]::IsNullOrWhiteSpace([string]$osv.RenderFont)) { $args['OldSnapRenderFont'] = [string]$osv.RenderFont }
                 if ($osv.ContainsKey('PixelDiff') -and $osv.PixelDiff -is [hashtable]) {
                     if ($osv.PixelDiff.ContainsKey('Enabled') -and $null -ne $osv.PixelDiff.Enabled) { $args['OldSnapPixelDiff'] = [bool]$osv.PixelDiff.Enabled }

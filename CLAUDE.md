@@ -152,7 +152,12 @@ OldSnapVerify.ps1       pure old-snap 9->3 hand-verification helpers (dot-source
                         below-label > whole-sheet > above-label, lowest index
                         first; *_pre.png OCR derivatives never linked) so a
                         correl with no standalone snap PNG still gets a
-                        clickable image. Japanese via [char]. Unit-tested
+                        clickable image, plus Resolve-OldSnapPromotionMarker
+                        Path (v2.19.0: '<snap>.promoted.json', marking a snap
+                        PNG that was copied out of the evidence workbook
+                        rather than captured, so the pixel check keeps
+                        excluding its re-scaled geometry on later runs).
+                        Japanese via [char]. Unit-tested
                         (Tests\Test-OldSnapVerify.ps1). v2.17.0.
 PixelDigitMatch.ps1     pure D2 per-digit 3/9 image scorer (dot-source, no
                         param(), no COM/GDI): grayscale ink -> binarize -> trim
@@ -193,8 +198,15 @@ ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
                         INDEX/MATCH) and the spec grows to four columns --
                         K 件数(参照) pulls the EXPECTED count out of the
                         project's monthly workbook and L 件数チェック compares
-                        it against the OCR-read count. Without a reference the
-                        3-column I/J/K layout is unchanged. ProcessTime.ps1's COM-side
+                        it against the OCR-read count. v2.19.0: the layout is
+                        ALWAYS I/J/K/L -- with no reference configured K holds
+                        an inert TEXT placeholder carrying <DIR>/<BOOK>/
+                        <SHEET> tokens (New-ProcessTimeCountPlaceholderFormula,
+                        CountReference.PlaceholderWhenUnset) -- and L compares
+                        the count against K when K has a value, else against
+                        the SAME correl's other side (GIFT vs GFIX) via
+                        Get-ProcessTimeCountPairMap + the template's {1}.
+                        Equal counts read OK, INCLUDING 0 vs 0. ProcessTime.ps1's COM-side
                         Set-ProcessTimeCheckColumns walks the spec to write the
                         headers/formulas/number-formats uniformly after the
                         data rows. Japanese headers via [char]. Unit-tested
@@ -520,7 +532,35 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-27 v2.18.0)
+## Current state (last bump: 2026-07-28 v2.19.0)
+
+v2.19.0 (ProcessTime: count check reworked + identified-snap promotion):
+three fixes from the operator's review of v2.18.0's real output.
+**Count check** -- a zero record count is legitimate, and what the operator
+wants checked is whether the two sides AGREE, so `L 件数チェック` now compares
+the OCR-read count against the reference count `K` when K has a value and
+otherwise against the SAME correl's other side (GIFT vs GFIX). Equal reads
+`OK`, INCLUDING `0` vs `0`; blank whenever there is nothing to compare
+against. The paired row is resolved per row by the pure
+`Get-ProcessTimeCountPairMap` (read off the sheet, so retained rows pair too)
+and filled into the template's `{1}` -- the cross-row check v2.16.0 listed as
+a follow-up. The columns are now ALWAYS I/J/K/L, so enabling a reference no
+longer shifts 検証. **K placeholder** -- with no reference configured K still
+carries the lookup shape with `<DIR>`/`<BOOK>`/`<SHEET>` tokens, written as
+TEXT (no broken-link prompt); the operator replaces the tokens and converts
+the column back to formulas. **Identified-snap promotion**
+(`OldSnapVerify.PromoteIdentifiedSnap`) -- v2.18.0's D1 fallback RANKED a
+correl's exported pictures and could link one the OCR had rejected (often the
+Excel screenshot). `Resolve-ProcessTimeSide` now records the picture the
+accepted read really came from, and saves an evidence-workbook export under
+the canonical `snap\<Stage>_HM\<correl>.png` name, so the hyperlink opens the
+exact page the numbers came from and later runs OCR it directly. It never
+overwrites a real capture and never writes a `<correl>.txt` (that tier means
+"immune Ctrl+A page text" and is trusted absolutely); the copy is marked with
+`<snap>.promoted.json` so the D2 pixel check keeps excluding its re-scaled
+geometry on every later run. Pure logic unit-tested; COM paths static-checked
+only -- confirm on an office PC.
+
 
 v2.18.0 (ProcessTime: reference-workbook 件数チェック + D1 fallback image):
 two fixes from the operator's first real run of the non-pixel build.

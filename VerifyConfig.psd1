@@ -470,17 +470,27 @@
         # ProcessTimeCheck.ps1). $false writes A..H data only.
         EmitCheckColumns = $true
 
-        # 件数チェック reference lookup (v2.18.0). The record-count check is
-        # really "does the OCR'd count match the count the project's monthly
-        # sheet lists for this job" -- the operator does it by hand with an
-        # INDEX/MATCH into that workbook. Turning this on emits that formula:
-        #   K 件数(参照)   =IFERROR(INDEX(<ValueColumn>,MATCH(LEFT(C行,KeyLength)&"*",<KeyColumn>,0)),"")
-        #   L 件数チェック =IF(OR(TRIM(G行)="",K行=""),"",IF(件数=K行,"T","F"))
-        # Enabled = $false keeps the previous self-contained K check
-        # ("count parses to a positive number"), so an untouched config is
-        # unaffected. FileName / SheetName accept two tokens:
+        # 件数チェック (v2.19.0). The check columns after the A..H data are
+        # always I 処理時間(検算) / J チェック / K 件数(参照) / L 件数チェック.
+        #   K 件数(参照)   the EXPECTED record count for this row's job, looked
+        #                  up in the project's monthly workbook with the
+        #                  operator's own formula:
+        #                  =IFERROR(INDEX(<Value>,MATCH(LEFT(C行,KeyLength)&"*",<Key>,0)),"")
+        #                  With Enabled = $false the column is still emitted,
+        #                  but as an inert TEXT placeholder carrying <DIR>,
+        #                  <BOOK> and <SHEET> tokens to search-and-replace once
+        #                  the real path is known (set PlaceholderWhenUnset =
+        #                  $false to leave the cells empty instead).
+        #   L 件数チェック compares the OCR-read count against K when K has a
+        #                  value, and otherwise against the SAME correl's other
+        #                  side (GIFT vs GFIX) -- the check that works with no
+        #                  reference workbook at all. Equal counts read OK,
+        #                  INCLUDING 0 vs 0 (a zero count is a legitimate
+        #                  result; only a disagreement is a finding). Blank
+        #                  whenever there is nothing to compare against.
+        # FileName / SheetName accept two tokens:
         #   {Tag}    this output workbook's tag (JOD / JRV / ...)
-        #   {Month}  CLI -CountReferenceMonth, else the current month number
+        #   {Month}  the Month field below, else the current month number
         # A {Tag} template under OutputMode 'Single' (no tag) disables the
         # lookup for that run rather than emitting a half-expanded path.
         # Directory blank -> the short '[Book.xlsx]Sheet'!... form, which
@@ -488,13 +498,11 @@
         # the folder to reference a CLOSED workbook. FirstRow/LastRow bound
         # the lookup ranges (whole-column external references to a closed
         # workbook are unreliable); set both to 0 for whole columns.
-        # NOTE turning this on adds a column, which shifts the 検証 column one
-        # to the right in an EXISTING output workbook: rows retained from an
-        # earlier run keep their verdict in the old position (now overwritten
-        # by 件数チェック). Rerun that workbook's rows with -Force (or delete
-        # the file first) so every row is rewritten in the new layout.
         CountReference = @{
             Enabled     = $false
+            # Emit the K column as an inert text placeholder while Enabled is
+            # $false, so the formula shape is already in the sheet.
+            PlaceholderWhenUnset = $true
             Directory   = ''
             FileName    = 'GPCS({Tag})_{Month}月.xlsx'
             SheetName   = '{Tag}'
@@ -543,6 +551,18 @@
             # counts as the D2 pixel check's calibrated snap, so with
             # PixelDiff on it lands on 要確認). $false = snap PNG only.
             FallbackImage = $true
+            # Once OCR has IDENTIFIED which exported evidence picture belongs
+            # to a correl, save that picture under the canonical snap name
+            # (snap\<Stage>_HM\<correl>.png) when no real capture exists
+            # there yet. The hyperlink then points at the exact page the
+            # numbers were read off, later runs OCR it directly instead of
+            # reopening the evidence workbook, and the 検証 column sees a
+            # normal image. Never overwrites a real capture, and never writes
+            # a <correl>.txt -- that tier means "exact page text, immune to
+            # the 9->3 misread" and must never be filled with OCR output.
+            # A promoted copy is re-scaled by the evidence paste, so it is
+            # still excluded from the D2 pixel check.
+            PromoteIdentifiedSnap = $true
             # D2 per-digit 3/9 image discrimination. OFF until the Phase-0
             # separability gate passes (mock-page/pixeldiff prototype); the
             # COM/GDI wiring is static-checked only, confirmed on an office PC.

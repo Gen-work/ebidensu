@@ -1,3 +1,69 @@
+## 2026-07-28 - ProcessTime: count check reworked + identified-snap promotion (v2.19.0)
+
+Three fixes from the operator's review of v2.18.0's output.
+
+### Changed
+- **The count check is now a GIFT-vs-GFIX comparison, and 0 vs 0 is OK.**
+  v2.16.0's K check called a zero count NG ("count parses to a POSITIVE
+  number"), but a zero record count is a legitimate result -- an interface
+  with no data that day -- and the check the operator actually wants is
+  whether the two sides AGREE. L 件数チェック now compares the OCR-read count
+  against the reference count (K) when K has a value, and otherwise against
+  the SAME correl's other side. Equal reads `OK`, including `0` vs `0`;
+  different reads `NG`; anything with nothing to compare against stays blank.
+  The paired row is not at a fixed offset (the layout groups all GIFT rows
+  then all GFIX rows per job, and retained rows sit wherever an earlier run
+  left them), so the writer reads (row, side, correl) off the sheet and the
+  pure `Get-ProcessTimeCountPairMap` resolves each partner into the template's
+  `{1}`. This was listed as a deliberate follow-up in v2.16.0 -- it is done.
+- **The check columns are now always I/J/K/L.** K 件数(参照) is emitted whether
+  or not a reference workbook is configured, so the layout no longer shifts
+  when `CountReference.Enabled` is turned on (v2.18.0's documented migration
+  wart is gone).
+
+### Added
+- **K placeholder when no reference is configured**
+  (`CountReference.PlaceholderWhenUnset`, default ON). K carries the real
+  lookup shape with `<DIR>` / `<BOOK>` / `<SHEET>` tokens, written as TEXT so
+  Excel never tries to resolve a reference that does not exist yet (no broken
+  link prompt, no `#REF!`). The operator search-and-replaces the three tokens
+  and converts the column back to formulas (Data -> Text to Columns -> Finish)
+  once the real path is known. Set the flag `$false` to leave K empty.
+- **Identified-snap promotion** (`OldSnapVerify.PromoteIdentifiedSnap`,
+  default ON) -- the fix for D1 linking the WRONG picture. v2.18.0 guessed
+  among a correl's exported pictures by tier rank, which could land on an
+  above-label candidate the OCR had actually REJECTED (typically the Excel
+  screenshot, not the HM page). `Resolve-ProcessTimeSide` now records the
+  picture the accepted reading really came from, and when that picture is an
+  evidence-workbook export -- i.e. this correl has no standalone snap -- it is
+  saved under the canonical name `snap\<Stage>_HM\<correl>.png`. The hyperlink
+  then points at the exact page the numbers were read off, the 検証 column
+  sees a normal image, and later runs OCR that file directly (tier 1.5)
+  instead of reopening the evidence workbook.
+  Promotion never overwrites a real capture, and **never writes a
+  `<correl>.txt`**: that tier means "exact Ctrl+A page text, immune to the
+  9->3 misread" and is trusted absolutely by the verdict, so filling it with
+  OCR output would launder an unverified read into a trusted one. A promoted
+  file is marked with a `<snap>.promoted.json` sidecar, because from the next
+  run on it is read through the ordinary snap path and would otherwise be
+  indistinguishable from a real capture -- the D2 pixel check consults that
+  marker and keeps excluding it (a workbook copy is re-scaled by the paste, so
+  its geometry is not what the check is calibrated against).
+- Hyperlink resolution order is now: the recorded accepted image -> the
+  standalone snap PNG -> v2.18.0's ranked guess (kept only for rows whose
+  cached OCR result predates this change).
+
+### Notes
+- Existing output workbooks: rows retained from a v2.18.0 run keep whatever
+  K/L held then; rerun those rows with `-Force` to get the new columns.
+  Correls already OCR'd need `-Force -Stage Ocr` (or a deleted sidecar) for
+  promotion to happen, since a cached result opens no workbook.
+- Pure logic unit-tested (`Test-ProcessTimeCheck.ps1` 99,
+  `Test-OldSnapVerify.ps1` 75; suite green apart from the 2 known Linux-only
+  path-separator cases). The COM paths -- the L formula evaluating in real
+  Excel, the text placeholder staying text, and the promoted file opening
+  from the hyperlink -- are static-checked only: confirm on an office PC.
+
 ## 2026-07-27 - ProcessTime: reference-workbook count check + D1 fallback image (v2.18.0)
 
 Two fixes from the operator's first real run of the non-pixel ProcessTime
