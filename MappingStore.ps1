@@ -79,6 +79,35 @@ function ConvertTo-TargetIdList {
     return $out.ToArray()
 }
 
+# A downloaded data file can use either the plain correl id or the batch-run
+# form "<correl>.<YYMMDD>.<8-digit sequence>".  Keep the mapping value intact
+# (it is still the row's identity), but expose both spellings to every phase
+# that has to find an external file or accept a -TargetIds value.
+function Get-CorrelIdAliases {
+    param([string]$CorrelId)
+    if ([string]::IsNullOrWhiteSpace($CorrelId)) { return @() }
+    $value = $CorrelId.Trim()
+    $out = [System.Collections.Generic.List[string]]::new()
+    $out.Add($value)
+    if ($value -match '^(?<base>.+)\.\d{6}\.\d{8}$') {
+        $out.Add([string]$Matches['base'])
+    }
+    return $out.ToArray()
+}
+
+function Test-CorrelIdEquivalent {
+    param([string]$Left, [string]$Right)
+    if ([string]::IsNullOrWhiteSpace($Left) -or [string]::IsNullOrWhiteSpace($Right)) { return $false }
+    $leftAliases = @(Get-CorrelIdAliases $Left)
+    $rightAliases = @(Get-CorrelIdAliases $Right)
+    foreach ($l in $leftAliases) {
+        foreach ($r in $rightAliases) {
+            if ($l -ieq $r) { return $true }
+        }
+    }
+    return $false
+}
+
 # True when no targets given, or row matches any target on
 # Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.
 function Test-TargetRow {
@@ -91,7 +120,9 @@ function Test-TargetRow {
         (Get-RowProp $Row 'Excel_NAME')
     )
     foreach ($t in $Targets) {
-        if ($ids -contains $t) { return $true }
+        foreach ($id in $ids) {
+            if (Test-CorrelIdEquivalent $id $t) { return $true }
+        }
     }
     return $false
 }

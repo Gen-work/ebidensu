@@ -15,6 +15,14 @@ Assert-Equal 'a|b'   ((ConvertTo-TargetIdList ' a , , b ') -join '|')    'trim +
 Assert-Equal 'x|y|z' ((ConvertTo-TargetIdList @('x','y,z')) -join '|')   'mixed array + comma'
 Assert-Equal 0       (@(ConvertTo-TargetIdList $null)).Count            'null -> empty (callers wrap in @())'
 
+# -- Correl-id aliases --
+Assert-Equal 'JIGPU87S.260729.10515511|JIGPU87S' `
+    ((Get-CorrelIdAliases 'JIGPU87S.260729.10515511') -join '|') 'batch-run correl also exposes its plain id'
+Assert-Equal 'JIGPU87S' ((Get-CorrelIdAliases 'JIGPU87S') -join '|') 'plain correl is unchanged'
+Assert-True (Test-CorrelIdEquivalent 'JIGPU87S' 'JIGPU87S.260729.10515511') 'plain and batch-run correl are equivalent'
+Assert-True (Test-CorrelIdEquivalent 'JIGPU87S.260729.10515511' 'JIGPU87S.260729.10515512') 'batch runs of the same plain correl are equivalent'
+Assert-True (-not (Test-CorrelIdEquivalent 'JIGPU87S' 'JIGPU88S.260729.10515511')) 'different plain correl ids remain distinct'
+
 # -- Ensure-MappingColumns --
 $rows = @([pscustomobject]@{ Correl_ID_S = 'JIDSF48S'; GIFT_HM_snap = '1' })
 Ensure-MappingColumns -Rows $rows | Out-Null
@@ -29,6 +37,8 @@ Assert-True (Test-TargetRow $r @())                    'no targets -> match all'
 Assert-True (Test-TargetRow $r @('JIDSF48S'))          'match Correl_ID_S'
 Assert-True (Test-TargetRow $r @('JIDSJ48S'))          'match JOB_NAME'
 Assert-True (-not (Test-TargetRow $r @('NOPE')))       'no match'
+$versioned = [pscustomobject]@{ Correl_ID_S='JIGPU87S.260729.10515511'; Correl_ID_M=''; JOB_NAME=''; Excel_NAME='' }
+Assert-True (Test-TargetRow $versioned @('JIGPU87S')) 'plain target selects a batch-run mapping row'
 
 # -- Get-PendingRows (snap-style) --
 $snapRows = @(
