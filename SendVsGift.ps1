@@ -81,6 +81,7 @@ foreach ($c in $candidates) {
 }
 if (-not $helpersPath) { throw 'ExcelHelpers.ps1 not found.' }
 . $helpersPath
+. (Join-Path $PSScriptRoot 'MappingStore.ps1')
 . (Join-Path $PSScriptRoot 'WorkbookResolver.ps1')
 . (Join-Path $PSScriptRoot 'ProjectLabels.ps1')
 . (Join-Path $PSScriptRoot 'SendMetadata.ps1')
@@ -206,10 +207,15 @@ function Find-GiftFileForZipRow([string]$GiftDir, [string]$CorrelId) {
     if ([string]::IsNullOrWhiteSpace($CorrelId)) { return $null }
     $files = @(Get-ChildItem -LiteralPath $GiftDir -File -ErrorAction Stop | Sort-Object Name)
     $candidates = @()
-    $candidates += @($files | Where-Object { [string]$_.Name -eq ($CorrelId + '.zip') })
-    $candidates += @($files | Where-Object { [string]$_.Name -eq $CorrelId })
-    $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($CorrelId) -and [string]$_.Extension -ieq '.zip' })
-    $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($CorrelId) })
+    # Correl_ID_S may carry the transfer-batch stamp
+    # ("<correl>.<YYMMDD>.<8-digit>") that the GIFT data file itself may or
+    # may not include (same rule as DfSnap.ps1's Find-DfZipFile).
+    foreach ($alias in @(Get-CorrelIdAliases $CorrelId)) {
+        $candidates += @($files | Where-Object { [string]$_.Name -eq ($alias + '.zip') })
+        $candidates += @($files | Where-Object { [string]$_.Name -eq $alias })
+        $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($alias) -and [string]$_.Extension -ieq '.zip' })
+        $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($alias) })
+    }
 
     $seen = @{}
     foreach ($f in $candidates) {

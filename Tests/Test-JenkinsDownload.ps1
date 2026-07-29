@@ -20,6 +20,13 @@ Assert-Equal 'JIDSF48S|JIDSF48S.dat' (($selected | ForEach-Object { $_.Name }) -
 $jobOnly = @(Select-JenkinsDownloadFiles -Files $files -CorrelId 'NO_CORREL' -JobName 'JIDSJ48S')
 Assert-Equal 'JIDSJ48S.log' (($jobOnly | ForEach-Object { $_.Name }) -join '|') 'fallback to JOB_NAME prefix when no correl file matches'
 
+# Mapping's Correl_ID_S carries the transfer-batch stamp, but the Jenkins
+# folder lists the file under its plain (shorter) name -- StartsWith($correl)
+# alone cannot match this direction; the reverse StartsWith($name) must.
+$stampedFiles = @([pscustomobject]@{ Name = 'JIDSU86S' })
+$stampedSelected = @(Select-JenkinsDownloadFiles -Files $stampedFiles -CorrelId 'JIDSU86S.260729.10515511' -JobName '')
+Assert-Equal 'JIDSU86S' (($stampedSelected | ForEach-Object { $_.Name }) -join '|') 'batch-stamped Correl_ID_S still matches a plainly-listed file'
+
 $url = ConvertTo-JenkinsDownloadUri -FolderUrl 'https://jenkins.example/job/JRV/ws/out?view=1#top' -FileName 'JIDSF48S data.txt'
 Assert-Equal 'https://jenkins.example/job/JRV/ws/out/JIDSF48S%20data.txt' $url 'builds file URL from folder URL and clears query/fragment'
 

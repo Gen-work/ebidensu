@@ -26,13 +26,31 @@
 #        SsCode=...; Section=... }
 # ============================================================
 
+# A workbook's own displayed correl order and the mapping id used to name a
+# snap file can disagree on whether the transfer-batch stamp
+# ("<correl>.<YYMMDD>.<8-digit>") is included (see MappingStore.ps1's
+# Get-CorrelIdAliases / Resolve-CorrelFilePath). Try the exact plain name
+# first (the common case, and what every existing caller/test expects when
+# SnapRoot does not exist or holds only plainly-named files); only fall back
+# to a directory scan for a batch-run-named file when that exact file is
+# missing. MappingStore.ps1 must already be dot-sourced by the caller (true
+# for every real caller -- ReplaceEvidence.ps1 loads it before this file).
 function Get-SnapPath {
     param([string]$SnapRoot, [string]$Folder, [string]$Name)
-    return (Join-Path (Join-Path $SnapRoot $Folder) ('{0}.png' -f $Name))
+    $dir = Join-Path $SnapRoot $Folder
+    $plain = Join-Path $dir ('{0}.png' -f $Name)
+    if (Test-Path -LiteralPath $plain -PathType Leaf) { return $plain }
+    if (Get-Command -Name 'Resolve-CorrelFilePath' -ErrorAction SilentlyContinue) {
+        $resolved = Resolve-CorrelFilePath -Dir $dir -CorrelId $Name -Extension '.png'
+        if ($null -ne $resolved) { return $resolved }
+    }
+    return $plain
 }
 
 # Drop blanks, '#VALUE!' / '#REF!' style errors, and anything that does not
-# look like a correl id. Order is preserved.
+# look like a correl id. Order is preserved. A correl id may carry the
+# transfer-batch stamp ("<correl>.<YYMMDD>.<8-digit>") when read directly off
+# a sheet that records it that way.
 function Select-ValidCorrelIds {
     param([string[]]$Raw)
     $out = [System.Collections.Generic.List[string]]::new()
@@ -41,7 +59,9 @@ function Select-ValidCorrelIds {
         $v = ([string]$item).Trim()
         if ([string]::IsNullOrWhiteSpace($v)) { continue }
         if ($v.StartsWith('#')) { continue }                 # #VALUE! / #REF! / #N/A
-        if ($v -notmatch '^[A-Za-z0-9_]{4,}$') { continue }  # not a correl-looking token
+        $looksLikeCorrel = ($v -match '^[A-Za-z0-9_]{4,}$') -or
+                            ($v -match '^[A-Za-z0-9_]{4,}\.\d{6}\.\d{8}$')
+        if (-not $looksLikeCorrel) { continue }
         $out.Add($v)
     }
     return $out.ToArray()

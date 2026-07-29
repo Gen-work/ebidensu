@@ -19,6 +19,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'MappingStore.ps1')
+
 if (-not (Test-Path -LiteralPath $MappingPath)) { throw "Mapping not found: $MappingPath" }
 $mapping = @(Import-Csv -LiteralPath $MappingPath)
 if ($mapping.Count -eq 0) { throw "Mapping is empty: $MappingPath" }
@@ -32,7 +34,7 @@ if ($cols -notcontains $TimeColumn) {
     }
 }
 
-$row = $mapping | Where-Object { $_.$IdColumn -eq $CorrelId } | Select-Object -First 1
+$row = $mapping | Where-Object { Test-CorrelIdEquivalent ([string]$_.$IdColumn) $CorrelId } | Select-Object -First 1
 if (-not $row) { throw "Correl '$CorrelId' not in column '$IdColumn'." }
 
 $existing = $row.$TimeColumn

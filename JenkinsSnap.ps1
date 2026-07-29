@@ -488,6 +488,16 @@ foreach ($toCode in $groupOrder) {
         $searchJob  = [string]$row.$job
         $searchTerm = [string]$row.$searchCol
 
+        # Ctrl+F is a literal substring search. Correl_ID_S sometimes carries
+        # the transfer-batch stamp ("<correl>.<YYMMDD>.<8-digit>"), which the
+        # Jenkins page's own rendered text may or may not include. Searching
+        # the stamped form fails outright (a superstring can't match) the
+        # moment the page shows only the base id -- leaving Ctrl+F with 0
+        # hits and NO highlighted row in the screenshot. The base id is
+        # always a prefix of either spelling, so it matches both.
+        $ctrlFTerm = Get-SnapCorrelIdBase $searchTerm
+        if ([string]::IsNullOrWhiteSpace($ctrlFTerm)) { $ctrlFTerm = $searchTerm }
+
         Write-Host ''
         Write-Host ("  [$correl] search: $searchTerm") -ForegroundColor White
 
@@ -514,10 +524,11 @@ foreach ($toCode in $groupOrder) {
             # job link when a build is queued and navigates Edge into that job
             # before we capture.
             Click-JenkinsPageCenter
-            # Ctrl+F search for CORREL_ID_S; leave the find bar open so the
-            # screenshot shows the highlighted match (ESC is sent after capture).
+            # Ctrl+F search for CORREL_ID_S (base id only -- see $ctrlFTerm
+            # above); leave the find bar open so the screenshot shows the
+            # highlighted match (ESC is sent after capture).
             Send-CtrlF
-            Paste-Replace $searchTerm
+            Paste-Replace $ctrlFTerm
             Start-Sleep -Milliseconds $ResultWaitMs
 
             try {
@@ -646,12 +657,31 @@ foreach ($toCode in $groupOrder) {
                 $rowExpected = ConvertTo-ExpectedDateTime -Value (Get-RowProp $row $TimeColumn) -Format $TimeFormat
             }
 
+            # Best-effort ground-truth reference for THIS correl: its own
+            # already-archived HM Ctrl+A capture (snap\<GIFT|GFIX>_HM\
+            # <correl>.txt), instead of "just search and take whatever comes
+            # first". Used only to pick among multiple same-correl Jenkins
+            # list entries (Select-JenkinsFileCandidate) -- never enforced as
+            # a tolerance, so it can only help disambiguate, never turn an ok
+            # into an ng. Same value whether or not TimeCheck/Expected_Time
+            # is configured for this run.
+            $rowPreferredTime = $null
+            try {
+                $hmFolder  = if ($Mode -eq 'GfixRecv') { 'GFIX_HM' } else { 'GIFT_HM' }
+                $hmTxtPath = Join-Path (Join-Path (Join-Path $WorkDir 'snap') $hmFolder) ("{0}.txt" -f $correl)
+                if (Test-Path -LiteralPath $hmTxtPath) {
+                    $hmArchivedText   = Get-Content -LiteralPath $hmTxtPath -Raw -Encoding UTF8
+                    $hmArchivedRows   = ConvertFrom-HmPageText $hmArchivedText
+                    $rowPreferredTime = Get-HmArchivedCorrelTime -HmRows $hmArchivedRows -CorrelId $correl
+                }
+            } catch { $rowPreferredTime = $null }
+
             $verdict = $null
             try {
                 $files   = ConvertFrom-JenkinsListText $pageText
                 $expectExists = ($Mode -ne 'NoGfix')
                 $verdict = Test-JenkinsFile -Files $files -CorrelId $searchTerm -Expected $rowExpected `
-                            -ToleranceMin $runTolerance -ExpectExists $expectExists
+                            -ToleranceMin $runTolerance -ExpectExists $expectExists -PreferredTime $rowPreferredTime
             } catch {
                 # Detection bugs must never block the screenshot workflow: keep the
                 # shot, mark done, and record a warning for review.
