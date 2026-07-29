@@ -48,6 +48,20 @@ function Get-GfixExpectedCommandFragment {
     return ('{0} {1}' -f $path, $ss)
 }
 
+# Command paths may append the transfer timestamp to Correl_ID_S, for example
+# JIDSU86S.260729.10515511. ReplaceEvidence must accept that spelling as the
+# same receive command while retaining the strict trailing SS-code boundary.
+function Get-GfixExpectedCommandPattern {
+    param([string]$ToCode, [string]$CorrelIdS, [string]$SsCode = '')
+    $base = $CorrelIdS
+    if ($base -match '^(?<base>.+)\.\d{6}\.\d{8}$') { $base = [string]$Matches['base'] }
+    $path = Get-GfixExpectedPath $ToCode $base
+    $ss = Get-GfixSsCode $base $SsCode
+    $pattern = [regex]::Escape($path) + '(?:\.\d{6}\.\d{8})?'
+    if (-not [string]::IsNullOrEmpty($ss)) { $pattern += '\s+' + [regex]::Escape($ss) + '(?=\s|[''"]|$)' }
+    return $pattern
+}
+
 # Parse a leading 'yyyy-MM-dd HH:mm:ss' timestamp. Returns [datetime] or $null.
 function Get-GfixLogTimestamp {
     param([string]$Line)
@@ -60,9 +74,10 @@ function Get-GfixLogTimestamp {
 }
 
 function Test-GfixCommandLine {
-    param([string]$Line, [string]$Fragment)
+    param([string]$Line, [string]$Fragment, [string]$Pattern = '')
     if ([string]::IsNullOrEmpty($Line)) { return $false }
     if ($Line -notmatch 'Command:') { return $false }
+    if (-not [string]::IsNullOrWhiteSpace($Pattern)) { return [regex]::IsMatch($Line, $Pattern) }
     return $Line.Contains($Fragment)
 }
 
@@ -74,9 +89,9 @@ function Test-GfixCommandLine {
 #     Warning    : non-empty when >1 candidate matched
 #     Error      : non-empty when 0 candidates / bad input (caller fails the row)
 #
-# File preference: '<Correl_ID_S>_*.log' first (named by GfixLogDownload),
-# else any '*.log'. The whole chosen file's lines are returned so the Excel
-# step can paste the entire log (not just the Command line).
+# Every '*.log' is inspected because both '<Correl_ID_S>_*.log' and
+# '<Correl_ID_S>.<timestamp>_*.log' are valid names. The whole chosen file's
+# lines are returned so the Excel step can paste the entire log.
 function Find-GfixLogForCorrel {
     param(
         [string]$LogDir,
@@ -97,15 +112,15 @@ function Find-GfixLogForCorrel {
         return [pscustomobject]$result
     }
     $result.Fragment = Get-GfixExpectedCommandFragment $ToCode $CorrelIdS $SsCode
+    $commandPattern = Get-GfixExpectedCommandPattern $ToCode $CorrelIdS $SsCode
     if (-not (Test-Path -LiteralPath $LogDir)) {
         $result.Error = "log dir not found: $LogDir"
         return [pscustomobject]$result
     }
 
-    $files = @(Get-ChildItem -LiteralPath $LogDir -Filter ('{0}_*.log' -f $CorrelIdS) -File -ErrorAction SilentlyContinue)
-    if ($files.Count -eq 0) {
-        $files = @(Get-ChildItem -LiteralPath $LogDir -Filter '*.log' -File -ErrorAction SilentlyContinue)
-    }
+    # Do not restrict this to '<correl>_*.log': timestamped downloads commonly
+    # use '<correl>.<timestamp>_*.log', and a legacy exact-name log may coexist.
+    $files = @(Get-ChildItem -LiteralPath $LogDir -Filter '*.log' -File -ErrorAction SilentlyContinue)
 
     $cands = [System.Collections.Generic.List[object]]::new()
     foreach ($f in $files) {
@@ -113,7 +128,7 @@ function Find-GfixLogForCorrel {
         try { $lines = @(Get-Content -LiteralPath $f.FullName -Encoding UTF8 -ErrorAction Stop) }
         catch { continue }
         foreach ($ln in $lines) {
-            if (Test-GfixCommandLine $ln $result.Fragment) {
+            if (Test-GfixCommandLine $ln $result.Fragment $commandPattern) {
                 $cands.Add([pscustomobject]@{
                     File        = $f.FullName
                     Timestamp   = (Get-GfixLogTimestamp $ln)

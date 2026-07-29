@@ -28,7 +28,16 @@
 
 function Get-SnapPath {
     param([string]$SnapRoot, [string]$Folder, [string]$Name)
-    return (Join-Path (Join-Path $SnapRoot $Folder) ('{0}.png' -f $Name))
+    $dir = Join-Path $SnapRoot $Folder
+    $expected = Join-Path $dir ('{0}.png' -f $Name)
+    # ReplaceEvidence dot-sources MappingStore first. Use its alias-aware
+    # resolver when available, while keeping this pure planner independently
+    # usable by callers that only dot-source EvidencePlan.
+    if (Get-Command -Name 'Resolve-CorrelFilePath' -ErrorAction SilentlyContinue) {
+        $resolved = Resolve-CorrelFilePath -Directory $dir -CorrelId $Name -Extension '.png'
+        if (-not [string]::IsNullOrWhiteSpace([string]$resolved)) { return $resolved }
+    }
+    return $expected
 }
 
 # Drop blanks, '#VALUE!' / '#REF!' style errors, and anything that does not
@@ -41,7 +50,7 @@ function Select-ValidCorrelIds {
         $v = ([string]$item).Trim()
         if ([string]::IsNullOrWhiteSpace($v)) { continue }
         if ($v.StartsWith('#')) { continue }                 # #VALUE! / #REF! / #N/A
-        if ($v -notmatch '^[A-Za-z0-9_]{4,}$') { continue }  # not a correl-looking token
+        if ($v -notmatch '^[A-Za-z0-9_]{4,}(?:\.\d{6}\.\d{8})?$') { continue }  # plain or timestamped correl
         $out.Add($v)
     }
     return $out.ToArray()

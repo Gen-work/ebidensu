@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 $here = Split-Path $MyInvocation.MyCommand.Path
 . (Join-Path $here '_TestCommon.ps1')
+. (Join-Path (Split-Path $here -Parent) 'MappingStore.ps1')
 . (Join-Path (Split-Path $here -Parent) 'EvidencePlan.ps1')
 
 Reset-Tests 'EvidencePlan'
@@ -19,8 +20,8 @@ function FirstOp([object[]]$plan, [string]$folder) {
 }
 
 # -- Select-ValidCorrelIds --
-$valid = Select-ValidCorrelIds @('JIGPF48S', '#VALUE!', '', '  ', 'JIDSF48S')
-Assert-Equal 'JIGPF48S|JIDSF48S' ($valid -join '|') 'drops #VALUE!/blank, keeps order'
+$valid = Select-ValidCorrelIds @('JIGPF48S', '#VALUE!', '', '  ', 'JIDSF48S.260729.10515511')
+Assert-Equal 'JIGPF48S|JIDSF48S.260729.10515511' ($valid -join '|') 'drops invalid values and keeps plain/timestamped correl order'
 
 # -- DF plan (spec 7) --
 $df = Build-DfEvidencePlan -SnapRoot 'X' -CorrelOrder @('A','B')
@@ -28,6 +29,21 @@ Assert-Equal 'text,picture,blank,text,picture,blank' (Kinds $df) 'DF: text,pic,b
 $dfPic = FirstOp $df 'DF'
 Assert-Equal 'X\DF\A.png' $dfPic.Path 'DF: snap path = snap\DF\<correl>.png'
 Assert-True $dfPic.Required 'DF: picture required'
+
+# A DF snap captured under the timestamped mapping id satisfies a workbook
+# whose Soushin-data sheet still contains the plain correl id.
+$aliasRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('evidence_alias_' + [guid]::NewGuid().ToString('N'))
+try {
+    $aliasDfDir = Join-Path $aliasRoot 'DF'
+    New-Item -ItemType Directory -Path $aliasDfDir -Force | Out-Null
+    $aliasPng = Join-Path $aliasDfDir 'JIGPU86S.260729.10515511.png'
+    Set-Content -LiteralPath $aliasPng -Value 'fake' -Encoding ASCII
+    $aliasPlan = Build-DfEvidencePlan -SnapRoot $aliasRoot -CorrelOrder @('JIGPU86S')
+    $aliasPic = FirstOp $aliasPlan 'DF'
+    Assert-Equal $aliasPng $aliasPic.Path 'DF: plain correl resolves timestamped snap filename'
+} finally {
+    Remove-Item -LiteralPath $aliasRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # -- GIFT plan (spec 8) --
 $gift = Build-GiftEvidencePlan -SnapRoot 'X' -JobName 'J' -CorrelOrder @('A')

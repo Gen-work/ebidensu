@@ -1,3 +1,22 @@
+## 2026-07-29 - Timestamped Correl_ID aliases
+
+### Fixed
+- Treat `<Correl_ID_S>.<YYMMDD>.<8-digit sequence>` as the same external-file
+  identity as the plain `Correl_ID_S`, without rewriting mapping CSV values.
+  This applies to DfSnap GIFT/GFIX data and ZIP lookup, ReplaceEvidence
+  DF/GIFT/GFIX screenshots, and GFIX receive-log command matching.
+- ReplaceEvidence now accepts a plain workbook correl such as `JIGPU86S` when
+  the captured screenshot is named `JIGPU86S.260729.10515511.png`, and accepts
+  the reverse combination as well. Exact filenames remain preferred.
+- GFIX log matching accepts the timestamp suffix immediately before the SS
+  code while retaining a strict boundary, so sibling correl prefixes cannot
+  match accidentally.
+
+### Tests
+- Added regression cases for correl equivalence, timestamped data/screenshot
+  filenames, DF evidence plans, timestamped GFIX commands, and timestamped log
+  filenames.
+
 ## 2026-07-28 - ProcessTime: count check reworked + identified-snap promotion (v2.19.0)
 
 Three fixes from the operator's review of v2.18.0's output.

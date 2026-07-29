@@ -240,12 +240,13 @@ function Invoke-Capture([string]$out, $proc, $region) {
 
 function Find-DataFile([string]$baseDir, [string]$correlIdS) {
     if (-not (Test-Path -LiteralPath $baseDir)) { return $null }
-    $pattern = $FilePattern -f $correlIdS
-    $hits = @(Get-ChildItem -LiteralPath $baseDir -Filter $pattern -File -ErrorAction SilentlyContinue |
-              Sort-Object LastWriteTime -Descending)
+    $patterns = @(Get-CorrelIdAliases $correlIdS | ForEach-Object { $FilePattern -f $_ })
+    $hits = @($patterns | ForEach-Object {
+        Get-ChildItem -LiteralPath $baseDir -Filter $_ -File -ErrorAction SilentlyContinue
+    } | Sort-Object FullName -Unique | Sort-Object LastWriteTime -Descending)
     if ($hits.Count -eq 0) { return $null }
     if ($hits.Count -gt 1) {
-        Write-Host ("    [WARN] {0} files match '{1}'; using newest" -f $hits.Count, $pattern) -ForegroundColor Yellow
+        Write-Host ("    [WARN] {0} files match correl aliases '{1}'; using newest" -f $hits.Count, ($patterns -join ', ')) -ForegroundColor Yellow
     }
     return $hits[0].FullName
 }
@@ -281,9 +282,11 @@ function Find-DfZipFile([string]$baseDir, [string]$correlIdS) {
     if (-not (Test-Path -LiteralPath $baseDir)) { return $null }
     $files = @(Get-ChildItem -LiteralPath $baseDir -File -ErrorAction SilentlyContinue | Sort-Object Name)
     $candidates = @()
-    $candidates += @($files | Where-Object { [string]$_.Name -eq ($correlIdS + '.zip') })
-    $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($correlIdS) -and [string]$_.Extension -ieq '.zip' })
-    $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($correlIdS) })
+    foreach ($alias in @(Get-CorrelIdAliases $correlIdS)) {
+        $candidates += @($files | Where-Object { [string]$_.Name -eq ($alias + '.zip') })
+        $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($alias) -and [string]$_.Extension -ieq '.zip' })
+        $candidates += @($files | Where-Object { ([string]$_.Name).StartsWith($alias) })
+    }
     $seen = @{}
     foreach ($f in $candidates) {
         $key = [string]$f.FullName
@@ -306,10 +309,11 @@ function Expand-DfZip([string]$zipPath, [string]$unzipDir, [string]$correlIdS) {
         $entries = @($archive.Entries | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.Name) })
         if ($entries.Count -eq 0) { throw ("zip has no file entries: {0}" -f $zipPath) }
         $entry = $null
-        $sameName = @($entries | Where-Object { [string]$_.Name -eq $correlIdS })
+        $aliases = @(Get-CorrelIdAliases $correlIdS)
+        $sameName = @($entries | Where-Object { $aliases -contains [string]$_.Name })
         if ($sameName.Count -gt 0) { $entry = $sameName[0] }
         if ($null -eq $entry) {
-            $sameBase = @($entries | Where-Object { [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) -eq $correlIdS })
+            $sameBase = @($entries | Where-Object { $aliases -contains [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) })
             if ($sameBase.Count -gt 0) { $entry = $sameBase[0] }
         }
         if ($null -eq $entry -and $entries.Count -eq 1) { $entry = $entries[0] }
