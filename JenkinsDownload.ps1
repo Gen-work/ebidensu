@@ -36,10 +36,16 @@ function Select-JenkinsDownloadFiles {
     $job = $JobName.Trim()
     if ([string]::IsNullOrWhiteSpace($correl)) { return @() }
 
+    # Correl_ID_S sometimes carries the transfer-batch stamp
+    # ("<correl>.<YYMMDD>.<8-digit>") that the Jenkins-listed file name may or
+    # may not include. StartsWith($correl) alone only covers the direction
+    # where the LISTED name is the longer (stamped) one; check both
+    # directions so a stamped mapping id still finds a plainly-named file.
     $selected = @($Files | Where-Object {
         $name = [string]$_.Name
         $name -eq $correl -or
-        $name.StartsWith($correl, [System.StringComparison]::OrdinalIgnoreCase)
+        $name.StartsWith($correl, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $correl.StartsWith($name, [System.StringComparison]::OrdinalIgnoreCase)
     })
 
     if ($selected.Count -gt 0 -or [string]::IsNullOrWhiteSpace($job)) { return $selected }

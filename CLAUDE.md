@@ -532,7 +532,50 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-28 v2.19.0)
+## Current state (last bump: 2026-07-29 v2.20.0)
+
+v2.20.0 (timestamped correl id: DF evidence linking + snap-verify alias
+tolerance + Jenkins Ctrl+F fix): Correl_ID_S can carry a transfer-batch
+stamp (`<correl>.<YYMMDD>.<8-digit>`); an in-progress change had already
+landed partial fixes (`Get-CorrelIdAliases`/`Test-CorrelIdEquivalent` in
+MappingStore.ps1, `Find-DataFile`/`Find-DfZipFile`/`Expand-DfZip` in
+DfSnap.ps1, `Get-GfixExpectedCommandPattern` in GfixLog.ps1) but left the DF
+evidence-linking gap its own pending test was written to catch, and never
+expanded the tolerance to sibling matchers. This release closes both.
+**DF evidence linking** -- new `Resolve-CorrelFilePath` (MappingStore.ps1)
+resolves a correl-named file whether it is saved under the plain id or the
+batch-stamped one; `EvidencePlan.ps1`'s `Get-SnapPath` (used by every
+`New-PicOp` across DF/GIFT/GFIX) falls back to it when the exact plain snap
+filename is missing, so `Build-DfEvidencePlan` links a DF snap PNG saved
+under its batch-stamped mapping id to a workbook whose Soushin-data sheet
+column A still shows the plain id. `Select-ValidCorrelIds` also accepts a
+batch-stamped token read directly off a sheet. **Snap-verify alias
+tolerance** -- new `Test-SnapCorrelIdMatch`/`Get-SnapCorrelIdBase`
+(SnapVerify.ps1, self-contained -- SnapVerify stays mapping-I/O-free) wired
+into every place a row's own correl-id text was matched against
+`Correl_ID_S`: `Test-HmAbend` (F1), `Test-MqRecord` (F2), `Test-JenkinsFile`
+(F3/F4), `Get-MatchedRowIndex` (F5); previously an exact `-eq` meant a
+batch-stamped id could silently fail to match its own HM/MQ/Jenkins record.
+Same tolerance applied to `Select-JenkinsDownloadFiles`
+(`JenkinsDownload.ps1`), `Parse-JenkinsList.ps1`, `ProcessTime.ps1`'s two
+archived-HM-text lookups, `SendVsGift.ps1`'s `Find-GiftFileForZipRow`
+(mirrors `DfSnap.ps1`'s `Find-DfZipFile`), and `Resolve-ExpectedTime.ps1`.
+**Jenkins Ctrl+F fix** -- Ctrl+F is a literal substring search, so
+searching the full batch-stamped id failed outright (no highlight, no hit
+row in the screenshot) whenever the Jenkins page's own rendered text showed
+only the base id; `JenkinsSnap.ps1` now searches on the base id only
+(always a prefix of either spelling). **Duplicate-candidate tie-break** --
+new `Get-HmArchivedCorrelTime` + `Test-JenkinsFile -PreferredTime`: when
+multiple Jenkins list rows share a correl (genuine batch reruns),
+`JenkinsSnap.ps1` reads this SAME correl's own already-archived HM Ctrl+A
+capture and passes its newest run time in as a ground-truth tie-break
+(`Select-JenkinsFileCandidate`) -- used only when no `Expected_Time`/
+time-check already narrows things, and it can only help disambiguate, never
+turn an otherwise-ok verdict into ng. Pure logic unit-tested
+(`Test-MappingStore.ps1`, `Test-SnapVerify.ps1`, `Test-EvidencePlan.ps1`,
+`Test-JenkinsDownload.ps1`); the JenkinsSnap.ps1 Ctrl+F/PreferredTime wiring
+and the GIFT_HM/GFIX_HM archive-folder-per-Mode assumption are COM/SendKeys-
+adjacent and static-checked only -- confirm on an office PC.
 
 v2.19.0 (ProcessTime: count check reworked + identified-snap promotion):
 three fixes from the operator's review of v2.18.0's real output.

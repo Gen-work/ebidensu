@@ -108,6 +108,38 @@ function Test-CorrelIdEquivalent {
     return $false
 }
 
+# Finds a single correl-named file under -Dir, tolerating the plain <-> batch-
+# run spelling mismatch: a caller that only knows the plain correl id (e.g. a
+# workbook's own displayed order) must still resolve a file that was actually
+# saved under its batch-run name, and vice versa.
+#   1. Exact match on every alias of -CorrelId (as given, then its base form).
+#   2. Otherwise, glob -Dir for "<base>.<YYMMDD>.<8-digit>-Extension" and
+#      return the newest (by file name, which sorts newest-last since the
+#      stamp is date+time) match.
+# Returns the full path, or $null when nothing resolves.
+function Resolve-CorrelFilePath {
+    param([string]$Dir, [string]$CorrelId, [string]$Extension)
+    if ([string]::IsNullOrWhiteSpace($Dir) -or [string]::IsNullOrWhiteSpace($CorrelId)) { return $null }
+    if (-not (Test-Path -LiteralPath $Dir)) { return $null }
+
+    $aliases = @(Get-CorrelIdAliases $CorrelId)
+    foreach ($alias in $aliases) {
+        $exact = Join-Path $Dir ($alias + $Extension)
+        if (Test-Path -LiteralPath $exact -PathType Leaf) { return $exact }
+    }
+
+    # No exact spelling hit: the id may be the plain/base form of a file that
+    # was actually saved under its full batch-run name. Get-CorrelIdAliases
+    # always returns the base form last (itself only when there is no stamp).
+    $base = $aliases[$aliases.Count - 1]
+    $pattern = '^' + [regex]::Escape($base) + '\.\d{6}\.\d{8}' + [regex]::Escape($Extension) + '$'
+    $hits = @(Get-ChildItem -LiteralPath $Dir -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match $pattern } |
+              Sort-Object Name -Descending)
+    if ($hits.Count -gt 0) { return $hits[0].FullName }
+    return $null
+}
+
 # True when no targets given, or row matches any target on
 # Correl_ID_S / Correl_ID_M / JOB_NAME / Excel_NAME.
 function Test-TargetRow {

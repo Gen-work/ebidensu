@@ -37,6 +37,31 @@ $script:SV_MqNumRec  = 'Number of records'
 $script:SV_NoData    = 'No Data!'
 
 # ---------------------------------------------------------------------------
+# Test-SnapCorrelIdMatch / Get-SnapCorrelIdBase
+#   A page's own correl-id text (HM last field, MQ CorrelId column, Jenkins
+#   file name) and the mapping's Correl_ID_S can disagree on whether the
+#   transfer-batch stamp ("<correl>.<YYMMDD>.<8-digit>") is included -- see
+#   MappingStore.ps1's Get-CorrelIdAliases/Test-CorrelIdEquivalent for the
+#   same rule applied to files. SnapVerify.ps1 is deliberately mapping-I/O-
+#   free (file header), so this is a small self-contained duplicate rather
+#   than a dependency on MappingStore.ps1.
+# ---------------------------------------------------------------------------
+function Get-SnapCorrelIdBase {
+    param([string]$CorrelId)
+    if ([string]::IsNullOrWhiteSpace($CorrelId)) { return '' }
+    $v = $CorrelId.Trim()
+    if ($v -match '^(?<base>.+)\.\d{6}\.\d{8}$') { return [string]$Matches['base'] }
+    return $v
+}
+
+function Test-SnapCorrelIdMatch {
+    param([string]$Left, [string]$Right)
+    if ([string]::IsNullOrWhiteSpace($Left) -or [string]::IsNullOrWhiteSpace($Right)) { return $false }
+    if ($Left -eq $Right) { return $true }
+    return ((Get-SnapCorrelIdBase $Left) -eq (Get-SnapCorrelIdBase $Right))
+}
+
+# ---------------------------------------------------------------------------
 # ConvertFrom-HmPageText
 #   Parses the Ctrl+A clipboard text of an HM batch-status page.
 #   Returns an array of PSCustomObjects, one per data row.
@@ -141,7 +166,7 @@ function Test-HmAbend {
         [int]$ToleranceMin = 30
     )
 
-    $matchRows = @($Rows | Where-Object { $_.CorrelId -eq $CorrelId })
+    $matchRows = @($Rows | Where-Object { Test-SnapCorrelIdMatch $_.CorrelId $CorrelId })
 
     if ($matchRows.Count -eq 0) {
         return @{ Verdict = 'ask'; Reason = "no rows found for correl $CorrelId"; Warnings = @() }
@@ -188,6 +213,29 @@ function Test-HmAbend {
 
     # Newest is abend
     return @{ Verdict = 'ng'; Reason = ("abend is the most recent run in window: {0}" -f $newest.StartTime); Warnings = $warnings.ToArray() }
+}
+
+# ---------------------------------------------------------------------------
+# Get-HmArchivedCorrelTime
+#   Best-effort per-correl reference time pulled from an ALREADY-ARCHIVED HM
+#   Ctrl+A capture (ConvertFrom-HmPageText output for snap\<GIFT|GFIX>_HM\
+#   <correl>.txt). A later phase (e.g. Jenkins F3) can use this as a
+#   ground-truth anchor for THIS SPECIFIC correl instead of a single coarse
+#   batch-wide Expected_Time, or instead of no time reference at all when
+#   TimeCheck is off. Picks the newest matching row's EndTime (falls back to
+#   StartTime when EndTime is unparsed); $null when nothing usable.
+# ---------------------------------------------------------------------------
+function Get-HmArchivedCorrelTime {
+    param([object[]]$HmRows, [string]$CorrelId)
+    if ($null -eq $HmRows) { return $null }
+    $matchRows = @($HmRows | Where-Object { Test-SnapCorrelIdMatch $_.CorrelId $CorrelId })
+    $dated = @($matchRows | Where-Object { $null -ne $_.StartTime -or $null -ne $_.EndTime })
+    if ($dated.Count -eq 0) { return $null }
+    $newest = (@($dated | Sort-Object {
+        if ($_.StartTime) { $_.StartTime } else { [datetime]::MinValue }
+    } -Descending))[0]
+    if ($null -ne $newest.EndTime) { return $newest.EndTime }
+    return $newest.StartTime
 }
 
 # ---------------------------------------------------------------------------
@@ -272,7 +320,7 @@ function Test-MqRecord {
         return @{ Verdict = 'ng'; Reason = 'page shows No Data!'; MatchedRow = $null }
     }
 
-    $matchRows = @($Parsed.Rows | Where-Object { $_.CorrelId -eq $CorrelId })
+    $matchRows = @($Parsed.Rows | Where-Object { Test-SnapCorrelIdMatch $_.CorrelId $CorrelId })
 
     # Condition 1b: no matching row
     if ($matchRows.Count -eq 0) {
@@ -341,16 +389,58 @@ function ConvertFrom-JenkinsListText {
 }
 
 # ---------------------------------------------------------------------------
+# Select-JenkinsFileCandidate
+#   Chooses ONE row among possibly-multiple same-correl Jenkins list entries
+#   (e.g. genuine batch reruns, or the same file listed under both its plain
+#   and batch-stamped spelling): nearest-to-Expected wins when a candidate
+#   falls inside ToleranceMin; else nearest-to-PreferredTime (a ground-truth
+#   reference such as this correl's own archived HM run time, used when no
+#   Expected/time-check is configured); else the newest overall. Never just
+#   "whichever the page listed first".
+# ---------------------------------------------------------------------------
+function Select-JenkinsFileCandidate {
+    param(
+        [object[]]$Rows,
+        [object]$Expected      = $null,
+        [int]$ToleranceMin     = 30,
+        [object]$PreferredTime = $null
+    )
+    if ($null -eq $Rows -or $Rows.Count -eq 0) { return $null }
+    if ($Rows.Count -eq 1) { return $Rows[0] }
+
+    if ($null -ne $Expected) {
+        $window = @($Rows | Where-Object {
+            $null -ne $_.DateTime -and [Math]::Abs(($_.DateTime - $Expected).TotalMinutes) -le $ToleranceMin
+        })
+        if ($window.Count -gt 0) { return (@($window | Sort-Object { $_.DateTime } -Descending))[0] }
+    }
+
+    if ($null -ne $PreferredTime) {
+        $dated = @($Rows | Where-Object { $null -ne $_.DateTime })
+        if ($dated.Count -gt 0) {
+            return (@($dated | Sort-Object { [Math]::Abs(($_.DateTime - $PreferredTime).TotalMinutes) }))[0]
+        }
+    }
+
+    return (@($Rows | Sort-Object { $_.DateTime } -Descending))[0]
+}
+
+# ---------------------------------------------------------------------------
 # Test-JenkinsFile
 #   Given parsed Jenkins file entries, checks whether the expected file
 #   exists (or does not exist for NoGfix mode) within the time window.
 #
 #   Parameters:
 #     Files        object[]  output of ConvertFrom-JenkinsListText
-#     CorrelId     string    filename to look for (exact match)
+#     CorrelId     string    filename to look for (alias-tolerant: plain <->
+#                            batch-stamped spelling both match)
 #     Expected     datetime|$null
 #     ToleranceMin int
 #     ExpectExists bool      $true = file should exist (F3); $false = NoGfix (F4)
+#     PreferredTime datetime|$null  best-effort tie-break ONLY among multiple
+#                            same-correl candidates (e.g. this correl's own
+#                            archived HM run time); never turns an otherwise
+#                            'ok' verdict into 'ng' the way Expected does.
 #
 #   Returns @{ Verdict='ok'|'ng'; Reason=[string]; File=[object]|$null }
 # ---------------------------------------------------------------------------
@@ -360,16 +450,18 @@ function Test-JenkinsFile {
         [string]$CorrelId,
         [object]$Expected,
         [int]$ToleranceMin = 30,
-        [bool]$ExpectExists = $true
+        [bool]$ExpectExists = $true,
+        [object]$PreferredTime = $null
     )
 
-    $target = $Files | Where-Object { $_.Name -eq $CorrelId } | Select-Object -First 1
+    $matchRows = @($Files | Where-Object { Test-SnapCorrelIdMatch $_.Name $CorrelId })
 
     if (-not $ExpectExists) {
         # NoGfix mode: expecting NO file for this correl
-        if ($null -eq $target) {
+        if ($matchRows.Count -eq 0) {
             return @{ Verdict = 'ok'; Reason = 'no file found as expected (NoGfix)'; File = $null }
         }
+        $target = Select-JenkinsFileCandidate -Rows $matchRows -Expected $Expected -ToleranceMin $ToleranceMin -PreferredTime $PreferredTime
         return @{
             Verdict = 'ng'
             Reason  = ("unexpected file found (may be past data): {0} {1}" -f $target.Name, $target.DateTime)
@@ -378,9 +470,11 @@ function Test-JenkinsFile {
     }
 
     # Normal mode: file should exist
-    if ($null -eq $target) {
+    if ($matchRows.Count -eq 0) {
         return @{ Verdict = 'ng'; Reason = 'file not in list'; File = $null }
     }
+
+    $target = Select-JenkinsFileCandidate -Rows $matchRows -Expected $Expected -ToleranceMin $ToleranceMin -PreferredTime $PreferredTime
 
     # No time check
     if ($null -eq $Expected) {
@@ -643,7 +737,7 @@ function Get-MatchedRowIndex {
     for ($i = 0; $i -lt $Rows.Count; $i++) {
         $r = $Rows[$i]
         if ($null -eq $r) { continue }
-        if ([string]$r.CorrelId -eq $CorrelId) {
+        if (Test-SnapCorrelIdMatch ([string]$r.CorrelId) $CorrelId) {
             $matched.Add([PSCustomObject]@{ Index = $i + 1; Date = $r.$DateProperty })
         }
     }

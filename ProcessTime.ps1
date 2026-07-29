@@ -541,7 +541,7 @@ function Resolve-ProcessTimeSide {
     if (-not [string]::IsNullOrWhiteSpace($SnapTextPath) -and (Test-Path -LiteralPath $SnapTextPath)) {
         try {
             $text = Get-Content -LiteralPath $SnapTextPath -Raw -Encoding UTF8
-            $matched = @(ConvertFrom-HmPageText $text | Where-Object { $_.CorrelId -eq $CorrelId })
+            $matched = @(ConvertFrom-HmPageText $text | Where-Object { Test-SnapCorrelIdMatch $_.CorrelId $CorrelId })
             $best = Get-NewestProcessTimeRow -Rows $matched
             if ($null -ne $best) {
                 return @{
@@ -833,7 +833,7 @@ function Get-ArchivedProcessTimePreview {
     if (-not (Test-Path -LiteralPath $Path)) { return '(no archived text; would need OCR on a real run)' }
     try {
         $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
-        $matched = @(ConvertFrom-HmPageText $text | Where-Object { $_.CorrelId -eq $CorrelId })
+        $matched = @(ConvertFrom-HmPageText $text | Where-Object { Test-SnapCorrelIdMatch $_.CorrelId $CorrelId })
         $best = Get-NewestProcessTimeRow -Rows $matched
         if ($null -eq $best) { return '(no matching row in archived text; would need OCR on a real run)' }
         return ("{0} -> {1} ({2})" -f (Format-ProcessTimeStamp $best.StartTime), (Format-ProcessTimeStamp $best.EndTime), `

@@ -23,6 +23,21 @@ Assert-True (Test-CorrelIdEquivalent 'JIGPU87S' 'JIGPU87S.260729.10515511') 'pla
 Assert-True (Test-CorrelIdEquivalent 'JIGPU87S.260729.10515511' 'JIGPU87S.260729.10515512') 'batch runs of the same plain correl are equivalent'
 Assert-True (-not (Test-CorrelIdEquivalent 'JIGPU87S' 'JIGPU88S.260729.10515511')) 'different plain correl ids remain distinct'
 
+# -- Resolve-CorrelFilePath --
+$aliasDir = Join-Path ([System.IO.Path]::GetTempPath()) ('correl_alias_' + [guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path $aliasDir -Force | Out-Null
+    $timestampedPng = Join-Path $aliasDir 'JIGPU86S.260729.10515511.png'
+    Set-Content -LiteralPath $timestampedPng -Value 'fake' -Encoding ASCII
+    Assert-Equal $timestampedPng (Resolve-CorrelFilePath $aliasDir 'JIGPU86S' '.png') 'plain correl resolves timestamped file'
+    Assert-Equal $timestampedPng (Resolve-CorrelFilePath $aliasDir 'JIGPU86S.260729.10515511' '.png') 'timestamped correl resolves exact file'
+    Assert-Equal $null (Resolve-CorrelFilePath $aliasDir 'JIGPU85S' '.png') 'different correl does not resolve'
+    Assert-Equal $null (Resolve-CorrelFilePath $aliasDir 'JIGPU86S' '.txt') 'different extension does not resolve'
+    Assert-Equal $null (Resolve-CorrelFilePath (Join-Path $aliasDir 'nope') 'JIGPU86S' '.png') 'missing directory does not resolve'
+} finally {
+    Remove-Item -LiteralPath $aliasDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # -- Ensure-MappingColumns --
 $rows = @([pscustomobject]@{ Correl_ID_S = 'JIDSF48S'; GIFT_HM_snap = '1' })
 Ensure-MappingColumns -Rows $rows | Out-Null

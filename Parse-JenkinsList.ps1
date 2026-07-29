@@ -35,7 +35,18 @@ foreach ($line in ($Text -split "`r?`n")) {
 
 if (-not $CorrelId) { return $files }
 
-$target = $files | Where-Object { $_.Name -eq $CorrelId } | Select-Object -First 1
+# CorrelId may carry the transfer-batch stamp ("<correl>.<YYMMDD>.<8-digit>")
+# that the listed file name may or may not include (see SnapVerify.ps1's
+# Test-SnapCorrelIdMatch, which this legacy standalone parser deliberately
+# duplicates rather than depending on).
+function ConvertTo-JenkinsListBaseId([string]$Id) {
+    if ($Id -match '^(?<base>.+)\.\d{6}\.\d{8}$') { return [string]$Matches['base'] }
+    return $Id
+}
+$correlBase = ConvertTo-JenkinsListBaseId $CorrelId
+$target = $files | Where-Object {
+    $_.Name -eq $CorrelId -or (ConvertTo-JenkinsListBaseId ([string]$_.Name)) -eq $correlBase
+} | Select-Object -First 1
 if (-not $target) {
     return [PSCustomObject]@{ Found = $false; Reason = "file not in list" }
 }

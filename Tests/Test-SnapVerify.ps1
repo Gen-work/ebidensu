@@ -81,6 +81,17 @@ $jkRow2 = "JIDSK05S 2026/06/12 11:01:53 512.00 KB ${ref}"
 $jkFullText = "File list${nl}${jkRow1}${nl}${jkRow2}${nl}"
 
 # ===========================================================================
+# Test-SnapCorrelIdMatch / Get-SnapCorrelIdBase
+# ===========================================================================
+
+Assert-Equal 'JIDSK01S' (Get-SnapCorrelIdBase 'JIDSK01S.260612.10515511') 'SnapCorrelIdBase: strips batch stamp'
+Assert-Equal 'JIDSK01S' (Get-SnapCorrelIdBase 'JIDSK01S') 'SnapCorrelIdBase: plain id unchanged'
+Assert-True  (Test-SnapCorrelIdMatch 'JIDSK01S' 'JIDSK01S.260612.10515511') 'SnapCorrelIdMatch: plain vs stamped'
+Assert-True  (Test-SnapCorrelIdMatch 'JIDSK01S.260612.10515511' 'JIDSK01S') 'SnapCorrelIdMatch: stamped vs plain'
+Assert-True  (Test-SnapCorrelIdMatch 'JIDSK01S.260612.10515511' 'JIDSK01S.260612.10515599') 'SnapCorrelIdMatch: two stamped runs of same base'
+Assert-True  (-not (Test-SnapCorrelIdMatch 'JIDSK01S' 'JIDSK02S.260612.10515511')) 'SnapCorrelIdMatch: different base id does not match'
+
+# ===========================================================================
 # ConvertFrom-HmPageText
 # ===========================================================================
 
@@ -154,6 +165,25 @@ $vFar = Test-HmAbend -Rows $hmRows -CorrelId 'JIDSK01S' -Expected $expFar -Toler
 Assert-Equal 'ask'  $vFar.Verdict    'HmAbend: no rows in window -> ask'
 Assert-True ($vFar.Warnings.Count -gt 0) 'HmAbend: out-of-window abend promoted to warning'
 
+# Rows carry the plain id (as archived by HmSnap); querying with the
+# mapping's batch-stamped spelling must still find them.
+$vStamped = Test-HmAbend -Rows $hmRows -CorrelId 'JIDSK01S.260612.10515511' -Expected $exp1 -ToleranceMin 30
+Assert-Equal 'ok' $vStamped.Verdict 'HmAbend: batch-stamped query id matches plain archived rows'
+
+# ===========================================================================
+# Get-HmArchivedCorrelTime
+# ===========================================================================
+
+$hmTime = Get-HmArchivedCorrelTime -HmRows $hmRows -CorrelId 'JIDSK01S'
+Assert-True ($null -ne $hmTime) 'HmArchivedTime: finds a time for a matching correl'
+Assert-Equal '2026/06/12 11:06:57' ($hmTime.ToString('yyyy/MM/dd HH:mm:ss')) 'HmArchivedTime: newest row EndTime wins'
+
+$hmTimeStamped = Get-HmArchivedCorrelTime -HmRows $hmRows -CorrelId 'JIDSK01S.260612.10515511'
+Assert-Equal $hmTime $hmTimeStamped 'HmArchivedTime: batch-stamped query id resolves the same row'
+
+$hmTimeMiss = Get-HmArchivedCorrelTime -HmRows $hmRows -CorrelId 'JXXXXX99'
+Assert-Equal $null $hmTimeMiss 'HmArchivedTime: no matching correl -> null'
+
 # ===========================================================================
 # ConvertFrom-MqPageText
 # ===========================================================================
@@ -211,6 +241,11 @@ $ngParsed = @{ NumRecords = 1; Rows = @($ngRow) }
 $mvRtn = Test-MqRecord -Parsed $ngParsed -CorrelId 'JTEST01S' -Expected $null
 Assert-Equal 'ng' $mvRtn.Verdict 'MQ: non-zero Rtncd -> ng'
 Assert-True ($mvRtn.Reason -like '*Rtncd=1*') 'MQ: Rtncd reason string'
+
+# Rows carry the plain id; querying with the mapping's batch-stamped
+# spelling must still find them.
+$mvStamped = Test-MqRecord -Parsed $mqParsed -CorrelId 'JIDSK05S.260612.10515511' -Expected $mqExp -ToleranceMin 30
+Assert-Equal 'ok' $mvStamped.Verdict 'MQ: batch-stamped query id matches plain archived rows'
 
 # ===========================================================================
 # ConvertFrom-JenkinsListText
@@ -270,6 +305,37 @@ Assert-Equal 'ok'  $jv5.Verdict  'Jenkins NoGfix: no file found as expected -> o
 $jv6 = Test-JenkinsFile -Files $jkFiles -CorrelId 'JIDSK01S' -Expected $null -ExpectExists $false
 Assert-Equal 'ng'  $jv6.Verdict  'Jenkins NoGfix: unexpected file found -> ng'
 Assert-True ($jv6.Reason -like '*past data*') 'Jenkins NoGfix: reason mentions past data'
+
+# File is listed under its plain name; querying with the mapping's
+# batch-stamped spelling must still find it.
+$jv7 = Test-JenkinsFile -Files $jkFiles -CorrelId 'JIDSK01S.260612.10515511' -Expected $jkExp -ToleranceMin 30
+Assert-Equal 'ok' $jv7.Verdict 'Jenkins: batch-stamped query id matches plain listed file'
+
+# -- Select-JenkinsFileCandidate / multiple same-correl candidates --
+# Two genuine batch reruns of the same correl, hours apart.
+$jkDupText  = "File list${nl}JIDSK09S 2026/06/12 08:00:00 100 B ${ref}${nl}JIDSK09S 2026/06/12 15:00:00 100 B ${ref}${nl}"
+$jkDupFiles = @(ConvertFrom-JenkinsListText $jkDupText)
+Assert-Equal 2 $jkDupFiles.Count 'Jenkins dup fixture: 2 rows parsed'
+
+# Expected near the EARLIER run -> that candidate wins even though it is not newest.
+$jkExpEarly = [datetime]::ParseExact('2026/06/12 08:10:00', 'yyyy/MM/dd HH:mm:ss',
+              [System.Globalization.CultureInfo]::InvariantCulture)
+$jvDupExp = Test-JenkinsFile -Files $jkDupFiles -CorrelId 'JIDSK09S' -Expected $jkExpEarly -ToleranceMin 30
+Assert-Equal 'ok' $jvDupExp.Verdict 'Jenkins dup: earlier run inside Expected window -> ok'
+Assert-Equal '2026/06/12 08:00:00' ($jvDupExp.File.DateTime.ToString('yyyy/MM/dd HH:mm:ss')) 'Jenkins dup: Expected picks the earlier (nearest) run, not newest'
+
+# No Expected/time-check, but a PreferredTime (e.g. this correl's own
+# archived HM run time) is available -> nearest to PreferredTime wins.
+$jkPreferredLate = [datetime]::ParseExact('2026/06/12 14:50:00', 'yyyy/MM/dd HH:mm:ss',
+                   [System.Globalization.CultureInfo]::InvariantCulture)
+$jvDupPref = Test-JenkinsFile -Files $jkDupFiles -CorrelId 'JIDSK09S' -Expected $null -PreferredTime $jkPreferredLate
+Assert-Equal 'ok' $jvDupPref.Verdict 'Jenkins dup: PreferredTime tie-break -> still ok (no tolerance enforced)'
+Assert-Equal '2026/06/12 15:00:00' ($jvDupPref.File.DateTime.ToString('yyyy/MM/dd HH:mm:ss')) 'Jenkins dup: PreferredTime picks the nearest run'
+
+# Neither Expected nor PreferredTime -> newest overall wins (previous
+# behavior for the single-candidate case, extended to duplicates).
+$jvDupNone = Test-JenkinsFile -Files $jkDupFiles -CorrelId 'JIDSK09S' -Expected $null
+Assert-Equal '2026/06/12 15:00:00' ($jvDupNone.File.DateTime.ToString('yyyy/MM/dd HH:mm:ss')) 'Jenkins dup: no reference time -> newest run wins'
 
 # ===========================================================================
 # Get-SnapPageKind
@@ -433,6 +499,12 @@ Assert-Equal 0 $mi0 'MatchedRowIndex HM: no match -> 0'
 # MQ rows: [1]=07:54:23, [2]=10:32:42, [3]=11:01:57 (newest)
 $mqIdx = Get-MatchedRowIndex -Rows $mqParsed.Rows -CorrelId 'JIDSK05S' -DateProperty 'RecvDate' -Expected $mqExp -ToleranceMin 30
 Assert-Equal 3 $mqIdx 'MatchedRowIndex MQ: newest RecvDate (11:01:57) -> screen row 3'
+
+# Rows carry the plain id; querying with the mapping's batch-stamped
+# spelling must still resolve a screen row (this drives the F5 pixel box
+# AND, via the same predicate, the Ctrl+F highlight search term).
+$miStamped = Get-MatchedRowIndex -Rows $hmRows -CorrelId 'JIDSK01S.260612.10515511' -DateProperty 'StartTime' -Expected $exp1 -ToleranceMin 30
+Assert-Equal 1 $miStamped 'MatchedRowIndex HM: batch-stamped query id matches plain archived rows'
 
 # ===========================================================================
 # Get-RowPixelRect (HM / MQ fixed geometry)
