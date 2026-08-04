@@ -77,6 +77,13 @@ SnapVerify.ps1          pure snap-phase NG detection + localisation library
                         ConvertFrom-HmPageText / Test-HmAbend (F1),
                         ConvertFrom-MqPageText / Test-MqRecord (F2),
                         ConvertFrom-JenkinsListText / Test-JenkinsFile (F3/F4),
+                        Get-JenkinsSearchTerm (the EXACT listed file name
+                        Ctrl+F should look for -- resolves the intended entry
+                        via Select-JenkinsFileCandidate so a correl with
+                        several listed reruns highlights the newest row
+                        instead of whichever the page listed first; '' when
+                        nothing matches, so the caller keeps its base-id
+                        fallback),
                         Get-SnapPageKind (A3 sentinel), Resolve-SnapRunTime (2.2),
                         and M5/F5 pixel localisation: Get-MatchedRowIndex /
                         Get-RowPixelRect / Get-JenkinsHighlightRect /
@@ -384,7 +391,17 @@ Pack-LlmContext.ps1     packs project context to clipboard for LLM ingestion
 Apply-LlmPatch.ps1      applies XML / git-unified-diff patches from clipboard
 Export-DailyPatch.ps1   extracts today's git diff to clipboard
 Parse-GiftMq.ps1        parses GIFT/MQ transfer status page text
-Parse-JenkinsList.ps1   parses Jenkins file list page text
+Parse-JenkinsList.ps1   parses Jenkins file list page text (standalone; with
+                        -CorrelId resolves the NEWEST matching entry, not the
+                        first listed)
+JenkinsDownload.ps1     Jenkins receive-file download glue: Select-Jenkins
+                        DownloadFiles (-PreferNewest, default on: several
+                        entries for one correl are reruns of one transfer, so
+                        only the newest is fetched; the JOB_NAME fallback is
+                        NOT narrowed) + Sort-JenkinsFilesNewestFirst /
+                        Get-JenkinsFileTime, Invoke-JenkinsFileDownload
+                        (reports the passed-over entries as Superseded).
+                        Unit-tested via Tests\Test-JenkinsDownload.ps1.
 Probe-Shapes.ps1        lists all shapes in an evidence workbook (calibration aid)
 Probe-SheetFormat.ps1   read-only cell-FORMAT probe (calibration aid, v2.15.2):
                         dumps a workbook's / one sheet's column widths, row
@@ -604,7 +621,18 @@ derives run identity from the log's own `Command:` line
 download collapse into a single run instead of warning on every run, and a
 batch-stamped `Correl_ID_S` selects its own run outright -- the warning is
 now reserved for genuinely different receive runs. `Find-DataFile`
-(DfSnap.ps1) prefers an exact spelling over newest-mtime. **Fixed**:
+(DfSnap.ps1) prefers an exact spelling over newest-mtime. **Jenkins
+newest-wins**: Ctrl+F is a plain substring search, so the bare correl id
+stopped on whatever row the page listed FIRST (routinely an older rerun) --
+the screenshot highlighted the wrong row and the right file was downloaded
+by hand. New pure `Get-JenkinsSearchTerm` (SnapVerify.ps1) resolves the
+intended entry off the page's own Ctrl+A list and returns its EXACT file
+name, which `JenkinsSnap.ps1` Ctrl+F's (one row, no ambiguity); the same
+choice narrows the download to that one file
+(`Select-JenkinsDownloadFiles -PreferNewest`, older entries reported as
+`[older] ... superseded`). `Parse-JenkinsList.ps1`'s `-First 1` and the
+readiness poll's literal stamped-id match are fixed too. Config
+`SnapVerify.PreferNewestJenkinsFile` (default on). **Fixed**:
 `Expand-DfZip` named the extracted compare file after `Correl_ID_S`, so a
 batch-stamped id made df.exe read `.10515511` as the file's extension and
 the file would not open -- it now keeps the ZIP ENTRY's own name in a

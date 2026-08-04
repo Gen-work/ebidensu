@@ -645,6 +645,17 @@
         PollIntervalMs    = 500
         NoGfixNoteColumn  = 'AZ'    # F4: column for past-data annotation
 
+        # Jenkins: 同一 correl に複数のエントリが並ぶとき (同じ転送の再実行、
+        # あるいは素の ID とバッチスタンプ付き ID の両表記) は「最新」を採る。
+        # Ctrl+F は単なる部分一致検索なので correl ID だけを渡すとページが先に
+        # 並べた行 = たいてい古い実行 で止まってしまい、証跡の highlight が別の
+        # 行に当たる。$true なら先にページの Ctrl+A テキストを解析して対象
+        # エントリの「完全なファイル名」を求め、それを Ctrl+F する (= 1 行に
+        # 確定する) と同時に、その最新ファイルだけを DATA\ へ DL する。
+        # 見送った古いエントリはコンソールに [older] として明示する。
+        # $false で従来動作 (correl ID を検索し、一致した全ファイルを DL)。
+        PreferNewestJenkinsFile = $true
+
         # M5/F5 pixel localisation: write <correl>.loc.json beside each PNG so
         # the Mark phase can red-box the exact data row the verdict judged.
         # OFF by default -- HM/MQ geometry must be measured for the office-PC

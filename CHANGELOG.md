@@ -1,6 +1,6 @@
 ## 2026-08-04 - Deterministic 3<->9 handling + timestamped-id tolerance cleanup + docs (v2.21.0)
 
-Three operator-reported problems and a documentation pass.
+Four operator-reported problems and a documentation pass.
 
 The headline change is a reversal of policy on the ja-OCR `9`/`3` confusion:
 the tool no longer tries to *guess* the right digit. It acts only where the
@@ -11,6 +11,22 @@ CORRECT reading into a wrong one -- the reported case had a real start/end of
 and the tool silently shipped `00:00:07` derived from a misread end second.
 
 ### Added
+- **Jenkins: the newest listed entry is now the target** -- new pure
+  `Get-JenkinsSearchTerm` (SnapVerify.ps1) resolves WHICH file a correl means
+  from the page's own Ctrl+A text and returns that entry's EXACT listed file
+  name, which `JenkinsSnap.ps1` then Ctrl+F's. Ctrl+F is a plain substring
+  search with no notion of "newest", so handed the correl id it stopped on
+  whatever the page listed first -- routinely an older rerun -- and the
+  screenshot highlighted the wrong row, leaving the operator to find and
+  download the right file by hand. A full file name matches exactly one row.
+  The candidate choice reuses `Select-JenkinsFileCandidate`, so the row that
+  gets highlighted is the row the F3/F4 verdict judges: inside the `Expected`
+  window when one is configured, else nearest this correl's own archived HM
+  run time, else newest. Resolution is best-effort at every step -- an unready
+  page, a parse miss or a genuinely absent file all fall back to the previous
+  base-correl-id search. New `SnapVerify.PreferNewestJenkinsFile` (default
+  `$true`) and the `-PreferNewestFile` script parameter.
+
 - **`TimeDigitVerify.ps1`** -- new pure module (dot-source, no `param()`, no
   COM/OCR/IO, ASCII source), unit-tested by `Tests\Test-TimeDigitVerify.ps1`:
   - `Repair-ImpossibleTimeDigit` -- corrects a digit ONLY when its field is
@@ -62,6 +78,33 @@ and the tool silently shipped `00:00:07` derived from a misread end second.
   take to resume.
 
 ### Changed
+- **Only the newest matching file is downloaded** (`JenkinsDownload.ps1`).
+  `Select-JenkinsDownloadFiles` matched on name alone and returned EVERY
+  match, so a correl with several entries had the old file downloaded
+  alongside the new one and the operator swapped in the right one manually.
+  It now takes the newest (`Sort-JenkinsFilesNewestFirst`; entries whose
+  timestamp did not parse sort last and can never outrank a dated one, name
+  breaks a remaining tie). `Invoke-JenkinsFileDownload` reports the passed-over
+  entries as `Superseded` and `JenkinsSnap.ps1` prints them as
+  `[older] <name> <time> -- superseded, not downloaded`, because one of them
+  may already be sitting in `DATA\` from an earlier run and only the operator
+  can clear it out. The JOB_NAME fallback is deliberately NOT narrowed: those
+  matches are normally different correls of one job, not reruns of one
+  transfer. `-PreferNewest $false` restores the old behaviour.
+- **`Parse-JenkinsList.ps1` picks the newest entry, not the first listed.**
+  Its `-CorrelId` lookup ended in `Select-Object -First 1`, the same
+  first-wins bug in the standalone parser. Its header comments were also
+  migrated to ASCII per the source-encoding policy (the Japanese column word
+  it matches on was already built from `[char]`).
+- **The Jenkins readiness poll no longer burns its full timeout on a stamped
+  id.** `Wait-JenkinsPageReady` was passed the raw `Correl_ID_S`; a
+  batch-stamped id can never appear literally on a page that renders only the
+  base id, so `$text.Contains($SearchTerm)` never matched and every such row
+  waited out `PollTimeoutSec`. It now receives the resolved search term.
+- `JenkinsSnap.ps1` builds each row's `Expected_Time` and archived-HM
+  reference time BEFORE the capture loop (the Ctrl+F target resolution needs
+  them); they used to be built after the screenshot, when only the verdict did.
+
 - **ProcessTime no longer overrides the page's printed duration silently.**
   `Resolve-ProcessTimeSide` used to write the derived duration and merely note
   `page duration X != derived Y (kept derived)` -- attaching the note to a
@@ -144,14 +187,22 @@ and the tool silently shipped `00:00:07` derived from a misread end second.
 
 ### Notes
 - Pure logic is unit-tested (`Test-TimeDigitVerify.ps1` new;
-  `Test-GfixLog.ps1`, `Test-ProcessTimeParse.ps1`, `Test-OldSnapVerify.ps1`
-  extended). There is no PowerShell or Excel in this build environment, so the
-  COM paths are static-checked only -- **confirm on an office PC**: (1) the
-  D/E/F conditional formatting actually reddens the 3/9 seconds cells in Excel
-  2019 and survives a rerun without stacking; (2) a known 9->3 row reaches
-  要確認 rather than auto-confirming; (3) `df.exe` opens the newly-named
-  extracted compare file for a batch-stamped isZip row; (4) a log folder
-  holding both spellings of one download no longer warns.
+  `Test-GfixLog.ps1`, `Test-ProcessTimeParse.ps1`, `Test-OldSnapVerify.ps1`,
+  `Test-JenkinsDownload.ps1`, `Test-SnapVerify.ps1` extended). There is no
+  PowerShell or Excel in this build environment, so the COM/SendKeys paths are
+  static-checked only -- **confirm on an office PC**: (1) the D/E/F conditional
+  formatting actually reddens the 3/9 seconds cells in Excel 2019 and survives
+  a rerun without stacking; (2) a known 9->3 row reaches 要確認 rather than
+  auto-confirming; (3) `df.exe` opens the newly-named extracted compare file
+  for a batch-stamped isZip row; (4) a log folder holding both spellings of one
+  download no longer warns; (5) on a correl with several Jenkins entries, the
+  console prints the resolved `target:` line, the screenshot highlights the
+  NEWEST row, and only that file is downloaded.
+- The Jenkins target resolution costs one extra Ctrl+A/Ctrl+C page read per
+  row (before the Ctrl+F, so the existing page-center click still clears the
+  selection before the capture). If that proves too slow on the office PC,
+  `SnapVerify.PreferNewestJenkinsFile = $false` turns the whole newest-wins
+  path off and restores the previous behaviour.
 - Behaviour change worth knowing: for a correl whose start/end and printed
   duration disagree uniquely, the WRITTEN start or end value now differs from
   the raw OCR read (that is the point). The row Note names the substitution

@@ -1564,6 +1564,10 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             $args['SaveText']         = [bool]$sv.SaveText
             $args['PollTimeoutSec']   = [int]$sv.PollTimeoutSec
             $args['PollIntervalMs']   = [int]$sv.PollIntervalMs
+            # Newest-wins Ctrl+F target + download for duplicate correl entries.
+            if ($sv.ContainsKey('PreferNewestJenkinsFile') -and $null -ne $sv.PreferNewestJenkinsFile) {
+                $args['PreferNewestFile'] = [bool]$sv.PreferNewestJenkinsFile
+            }
             if ($sv.ContainsKey('Localize')) { $args['Localize'] = $sv.Localize }   # M5/F5
         }
         if ($Config.ContainsKey('ExpectedTime')) {

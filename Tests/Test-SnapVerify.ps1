@@ -338,6 +338,35 @@ $jvDupNone = Test-JenkinsFile -Files $jkDupFiles -CorrelId 'JIDSK09S' -Expected 
 Assert-Equal '2026/06/12 15:00:00' ($jvDupNone.File.DateTime.ToString('yyyy/MM/dd HH:mm:ss')) 'Jenkins dup: no reference time -> newest run wins'
 
 # ===========================================================================
+# Get-JenkinsSearchTerm -- what Ctrl+F should actually look for.
+# Ctrl+F is a plain substring search, so handing it the correl id stops on
+# whichever row the page listed FIRST (routinely an older rerun). Resolving
+# the intended entry's exact file name off the list makes it land on one row.
+# ===========================================================================
+
+# Same correl listed twice under two different names: search the newest.
+$jkTermText = "File list${nl}JIDSU86S 2026/07/24 09:50:03 100 B ${ref}${nl}JIDSU86S.260729.10515511 2026/07/29 10:51:55 100 B ${ref}${nl}"
+$jkTermFiles = @(ConvertFrom-JenkinsListText $jkTermText)
+Assert-Equal 2 $jkTermFiles.Count 'Jenkins term fixture: 2 rows parsed'
+Assert-Equal 'JIDSU86S.260729.10515511' (Get-JenkinsSearchTerm -Files $jkTermFiles -CorrelId 'JIDSU86S') `
+    'search term is the newest entry EXACT file name, not the bare correl id'
+Assert-Equal 'JIDSU86S.260729.10515511' (Get-JenkinsSearchTerm -Files $jkTermFiles -CorrelId 'JIDSU86S.260724.09500300') `
+    'a batch-stamped mapping id resolves to the newest listed entry too'
+
+# An Expected window still wins over "newest": the term follows the verdict's
+# own candidate choice, so the highlighted row is the row that was judged.
+$jkTermEarly = [datetime]::ParseExact('2026/07/24 09:55:00', 'yyyy/MM/dd HH:mm:ss',
+               [System.Globalization.CultureInfo]::InvariantCulture)
+Assert-Equal 'JIDSU86S' (Get-JenkinsSearchTerm -Files $jkTermFiles -CorrelId 'JIDSU86S' -Expected $jkTermEarly -ToleranceMin 30) `
+    'an Expected window selects the same entry the verdict will judge'
+
+# Nothing to resolve -> '' so the caller keeps its base-id fallback (which is
+# also the right search when the file is genuinely absent).
+Assert-Equal '' (Get-JenkinsSearchTerm -Files $jkTermFiles -CorrelId 'JXXXXX99') 'no match -> empty term (caller falls back)'
+Assert-Equal '' (Get-JenkinsSearchTerm -Files @() -CorrelId 'JIDSU86S') 'empty list -> empty term'
+Assert-Equal '' (Get-JenkinsSearchTerm -Files $jkTermFiles -CorrelId '') 'empty correl -> empty term'
+
+# ===========================================================================
 # Get-SnapPageKind
 # ===========================================================================
 

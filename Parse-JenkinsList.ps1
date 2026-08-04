@@ -1,8 +1,12 @@
 # ============================================================
 # Parse-JenkinsList.ps1
-#   Jenkins ファイル一覧ページの Ctrl+A テキストから
-#   各ファイルの (name, datetime, size) を抽出。
-#   ExpectedTime 指定時は ToleranceMinutes 内に収まるか判定。
+#   Extracts (name, datetime, size) for each file from the Ctrl+A text of a
+#   Jenkins file-list page. With -CorrelId, resolves that correl's entry --
+#   the NEWEST one when several match, since duplicates are reruns of the
+#   same transfer -- and, with -ExpectedTime, reports whether it falls inside
+#   -ToleranceMinutes.
+#   (ASCII source per the project encoding policy; the Japanese column word
+#   this parser matches on is built from [char] below.)
 # ============================================================
 param(
     [Parameter(Mandatory)][string]$Text,
@@ -15,8 +19,9 @@ $ErrorActionPreference = 'Stop'
 $files = @()
 foreach ($line in ($Text -split "`r?`n")) {
     $line = $line.Trim()
-    # "JIGPLB1S 2026/05/15 13:45:21 189.90 KB 参照"
-    $refWord = [char]0x53C2 + [char]0x7167   # 参照
+    # Row shape: "JIGPLB1S 2026/05/15 13:45:21 189.90 KB <sansho>", where
+    # <sansho> ("reference") is the trailing link text of every listed file.
+    $refWord = [char]0x53C2 + [char]0x7167   # sansho (reference)
     if ($line -match ('^(\S+)\s+(\d{4}/\d{2}/\d{2})\s+(\d{1,2}:\d{2}:\d{2})\s+(.+?)\s+' + $refWord + '$')) {
         $dt = $null
         try {
@@ -44,12 +49,19 @@ function ConvertTo-JenkinsListBaseId([string]$Id) {
     return $Id
 }
 $correlBase = ConvertTo-JenkinsListBaseId $CorrelId
-$target = $files | Where-Object {
+$candidates = @($files | Where-Object {
     $_.Name -eq $CorrelId -or (ConvertTo-JenkinsListBaseId ([string]$_.Name)) -eq $correlBase
-} | Select-Object -First 1
-if (-not $target) {
+})
+if ($candidates.Count -eq 0) {
     return [PSCustomObject]@{ Found = $false; Reason = "file not in list" }
 }
+# Several entries for one correl are reruns of the same transfer (or its plain
+# and batch-stamped spellings): the latest one is the evidence. Taking the
+# first LISTED entry, as this did, routinely picked an older run. Undated
+# entries sort last -- they say nothing about which run they are.
+$target = @($candidates | Sort-Object -Property `
+    @{ Expression = { $null -ne $_.DateTime }; Descending = $true }, `
+    @{ Expression = { if ($null -ne $_.DateTime) { $_.DateTime } else { [datetime]::MinValue } }; Descending = $true })[0]
 
 if ($ExpectedTime -eq [datetime]::MinValue) {
     return [PSCustomObject]@{

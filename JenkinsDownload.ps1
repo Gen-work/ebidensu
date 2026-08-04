@@ -25,11 +25,44 @@ function ConvertTo-JenkinsDownloadUri {
     return $builder.Uri.AbsoluteUri
 }
 
+# The listed timestamp of one parsed entry, or $null. Read through
+# PSObject.Properties so a caller passing name-only objects (and Set-StrictMode)
+# cannot turn a missing column into a terminating error.
+function Get-JenkinsFileTime {
+    param($File)
+    if ($null -eq $File) { return $null }
+    if (-not $File.PSObject.Properties['DateTime']) { return $null }
+    return $File.DateTime
+}
+
+# Newest first. Entries whose listed timestamp did not parse sort LAST: they
+# carry no evidence about which run they are, so they must never outrank a
+# dated entry. Name breaks a remaining tie so the order is deterministic.
+function Sort-JenkinsFilesNewestFirst {
+    param([object[]]$Files)
+    return @(@($Files) | Sort-Object -Property `
+        @{ Expression = { $null -ne (Get-JenkinsFileTime $_) }; Descending = $true }, `
+        @{ Expression = { $t = Get-JenkinsFileTime $_; if ($null -ne $t) { $t } else { [datetime]::MinValue } }; Descending = $true }, `
+        @{ Expression = { [string]$_.Name }; Descending = $false })
+}
+
+# Picks the Jenkins-listed file(s) to download for one correl.
+#
+# When several entries match the SAME correl they are reruns of one transfer
+# (the plain and batch-stamped spellings of one file, or genuine retries), and
+# only the latest one is the evidence. -PreferNewest (the default) therefore
+# returns just the newest; it used to return every match, so the folder ended
+# up holding the old file too and the operator downloaded the right one by
+# hand. Pass -PreferNewest:$false to get every match as before.
+#
+# The JOB-NAME fallback is deliberately NOT narrowed: those matches are
+# normally different correls of the same job, not reruns of one transfer.
 function Select-JenkinsDownloadFiles {
     param(
         [Parameter(Mandatory)][array]$Files,
         [Parameter(Mandatory)][string]$CorrelId,
-        [string]$JobName = ''
+        [string]$JobName = '',
+        [bool]$PreferNewest = $true
     )
 
     $correl = $CorrelId.Trim()
@@ -48,7 +81,13 @@ function Select-JenkinsDownloadFiles {
         $correl.StartsWith($name, [System.StringComparison]::OrdinalIgnoreCase)
     })
 
-    if ($selected.Count -gt 0 -or [string]::IsNullOrWhiteSpace($job)) { return $selected }
+    if ($selected.Count -gt 0) {
+        if ($PreferNewest -and $selected.Count -gt 1) {
+            return @((Sort-JenkinsFilesNewestFirst $selected)[0])
+        }
+        return $selected
+    }
+    if ([string]::IsNullOrWhiteSpace($job)) { return @() }
 
     return @($Files | Where-Object {
         $name = [string]$_.Name
@@ -66,7 +105,8 @@ function Invoke-JenkinsFileDownload {
         [Parameter(Mandatory)][string]$CorrelId,
         [string]$JobName = '',
         [switch]$Force,
-        [string]$ParserScript = ''
+        [string]$ParserScript = '',
+        [bool]$PreferNewest = $true
     )
 
     if ([string]::IsNullOrWhiteSpace($ParserScript)) {
@@ -75,7 +115,14 @@ function Invoke-JenkinsFileDownload {
     if (-not (Test-Path -LiteralPath $ParserScript)) { throw "Parser not found: $ParserScript" }
 
     $allFiles = @(& $ParserScript -Text $PageText)
-    $matches = @(Select-JenkinsDownloadFiles -Files $allFiles -CorrelId $CorrelId -JobName $JobName)
+    # Both sets, so the caller can SAY which older entries were passed over
+    # instead of silently downloading one of several.
+    $allMatches = @(Select-JenkinsDownloadFiles -Files $allFiles -CorrelId $CorrelId -JobName $JobName -PreferNewest $false)
+    $matches    = @(Select-JenkinsDownloadFiles -Files $allFiles -CorrelId $CorrelId -JobName $JobName -PreferNewest $PreferNewest)
+
+    $keptNames = @{}
+    foreach ($m in $matches) { $keptNames[[string]$m.Name] = $true }
+    $superseded = @($allMatches | Where-Object { -not $keptNames.ContainsKey([string]$_.Name) })
 
     $dataKind = if ($Mode -eq 'GiftRecv') { 'GIFT' } else { 'GFIX' }
     $dataDir = Join-Path (Join-Path $WorkDir 'DATA') $dataKind
@@ -86,6 +133,12 @@ function Invoke-JenkinsFileDownload {
         DataDir = $dataDir
         Found = $allFiles.Count
         Matched = $matches.Count
+        # Everything that matched this correl before the newest-wins narrowing,
+        # and the older entries it passed over ({ Name; DateTime } each).
+        Candidates = $allMatches.Count
+        Superseded = @($superseded | ForEach-Object {
+            [pscustomobject]@{ Name = [string]$_.Name; DateTime = $_.DateTime }
+        })
         Downloaded = 0
         Skipped = 0
         Failed = 0

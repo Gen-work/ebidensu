@@ -222,6 +222,26 @@ list (or, for the no-GFIX case, unexpectedly present).
 Set `SnapVerify.Enabled = $false` to go back to plain screenshots.
 Full rules: [`SnapVerify-Plan.md`](SnapVerify-Plan.md).
 
+### Jenkins: which entry is "the" file
+
+A correl can appear several times in a Jenkins folder listing — reruns of the
+same transfer, or the same file under both its plain and batch-stamped name.
+**The newest one is the evidence.**
+
+Ctrl+F cannot express that: it is a plain substring search, so given the correl
+id it stops on whichever row the page lists first, which is routinely an older
+run. The phase therefore resolves the target *before* searching: it reads the
+page's own Ctrl+A text, picks the intended entry (inside the `Expected` window
+if one is configured, else nearest this correl's archived HM run time, else
+newest), and Ctrl+F's that entry's **exact file name** — which matches exactly
+one row. The same choice drives the download, so only the newest file lands in
+`DATA\`; older entries are listed on the console as `[older] ... superseded,
+not downloaded` rather than silently dropped, since one of them may already be
+sitting in `DATA\` from an earlier run and only you can clear it out.
+
+Set `SnapVerify.PreferNewestJenkinsFile = $false` for the old behaviour (search
+the bare correl id, download every match).
+
 ### Clone
 
 For each unique `Excel_NAME` in the mapping (grouping all rows that share it):
