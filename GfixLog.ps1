@@ -73,6 +73,118 @@ function Get-GfixLogTimestamp {
     return $null
 }
 
+# The correl token the Command: line itself points at, INCLUDING the transfer
+# batch stamp when the command carries one:
+#   '... /appl/IDS/IDSVer1/gfix/recv/JIDSU86S.260729.10515511 F'
+#     -> 'JIDSU86S.260729.10515511'
+#   '... /appl/IDS/IDSVer1/gfix/recv/JIDSU86S F'   -> 'JIDSU86S'
+# Returns '' when the line carries no recv path for this TO_CODE. Pure string
+# work -- this is what tells two candidate logs apart, since the FILE name is
+# only our own download naming and says nothing about which run it recorded.
+function Get-GfixCommandCorrelToken {
+    param([string]$Line, [string]$ToCode)
+    if ([string]::IsNullOrEmpty($Line) -or [string]::IsNullOrWhiteSpace($ToCode)) { return '' }
+    $prefix = ('/appl/{0}/{0}Ver1/gfix/recv/' -f $ToCode)
+    $m = [regex]::Match($Line, ([regex]::Escape($prefix) + '([A-Za-z0-9]+(?:\.\d{6}\.\d{8})?)'))
+    if ($m.Success) { return $m.Groups[1].Value }
+    return ''
+}
+
+# The transfer batch stamp of a correl id ('.YYMMDD.NNNNNNNN'), or '' when the
+# id is the plain spelling.
+function Get-GfixCorrelStamp {
+    param([string]$CorrelId)
+    if ([string]::IsNullOrWhiteSpace($CorrelId)) { return '' }
+    if ($CorrelId.Trim() -match '\.(?<stamp>\d{6}\.\d{8})$') { return [string]$Matches['stamp'] }
+    return ''
+}
+
+# Identity of the receive RUN a candidate log recorded. Two files carrying the
+# same command token and the same log timestamp are the same run downloaded
+# twice under two different names -- which is exactly what happens when a
+# folder holds both '<correl>_x.log' (legacy naming) and
+# '<correl>.<stamp>_x.log' (timestamped naming) for one job. That is a
+# duplicate, NOT the "several candidates, chose newest" ambiguity worth
+# warning about.
+function Get-GfixLogRunKey {
+    param([string]$CorrelToken, $Timestamp, [string]$CommandLine)
+    $tok = [string]$CorrelToken
+    if ([string]::IsNullOrWhiteSpace($tok)) { $tok = ([string]$CommandLine).Trim() }
+    $ts = if ($null -ne $Timestamp) { ([datetime]$Timestamp).ToString('yyyy-MM-dd HH:mm:ss') } else { '' }
+    return ('{0}|{1}' -f $tok, $ts)
+}
+
+# ---------------------------------------------------------------------------
+# Select-GfixLogCandidate
+#   Narrows the logs whose Command: line matched down to the ONE receive run
+#   this correl means, and says whether anything genuinely ambiguous is left.
+#
+#   1. EXACT RUN WINS. When Correl_ID_S carries a batch stamp and some
+#      candidate's command token carries that same stamp, only those
+#      candidates survive -- the mapping row named a specific transfer, so a
+#      different run of the same job is not a competing answer.
+#   2. DUPLICATE SPELLINGS COLLAPSE. Remaining candidates are grouped by run
+#      identity (Get-GfixLogRunKey); each group keeps one representative,
+#      preferring the file whose NAME carries the batch stamp (the current
+#      download convention) so reruns stay reproducible.
+#   3. ONLY REAL AMBIGUITY WARNS. A warning is produced when more than one
+#      distinct RUN is left -- genuine retries of the same job, which is the
+#      case that deserves the operator's attention.
+#
+#   Candidates: @( @{ File; Timestamp; CommandLine; CorrelToken; ... } ... )
+#   Returns @{ Chosen; Runs; Duplicates; Warning } -- Runs is the deduped set
+#   newest-first, Duplicates the count collapsed in step 2.
+# ---------------------------------------------------------------------------
+function Select-GfixLogCandidate {
+    param([object[]]$Candidates, [string]$CorrelIdS)
+
+    $res = @{ Chosen = $null; Runs = @(); Duplicates = 0; Warning = '' }
+    $all = @($Candidates | Where-Object { $null -ne $_ })
+    if ($all.Count -eq 0) { return $res }
+
+    # 1. exact-run preference
+    $wantStamp = Get-GfixCorrelStamp $CorrelIdS
+    if (-not [string]::IsNullOrWhiteSpace($wantStamp)) {
+        $exact = @($all | Where-Object { (Get-GfixCorrelStamp ([string]$_.CorrelToken)) -eq $wantStamp })
+        if ($exact.Count -gt 0) { $all = $exact }
+    }
+
+    # 2. collapse duplicate spellings of one run
+    $groups = [ordered]@{}
+    foreach ($c in $all) {
+        $key = Get-GfixLogRunKey -CorrelToken ([string]$c.CorrelToken) -Timestamp $c.Timestamp -CommandLine ([string]$c.CommandLine)
+        if (-not $groups.Contains($key)) {
+            $groups[$key] = $c
+            continue
+        }
+        # Keep the stamped file name; it is the naming the downloader emits
+        # now, so a rerun picks the same file every time. The stamp is matched
+        # ANYWHERE in the name -- downloads carry a suffix after it
+        # ('JIDSU86S.260729.10515511_a.log'), so an end-anchored test finds
+        # nothing.
+        $stampRx = '\.\d{6}\.\d{8}'
+        $kept = $groups[$key]
+        $keptStamped = ([System.IO.Path]::GetFileName([string]$kept.File)) -match $stampRx
+        $thisStamped = ([System.IO.Path]::GetFileName([string]$c.File)) -match $stampRx
+        if ($thisStamped -and -not $keptStamped) { $groups[$key] = $c }
+        $res.Duplicates++
+    }
+
+    $runs = @($groups.Values | Sort-Object -Property @{
+        Expression = { if ($_.Timestamp) { $_.Timestamp } else { [datetime]::MinValue } }
+    } -Descending)
+    $res.Runs = $runs
+    $res.Chosen = $runs[0]
+
+    # 3. warn only on genuinely different runs
+    if ($runs.Count -gt 1) {
+        $names = (@($runs | ForEach-Object { [System.IO.Path]::GetFileName([string]$_.File) }) -join ', ')
+        $res.Warning = ('{0} different receive runs matched; chose newest ({1}). candidates: {2}' -f `
+            $runs.Count, [System.IO.Path]::GetFileName([string]$res.Chosen.File), $names)
+    }
+    return $res
+}
+
 function Test-GfixCommandLine {
     param([string]$Line, [string]$Fragment, [string]$Pattern = '')
     if ([string]::IsNullOrEmpty($Line)) { return $false }
@@ -84,14 +196,22 @@ function Test-GfixCommandLine {
 # Scans -LogDir for the receive log of one correl id.
 #   Returns a PSCustomObject:
 #     CorrelIdS, Fragment,
-#     Candidates : @( @{File;Timestamp;CommandLine} ... )
-#     Chosen     : @{File;Timestamp;CommandLine;Lines}  (newest, or $null)
-#     Warning    : non-empty when >1 candidate matched
+#     Candidates : @( @{File;Timestamp;CommandLine;CorrelToken} ... ) -- every
+#                  file whose Command: line matched, before deduplication
+#     Runs       : the same set after duplicate spellings of ONE run were
+#                  collapsed (Select-GfixLogCandidate), newest first
+#     Duplicates : how many candidates were collapsed as same-run duplicates
+#     Chosen     : @{File;Timestamp;CommandLine;Lines}  (newest run, or $null)
+#     Warning    : non-empty ONLY when more than one distinct RUN matched
 #     Error      : non-empty when 0 candidates / bad input (caller fails the row)
 #
 # Every '*.log' is inspected because both '<Correl_ID_S>_*.log' and
-# '<Correl_ID_S>.<timestamp>_*.log' are valid names. The whole chosen file's
-# lines are returned so the Excel step can paste the entire log.
+# '<Correl_ID_S>.<timestamp>_*.log' are valid names. That is also why the
+# duplicate collapse exists: a folder holding BOTH spellings of one download
+# used to look like two competing candidates and warned on every run, even
+# though it always went on to pick the right file. Run identity comes from the
+# log's own Command: line, never from our download naming. The whole chosen
+# file's lines are returned so the Excel step can paste the entire log.
 function Find-GfixLogForCorrel {
     param(
         [string]$LogDir,
@@ -103,6 +223,10 @@ function Find-GfixLogForCorrel {
         CorrelIdS  = $CorrelIdS
         Fragment   = ''
         Candidates = @()
+        # Candidates after duplicate spellings of one run were collapsed,
+        # newest first. Runs.Count > 1 is the only genuine ambiguity.
+        Runs       = @()
+        Duplicates = 0
         Chosen     = $null
         Warning    = ''
         Error      = ''
@@ -133,6 +257,7 @@ function Find-GfixLogForCorrel {
                     File        = $f.FullName
                     Timestamp   = (Get-GfixLogTimestamp $ln)
                     CommandLine = $ln
+                    CorrelToken = (Get-GfixCommandCorrelToken $ln $ToCode)
                     Lines       = $lines
                 })
                 break
@@ -146,15 +271,13 @@ function Find-GfixLogForCorrel {
         return [pscustomobject]$result
     }
 
-    $sorted = @($cands | Sort-Object -Property @{
-        Expression = { if ($_.Timestamp) { $_.Timestamp } else { [datetime]::MinValue } }
-    } -Descending)
-    $result.Chosen = $sorted[0]
-
-    if ($cands.Count -gt 1) {
-        $names = (@($cands | ForEach-Object { Split-Path -Leaf $_.File }) -join ', ')
-        $result.Warning = ('{0} logs matched; chose newest ({1}). candidates: {2}' -f `
-            $cands.Count, (Split-Path -Leaf $result.Chosen.File), $names)
-    }
+    # Which candidate, and is anything really ambiguous? The plain and
+    # batch-stamped spellings of ONE download are collapsed here instead of
+    # being reported as competing candidates.
+    $pick = Select-GfixLogCandidate -Candidates $cands.ToArray() -CorrelIdS $CorrelIdS
+    $result.Chosen     = $pick.Chosen
+    $result.Runs       = $pick.Runs
+    $result.Duplicates = [int]$pick.Duplicates
+    $result.Warning    = [string]$pick.Warning
     return [pscustomobject]$result
 }

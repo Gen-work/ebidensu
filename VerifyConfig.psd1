@@ -470,6 +470,14 @@
         # ProcessTimeCheck.ps1). $false writes A..H data only.
         EmitCheckColumns = $true
 
+        # 3<->9 の赤マーキング (条件付き書式). 開始日時 / 終了日時 / 処理時間 の
+        # うち「秒」の数字が 3 または 9 のセルを赤くする。ja OCR が MS Gothic の
+        # 3 と 9 を取り違えても他に痕跡が残らないのはこの桁だけなので、該当セル
+        # だけを人が snap 画像と突き合わせられるようにする。値は一切書き換えず、
+        # 印を付けるだけ (TimeDigitVerify.ps1 / Get-ProcessTimeDigitFormatRule)。
+        # $false で条件付き書式を出力しない。
+        EmitDigitFormat = $true
+
         # 件数チェック (v2.19.0). The check columns after the A..H data are
         # always I 処理時間(検算) / J チェック / K 件数(参照) / L 件数チェック.
         #   K 件数(参照)   the EXPECTED record count for this row's job, looked

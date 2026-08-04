@@ -244,9 +244,16 @@ function Get-ProcessTimeDateHints {
 #     time-of-day matches a hint's but whose date differs adopts the hint's
 #     date (end time shifted by the same delta).
 #
+#     DigitRepairs the deterministic impossible-digit repairs applied to
+#                  this row's tokens ('Minute 93->33'), from
+#                  Repair-ImpossibleTimeDigit (TimeDigitVerify.ps1). Only
+#                  digits that CANNOT be what OCR read are touched; an
+#                  ambiguous 3/9 is never rewritten here. Empty array when
+#                  the module is not dot-sourced or nothing was forced.
+#
 #   Returns plain array of PSCustomObject
 #     { StartTime; EndTime; Status; PageDuration; RecordCount; Partial;
-#       CorrelSeen; DateCorrected; RawLine }.
+#       CorrelSeen; DateCorrected; DigitRepairs; RawLine }.
 # ---------------------------------------------------------------------------
 function ConvertFrom-ProcessTimeOcrLines {
     param([string[]]$Lines, [string]$CorrelId = '', [datetime[]]$StartDateHints = @())
@@ -287,16 +294,36 @@ function ConvertFrom-ProcessTimeOcrLines {
         }
     }
 
+    # A token that fails to parse gets ONE deterministic rescue attempt:
+    # Repair-ImpossibleTimeDigit (TimeDigitVerify.ps1) forces a digit back
+    # into its field's legal range when exactly one 3<->9 substitution can do
+    # it -- '10:93:20' can only ever have been '10:33:20'. Without this the
+    # whole row was dropped and the correl reported "not found". Resolved once
+    # per call (not per line) and guarded by Get-Command, so
+    # ProcessTimeParse.ps1 still dot-sources standalone; nothing else here
+    # depends on that module.
+    $canRepairDigits = [bool](Get-Command -Name 'Repair-ImpossibleTimeDigit' -ErrorAction SilentlyContinue)
+
     foreach ($rawLine in @($Lines)) {
         if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
         $line = ConvertTo-ProcessTimeNormalizedLine $rawLine
 
         # Parsed datetimes in page order (skip tokens whose date is garbage).
         $parsed = @()
+        $digitRepairs = [System.Collections.Generic.List[string]]::new()
         foreach ($m in @([regex]::Matches($line, $dtToken))) {
             $txt = ($m.Value -replace '\s+', ' ').Trim()
             $dt = $null
             try { $dt = [datetime]::ParseExact($txt, $dtFmt, $culture) } catch {}
+            if ($null -eq $dt -and $canRepairDigits) {
+                $fix = Repair-ImpossibleTimeDigit -Text $txt -Kind 'DateTime'
+                if ($fix.Repaired) {
+                    try { $dt = [datetime]::ParseExact([string]$fix.Text, $dtFmt, $culture) } catch {}
+                    if ($null -ne $dt) {
+                        foreach ($chg in @($fix.Changes)) { $digitRepairs.Add([string]$chg) }
+                    }
+                }
+            }
             if ($null -ne $dt) { $parsed += @{ Time = $dt; End = ($m.Index + $m.Length) } }
         }
         if ($parsed.Count -eq 0) { continue }
@@ -359,7 +386,19 @@ function ConvertFrom-ProcessTimeOcrLines {
         $pageDuration = ''
         if ($searchFrom -lt $line.Length) {
             $pm = [regex]::Match($line.Substring($searchFrom), $timeToken)
-            if ($pm.Success) { $pageDuration = $pm.Value }
+            if ($pm.Success) {
+                $pageDuration = $pm.Value
+                # Same deterministic rescue as the datetime tokens above: this
+                # column is the anchor the duration cross-check leans on, so an
+                # impossible '00:93:07' must not reach it as-is.
+                if ($canRepairDigits) {
+                    $pfix = Repair-ImpossibleTimeDigit -Text $pageDuration -Kind 'Duration'
+                    if ($pfix.Repaired) {
+                        $pageDuration = [string]$pfix.Text
+                        foreach ($chg in @($pfix.Changes)) { $digitRepairs.Add(('pageDuration ' + [string]$chg)) }
+                    }
+                }
+            }
         }
 
         $correlSeen = $false
@@ -384,6 +423,9 @@ function ConvertFrom-ProcessTimeOcrLines {
             Partial       = $isPartial
             CorrelSeen    = $correlSeen
             DateCorrected = $dateCorrected
+            # Deterministic impossible-digit repairs applied while parsing
+            # this row ('Minute 93->33'); empty when nothing was forced.
+            DigitRepairs  = $digitRepairs.ToArray()
             RawLine       = $rawLine
         })
     }

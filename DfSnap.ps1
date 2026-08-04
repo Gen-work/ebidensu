@@ -238,17 +238,42 @@ function Invoke-Capture([string]$out, $proc, $region) {
     }
 }
 
+# Resolves the correl's data file, tolerating the plain <-> batch-stamped
+# spelling in EITHER direction (the mapping may carry the stamped id while the
+# file on disk is plain, or the other way round).
+#
+# Preference order is explicit rather than "newest wins": an id spelled
+# exactly as asked for is the answer, and only when no spelling matches
+# exactly does the alias glob get to choose. Newest-mtime last resort only.
+# The old version globbed every alias, deduped and took the newest by write
+# time -- so a folder holding both spellings warned on every single row even
+# though there was never any real ambiguity, and could pick the file that was
+# merely touched most recently.
 function Find-DataFile([string]$baseDir, [string]$correlIdS) {
     if (-not (Test-Path -LiteralPath $baseDir)) { return $null }
-    $patterns = @(Get-CorrelIdAliases $correlIdS | ForEach-Object { $FilePattern -f $_ })
-    $hits = @($patterns | ForEach-Object {
-        Get-ChildItem -LiteralPath $baseDir -Filter $_ -File -ErrorAction SilentlyContinue
-    } | Sort-Object FullName -Unique | Sort-Object LastWriteTime -Descending)
-    if ($hits.Count -eq 0) { return $null }
-    if ($hits.Count -gt 1) {
-        Write-Host ("    [WARN] {0} files match correl aliases '{1}'; using newest" -f $hits.Count, ($patterns -join ', ')) -ForegroundColor Yellow
+    $aliases = @(Get-CorrelIdAliases $correlIdS)
+
+    # 1. exact file name, in alias order (as given, then the base spelling)
+    foreach ($alias in $aliases) {
+        $exact = Join-Path $baseDir $alias
+        if (Test-Path -LiteralPath $exact -PathType Leaf) { return $exact }
     }
-    return $hits[0].FullName
+
+    # 2. the configured glob per alias, first alias that hits anything
+    foreach ($alias in $aliases) {
+        $hits = @(Get-ChildItem -LiteralPath $baseDir -Filter ($FilePattern -f $alias) -File -ErrorAction SilentlyContinue |
+                  Sort-Object Name)
+        if ($hits.Count -eq 0) { continue }
+        if ($hits.Count -gt 1) {
+            # Several genuinely different files under one spelling: that IS
+            # worth a word. Newest by write time, as before.
+            $hits = @($hits | Sort-Object LastWriteTime -Descending)
+            Write-Host ("    [WARN] {0} files match '{1}'; using newest ({2})" -f `
+                $hits.Count, ($FilePattern -f $alias), $hits[0].Name) -ForegroundColor Yellow
+        }
+        return $hits[0].FullName
+    }
+    return $null
 }
 
 # -- isZip rows: unzip-and-compare helpers --------------------
@@ -297,13 +322,21 @@ function Find-DfZipFile([string]$baseDir, [string]$correlIdS) {
     return $null
 }
 
-# Extract the correl's data file out of $zipPath into $unzipDir and return
-# the extracted file's full path (named after the correl id, same convention
-# as SendVsGift's data\unzip). Throws on any problem -- the caller fails the
-# row rather than silently comparing the zip binaries.
+# Extract the correl's data file out of $zipPath and return the extracted
+# file's full path. Throws on any problem -- the caller fails the row rather
+# than silently comparing the zip binaries.
+#
+# The extracted file KEEPS THE ZIP ENTRY'S OWN NAME, inside a per-correl
+# subfolder of $unzipDir. Naming it after the correl id (the old behaviour)
+# broke df.exe once Correl_ID_S could carry a transfer batch stamp: an id like
+# 'JIDSU86S.260729.10515511' makes Windows -- and df.exe's own file-type
+# dispatch -- read '.10515511' as the file's extension, so the compare file
+# would not open. The entry name is what the transfer actually produced, which
+# is also what the plain (non-zip) side of the compare is named; the per-correl
+# subfolder keeps two correls whose zips both contain e.g. 'data.txt' apart.
 function Expand-DfZip([string]$zipPath, [string]$unzipDir, [string]$correlIdS) {
-    Ensure-Dir $unzipDir
-    $outFile = Join-Path $unzipDir $correlIdS
+    $outDir = Join-Path $unzipDir $correlIdS
+    Ensure-Dir $outDir
     $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     try {
         $entries = @($archive.Entries | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.Name) })
@@ -318,6 +351,16 @@ function Expand-DfZip([string]$zipPath, [string]$unzipDir, [string]$correlIdS) {
         }
         if ($null -eq $entry -and $entries.Count -eq 1) { $entry = $entries[0] }
         if ($null -eq $entry) { throw ("zip has multiple entries and none matches {0}: {1}" -f $correlIdS, $zipPath) }
+
+        # ZipArchiveEntry.Name is already the leaf name (FullName carries any
+        # folder), but take the leaf explicitly so a hand-built archive cannot
+        # write outside $outDir. Base correl id as the last-resort name.
+        $leaf = [System.IO.Path]::GetFileName([string]$entry.Name)
+        if ([string]::IsNullOrWhiteSpace($leaf)) {
+            $leaf = @(Get-CorrelIdAliases $correlIdS)[-1]
+        }
+        $outFile = Join-Path $outDir $leaf
+
         $inStream = $entry.Open()
         try {
             $outStream = [System.IO.File]::Open($outFile, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)

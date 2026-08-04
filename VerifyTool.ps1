@@ -1815,6 +1815,7 @@ function Invoke-ToolPhase([string]$PhaseKey, [hashtable]$Config, [hashtable]$Sta
             if ($pt.ContainsKey('OcrPreprocessThreshold') -and $null -ne $pt.OcrPreprocessThreshold) { $args['OcrPreprocessThreshold'] = [int]$pt.OcrPreprocessThreshold }
             if ($pt.ContainsKey('ExportScale') -and $null -ne $pt.ExportScale)   { $args['ExportScale'] = [double]$pt.ExportScale }
             if ($pt.ContainsKey('EmitCheckColumns') -and $null -ne $pt.EmitCheckColumns) { $args['EmitCheckColumns'] = [bool]$pt.EmitCheckColumns }
+            if ($pt.ContainsKey('EmitDigitFormat') -and $null -ne $pt.EmitDigitFormat) { $args['EmitDigitFormat'] = [bool]$pt.EmitDigitFormat }
             # Expected-record-count lookup: the whole block is passed through
             # as-is; ProcessTime.ps1 expands its {Tag}/{Month} tokens per
             # output workbook (Resolve-ProcessTimeCountReference).

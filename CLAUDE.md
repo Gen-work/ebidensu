@@ -168,9 +168,9 @@ PixelDigitMatch.ps1     pure D2 per-digit 3/9 image scorer (dot-source, no
                         Merge-DigitPixelVerdicts). The PS port of the Phase-0
                         GO-proven mock-page/pixeldiff.mjs metric. Unit-tested
                         (Tests\Test-PixelDigitMatch.ps1). v2.17.0.
-OldSnapPixelVerify.ps1  SUPERSEDED by docs/ProcessTime-OldSnap-MockMatch-
-                        Plan.md (kept, off by default -- do not run two
-                        competing D2 paths).
+OldSnapPixelVerify.ps1  PARKED with the rest of the D2 image-check line
+                        (docs/Parked-Ideas.md); kept, off by default -- do
+                        not run two competing D2 paths.
                         NON-pure GDI+ glue for D2 (dot-source, no param();
                         static-checked only). New-DigitTemplateGray (render MS
                         Gothic 3/9), Get-BitmapGrayRegion (crop a snap digit
@@ -181,6 +181,36 @@ OldSnapPixelVerify.ps1  SUPERSEDED by docs/ProcessTime-OldSnap-MockMatch-
                         PixelDigitMatch. Every entry point swallows errors ->
                         '' so an image check never blocks the write. Off by
                         default (OldSnapVerify.PixelDiff.Enabled). v2.17.0.
+TimeDigitVerify.ps1     pure 3<->9 digit-risk analysis for OCR'd HM times
+                        (dot-source, no param(), no COM/OCR/IO, ASCII).
+                        The project's answer to the ja recognizer reading
+                        MS Gothic '9' as '3': act only where the answer is
+                        FORCED, flag everything else, never rewrite a
+                        plausible reading.
+                        Repair-ImpossibleTimeDigit -- fix a digit only when
+                        exactly one 3<->9 substitution brings its field back
+                        into range ('10:93:20' -> '10:33:20'; '2026/19/03'
+                        untouched + Invalid).
+                        Resolve-ProcessTimeDurationConflict -- treat start,
+                        end and the page's own printed processing-time column
+                        as three readings of one fact; a disagreement that
+                        EXACTLY ONE substitution reconciles is repaired by
+                        arithmetic ('repaired'), several or none leaves the
+                        values as read ('ambiguous'/'conflict') and flags the
+                        row. This replaced the old silent "kept derived"
+                        override that shipped wrong durations.
+                        Get-TimeDigitRisk -- 'none'/'suspect'/'invalid'
+                        classification, never rewrites.
+                        Get-ProcessTimeDigitFormatRule +
+                        New-ProcessTimeDigitFormatFormula -- the conditional
+                        format that reddens every start/end/duration cell
+                        whose SECONDS digit is a 3 or 9 (applied by
+                        ProcessTime.ps1's Set-ProcessTimeDigitFormat; gated
+                        on ProcessTime.EmitDigitFormat).
+                        Also Get-TimeDigitFieldSpec / Get-TimeDigitSwapVariants
+                        / ConvertTo-TimeDigitDurationSeconds /
+                        Format-TimeDigitDuration. Unit-tested
+                        (Tests\Test-TimeDigitVerify.ps1). v2.21.0.
 ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
                         module (dot-source, no param(), no COM): Get-ProcessTime
                         CheckColumnSpec returns the data-driven spec for the
@@ -300,14 +330,22 @@ Validate.ps1            Phase Validate (read-only diagnostic)
 Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
 Check-Encoding.ps1      read-only encoding policy checker + label self-test
 Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1
+docs/Parked-Ideas.md    designed-then-deliberately-shelved work, with what
+                        it would take to resume. NOT on the TODO list.
+                        Currently holds the whole D2 image-check line
+                        (mock-page + PixelDigitMatch + OldSnapPixelVerify)
+                        and the never-wired Repair-ProcessTimeStartFromStamp.
 docs/ProcessTime-OldSnap-MockMatch-Plan.md
-                        PLANNED replacement for v2.17.0's D2 image check:
-                        render the reference row from mock-page in Edge on
-                        the office PC (same engine/font/CSS as the snap) and
-                        whole-field template-match it via Locate-ByImage,
-                        instead of GDI+ per-digit templates. Pure PowerShell
-                        + Edge (no node on the office PC). Section 10 holds
-                        the 2026-07-27 review + landing order.
+                        PARKED (see docs/Parked-Ideas.md). Designed
+                        replacement for v2.17.0's D2 image check: render the
+                        reference row from mock-page in Edge on the office PC
+                        (same engine/font/CSS as the snap) and whole-field
+                        template-match it via Locate-ByImage, instead of GDI+
+                        per-digit templates. Never built -- both D2
+                        generations need an office-PC calibration session
+                        that never happened, and the deterministic checks in
+                        TimeDigitVerify.ps1 cover the day-to-day 3/9 problem
+                        without one.
 docs/ProcessTime-OcrBenchmark-Plan.md
                         Phase 2/3 design: OCR benchmark test set + 3/9 fix
                         (real-snap + synthetic-HTML ground truth, runner,
@@ -377,7 +415,7 @@ Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
 `SendMetadata.ps1`, `OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`,
 `SnapLocalize.ps1`, `OwnerFilter.ps1`, `Find-ActiveHighlightRow.ps1`,
 `ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`, `OldSnapVerify.ps1`,
-`PixelDigitMatch.ps1`, `OldSnapPixelVerify.ps1`. All phase scripts have
+`PixelDigitMatch.ps1`, `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. All phase scripts have
 `param()` and are called via `& $path @args`.
 
 The critical pattern before any dot-source:
@@ -532,7 +570,55 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-07-29 v2.20.0)
+## Current state (last bump: 2026-08-04 v2.21.0)
+
+v2.21.0 (deterministic 3<->9 handling + timestamped-id tolerance cleanup +
+docs): **policy reversal on the ja-OCR `9`/`3` confusion -- the tool no
+longer guesses.** It acts only where the answer is arithmetically FORCED and
+leaves everything else exactly as read, marked red for a human. The old
+behaviour could turn a CORRECT reading into a wrong one: the reported case
+had a real start/end of `...:02`/`...:03` with the page's own printed
+duration reading `00:00:01`, and `Resolve-ProcessTimeSide` silently shipped
+`00:00:07` derived from a misread end second while merely NOTING the
+disagreement on the value it had already overwritten. New pure
+`TimeDigitVerify.ps1` (unit-tested) supplies the three rules:
+(1) `Repair-ImpossibleTimeDigit` fixes a digit only when its field is out of
+range and exactly one 3<->9 substitution inside that field restores it
+(minute `93` -> `33` forced; `99` -> `39` forced since `93` is still
+illegal; month `19` untouched + `Invalid`); (2)
+`Resolve-ProcessTimeDurationConflict` treats start, end and the page's
+printed processing-time column as three readings of one fact and repairs a
+disagreement only when exactly one substitution reconciles all three --
+`ambiguous`/`conflict` change nothing and flag the row (new
+`Get-OldSnapVerifyVerdict -DigitConflict` -> 要確認); (3) everything left
+over is marked, not fixed -- `Set-ProcessTimeDigitFormat` reddens every
+start/end/duration cell whose SECONDS digit is a 3 or 9 (config
+`ProcessTime.EmitDigitFormat`, default on), which together with the existing
+D1 hyperlink gets the operator from a red digit to its snap image in one
+click. `ConvertFrom-ProcessTimeOcrLines` also now RESCUES an impossible
+digit instead of dropping the whole row (`10:93:20` used to make the correl
+report "not found"). Per-side `DigitFlag` persists to the sidecar.
+**Timestamped-correl-id tolerance cleaned up**: `Find-GfixLogForCorrel`
+derives run identity from the log's own `Command:` line
+(`Select-GfixLogCandidate`), so the plain and batch-stamped spellings of ONE
+download collapse into a single run instead of warning on every run, and a
+batch-stamped `Correl_ID_S` selects its own run outright -- the warning is
+now reserved for genuinely different receive runs. `Find-DataFile`
+(DfSnap.ps1) prefers an exact spelling over newest-mtime. **Fixed**:
+`Expand-DfZip` named the extracted compare file after `Correl_ID_S`, so a
+batch-stamped id made df.exe read `.10515511` as the file's extension and
+the file would not open -- it now keeps the ZIP ENTRY's own name in a
+per-correl subfolder. **Docs**: `README.md` rewritten as a project front
+page (slogan, the single interactive entry point, the pipeline as one
+diagram, zero-dependency table, verification posture); operational detail
+moved to `docs/Operations.md`; the 未来展望 vision prose moved verbatim into
+`docs/Generalization-Roadmap.md` Appendix A; the D2 image-check line and the
+never-wired `Repair-ProcessTimeStartFromStamp` parked in
+`docs/Parked-Ideas.md`. Pure logic unit-tested; COM paths static-checked
+only -- confirm the conditional formatting, the 要確認 verdict, the df.exe
+open and the quiet log folder on an office PC.
+
+
 
 v2.20.0 (timestamped correl id: DF evidence linking + snap-verify alias
 tolerance + Jenkins Ctrl+F fix): Correl_ID_S can carry a transfer-batch
@@ -856,19 +942,23 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
-- **ProcessTime: ja-OCR digit 9->3 -- PHASED FIX IN PROGRESS** (see
-  `docs/ProcessTime-OcrBenchmark-Plan.md`). v2.15.3 added image preprocessing
-  (`ConvertTo-ProcessTimeOcrImage`) as a root-cause mitigation, but there is no
-  way yet to MEASURE 3/9 accuracy or tune it. Plan: (Phase 2, v2.17.0) build a
-  pixel-level OCR benchmark — real snaps + confirmed J-column values as the
-  primary ground truth, a synthetic 「バッチ処理状況一覧」HTML generator as a
-  supplement — plus `Test-OcrAccuracy.ps1` (3<->9 confusion matrix) and a
-  deterministic `Repair-ProcessTimeStartFromStamp` (adopt the clean en-US
-  14-digit datestamp's hh:mm for the start time when the ja read differs only
-  by a 3<->9 swap; seconds unchanged). (Phase 3) tune preprocessing via
-  `-Sweep`, and only if that still misses 100% add the bounding-box en-US
-  second-pass (Plan A), gated on the J-column `F` trigger. A post-hoc regex
-  check cannot catch this bug — a 9->3 misread is a format-valid timestamp.
+- **ProcessTime: ja-OCR digit 9<->3 -- DETERMINISTIC FIX SHIPPED (v2.21.0),
+  measurement still open.** The confusion itself is now handled without
+  guessing, by `TimeDigitVerify.ps1`: (a) a digit that makes its field
+  illegal is forced back when exactly one 3<->9 substitution can do it
+  (`Repair-ImpossibleTimeDigit` -- '10:93:20' can only have been
+  '10:33:20'); (b) start, end and the page's own printed processing-time
+  column are treated as three readings of one fact, so a disagreement that
+  exactly one substitution reconciles is repaired by arithmetic
+  (`Resolve-ProcessTimeDurationConflict`) and anything ambiguous is left
+  exactly as read and flagged; (c) every remaining ambiguous 3/9 -- one
+  sitting where the opposite digit would also be legal -- is marked red in
+  the output workbook by conditional formatting for a human glance. **No
+  heuristic ever rewrites a plausible reading**; that was the v2.20.0-era
+  bug (a misread end second turned a printed 00:00:01 into a derived
+  00:00:07 silently). Still open: there is no way to MEASURE 3/9 accuracy,
+  so preprocessing (`ConvertTo-ProcessTimeOcrImage`, v2.15.3) cannot be
+  tuned -- see the benchmark item below.
 
 - **ProcessTime: OCR benchmark harness** (Phase 2,
   `docs/ProcessTime-OcrBenchmark-Plan.md`) -- new office-PC-only
@@ -879,7 +969,9 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   operator-supplied CSS + office-PC visual calibration (real captured snaps
   stay the primary ground truth; synthetic pages only cover 3/9 combinations
   absent from real data). Windows/Edge/OCR paths are static-checked only; pure
-  `Compare-OcrDigits` / `Get-OcrBenchmarkScore` are CI-unit-tested.
+  `Compare-OcrDigits` / `Get-OcrBenchmarkScore` are CI-unit-tested. NOTE the
+  plan's `Repair-ProcessTimeStartFromStamp` step is parked, not pending --
+  it exists, was never wired, and is superseded (`docs/Parked-Ideas.md`).
 
 - **NEXT: ReplaceGfix duplicate-candidate confirmation** — since v2.9.18,
   `GfixLogDownload` deliberately downloads *every* GoAnywhere job matching a
@@ -887,10 +979,15 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   content matching (`Find-GfixLogForCorrel`) is what actually decides which
   correl a log belongs to. This means `log\` can now legitimately hold more
   than one candidate log for a single correl (e.g. genuine retries of the
-  same job) more often than before. Today `Find-GfixLogForCorrel` silently
-  picks the newest candidate by its `Command:` line timestamp and only prints
-  a `[WARN] N logs matched; chose newest (...)` — it never stops for operator
-  confirmation. Planned next step: when `ReplaceGfix` (or `GfixLogDownload`'s
+  same job) more often than before. **Partly addressed in v2.21.0**:
+  `Find-GfixLogForCorrel` now decides run identity from the log's own
+  `Command:` line (`Select-GfixLogCandidate`), so the plain and
+  batch-stamped spellings of ONE download collapse into a single run
+  instead of warning, and a batch-stamped `Correl_ID_S` selects its own run
+  outright. What is left is the genuine case: two real reruns of the same
+  job, where it still silently picks the newest and only prints a
+  `[WARN] N different receive runs matched; chose newest (...)` — it never
+  stops for operator confirmation. Planned next step: when `ReplaceGfix` (or `GfixLogDownload`'s
   finalize step) hits a multi-candidate `Warning`, show the operator each
   candidate's file name + parsed timestamp and require an explicit pick
   (Enter = accept newest, or choose another) before the log is pasted into

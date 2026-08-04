@@ -1,3 +1,163 @@
+## 2026-08-04 - Deterministic 3<->9 handling + timestamped-id tolerance cleanup + docs (v2.21.0)
+
+Three operator-reported problems and a documentation pass.
+
+The headline change is a reversal of policy on the ja-OCR `9`/`3` confusion:
+the tool no longer tries to *guess* the right digit. It acts only where the
+answer is arithmetically forced, and everything else is left exactly as OCR
+read it and marked red for a human. The previous behaviour could turn a
+CORRECT reading into a wrong one -- the reported case had a real start/end of
+`...:02` / `...:03` with the page's own printed duration reading `00:00:01`,
+and the tool silently shipped `00:00:07` derived from a misread end second.
+
+### Added
+- **`TimeDigitVerify.ps1`** -- new pure module (dot-source, no `param()`, no
+  COM/OCR/IO, ASCII source), unit-tested by `Tests\Test-TimeDigitVerify.ps1`:
+  - `Repair-ImpossibleTimeDigit` -- corrects a digit ONLY when its field is
+    out of its legal range and exactly ONE 3<->9 substitution inside that
+    field brings it back. A minute reading `93` can only ever have been `33`,
+    so that is forced, not guessed; `99` has a unique fix (`39`, since `93`
+    is still illegal) so it is forced too; a month reading `19` has none
+    (`13` is also illegal) so it is left alone and reported `Invalid`.
+  - `Resolve-ProcessTimeDurationConflict` -- treats the start time, the end
+    time and the page's own printed processing-time column as three readings
+    of one fact. A disagreement that EXACTLY ONE single 3<->9 substitution
+    across start/end reconciles is repaired by arithmetic (`repaired`); when
+    several substitutions would work (`ambiguous`) or none does (`conflict`)
+    nothing is rewritten and the row is flagged. Negative durations are
+    rejected as candidates.
+  - `Get-TimeDigitRisk` -- classifies a reading `none`/`suspect`/`invalid`
+    without touching it. `suspect` means a 3 or 9 sits where the opposite
+    digit would ALSO be legal, i.e. the misread would leave no trace. A `3`
+    in a minute/second TENS slot is explicitly NOT suspect: a `9` cannot
+    occur there, so the repair above would already have caught it.
+  - `Get-ProcessTimeDigitFormatRule` / `New-ProcessTimeDigitFormatFormula` --
+    the conditional-format spec for the output workbook, plus supporting
+    `Get-TimeDigitFieldSpec` / `Get-TimeDigitSwapVariants` /
+    `ConvertTo-TimeDigitDurationSeconds` / `Format-TimeDigitDuration`.
+- **Red marking of ambiguous 3/9 digits in the ProcessTime output workbook.**
+  New COM finalizer `Set-ProcessTimeDigitFormat` (ProcessTime.ps1) applies one
+  conditional-format rule per start/end/duration column (D/E/F) reddening every
+  cell whose SECONDS digit is a `3` or a `9` -- the digits the recognizer can
+  flip without leaving any other trace. The formula routes through
+  `TEXT(cell,"ss")` so a single rule covers both a real date/time serial and
+  the plain-text fallback, and a blank cell never fires. Values are never
+  changed by this; combined with the existing D1 hyperlink on the correl-id
+  cell, one click gets the operator from a red digit to the snap image it came
+  from. New config `ProcessTime.EmitDigitFormat` (default `$true`), threaded
+  through `VerifyTool.ps1` and the `-EmitDigitFormat` script parameter.
+  Existing rules on those columns are deleted first so reruns replace rather
+  than stack.
+- **`Get-OldSnapVerifyVerdict -DigitConflict`** (OldSnapVerify.ps1) -- a row
+  whose three readings could not be reconciled can never auto-confirm; it lands
+  on 要確認. `suspect` alone deliberately does NOT force the verdict: nearly
+  every timestamp carries an ambiguous 3 or 9, so drowning the 検証 column
+  would defeat it -- those are surfaced per-cell by the red marking instead.
+- **`Select-GfixLogCandidate` / `Get-GfixCommandCorrelToken` /
+  `Get-GfixCorrelStamp` / `Get-GfixLogRunKey`** (GfixLog.ps1) -- pure receive-run
+  identity helpers, unit-tested.
+- **`docs\Operations.md`** -- the day-to-day reference (phases, options, folder
+  layout, mapping columns, per-phase behaviour) moved out of `README.md`.
+- **`docs\Parked-Ideas.md`** -- designed-then-shelved work, with what it would
+  take to resume.
+
+### Changed
+- **ProcessTime no longer overrides the page's printed duration silently.**
+  `Resolve-ProcessTimeSide` used to write the derived duration and merely note
+  `page duration X != derived Y (kept derived)` -- attaching the note to a
+  value it had already overwritten. It now runs the conflict resolver: a
+  uniquely-explainable disagreement is repaired (start/end corrected, duration
+  set to the printed one, explained in the row Note), and anything else keeps
+  the values exactly as read and sets the new per-side `DigitFlag`.
+- **`ConvertFrom-ProcessTimeOcrLines` rescues impossible digits instead of
+  dropping the row** (ProcessTimeParse.ps1). A datetime token that fails
+  `ParseExact` now gets one deterministic repair attempt before being
+  discarded, and the page-duration token gets the same treatment. Previously
+  `10:93:20` dropped the entire row and the correl was reported "not found".
+  Repairs are recorded on the row as `DigitRepairs` and surface in the run's
+  notes. The call is `Get-Command`-guarded and resolved once per call, so
+  `ProcessTimeParse.ps1` still dot-sources standalone.
+- **Per-side `DigitFlag`** (`''` / `'suspect'` / `'conflict'`) is carried on the
+  ProcessTime result, persisted to the sidecar as `GiftDigitFlag` /
+  `GfixDigitFlag`, and read back by the workbook writer. Sidecars written before
+  this release read back as `''`.
+- **The GFIX log matcher stopped warning about duplicate spellings of one run.**
+  `Find-GfixLogForCorrel` now derives run identity from the log's own
+  `Command:` line -- the recv-path correl token (batch stamp included) plus the
+  log timestamp -- rather than from our download file naming. A folder holding
+  both `<correl>_x.log` and `<correl>.<stamp>_x.log` for ONE download collapses
+  to a single run and reports `Duplicates`, where it previously printed
+  `[WARN] 2 logs matched; chose newest (...)` on every run despite there never
+  having been an ambiguity. The stamped file name is kept as the
+  representative so reruns are reproducible. A batch-stamped `Correl_ID_S` now
+  also selects its own run outright: an exact stamp match wins over "newest".
+  The warning is reserved for genuinely different receive runs and reworded to
+  `N different receive runs matched`. New `Runs` / `Duplicates` fields on the
+  result; `GfixLogDownload.ps1` logs collapsed duplicates at `[INFO]`.
+- **`Find-DataFile` (DfSnap.ps1) prefers an exact spelling over newest-mtime.**
+  It tried every alias glob, deduped, and took the newest by write time, so a
+  side holding both the plain and the batch-stamped file warned on every row
+  and could pick the merely-most-recently-touched one. It now returns an exact
+  file-name match first (in alias order), then the configured glob per alias,
+  and only warns when one spelling genuinely matches several files.
+
+### Fixed
+- **`Expand-DfZip` produced a compare file df.exe could not open.** The
+  extracted file was named after `Correl_ID_S`; once that id could carry a
+  transfer batch stamp, `JIDSU86S.260729.10515511` made Windows -- and df.exe's
+  own file-type dispatch -- read `.10515511` as the extension. The extracted
+  file now keeps the ZIP ENTRY's own name (what the transfer actually
+  produced, and what the non-zip side of the compare is named) inside a
+  per-correl subfolder of `DATA\<side>\unzip`, so two correls whose zips both
+  contain e.g. `data.txt` cannot collide. The leaf is taken explicitly so a
+  hand-built archive cannot write outside the target folder.
+
+### Docs
+- **`README.md` rewritten as a project front page.** It led with per-phase
+  command blocks and carried stale claims (`DfSnap` / `GfixLodDownload`
+  "registered but not implemented", ReplaceGfix "writes a placeholder"). It now
+  opens with the slogan, says what the tool does and shows the single
+  interactive entry point everyone actually uses, gives the phase pipeline as
+  one diagram, and states the two things that make the project distinctive:
+  **zero third-party dependencies** (a table of what most tools reach for vs
+  what ships with Windows) and the **verification posture** (act only when the
+  answer is forced, preview before touching shared documents, never auto-send,
+  atomic state, verify the capture rather than just taking it). Framed as a
+  working tool that doubles as a readable sample project, with the decoupled
+  version pointed at `docs\Generalization-Roadmap.md`. The operational detail
+  moved to `docs\Operations.md`; the 未来展望 vision prose moved verbatim into
+  `docs\Generalization-Roadmap.md` Appendix A (that document already turned it
+  into milestones and referenced it by name).
+- **The D2 image check is parked, not pending.** `docs\ProcessTime-OldSnap-
+  MockMatch-Plan.md` is marked PARKED and `CLAUDE.md`'s file map and TODO list
+  updated to match. Both D2 generations need an office-PC calibration session
+  that never happened, and the deterministic checks above cover the day-to-day
+  problem without one. `OldSnapPixelVerify.ps1` and `PixelDigitMatch.ps1` stay
+  in the tree, still off by default.
+- **`Repair-ProcessTimeStartFromStamp` documented as never wired.** It has
+  existed since v2.17.0 and is called by nothing but its own tests, so the
+  "datestamp cross-check" earlier release notes described was never actually
+  running -- the "completely ineffective" half of the operator's report. It is
+  kept (tested, sound idea) but recorded in `docs\Parked-Ideas.md` as
+  superseded by the arithmetic disambiguator, which uses three independent
+  readings instead of two and refuses to act when the fix is not unique.
+
+### Notes
+- Pure logic is unit-tested (`Test-TimeDigitVerify.ps1` new;
+  `Test-GfixLog.ps1`, `Test-ProcessTimeParse.ps1`, `Test-OldSnapVerify.ps1`
+  extended). There is no PowerShell or Excel in this build environment, so the
+  COM paths are static-checked only -- **confirm on an office PC**: (1) the
+  D/E/F conditional formatting actually reddens the 3/9 seconds cells in Excel
+  2019 and survives a rerun without stacking; (2) a known 9->3 row reaches
+  要確認 rather than auto-confirming; (3) `df.exe` opens the newly-named
+  extracted compare file for a batch-stamped isZip row; (4) a log folder
+  holding both spellings of one download no longer warns.
+- Behaviour change worth knowing: for a correl whose start/end and printed
+  duration disagree uniquely, the WRITTEN start or end value now differs from
+  the raw OCR read (that is the point). The row Note names the substitution
+  and both durations, and column J still cross-checks the arithmetic on the
+  sheet.
+
 ## 2026-07-29 - Timestamped correl id: DF evidence linking + snap-verify alias tolerance + Jenkins Ctrl+F fix (v2.20.0)
 
 Review and follow-through on an in-progress change (Correl_ID_S can carry a
