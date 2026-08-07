@@ -66,9 +66,11 @@
     "ExportScale": 3.0,
     "Stage": "Both",
     "EmitCheckColumns": true,
+    "EmitDigitFormat": true,
     "OcrPreprocessBinarize": false,
     "OcrPreprocessThreshold": 128,
-    "_CheckColumnsNote": "EmitCheckColumns (default true) appends the on-sheet audit columns after the A..H data columns: I duration re-derivation (=E-D), J T/F compare of the written vs re-derived duration, K record-count check. Set false to write A..H data only. OcrPreprocessBinarize/OcrPreprocessThreshold are reserved (carried through but not yet wired into the OCR image pipeline)."
+    "_CheckColumnsNote": "EmitCheckColumns (default true) appends the on-sheet audit columns after the A..H data columns: I duration re-derivation (=E-D), J T/F compare of the written vs re-derived duration, K record-count check. Set false to write A..H data only. OcrPreprocessBinarize/OcrPreprocessThreshold are reserved (carried through but not yet wired into the OCR image pipeline).",
+    "_DigitFormatNote": "EmitDigitFormat (default true) reddens every start/end/duration cell whose SECONDS digit is a 3 or a 9 via conditional formatting -- the one digit pair the ja OCR engine flips without leaving any other trace, so the operator can check those cells against the snap image the correl-id cell links to. It only MARKS: no value is ever rewritten for it. Digits that cannot be what OCR read (e.g. a minute tens of 9) are repaired deterministically elsewhere and never reach this."
   },
 
   "ExpectedTime": {

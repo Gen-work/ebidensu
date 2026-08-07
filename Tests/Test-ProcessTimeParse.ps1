@@ -4,6 +4,11 @@ $ErrorActionPreference = 'Stop'
 
 $here = Split-Path $MyInvocation.MyCommand.Path
 . (Join-Path $here '_TestCommon.ps1')
+# TimeDigitVerify first: ConvertFrom-ProcessTimeOcrLines uses its
+# Repair-ImpossibleTimeDigit to rescue a token whose digit cannot be what OCR
+# read (it degrades to "drop the row" when the module is absent, so the parse
+# module still dot-sources standalone -- the tests exercise the wired path).
+. (Join-Path (Split-Path $here -Parent) 'TimeDigitVerify.ps1')
 . (Join-Path (Split-Path $here -Parent) 'ProcessTimeParse.ps1')
 
 Reset-Tests 'ProcessTimeParse'
@@ -45,6 +50,25 @@ Assert-Equal 0 $noMatch.Count 'lines without two datetime tokens are skipped'
 
 $badDate = @(ConvertFrom-ProcessTimeOcrLines @('2026/13/40 09:00:00   2026/07/16 09:01:23   x'))
 Assert-Equal 0 $badDate.Count 'an unparseable datetime token drops the row instead of throwing'
+
+# Impossible-digit rescue: a minute/second tens digit can never be 9, so the
+# ja recognizer's 3->9 flip is forced back deterministically instead of the
+# whole row being dropped (which used to report the correl as "not found").
+$fixed = @(ConvertFrom-ProcessTimeOcrLines @(
+    "2026/07/16 09:00:00   2026/07/16 09:91:23   JIDSM01S   $normal"
+))
+Assert-Equal 1 $fixed.Count 'a row whose end minute reads 91 is rescued, not dropped'
+Assert-Equal '2026/07/16 09:31:23' $fixed[0].EndTime.ToString('yyyy/MM/dd HH:mm:ss') 'minute 91 forced to 31'
+Assert-True  (@($fixed[0].DigitRepairs).Count -ge 1) 'the forced repair is recorded on the row'
+Assert-Equal 'Minute 91->31' $fixed[0].DigitRepairs[0] 'the repair note names the field and both values'
+
+# An ambiguous 3/9 is NEVER rewritten here -- only the workbook's red marking
+# and the duration cross-check get to say anything about it.
+$asRead = @(ConvertFrom-ProcessTimeOcrLines @(
+    "2026/07/16 09:00:00   2026/07/16 09:01:29   JIDSM01S   $normal"
+))
+Assert-Equal '2026/07/16 09:01:29' $asRead[0].EndTime.ToString('yyyy/MM/dd HH:mm:ss') 'a legal seconds digit is left exactly as read'
+Assert-Equal 0 (@($asRead[0].DigitRepairs)).Count 'nothing is reported repaired for a legal reading'
 
 # ---------------------------------------------------------------------------
 # ConvertTo-ProcessTimeNormalizedLine (OCR-injected spaces inside time tokens)

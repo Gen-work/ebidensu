@@ -91,6 +91,8 @@ Assert-Equal 'NeedsCheck' (Get-OldSnapVerifyVerdict -Source 'ocr:snap-png' -Snap
 Assert-Equal 'NeedsCheck' (Get-OldSnapVerifyVerdict -Source 'ocr-partial' -SnapExists $true) 'a partial read is never auto-confirmed'
 Assert-Equal 'NeedsCheck' (Get-OldSnapVerifyVerdict -Source 'none' -SnapExists $true) 'none source with a snap -> NeedsCheck'
 Assert-Equal 'NeedsCheck' (Get-OldSnapVerifyVerdict -Source 'ocr' -SnapExists $true -ArithmeticOk $true -DatestampSwap $true) 'a 3<->9 datestamp swap flags even when arithmetic is ok'
+Assert-Equal 'NeedsCheck' (Get-OldSnapVerifyVerdict -Source 'ocr' -SnapExists $true -ArithmeticOk $true -DigitConflict $true) 'an unresolved 3<->9 duration conflict flags even when arithmetic is ok'
+Assert-Equal 'OcrOk' (Get-OldSnapVerifyVerdict -Source 'ocr' -SnapExists $true -ArithmeticOk $true -DigitConflict $false) 'a resolved/absent digit conflict does not flag'
 Assert-Equal 'OcrOk' (Get-OldSnapVerifyVerdict -Source 'ocr' -SnapExists $true -ArithmeticOk $true) 'OCR row passing every deterministic check (D2 off) auto-confirms'
 Assert-Equal 'OcrOk' (Get-OldSnapVerifyVerdict -Source 'ocr' -SnapExists $true -ArithmeticOk $null) 'an undecidable arithmetic (null) does NOT by itself flag when D2 off'
 # D2 enabled: require an explicit image 'ok'.

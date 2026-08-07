@@ -264,6 +264,12 @@ function Repair-ProcessTimeStartFromStamp {
 #     ArithmeticOk  Test-OldSnapDurationArithmetic result ($true/$false/$null).
 #     DatestampSwap a pure 3<->9 datestamp-vs-start disagreement was found
 #                   (Repair-ProcessTimeStartFromStamp .SwapDetected).
+#     DigitConflict the row's own three readings (start, end and the page's
+#                   printed processing-time column) disagree and no single
+#                   3<->9 substitution reconciles them
+#                   (Resolve-ProcessTimeDurationConflict, TimeDigitVerify.ps1
+#                   -- Status 'ambiguous' / 'conflict'). The values were left
+#                   exactly as OCR read them, so a human must settle it.
 #     PixelResult   the D2 per-digit image check: 'ok' / 'ng' / '' (unknown /
 #                   not run). Only consulted when PixelEnabled.
 #     PixelEnabled  D2 image comparison is turned on (Phase 0 passed).
@@ -276,6 +282,7 @@ function Get-OldSnapVerifyVerdict {
         [bool]$SnapExists,
         $ArithmeticOk = $null,
         [bool]$DatestampSwap = $false,
+        [bool]$DigitConflict = $false,
         [string]$PixelResult = '',
         [bool]$PixelEnabled = $false
     )
@@ -293,6 +300,7 @@ function Get-OldSnapVerifyVerdict {
     # Deterministic checks (robust floor, ship regardless of D2).
     if ($ArithmeticOk -eq $false) { return 'NeedsCheck' }
     if ($DatestampSwap)           { return 'NeedsCheck' }
+    if ($DigitConflict)           { return 'NeedsCheck' }
 
     # D2 image check (only when Phase 0 passed and it is enabled): require an
     # explicit 'ok'; 'ng' or an unknown/failed localization both flag.

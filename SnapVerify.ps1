@@ -494,6 +494,45 @@ function Test-JenkinsFile {
 }
 
 # ---------------------------------------------------------------------------
+# Get-JenkinsSearchTerm
+#   The literal string Ctrl+F should look for on a Jenkins file-list page.
+#
+#   Ctrl+F is a plain substring search with no notion of "newest": handed the
+#   correl id it stops on whatever the page happens to list FIRST, which is
+#   routinely an older rerun of the same transfer. The screenshot then
+#   highlights the wrong row, and the operator has to find and download the
+#   right file by hand.
+#
+#   The page's own Ctrl+A text already tells us which entries exist and when
+#   each ran, so resolve the target BEFORE searching: pick the intended
+#   candidate (Select-JenkinsFileCandidate -- inside the Expected window if
+#   there is one, else nearest the ground-truth PreferredTime, else NEWEST)
+#   and return that entry's EXACT listed file name. Ctrl+F on a full file name
+#   lands on exactly one row.
+#
+#   Returns '' when nothing matches this correl -- the caller keeps its own
+#   fallback term (the base correl id), which is also the right thing to search
+#   for when the expected file is genuinely absent (F3 NG) or must be absent
+#   (F4 NoGfix).
+# ---------------------------------------------------------------------------
+function Get-JenkinsSearchTerm {
+    param(
+        [object[]]$Files,
+        [string]$CorrelId,
+        [object]$Expected      = $null,
+        [int]$ToleranceMin     = 30,
+        [object]$PreferredTime = $null
+    )
+    if ([string]::IsNullOrWhiteSpace($CorrelId)) { return '' }
+    $matchRows = @($Files | Where-Object { Test-SnapCorrelIdMatch $_.Name $CorrelId })
+    if ($matchRows.Count -eq 0) { return '' }
+    $target = Select-JenkinsFileCandidate -Rows $matchRows -Expected $Expected `
+        -ToleranceMin $ToleranceMin -PreferredTime $PreferredTime
+    if ($null -eq $target) { return '' }
+    return [string]$target.Name
+}
+
+# ---------------------------------------------------------------------------
 # Get-SnapPageKind
 #   Classifies the Ctrl+A text of a snap-phase page into one of:
 #     HmResult      HM batch-status page (expected for HM phase)
