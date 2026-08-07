@@ -75,6 +75,12 @@ param(
     [string]$TimeFormat     = 'yyyy/MM/dd HH:mm:ss',
     [string]$RunTime        = '',   # '' = prompt; else 'n' / 'yyyy/MM/dd HH:mm:ss'
     [string]$RunTolerance   = '',   # non-interactive tolerance override
+    # When several Jenkins entries match one correl (reruns of the same
+    # transfer, or its plain and batch-stamped spellings), take the NEWEST:
+    # resolve its exact listed file name off the page's own Ctrl+A text and
+    # Ctrl+F THAT, and download only that file. $false restores the old
+    # behaviour (search the bare correl id, download every match).
+    [bool]$PreferNewestFile = $true,
 
     # ---- M5/F5 pixel localisation (Config.SnapVerify.Localize); off by default ----
     [hashtable]$Localize    = @{},
@@ -494,14 +500,45 @@ foreach ($toCode in $groupOrder) {
         # the stamped form fails outright (a superstring can't match) the
         # moment the page shows only the base id -- leaving Ctrl+F with 0
         # hits and NO highlighted row in the screenshot. The base id is
-        # always a prefix of either spelling, so it matches both.
-        $ctrlFTerm = Get-SnapCorrelIdBase $searchTerm
-        if ([string]::IsNullOrWhiteSpace($ctrlFTerm)) { $ctrlFTerm = $searchTerm }
+        # always a prefix of either spelling, so it matches both, and it is
+        # the FALLBACK term used whenever the list cannot resolve a target
+        # (including when the file is genuinely absent, which is the point of
+        # the F3 NG / F4 NoGfix checks).
+        $ctrlFBase = Get-SnapCorrelIdBase $searchTerm
+        if ([string]::IsNullOrWhiteSpace($ctrlFBase)) { $ctrlFBase = $searchTerm }
 
         Write-Host ''
         Write-Host ("  [$correl] search: $searchTerm") -ForegroundColor White
 
         $snapPath = Join-Path $snapDir "$correl.png"
+
+        # Row-scoped inputs for candidate selection. Computed once per row,
+        # BEFORE the capture loop, because the Ctrl+F target is now resolved
+        # from the page list up front (they used to be built after the
+        # screenshot, when only the verdict needed them).
+        $rowExpected = $null
+        if ($timeMode -ne 'none') {
+            $rowExpected = ConvertTo-ExpectedDateTime -Value (Get-RowProp $row $TimeColumn) -Format $TimeFormat
+        }
+
+        # Best-effort ground-truth reference for THIS correl: its own
+        # already-archived HM Ctrl+A capture (snap\<GIFT|GFIX>_HM\
+        # <correl>.txt), instead of "just search and take whatever comes
+        # first". Used only to pick among multiple same-correl Jenkins
+        # list entries (Select-JenkinsFileCandidate) -- never enforced as
+        # a tolerance, so it can only help disambiguate, never turn an ok
+        # into an ng. Same value whether or not TimeCheck/Expected_Time
+        # is configured for this run.
+        $rowPreferredTime = $null
+        try {
+            $hmFolder  = if ($Mode -eq 'GfixRecv') { 'GFIX_HM' } else { 'GIFT_HM' }
+            $hmTxtPath = Join-Path (Join-Path (Join-Path $WorkDir 'snap') $hmFolder) ("{0}.txt" -f $correl)
+            if (Test-Path -LiteralPath $hmTxtPath) {
+                $hmArchivedText   = Get-Content -LiteralPath $hmTxtPath -Raw -Encoding UTF8
+                $hmArchivedRows   = ConvertFrom-HmPageText $hmArchivedText
+                $rowPreferredTime = Get-HmArchivedCorrelTime -HmRows $hmArchivedRows -CorrelId $correl
+            }
+        } catch { $rowPreferredTime = $null }
 
         $resolved = $false
         $attempt  = 0
@@ -516,17 +553,46 @@ foreach ($toCode in $groupOrder) {
                 $cntFail++; $resolved = $true; break
             }
 
+            # Resolve WHICH listed file this correl means, before searching for
+            # it. Ctrl+F has no notion of "newest" -- given the bare correl id
+            # it stops on whatever the page lists first, which is routinely an
+            # older rerun, so the screenshot highlighted the wrong row and the
+            # right file had to be fetched by hand. The page's own Ctrl+A text
+            # already carries every entry with its timestamp, so read it first
+            # and search for the chosen entry's EXACT file name (one row, no
+            # ambiguity). Best-effort throughout: an unready page, a parse miss
+            # or a genuinely absent file all fall back to the base-id search,
+            # which is exactly the old behaviour.
+            $ctrlFTerm = $ctrlFBase
+            $listTerm  = ''
+            $preFiles  = @()
+            if ($PreferNewestFile) {
+                try {
+                    $preFiles = @(ConvertFrom-JenkinsListText (Get-JenkinsPageTextOnce))
+                    $listTerm = Get-JenkinsSearchTerm -Files $preFiles -CorrelId $searchTerm `
+                        -Expected $rowExpected -ToleranceMin $runTolerance -PreferredTime $rowPreferredTime
+                } catch { $listTerm = '' }
+                if (-not [string]::IsNullOrWhiteSpace($listTerm)) {
+                    $ctrlFTerm = $listTerm
+                    if ($listTerm -ne $ctrlFBase) {
+                        Write-Host ("    target: {0} (newest of {1} listed entr{2})" -f `
+                            $listTerm, $preFiles.Count, $(if ($preFiles.Count -eq 1) { 'y' } else { 'ies' })) -ForegroundColor DarkGray
+                    }
+                }
+            }
+
             # Click the page center BEFORE Ctrl+F: it clears any select-all left
-            # by the previous row's page-text read (Esc does not clear an Edge
-            # selection) so the highlight is not captured here, and it focuses the
-            # page. The center is used rather than Click-PageBody's
-            # (Left+150, Top+150), which lands on the left-sidebar "Build Queue"
-            # job link when a build is queued and navigates Edge into that job
-            # before we capture.
+            # by the pre-read above (and by the previous row's page-text read --
+            # Esc does not clear an Edge selection) so the highlight is not
+            # captured here, and it focuses the page. The center is used rather
+            # than Click-PageBody's (Left+150, Top+150), which lands on the
+            # left-sidebar "Build Queue" job link when a build is queued and
+            # navigates Edge into that job before we capture.
             Click-JenkinsPageCenter
-            # Ctrl+F search for CORREL_ID_S (base id only -- see $ctrlFTerm
-            # above); leave the find bar open so the screenshot shows the
-            # highlighted match (ESC is sent after capture).
+            # Ctrl+F search for the resolved file name (or the base correl id
+            # when nothing resolved -- see $ctrlFTerm above); leave the find bar
+            # open so the screenshot shows the highlighted match (ESC is sent
+            # after capture).
             Send-CtrlF
             Paste-Replace $ctrlFTerm
             Start-Sleep -Milliseconds $ResultWaitMs
@@ -563,7 +629,11 @@ foreach ($toCode in $groupOrder) {
             $needPageText = $detectMode -or ($Mode -in 'GiftRecv','GfixRecv')
             if ($needPageText) {
                 if ($detectMode) {
-                    $ready    = Wait-JenkinsPageReady -SearchTerm $searchTerm -RequireTerm ($Mode -ne 'NoGfix')
+                    # Poll on the term the page can actually contain. Passing
+                    # the raw Correl_ID_S meant a batch-stamped id never
+                    # matched a page that renders only the base id, so the
+                    # poll burned its whole timeout on every such row.
+                    $ready    = Wait-JenkinsPageReady -SearchTerm $ctrlFTerm -RequireTerm ($Mode -ne 'NoGfix')
                     $pageText = [string]$ready.Text
                     $pageKind = [string]$ready.Kind
                     Write-Host ("    pageKind: {0}" -f $pageKind) -ForegroundColor DarkGray
@@ -615,12 +685,20 @@ foreach ($toCode in $groupOrder) {
                     } else {
                         $dl = Invoke-JenkinsFileDownload -WorkDir $WorkDir -Mode $Mode -FolderUrl $folderUrl `
                             -PageText $pageText -CorrelId $correl -JobName $searchJob -Force:$forceFlag `
-                            -ParserScript (Join-Path $scriptDir 'Parse-JenkinsList.ps1')
+                            -ParserScript (Join-Path $scriptDir 'Parse-JenkinsList.ps1') `
+                            -PreferNewest $PreferNewestFile
                         Write-Host ("    Jenkins files: found={0} matched={1} downloaded={2} skipped={3} failed={4} -> DATA\{5}" -f `
                             $dl.Found, $dl.Matched, $dl.Downloaded, $dl.Skipped, $dl.Failed, $dl.DataKind) -ForegroundColor DarkGray
                         foreach ($f in @($dl.Files)) {
                             $color = if ($f.Status -eq 'ok') { 'Gray' } elseif ($f.Status -eq 'skip') { 'DarkGray' } else { 'Yellow' }
                             Write-Host ("      [{0}] {1}" -f $f.Status, $f.Name) -ForegroundColor $color
+                        }
+                        # Older reruns of this same transfer that were passed
+                        # over. Named rather than silently dropped: if one of
+                        # them is already sitting in DATA\ from an earlier run,
+                        # the operator is the one who has to clear it out.
+                        foreach ($s in @($dl.Superseded)) {
+                            Write-Host ("      [older] {0} {1} -- superseded, not downloaded" -f $s.Name, $s.DateTime) -ForegroundColor DarkGray
                         }
                         $dlStatus = if ($dl.Failed -gt 0) { 'fail' } elseif ($dl.Matched -eq 0) { 'warn' } else { 'ok' }
                         $dlMessage = "DATA\$($dl.DataKind): found=$($dl.Found) matched=$($dl.Matched) downloaded=$($dl.Downloaded) skipped=$($dl.Skipped) failed=$($dl.Failed)"
@@ -652,30 +730,8 @@ foreach ($toCode in $groupOrder) {
             }
 
             # -- F3/F4 verdict: ok -> field=1, ng -> field=2 ------------------
-            $rowExpected = $null
-            if ($timeMode -ne 'none') {
-                $rowExpected = ConvertTo-ExpectedDateTime -Value (Get-RowProp $row $TimeColumn) -Format $TimeFormat
-            }
-
-            # Best-effort ground-truth reference for THIS correl: its own
-            # already-archived HM Ctrl+A capture (snap\<GIFT|GFIX>_HM\
-            # <correl>.txt), instead of "just search and take whatever comes
-            # first". Used only to pick among multiple same-correl Jenkins
-            # list entries (Select-JenkinsFileCandidate) -- never enforced as
-            # a tolerance, so it can only help disambiguate, never turn an ok
-            # into an ng. Same value whether or not TimeCheck/Expected_Time
-            # is configured for this run.
-            $rowPreferredTime = $null
-            try {
-                $hmFolder  = if ($Mode -eq 'GfixRecv') { 'GFIX_HM' } else { 'GIFT_HM' }
-                $hmTxtPath = Join-Path (Join-Path (Join-Path $WorkDir 'snap') $hmFolder) ("{0}.txt" -f $correl)
-                if (Test-Path -LiteralPath $hmTxtPath) {
-                    $hmArchivedText   = Get-Content -LiteralPath $hmTxtPath -Raw -Encoding UTF8
-                    $hmArchivedRows   = ConvertFrom-HmPageText $hmArchivedText
-                    $rowPreferredTime = Get-HmArchivedCorrelTime -HmRows $hmArchivedRows -CorrelId $correl
-                }
-            } catch { $rowPreferredTime = $null }
-
+            # $rowExpected / $rowPreferredTime were built before the capture
+            # loop (the Ctrl+F target resolution needs them too).
             $verdict = $null
             try {
                 $files   = ConvertFrom-JenkinsListText $pageText

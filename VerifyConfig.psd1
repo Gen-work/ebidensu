@@ -470,6 +470,14 @@
         # ProcessTimeCheck.ps1). $false writes A..H data only.
         EmitCheckColumns = $true
 
+        # 3<->9 の赤マーキング (条件付き書式). 開始日時 / 終了日時 / 処理時間 の
+        # うち「秒」の数字が 3 または 9 のセルを赤くする。ja OCR が MS Gothic の
+        # 3 と 9 を取り違えても他に痕跡が残らないのはこの桁だけなので、該当セル
+        # だけを人が snap 画像と突き合わせられるようにする。値は一切書き換えず、
+        # 印を付けるだけ (TimeDigitVerify.ps1 / Get-ProcessTimeDigitFormatRule)。
+        # $false で条件付き書式を出力しない。
+        EmitDigitFormat = $true
+
         # 件数チェック (v2.19.0). The check columns after the A..H data are
         # always I 処理時間(検算) / J チェック / K 件数(参照) / L 件数チェック.
         #   K 件数(参照)   the EXPECTED record count for this row's job, looked
@@ -636,6 +644,17 @@
         PollTimeoutSec    = 10
         PollIntervalMs    = 500
         NoGfixNoteColumn  = 'AZ'    # F4: column for past-data annotation
+
+        # Jenkins: 同一 correl に複数のエントリが並ぶとき (同じ転送の再実行、
+        # あるいは素の ID とバッチスタンプ付き ID の両表記) は「最新」を採る。
+        # Ctrl+F は単なる部分一致検索なので correl ID だけを渡すとページが先に
+        # 並べた行 = たいてい古い実行 で止まってしまい、証跡の highlight が別の
+        # 行に当たる。$true なら先にページの Ctrl+A テキストを解析して対象
+        # エントリの「完全なファイル名」を求め、それを Ctrl+F する (= 1 行に
+        # 確定する) と同時に、その最新ファイルだけを DATA\ へ DL する。
+        # 見送った古いエントリはコンソールに [older] として明示する。
+        # $false で従来動作 (correl ID を検索し、一致した全ファイルを DL)。
+        PreferNewestJenkinsFile = $true
 
         # M5/F5 pixel localisation: write <correl>.loc.json beside each PNG so
         # the Mark phase can red-box the exact data row the verdict judged.

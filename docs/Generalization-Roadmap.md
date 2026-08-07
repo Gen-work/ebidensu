@@ -1,12 +1,13 @@
 # Generalization Roadmap -- from VerifyTool to a generic evidence workbench
 
-This document turns the vision in `README.md` ("未来展望: 从个人证据工具到可复用工作流构建器")
+This document turns the project's vision ("从个人证据工具到可复用工作流构建器")
 into a concrete, staged plan: move the work-specialized version to a branch, keep
 `main` sanitized and progressively generic, and grow toward an AI-assisted,
 profile-driven evidence automation workbench.
 
 Status of each milestone is tracked here. Update this file whenever a milestone
-lands.
+lands. The vision statement itself is preserved verbatim in **Appendix A** at
+the end of this file (it used to live in `README.md`).
 
 ## 1. Guiding principles
 
@@ -21,7 +22,7 @@ lands.
    overlay + `VerifyConfig.psd1` section split is the seed of this.
 4. **Operator safety by default.** Approval gates, backups, append-only progress
    logs, never auto-send, never silently overwrite -- as spelled out in the
-   README vision section.
+   vision statement in Appendix A.
 5. **Sanitized main.** No person, client-company, hostname, or internal share
    path identifiers on the `main` tip. Client-flavored *defaults* live in
    per-work-folder overlays or the spec branch, not in committed defaults.
@@ -196,3 +197,117 @@ per `docs/Versioning.md`, this file's status column updated.
   than `.ps1`, but keep `Check-Encoding.ps1` in the loop.
 - **The GitLab mirror**: everything pushed replicates there; the fresh-repo
   export (M6) must be a *new* remote, not a branch of the mirrored repo.
+
+---
+
+## Appendix A: the original vision statement
+
+Moved here verbatim from `README.md` when that file was rewritten as a
+project front page (2026-08-04). This is the source text the plan above
+turns into milestones; the README now carries only a short summary of it.
+
+### 未来展望：从个人证据工具到可复用工作流构建器
+
+This repository is still optimized for one concrete evidence workflow. The
+long-term goal is to evolve it into a reusable **evidence automation builder**:
+a system that helps an operator describe a project's workflow, acceptance
+criteria, page evidence, and Excel deliverables, then assembles the smallest safe
+toolchain for that specific situation.
+
+#### Guided setup and AI-assisted onboarding
+
+Future setup should make a new project usable without requiring the operator to
+read the entire codebase first:
+
+- Provide a guided wizard for work-folder creation, mapping CSV generation,
+  template discovery, phase selection, and per-project `verify_config.json`
+  initialization.
+- Add an AI entry point that interviews the operator in natural language and
+  analyzes sample screenshots or exported page text to infer target pages, key
+  identifiers, expected statuses, time-window rules, NG conditions, and Excel
+  evidence layout requirements.
+- Have the AI propose a reviewable execution plan before anything is automated,
+  explicitly separating automated steps, manual checks, and approval boundaries.
+- Generate or enable only the modules required by the target project instead of
+  copying the current project-specific workflow wholesale.
+
+#### Stronger component decoupling
+
+To support multiple projects, each responsibility should become more independent:
+
+- Separate generic primitives -- window activation, screenshot capture,
+  clipboard text extraction, Excel insertion, progress tracking, backup/restore,
+  and review UI -- from project-specific business rules.
+- Define stable interfaces for phases such as `discover`, `capture`, `verify`,
+  `insert`, `review`, and `deliver`, so each project can swap implementations
+  without rewriting the main runner.
+- Keep validation logic as pure functions wherever possible, backed by fixtures
+  built from page text or screenshots, so rules can be tested away from the
+  office machine and without COM, browser, or network dependencies.
+- Let project profiles declare their own page sentinels, expected fields, NG
+  rules, Excel sheets, labels, and delivery rules.
+
+#### Friendly UI for operators
+
+The current command-line workflow should eventually be wrapped in a safer and
+more visible operator UI:
+
+- Show phase progress, pending/OK/NG counts, the current target ID, the latest
+  screenshot, and recent warnings in one place.
+- Offer clear resume, retry, skip, and abort actions without requiring the
+  operator to remember phase names or CSV column meanings.
+- Preview what will be written to Excel before committing large changes.
+- Improve review work by jumping directly to the relevant workbook, sheet, cell,
+  and screenshot while recording reviewer decisions and maintaining an audit
+  trail.
+
+#### Backup, rollback, and auditability by default
+
+Evidence workflows often modify shared Excel files, templates, and customer-facing
+deliverables, so safety should be a default capability:
+
+- Create automatic backups before changing mapping files, evidence workbooks,
+  templates, check sheets, or delivery artifacts.
+- Keep append-only progress logs and operation manifests that explain which files
+  were opened, generated, modified, skipped, or failed.
+- Provide a one-command restore or rollback path for the last operation whenever
+  possible.
+- Detect external edits before writing shared files; if a file changed during
+  preview or review, stop and ask the operator instead of overwriting newer work.
+
+#### Sensitive human-intervention requests
+
+Automation should be aggressive about repetitive work but conservative around
+ambiguous evidence:
+
+- Pause immediately when the page type is unexpected, the target ID cannot be
+  found, the status is ambiguous, the timestamp is outside tolerance, or a
+  screenshot may have been taken too early.
+- Ask precise questions with enough context: target ID, page name, detected text,
+  expected rule, screenshot path, and the proposed next action.
+- Preserve operator decisions as structured records, so later reruns and reviews
+  can distinguish automated results from manual overrides.
+- Prefer safe defaults: never silently mark questionable evidence as complete,
+  never send mail automatically, and never overwrite shared deliverables without
+  explicit confirmation.
+
+#### Optimized tool assembly
+
+The ideal end state is a small, project-specific tool assembled from reusable
+parts:
+
+1. The operator provides sample evidence, screenshots or page text, project
+   rules, and Excel templates.
+2. The AI setup flow identifies reusable components and missing adapters.
+3. The system generates a project profile, validation fixtures, and a suggested
+   phase pipeline.
+4. The operator reviews and approves the plan.
+5. The tool runs with strong backups, visible progress, and human intervention at
+   every risky boundary.
+
+In short, the future product should feel less like a pile of personal scripts and
+more like a **guided evidence automation workbench**: flexible enough for each
+project, strict enough for audit work, and safe enough for real office
+environments where installation privileges, browsers, and third-party libraries
+are limited.
+

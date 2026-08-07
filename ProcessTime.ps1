@@ -173,6 +173,12 @@ param(
     # the record-count check (ProcessTimeCheck.ps1's Get-ProcessTimeCheckColumnSpec).
     # $false writes A..H data only and skips the whole check-column pass.
     [bool]$EmitCheckColumns = $true,
+    # Red conditional formatting on every start/end/duration cell whose
+    # SECONDS digit is a 3 or a 9 -- the one digit pair the ja recognizer
+    # flips without leaving any other trace, so the operator eyeballs those
+    # cells against the linked snap. Marks only; no value is ever rewritten
+    # for this (TimeDigitVerify.ps1's Get-ProcessTimeDigitFormatRule).
+    [bool]$EmitDigitFormat = $true,
     # Expected-record-count lookup for the count check column
     # (ProcessTime.CountReference; see ProcessTimeCheck.ps1). The raw config
     # block -- Resolve-ProcessTimeCountReference expands its {Tag}/{Month}
@@ -252,6 +258,7 @@ if (-not $helpersPath) {
 . (Join-Path $PSScriptRoot 'OcrWindows.ps1')
 . (Join-Path $PSScriptRoot 'SnapVerify.ps1')
 . (Join-Path $PSScriptRoot 'SendMetadata.ps1')
+. (Join-Path $PSScriptRoot 'TimeDigitVerify.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeParse.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeCheck.ps1')
 . (Join-Path $PSScriptRoot 'OldSnapVerify.ps1')
@@ -534,8 +541,14 @@ function Resolve-ProcessTimeSide {
     # workbook into the snap folder (Save-ProcessTimeIdentifiedSnap below):
     # it is a re-scaled workbook copy, NOT an original screen capture, so the
     # pixel check must keep treating it as unverifiable.
+    # DigitFlag records what the 3<->9 digit checks concluded about this
+    # reading WITHOUT changing it: '' = nothing to say, 'suspect' = a 3/9
+    # sits where the opposite digit would also be legal (undetectable from
+    # the text alone), 'conflict' = the page's own printed duration
+    # disagrees with the derived one and no single substitution explains it.
+    # It only drives the row's verify verdict; the values stay as read.
     $result = @{ Matched = $false; Source = 'none'; StartTime = $null; EndTime = $null; Duration = ''; RecordCount = ''; Note = ''
-                 ImagePath = ''; ImagePromoted = $false }
+                 ImagePath = ''; ImagePromoted = $false; DigitFlag = '' }
 
     # Tier 1: archived Ctrl+A snap text (fast, exact).
     if (-not [string]::IsNullOrWhiteSpace($SnapTextPath) -and (Test-Path -LiteralPath $SnapTextPath)) {
@@ -551,6 +564,9 @@ function Resolve-ProcessTimeSide {
                     RecordCount = $(if ($best.PSObject.Properties['RecordCount']) { [string]$best.RecordCount } else { '' })
                     Note = ''
                     ImagePath = ''; ImagePromoted = $false
+                    # The .txt tier is copied page text, not OCR -- immune to
+                    # the 3<->9 confusion, so it never carries a digit flag.
+                    DigitFlag = ''
                 }
             }
         } catch {
@@ -723,22 +739,80 @@ function Resolve-ProcessTimeSide {
         $notes.Add('start date taken from en-US datestamp (ja date OCR-corrected)')
     }
 
+    if ($row.PSObject.Properties['DigitRepairs']) {
+        foreach ($chg in @($row.DigitRepairs)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$chg)) {
+                $notes.Add(('impossible digit repaired: {0}' -f $chg))
+            }
+        }
+    }
+
     # Duration: derived from start/end when both were read; cross-checked
     # against the page's own proc-time column, which also fills in when the
     # end time was unreadable (it is real on-page evidence, not invented).
+    #
+    # A disagreement between the two USED to be resolved silently in favour of
+    # the derived value. That shipped wrong numbers: when the ja recognizer
+    # flips one seconds digit (3<->9), the derived duration inherits the
+    # error while the page's own printed column is still right, so the note
+    # was attached to a value that had already been overwritten. Now the
+    # three readings are treated as constraints on each other
+    # (Resolve-ProcessTimeDurationConflict, TimeDigitVerify.ps1): a
+    # disagreement that EXACTLY ONE 3<->9 substitution reconciles is repaired
+    # by arithmetic; anything else is left exactly as read and flagged for a
+    # human, never guessed at.
     $pageDur = ''
     if ($row.PSObject.Properties['PageDuration']) { $pageDur = [string]$row.PageDuration }
     $derived = Get-ProcessDurationText $row.StartTime $row.EndTime
     if (-not [string]::IsNullOrWhiteSpace($derived)) {
         $result.Duration = $derived
         if (-not [string]::IsNullOrWhiteSpace($pageDur) -and $pageDur -ne $derived) {
-            $notes.Add(("page duration {0} != derived {1} (kept derived)" -f $pageDur, $derived))
+            $conflict = Resolve-ProcessTimeDurationConflict `
+                -Start (Format-ProcessTimeStamp $result.StartTime) `
+                -End (Format-ProcessTimeStamp $result.EndTime) `
+                -PageDuration $pageDur
+            switch ([string]$conflict.Status) {
+                'repaired' {
+                    $fixedStart = ConvertTo-ProcessTimeDateTimeValue ([string]$conflict.Start)
+                    $fixedEnd   = ConvertTo-ProcessTimeDateTimeValue ([string]$conflict.End)
+                    if ($null -ne $fixedStart -and $null -ne $fixedEnd) {
+                        $result.StartTime = $fixedStart
+                        $result.EndTime   = $fixedEnd
+                        $result.Duration  = [string]$conflict.Duration
+                        $notes.Add([string]$conflict.Note)
+                    } else {
+                        $result.DigitFlag = 'conflict'
+                        $notes.Add(("page duration {0} != derived {1} (kept derived; repair could not be re-parsed)" -f $pageDur, $derived))
+                    }
+                }
+                'agree'   { }
+                default   {
+                    # 'ambiguous' / 'conflict' / 'unknown': the reading stands
+                    # as OCR produced it and the row is flagged instead.
+                    $result.DigitFlag = 'conflict'
+                    $note = [string]$conflict.Note
+                    if ([string]::IsNullOrWhiteSpace($note)) {
+                        $note = ("page duration {0} != derived {1} (kept derived)" -f $pageDur, $derived)
+                    }
+                    $notes.Add($note)
+                }
+            }
         }
     } elseif (-not [string]::IsNullOrWhiteSpace($pageDur)) {
         $result.Duration = $pageDur
         $notes.Add('duration read from the page column (end time not read)')
     }
     if (-not $result.Matched) { $notes.Add('end time not read from OCR') }
+
+    # Undetectable-misread risk: a 3 or 9 sitting where the opposite digit
+    # would ALSO be legal. Values are never touched for this -- it only
+    # decides whether the row is offered up for a human glance.
+    if ([string]::IsNullOrWhiteSpace([string]$result.DigitFlag)) {
+        foreach ($stamp in @((Format-ProcessTimeStamp $result.StartTime), (Format-ProcessTimeStamp $result.EndTime))) {
+            if ([string]::IsNullOrWhiteSpace($stamp)) { continue }
+            if ((Get-TimeDigitRisk -Text $stamp).Level -eq 'suspect') { $result.DigitFlag = 'suspect'; break }
+        }
+    }
 
     $srcTag = if ($result.Matched) { 'ocr' } else { 'ocr-partial' }
     if ($tag -ne 'section' -and -not [string]::IsNullOrWhiteSpace($tag)) { $srcTag = ('{0}:{1}' -f $srcTag, $tag) }
@@ -941,6 +1015,40 @@ function Get-ProcessTimeRowField {
     return $Row.$Name
 }
 
+# ---------------------------------------------------------------------------
+# Set-ProcessTimeDigitFormat  (COM side of the 3<->9 red flagging)
+#   Applies TimeDigitVerify.ps1's conditional-format rules to the start / end
+#   / duration columns so every cell whose SECONDS digit is a 3 or a 9 shows
+#   red -- the digits the ja recognizer can flip without leaving any other
+#   trace. Nothing is rewritten: this is purely a "look at this one against
+#   the snap" marker, and the operator clears it by confirming the row.
+#
+#   FormatConditions.Delete() on the column range first, so a rerun replaces
+#   this phase's rule instead of stacking a new copy each time (the phase owns
+#   these columns' conditional formatting; no other rule is expected there).
+#   Every step is best-effort: formatting must never block the workbook save.
+# ---------------------------------------------------------------------------
+function Set-ProcessTimeDigitFormat {
+    param($Worksheet, [int]$FirstDataRow, [int]$LastDataRow, [object[]]$Rules)
+    if ($LastDataRow -lt $FirstDataRow) { return }
+    $xlExpression = 2
+    foreach ($rule in @($Rules)) {
+        $col = [string]$rule.Column
+        try {
+            $rng = $Worksheet.Range(('{0}{1}:{0}{2}' -f $col, $FirstDataRow, $LastDataRow))
+            try { $rng.FormatConditions.Delete() } catch {}
+            $formula = New-ProcessTimeDigitFormatFormula -Template ([string]$rule.FormulaTemplate) `
+                -Column $col -Row $FirstDataRow
+            $fc = $rng.FormatConditions.Add($xlExpression, [System.Type]::Missing, $formula)
+            try { $fc.Font.Color = [double]$rule.FontColor } catch {}
+            try { $fc.Interior.Color = [double]$rule.InteriorColor } catch {}
+            try { $fc.StopIfTrue = [bool]$rule.StopIfTrue } catch {}
+        } catch {
+            Write-Warning ("ProcessTime workbook formatting: 3/9 digit rule failed for column {0}: {1}" -f $col, $_.Exception.Message)
+        }
+    }
+}
+
 function Write-ProcessTimeWorkbook {
     param($Excel, [string]$OutputPath, [string]$SheetName, [object[]]$Rows,
           [bool]$EmitCheckColumns = $true,
@@ -953,7 +1061,9 @@ function Write-ProcessTimeWorkbook {
           [string]$WorkDir = '', [string]$SnapDirPattern = 'snap\{0}_HM',
           [bool]$FallbackImage = $true, [string]$ExportRoot = 'snap\ProcessTime',
           [bool]$PixelEnabled = $false, [string]$PixelFont = 'MS Gothic',
-          [double]$PixelMinMargin = 0.04, [hashtable]$PixelGeometry = $null)
+          [double]$PixelMinMargin = 0.04, [hashtable]$PixelGeometry = $null,
+          # Red conditional formatting on the 3/9 seconds digits (D/E/F).
+          [bool]$EmitDigitFormat = $true)
 
     # A..H data headers only; the I/J/K check headers come from the spec.
     $headers = @(
@@ -1001,6 +1111,9 @@ function Write-ProcessTimeWorkbook {
                     # to the snap-path lookup in the write loop.
                     ImagePath = [string](Get-ProcessTimeRowField $r $(if ($isGift) { 'GiftImage' } else { 'GfixImage' }))
                     ImagePromoted = [bool](Get-ProcessTimeRowField $r $(if ($isGift) { 'GiftImagePromoted' } else { 'GfixImagePromoted' }))
+                    # '' / 'suspect' / 'conflict' -- absent on sidecars written
+                    # before the 3<->9 rework, which read back as ''.
+                    DigitFlag = [string](Get-ProcessTimeRowField $r $(if ($isGift) { 'GiftDigitFlag' } else { 'GfixDigitFlag' }))
                 })
             }
         }
@@ -1156,8 +1269,17 @@ function Write-ProcessTimeWorkbook {
                     # geometry is what gets calibrated -- so with PixelEnabled
                     # a fallback-image row keeps PixelResult '' and lands on
                     # 'needs check', per the plan's conservative rule.
+                    # A 'conflict' row (the page's printed duration disagrees
+                    # with the derived one and no single 3<->9 substitution
+                    # explains it) can never be auto-confirmed: its values are
+                    # left exactly as read, so a human has to settle it.
+                    # 'suspect' alone does NOT force a flag -- almost every
+                    # timestamp carries an ambiguous 3 or 9, and marking them
+                    # all would drown the column; those are surfaced by the
+                    # cell-level conditional formatting instead.
                     $verdict = Get-OldSnapVerifyVerdict -Source $r.Source -SnapExists $imageExists `
-                        -ArithmeticOk $arith -PixelResult $pixelResult -PixelEnabled $PixelEnabled
+                        -ArithmeticOk $arith -PixelResult $pixelResult -PixelEnabled $PixelEnabled `
+                        -DigitConflict ([string]$r.DigitFlag -eq 'conflict')
                     if ($verdict -eq 'NeedsCheck') { $verifyNeedsCheck++ }
                     Set-RangeValue2 $ws.Cells.Item($row, $verifyColIndex) (Get-OldSnapVerifyLabel $verdict) | Out-Null
                 }
@@ -1279,6 +1401,15 @@ function Write-ProcessTimeWorkbook {
             }
         } catch {
             Write-Warning ("ProcessTime workbook formatting: GIFT/GFIX row fill failed for '{0}': {1}" -f $OutputPath, $_.Exception.Message)
+        }
+
+        # 3<->9 red flagging on start / end / duration. Applied AFTER the
+        # per-row fill above: conditional formatting wins over direct cell
+        # formatting in Excel, so the marked digits stay visible on both the
+        # GIFT and GFIX row colours.
+        if ($EmitDigitFormat -and $finalRow -ge 2) {
+            Set-ProcessTimeDigitFormat -Worksheet $ws -FirstDataRow 2 -LastDataRow $finalRow `
+                -Rules (Get-ProcessTimeDigitFormatRule)
         }
 
         try {
@@ -1592,6 +1723,7 @@ try {
                         GiftSource   = $giftResult.Source
                         GiftImage    = $giftResult.ImagePath
                         GiftImagePromoted = [bool]$giftResult.ImagePromoted
+                        GiftDigitFlag = [string]$giftResult.DigitFlag
                         GfixStart    = (Format-ProcessTimeStamp $gfixResult.StartTime)
                         GfixEnd      = (Format-ProcessTimeStamp $gfixResult.EndTime)
                         GfixDuration = $gfixResult.Duration
@@ -1599,6 +1731,7 @@ try {
                         GfixSource   = $gfixResult.Source
                         GfixImage    = $gfixResult.ImagePath
                         GfixImagePromoted = [bool]$gfixResult.ImagePromoted
+                        GfixDigitFlag = [string]$gfixResult.DigitFlag
                     }
                     $payload = [pscustomobject]@{
                         SchemaVersion = 1
@@ -1727,7 +1860,8 @@ try {
                         -WorkDir $WorkDir -SnapDirPattern $OldSnapDirPattern `
                         -FallbackImage ($OldSnapVerifyEnabled -and $OldSnapFallbackImage) -ExportRoot $exportRootRel `
                         -PixelEnabled ($OldSnapVerifyEnabled -and $OldSnapPixelDiff) `
-                        -PixelFont $OldSnapRenderFont -PixelMinMargin $OldSnapPixelThreshold
+                        -PixelFont $OldSnapRenderFont -PixelMinMargin $OldSnapPixelThreshold `
+                        -EmitDigitFormat $EmitDigitFormat
                     $written.Add($path)
                     $writtenCorrelCount += $rowsForTag.Count
                     # Only the rows that made it into a SUCCESSFULLY written

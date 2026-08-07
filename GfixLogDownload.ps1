@@ -384,6 +384,11 @@ foreach ($row in $pending) {
     $toCode  = [string]$row.TO_code
     $ssCode  = Get-RowProp $row 'SS_CODE'
     $res = Find-GfixLogForCorrel -LogDir $logDir -ToCode $toCode -CorrelIdS $correl -SsCode $ssCode
+    if ([int]$res.Duplicates -gt 0) {
+        # Same run downloaded under both the plain and the batch-stamped file
+        # name. Not a problem -- say so quietly instead of warning.
+        Write-Host ("  [INFO] {0}: {1} duplicate log file(s) of the same receive run collapsed" -f $correl, $res.Duplicates) -ForegroundColor DarkGray
+    }
     if (-not [string]::IsNullOrWhiteSpace([string]$res.Warning)) {
         Write-Host ("  [WARN] {0}: {1}" -f $correl, $res.Warning) -ForegroundColor Yellow
         Write-ProgressEvent -WorkDir $WorkDir -Phase 'GfixLogDownload' -CorrelIdS $correl -JobName $jobName -Action 'match' -Status 'info' -Message $res.Warning
