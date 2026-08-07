@@ -1,5 +1,49 @@
 # VerifyTool
 
+[日本語](#日本語) | [English](#english)
+
+---
+
+## 日本語
+
+ファイル転送基盤（GIFT→GFIX）移行案件で、証跡（エビデンス）取得作業を自動化するCLIツールです。
+
+### 背景
+
+移行案件では、HM/MQ/Jenkinsの画面をキャプチャしてExcelに貼り付け、該当セルに赤枠を引き、進捗をCSVで管理する証跡作成作業を手作業で行っていました。1件あたり約0.3人日かかっていました。
+
+### 解決方法
+
+PowerShellで実装しました。処理の流れは次のとおりです。
+
+- 対象画面（HM/MQ/Jenkins）をキャプチャ
+- エビデンス用Excelに画像を挿入
+- 該当セルに赤枠を描画
+- 完了状態をCSVマッピングファイルに記録
+
+### 結果
+
+1件あたりの作業時間が0.3人日から0.1人日未満へ短縮しました（同僚に確認した見積りによる）。
+
+### 設計上の判断
+
+「動くツール」と「現場に根づくツール」は別だと考え、以下を意識しました。
+
+- **段階的な確認モード**: 最初から全自動にはせず、判定結果を都度確認できるモードを用意しました。誤検知を早期に発見できないと、利用者が結果を信用できなくなるためです。
+- **カスタマイズの余地**: 枠の位置や文言を設定ファイルで調整できるようにし、案件ごとの違いや仕様変更に対応できる構成にしました。
+- **利用者に使ってもらうまで**: 導入前に既存の手作業と結果を突き合わせ、差分がないことを確認したうえで展開しました。
+
+### 使い方
+
+```powershell
+.\VerifyTool.ps1
+.\VerifyTool.ps1 -Phase Status
+```
+
+---
+
+## English
+
 > **从一个人的证据工具，到可复用的工作流构建器。**
 > *From one operator's evidence tool to a reusable workflow builder.*
 
@@ -18,9 +62,7 @@ It runs on a locked-down Windows remote desktop with **PowerShell 5.1 and Excel
 2019 and nothing else installed** — no runtime, no package manager, no
 third-party library.
 
----
-
-## What it looks like
+### What it looks like
 
 One entry point. It reads the current state, tells you what to do next, and
 runs it:
@@ -61,9 +103,7 @@ runs, and can be limited to specific jobs. Flags exist for scripting
 (`-Phase`, `-TargetIds`, `-DryRun`, …) — see [`docs/Operations.md`](docs/Operations.md) —
 but day to day you just run `.\VerifyTool.ps1` and answer prompts.
 
----
-
-## The pipeline
+### The pipeline
 
 State lives in one CSV (`mapping_<Owner>.csv`), one row per data-transfer job.
 Each phase reads the rows still pending for it, does its work, and marks them.
@@ -91,9 +131,7 @@ Nothing is order-dependent beyond the arrows; interrupt anywhere and re-run.
   Deliver ── check sheet · J4 file transfer · Outlook review-request drafts
 ```
 
----
-
-## Why it is built this way
+### Why it is built this way
 
 The constraint that shaped everything: **the target machine cannot be changed.**
 No admin rights, no installer, no internet, an old remote desktop session that
@@ -115,7 +153,7 @@ Copy the folder onto the machine and it runs.
 OCR logic off-site. It never runs on the operator's PC, and it is currently
 [parked](docs/Parked-Ideas.md).)*
 
-### Testable where it matters
+#### Testable where it matters
 
 COM, `SendKeys` and screen capture cannot be exercised in CI. So every piece of
 real logic is pulled out into a **pure module** — no COM, no I/O, no screen —
@@ -130,7 +168,7 @@ file name, planning what goes where in a workbook, judging whether a capture is
 NG — all of it is pure and covered. The COM shells around them stay thin enough
 to review by eye.
 
-### It says "I don't know" out loud
+#### It says "I don't know" out loud
 
 The tool automates evidence for an audit, so a confidently wrong answer is worse
 than no answer. The rules it holds itself to:
@@ -153,9 +191,7 @@ than no answer. The rules it holds itself to:
   the page's own text — right page, right job, right time window, no abend —
   and a failed check keeps the row pending instead of banking a bad screenshot.
 
----
-
-## Status
+### Status
 
 This is a **working tool in daily production use**, and deliberately a
 **readable sample project**: one real, messy, end-to-end workflow, automated
@@ -172,9 +208,7 @@ in `VerifyConfig.psd1`, and any work folder can override all of it with a
 `verify_config.json` overlay — window sizes, red-box coordinates, sheet names,
 mail templates, expected-time rules, output routing.
 
----
-
-## Documentation
+### Documentation
 
 | | |
 |---|---|
@@ -188,9 +222,7 @@ mail templates, expected-time rules, output routing.
 | [`CLAUDE.md`](CLAUDE.md) | full architecture map; read this first when opening the repo in an IDE or an LLM session |
 | [`CHANGELOG.md`](CHANGELOG.md) | per-version history |
 
----
-
-## Working on it
+### Working on it
 
 ```powershell
 .\Tests\Run-Tests.ps1        # parse check + unit tests
@@ -207,7 +239,7 @@ Two rules that are easy to trip over:
 
 Both are checked; `CLAUDE.md` has the full conventions.
 
-### Cross-environment workflow
+#### Cross-environment workflow
 
 Development happens away from the office PC, which has no git access:
 
