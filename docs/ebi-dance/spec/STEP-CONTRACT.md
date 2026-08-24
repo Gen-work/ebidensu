@@ -217,6 +217,35 @@ if ($Ctx.DryRun) {
 的 —— 谁都能读写、没人声明依赖、断点续跑后凭空消失。Session 把同一件事变成
 **声明过、可 lint、resume 时被系统性重建**的。
 
+### 3.5 标准候选形状(评审修订 P0-R4)
+
+凡是「按 key 找东西可能不唯一」的 step(`table.key`、`file.find`、`file.newest`、
+`verify.match_record`、`excel.find_anchor`……)在歧义时**必须**返回同一个形状,
+`human.choose` 只有一个渲染器:
+
+```powershell
+@{ ok = $false; failure = 'ambiguous'
+   candidates = @(
+     @{ value    = 'ABC123.260824.10515511.dat'  # 候选本体(文件名/行号/单元格地址)
+        source   = 'download-dir'                # 从哪找到的
+        evidence = @{ createdAt='09:51:02'; receivedAt='09:50:03'; size='1.2 MB' } }
+     # ... 全部候选,一个不少
+   )
+   suggestion = @{ index  = 2
+                   reason = 'received time is newest inside the run window'
+                   doubts = '#1 and #2 are 3 minutes apart; both may belong to this run' }
+}
+```
+
+规则:
+
+- `candidates` 是**全部**候选,不许只给「最佳」
+- `evidence` 的键因场景而异,但**有什么证据都要放**;证据不够就让
+  `suggestion.doubts` 说出来,不要假装能判断
+- `suggestion` 可以是 `$null`(真的没法建议),但不许假装确定
+- 这个形状由 `kernel/Key.ps1` 的排序 / 证据函数产生,step 不自己拼 ——
+  旧工具七处各写 `-eq` 的教训(PROFILE-SCHEMA §6.4)
+
 ---
 
 ## 4. `needs` — 前置条件

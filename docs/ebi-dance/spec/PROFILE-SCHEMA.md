@@ -45,23 +45,19 @@ profiles/<name>/
   "sides": {
     "before": "移行前",
     "after":  "移行後"
-  },
-  "columns": {
-    "key":         "Correl_ID_S",
-    "group":       "JOB_NAME",
-    "owner":       "Owner",
-    "deliverable": "Excel_NAME"
   }
 }
 ```
 
 `sides` 的值只用于**显示**。工作流里永远只出现中性名。
 
-> **v3 修订(P0-R1)**:初版还有一个 `roles` 显示名映射,已删 —— 页面的显示名
-> 归 pages.json 每个 **page** 条目自己的 `title`(`ebi explain` 写成
-> `transferStatus(MQ転送状態一覧)`);role 是结构枚举,不需要每个项目起显示名。
-
-`columns` 把中性名映射到清单 CSV 的实际列名。**`{{item.key}}` 就是靠这个解析的。**
+> **v3 修订(P0-R1 / P0-R4)**:初版这里还有 `roles`(role 显示名)和
+> `columns`(列名映射)两块,都删了 ——
+> 页面显示名归 pages.json 每个 **page** 条目自己的 `title`(`ebi explain`
+> 写成 `transferStatus(MQ転送状態一覧)`);role 是结构枚举,不需要每个项目
+> 起显示名。列名映射归 worklist.json 的 `columns[].role`(§6):同一事实在
+> 两个文件里各声明一遍必然漂移,`{{item.key}}` / `{{item.group}}` /
+> `{{item.deliverable}}` 现在**只**由 worklist.json 解析。
 
 ---
 
@@ -313,6 +309,22 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
 
 `ebi lint` 检查:所有 `role: key` 的列都出现在 `key.columns` 里,反之亦然。
 
+**key 只在这个文件里声明**(评审修订 P0-R4:初版 vocabulary.json 里还有一份
+`columns.key`,已删 —— 单一事实源)。
+
+### 6.1b `{{item.key}}` 与 `{{item.keySafe}}`(复合键怎么进模板和文件名)
+
+复合键要进日志、面板、还要进文件名 —— 不定死求值规则,每个 step 会各拼各的:
+
+- `{{item.key}}`(**显示形**):`key.columns` 各列的值按顺序用 `" / "` 拼接
+  (单列键就是该列原值)。用于面板、日志、`ebi explain`。
+- `{{item.keySafe}}`(**机器 / 文件名安全形**):每个键列值先规范化 ——
+  全角 ASCII 折半角、去首尾空白、`[^0-9A-Za-z._-]` 的字符替换为 `_` ——
+  再按顺序用 `__` 拼接。**文件名、目录名、ledger 的 item 字段一律用它**,
+  裸 `{{item.key}}` 出现在路径模板里是 `ebi lint` 警告。
+- **冲突检测**:`table.load` 时若两行 keySafe 相同而 key 不同 → 报错停下
+  (规范化把两个不同的键折叠了,必须人来改列或改规范化,不能带病跑)。
+
 ### 6.2 变体规则是**长出来的**,不是一次写死的
 
 这是这一节最重要的设计,来自一个明确的现场判断:**没人能预先声明全部变体规则。**
@@ -395,6 +407,20 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
 | `time` | 时间列 |
 
 启动时按此 schema 自动补齐缺失的列(沿用 `Ensure-MappingColumns` 的行为)。
+
+### 6.6 学到的规则存哪(评审修订 P0-R4)
+
+§6.3 的歧义面板确认「存成规则」后,规则要落盘 —— 但 WorkDir 往往是办公 PC 上
+的部署副本,不能直接写 git 里的 profile。流程:
+
+1. 运行时先追加进 `<WorkDir>/ebi.local.json` 的 `learnedRules[]`
+   (带 `confirmedAt` / `confirmedBy` / 来源 `runId` / `note` 场景说明)
+2. 面板当场提示:「已学到 1 条规则,记得回填 profile 并提交」
+3. `ebi profile check` 发现 WorkDir 里有未回填的 learnedRules → **警告**,
+   并打印可直接粘进 worklist.json `confirmedRules` 的 JSON 片段
+4. 人工回填 + 提交后,从 ebi.local.json 删除
+
+学习规则**只能收紧或扩展匹配,不能改判定语义**(判定永远归 rules.json)。
 
 ---
 

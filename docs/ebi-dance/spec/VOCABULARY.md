@@ -140,9 +140,12 @@ rules。role 管机制,page 管身份。
 同一页多次 `capture` 时,产物加 tag 区分:
 
 ```
-capture/<side>_<page>/<key>.png            默认(单张)
-capture/<side>_<page>/<key>__<tag>.png     多张时,tag 由工作流指定
+capture/<side>_<page>/<keySafe>.png            默认(单张)
+capture/<side>_<page>/<keySafe>__<tag>.png     多张时,tag 由工作流指定
 ```
+
+文件名一律用 `keySafe`(复合键 + 非法字符的文件名安全形,定义见
+PROFILE-SCHEMA §6.1b),不用裸 key。
 
 例:`capture/before_transferStatus/ABC123__row.png`、
 `capture/before_transferStatus/ABC123__total.png`
@@ -208,9 +211,9 @@ pages.json 的 `title`(显示名)里。
 ### 3.2 目录命名
 
 ```
-worklist.csv                          工作清单
-capture/<side>_<page>/<key>.png       截图
-capture/<side>_<page>/<key>.txt       页面文本(与截图同时归档)
+worklist.csv                              工作清单
+capture/<side>_<page>/<keySafe>.png       截图
+capture/<side>_<page>/<keySafe>.txt       页面文本(与截图同时归档)
 run/<runId>/trace.jsonl               本次运行的完整记录
 run/<runId>/ledger.jsonl              断点续跑用的完成台账
 .ebi/                                 本机状态(不进 git)

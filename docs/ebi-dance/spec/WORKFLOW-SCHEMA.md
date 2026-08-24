@@ -100,7 +100,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | `"empty"` | 空 或 `0` |
 | `"!= ok"` | 值不是 `ok` |
 | `"== ng"` | 值等于 `ng` |
-| `"bit !3"` | 位掩码:3 号位组合未全置(位定义在 profile) |
+| `"bit !<位名>"` | 位掩码:该**名字**的位未置,如 `"bit !before"`(位名 → 位值的映射在 profile worklist.json 的 `bits`;和 §7.3 checkpoint 的 `bit` 同一套名字 —— 一边用名字一边用数字必然抄错) |
 | `"always"` | 全部,不管状态 |
 
 **这不是表达式语言,是五个固定枚举。** 需要更复杂的筛选 → 用
@@ -125,13 +125,14 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | `{{profile.X.Y}}` | profile 数据 | 全部 |
 | `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir`) | 全部 |
 | `{{item.X}}` | 当前行的某列 | 仅 `each` |
-| `{{item.key}}` | 当前行的主键(profile 声明是哪列) | 仅 `each` |
+| `{{item.key}}` | 当前行的主键**显示形**(复合键按 PROFILE-SCHEMA §6.1b 拼接) | 仅 `each` |
+| `{{item.keySafe}}` | 主键的**文件名安全形**(§6.1b)。路径模板里必须用它,裸 `item.key` 进路径是 lint 警告 | 仅 `each` |
 | `{{steps.<id>.out.<field>}}` | 同段内先前 step 的输出 | 同段内,且被引用的 step 必须在前面 |
 
 ### 4.2 规则
 
 - **只有取值和字符串拼接**,没有运算:
-  `"capture/{{vars.side}}_transferStatus/{{item.key}}.png"` ✓
+  `"capture/{{vars.side}}_transferStatus/{{item.keySafe}}.png"` ✓
   `"{{item.count + 1}}"` ✗
 - 引用不存在的路径 → `ebi lint` **静态报错**(不是运行时才发现)
 - 引用了尚未执行的 step → `ebi lint` 报错
@@ -293,14 +294,14 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
     { "id": "page", "use": "browser.wait_for",
       "with": { "contains":   "{{item.key}}",
                 "timeoutSec": "{{profile.pages.transferStatus.timeoutSec}}",
-                "archiveTo":  "capture/{{vars.side}}_transferStatus/{{item.key}}.txt" } },
+                "archiveTo":  "capture/{{vars.side}}_transferStatus/{{item.keySafe}}.txt" } },
 
     { "use": "browser.assert_page",
       "with": { "text": "{{steps.page.out.text}}",
                 "fingerprint": "{{profile.pages.transferStatus.fingerprint}}" } },
 
     { "id": "shot", "use": "screen.capture_window",
-      "with": { "saveAs": "capture/{{vars.side}}_transferStatus/{{item.key}}.png" } },
+      "with": { "saveAs": "capture/{{vars.side}}_transferStatus/{{item.keySafe}}.png" } },
 
     { "use": "screen.crop",
       "with": { "path":  "{{steps.shot.out.path}}",
@@ -316,8 +317,9 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
     { "id": "row", "use": "verify.match_record",
       "with": { "records": "{{steps.rec.out.records}}",
                 "key":     "{{item.key}}",
-                "aliases": "{{profile.key.aliases}}",
                 "tieBreak":"newest" } },
+    // key 的规范化 / 变体规则来自 profile worklist.json 的 key 节
+    // (kernel/Key.ps1 统一提供),不作为参数传 —— 见 PROFILE-SCHEMA §6.4
 
     { "id": "verdict", "use": "verify.assert",
       "with": { "record": "{{steps.row.out.record}}",

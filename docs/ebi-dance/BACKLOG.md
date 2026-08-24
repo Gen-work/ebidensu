@@ -99,7 +99,7 @@
   在 spec 里加一个「中断发生在 shot 与 crop 之间」的完整推演例子。
 - **完成**:P1-04 可照抄此节实现;推演例子覆盖同段引用、跨 item、once:group 三种情况
 
-### [ ] P0-R4 [规格修订] key 单一事实源 + 文件名安全形 + 学习规则落盘
+### [x] P0-R4 [规格修订] key 单一事实源 + 文件名安全形 + 学习规则落盘 —— 已完成(2026-08-24)
 - **估** 60min | **依赖** — | **改** `spec/PROFILE-SCHEMA.md` §2,§6;`spec/VOCABULARY.md`;`spec/WORKFLOW-SCHEMA.md` §8
 - **问题**:四个会互相放大的小洞:(a) key 被声明了**两次** ——
   vocabulary.json `columns.key`(单列)和 worklist.json `key.columns`(复合数组),
@@ -393,9 +393,9 @@
 ### [ ] P1-28 table.set + flow.checkpoint
 - **估** 60min | **抄** `MappingStore.ps1 Update-MappingRows` / `Set-MappingBit`
 - **做**:位定义来自 profile 的 `bits`,不硬编码 1/2/4
-- **注意**:`pendingWhen` 的位掩码写法从 `"bit !3"`(数字)改成 **`"bit !<位名>"`**
-  (如 `bit !before`)—— checkpoint 用名字、pendingWhen 用数字是两套口径,
-  必然抄错;顺手改 `spec/WORKFLOW-SCHEMA.md` §3.1
+- **注意**:`pendingWhen` 的位掩码写法用 **`"bit !<位名>"`**(如 `bit !before`),
+  不用数字 —— spec 已在 P0-R4 评审时顺手改掉(`spec/WORKFLOW-SCHEMA.md` §3.1),
+  实现按位名做即可
 
 ### [ ] P1-29 progress.event + progress.status
 - **估** 60min | **抄** P0-03 的 Trace + `VerifyTool.ps1 Show-Status`
