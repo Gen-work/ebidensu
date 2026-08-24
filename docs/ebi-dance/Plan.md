@@ -195,7 +195,7 @@ capture 目录形如 `capture/before_list/<key>.png`,取代 `snap/GIFT_MQ/<id>.p
 
 ### 4.5 主键:复合 + 规则增量学习
 
-两个来自现场的修正(详见 `docs/spec/PROFILE-SCHEMA.md` §6):
+两个来自现场的修正(详见 `docs/ebi-dance/spec/PROFILE-SCHEMA.md` §6):
 
 **(a) 主键可以是复合的。** 当前工作里 `Correl_ID_S` 相同但 `JOB_NAME` 不同,
 单列分不开两件事。所以 `key.columns` 是数组,而且工作流可以覆盖成更粗的键。
@@ -472,7 +472,7 @@ JP123456                     →  <EMPID_1>
 
 ## 8. Agent 层:三份文档 + 一个循环
 
-### 8.1 `docs/INTERVIEW.md` —— Agent 访谈剧本(你要的那份)
+### 8.1 `docs/ebi-dance/INTERVIEW.md` —— Agent 访谈剧本(你要的那份)
 
 **这是整个项目对"解放打键人"贡献最大的东西,而且不需要写任何代码就能用。**
 一个人想自动化自己的工作流时,把这份文档交给 Agent,Agent 照着问。
@@ -499,7 +499,7 @@ JP123456                     →  <EMPID_1>
 3. **宁可多问一次,不可少记一笔。** 判定不确定时输出 `unknown` 触发人工关卡,
    **绝不**降级成 `ok`。
 
-配套 `docs/INTERVIEW-CHECKLIST.md`:一页纸的问题清单,人也可以自己对着填。
+配套 `docs/ebi-dance/INTERVIEW-CHECKLIST.md`:一页纸的问题清单,人也可以自己对着填。
 
 ### 8.2 `docs/AGENTS.md` —— Agent 操作手册
 
@@ -631,20 +631,26 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 真正需要连续思考的只有少数几张(`kernel/Runner.ps1`、`kernel/Context.ps1`),
 这些标 `[需要整块时间]`,攒到有空档再做。
 
-### 10.3 卡的数量(粗估)
+### 10.3 卡的数量
 
-| 阶段 | 卡数 | 其中需要整块时间的 |
-|------|------|-------------------|
-| P0 骨架 | ~8 | 1(契约定稿 —— **已完成**) |
-| P1 kernel + 25 step | ~34 | 3(Context / Registry / Runner) |
-| P2 对拍验证 | ~6 | 1(第一次真跑) |
-| P3 新工作实战 | ~8 | 0(主要是访谈 + 填 profile) |
-| P4 excel/file 组 | ~22 | 0 |
-| P5 掩码 + Agent 循环 + 校准 | ~14 | 1(掩码的一致性替换) |
-| **合计到 P3 可接新工作** | **~56 张** | **5 张** |
+**完整卡片列表见 `docs/ebi-dance/BACKLOG.md`** —— 那是开工时唯一要看的文档。
+
+| 阶段 | 卡数 | 其中 `[整块]` |
+|------|------|--------------|
+| P0 骨架 | 8 | 1(最小 runner spike) |
+| P1 kernel + 25 个 step + 文档生成 | 34 | 3(Context / Runner 主体 / Runner 容错+ledger)+ 1(table.key) |
+| P2 对拍验证 | 6 | 1(办公 PC 首跑) |
+| P3 新工作实战 | 8 | 0(主要是访谈 + 填 profile) |
+| **合计到 P3 可接新工作** | **56 张** | **6 张** |
+| P4 excel/file 组 | 22 | 1(办公 PC 冒烟) |
+| P5 掩码 + Agent 循环 + 校准 | 14 | 1(掩码一致性替换) |
+| **全部** | **92 张** | **8 张** |
 
 按每次坐下做 1 张算,**到 P3 大约 56 次空档**。这个数字比"8 周"有用得多 ——
 它不依赖你每周能挤出多少小时。
+
+`[整块]` 的 8 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
+其余 84 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
 
 ### 10.4 关于模型
 
@@ -665,11 +671,11 @@ Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —�
 1. **打冻结标签** `spec/gift-gfix`(当前 tip),作为回滚点。旧脚本原地不动,
    继续可运行。
 2. ~~**写三份规格 + 一份词汇表**~~ —— **已完成(2026-08-24)**:
-   - `docs/spec/STEP-CONTRACT.md` — manifest 字段、返回值约定、失败表达、副作用等级
-   - `docs/spec/WORKFLOW-SCHEMA.md` — workflow JSON 全字段 + 模板语法
-   - `docs/spec/PROFILE-SCHEMA.md` — profile 结构(页面绑定、规则、清单 schema)
-   - `docs/spec/VOCABULARY.md` — §4 的完整版,含旧名 → 新名对照表
-   - `docs/INTERVIEW.md` — Agent 访谈剧本(**不依赖代码,现在就能用**)
+   - `docs/ebi-dance/spec/STEP-CONTRACT.md` — manifest 字段、返回值约定、失败表达、副作用等级
+   - `docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` — workflow JSON 全字段 + 模板语法
+   - `docs/ebi-dance/spec/PROFILE-SCHEMA.md` — profile 结构(页面绑定、规则、清单 schema)
+   - `docs/ebi-dance/spec/VOCABULARY.md` — §4 的完整版,含旧名 → 新名对照表
+   - `docs/ebi-dance/INTERVIEW.md` — Agent 访谈剧本(**不依赖代码,现在就能用**)
 3. **建骨架目录**,把基础设施搬进去(改造点已标注):
    - `ProgressLog.ps1` → `kernel/Trace.ps1`(事件字段泛化:去掉 `correl_id_s`/
      `job_name` 硬编码,改成 `key` + `tags{}`)
@@ -712,7 +718,7 @@ Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —�
 
 ### P3 — 新工作实战(2 周,真正的目标)
 
-用 `docs/INTERVIEW.md` 给下一份工作(Host → Host 或其他)搭第一条流程。
+用 `docs/ebi-dance/INTERVIEW.md` 给下一份工作(Host → Host 或其他)搭第一条流程。
 
 **验收:全程不写 PowerShell,只写 profile JSON + workflow JSON。**
 如果做不到,说明抽象漏了 —— 补的 step 记入 catalog,这是正常的成长方式。
@@ -775,7 +781,7 @@ ebi mask  check                          # 敏感信息门禁
 | **JSON 表达力不够,滑向自制编程语言** | 硬规则:workflow JSON **不引入表达式、不引入函数定义**。判定逻辑一律回到 `verify.*` 的 PowerShell 纯函数 + profile 规则表。JSON 只做"连线" |
 | **中性词汇表设计不当,新工作套不进去** | P3 就是它的考试。套不进去就改词汇表,**在只有一个 profile 时改是廉价的** |
 | **OCR 降级层重新变成负债** | 三条硬规则(§6.1)+ 强制校准闸门;样本集随使用自动增长,不需要专门维护 |
-| **PS 5.1 的坑** | 沿用现有铁律:ASCII 源码、无 `param()` 才 dot-source、`Check-Encoding` 入 CI、已知坑写进 `docs/spec/PS51-PITFALLS.md` |
+| **PS 5.1 的坑** | 沿用现有铁律:ASCII 源码、无 `param()` 才 dot-source、`Check-Encoding` 入 CI、已知坑写进 `docs/ebi-dance/spec/PS51-PITFALLS.md` |
 | **Agent 改坏工作流** | `ebi apply` 强制备份 + `ebi lint` + `ebi explain` 人工复核三道闸;Agent 无权改 step 代码 |
 | **办公 PC 无法验证的部分越积越多** | 每阶段末尾定义 ≤10 项的办公 PC 冒烟清单,跑完再开下一阶段 |
 

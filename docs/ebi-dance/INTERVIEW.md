@@ -18,9 +18,9 @@
 - 访谈结束时,人应该比开始时更清楚自己的流程 —— 如果他更糊涂了,是你的问题
 
 **先读这三份**:
-- `docs/spec/VOCABULARY.md` — 中性词汇表(page role、action、字段名)
+- `docs/ebi-dance/spec/VOCABULARY.md` — 中性词汇表(page role、action、字段名)
 - `docs/CATALOG.md` — 可用的 step 清单
-- `docs/spec/WORKFLOW-SCHEMA.md` — 你要产出的 JSON 长什么样
+- `docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` — 你要产出的 JSON 长什么样
 
 ---
 
