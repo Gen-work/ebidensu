@@ -118,7 +118,7 @@
   `human.choose` 渲染它 —— 一个形状,不许四家各造。
 - **完成**:两份 spec + 两个示例一致;P1-21 / P1-22 / P1-27 / P1-34 可直接引用
 
-### [ ] P0-R5 [规格修订] 按失败种类的容错策略 + warnings 通道
+### [x] P0-R5 [规格修订] 按失败种类的容错策略 + warnings 通道 —— 已完成(2026-08-24)
 - **估** 60min | **依赖** — | **改** `spec/STEP-CONTRACT.md` §2,§3;`spec/WORKFLOW-SCHEMA.md` §6
 - **问题**:(a) onError 策略是每 step 一刀切:`browser.wait_for` 的 `timeout`
   该 retry,`not_found` retry 毫无意义(还会对着错误页面连打三轮键盘);失败种类

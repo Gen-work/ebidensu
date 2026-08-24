@@ -174,16 +174,27 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 "onError": {
   "policy":   "ask",     // retry | ask | skip | fail
   "times":    3,         // policy=retry 时
-  "backoffMs": 800       // policy=retry 时,每次翻倍
+  "backoffMs": 800,      // policy=retry 时,每次翻倍
+  "byFailure": {         // 可选:按失败 id 覆盖(评审修订 P0-R5)
+    "timeout": { "policy": "retry", "times": 3 }
+  }
 }
 ```
 
 | policy | 行为 |
 |--------|------|
-| `retry` | 重试 `times` 次,退避递增。用尽后降级为 `ask` |
+| `retry` | 重试 `times` 次,退避递增。用尽后降级为 `ask`。**只对 manifest 标 `transient` 的失败生效** —— 非 transient 的失败(`not_found` 这类重试不可能自愈的)直接按 `ask` 处理:对着错误页面再打三轮键盘不叫容错 |
 | `ask` | **默认。** 停下,渲染 `human.gate` 面板:失败原因、上下文、证据路径,让人选 r=重试 / s=跳过这条 / q=中止 |
 | `skip` | 记录后跳过这条 item,继续下一条 |
 | `fail` | 中止整个 run |
+
+`byFailure` 的键必须是该 step manifest `failures` 里的 id(lint 检查)。
+一个 step 的失败种类天然不同质 —— 同一档策略对 `timeout` 合理、对
+`not_found` 就是浪费,所以策略可以按失败 id 细分,**但默认永远是整档 `ask`**,
+细分是跑出数据之后的收紧手段。
+
+step 返回的 `warnings`(STEP-CONTRACT §3.1b)不触发 onError,但 runner 必须
+写 trace、进末尾汇总、`--guided` 下当场显示。
 
 ### 6.1 为什么默认是 `ask`
 
@@ -369,6 +380,8 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 - [ ] `profile` 字段指向的 profile 存在且能加载
 - [ ] Session 资源配平:每个 step 的 `needs` 里的 `session:<name>`,在它之前
   (setup 算在前)都有 step `provides` 它(STEP-CONTRACT §3.4)
+- [ ] `onError.byFailure` 的键都在该 step manifest 的 `failures` 里(P0-R5)
+- [ ] 路径形态的模板值里用了裸 `{{item.key}}` → **警告**,提示用 `{{item.keySafe}}`
 
 ---
 

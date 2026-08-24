@@ -81,7 +81,10 @@ $Manifest = @{
   }
 
   # --- 失败模式 ---
-  failures = @('not_found', 'no_foreground_window')
+  failures = @(
+    @{ id='not_found';            transient=$false }   # 重试不可能自愈
+    @{ id='no_foreground_window'; transient=$true  }   # 重试可能自愈
+  )
 
   # --- 给 Agent 的示例 ---
   example  = @{ use='browser.find'; with=@{ term='{{item.key}}' } }
@@ -102,7 +105,7 @@ $Manifest = @{
 | `idempotent` | ✓ | `$false` 的 step,runner 在续跑时不会自动重放 |
 | `inputs` | ✓ | 参数定义。空则 `@{}` |
 | `outputs` | ✓ | 返回字段定义。空则 `@{}` |
-| `failures` | ✓ | **穷举**所有可能的失败标识。runner 用它校验返回值 |
+| `failures` | ✓ | **穷举**所有可能的失败,每项 `@{ id=..; transient=$true|$false }`。`transient` = 重试可能自愈(超时、窗口还没起来);`retry` 策略**只**重试 transient 的失败。`internal_error` 是保留 id,不必列。runner 用它校验返回值 |
 | `example` | ✓ | 至少一个可运行的调用例 |
 | `notes` | | 补充说明,支持多行。会渲染进 CATALOG.md |
 
@@ -162,6 +165,24 @@ function Invoke-Step {
   就是把这两条都弄坏
 - **不许抛异常表达业务失败**。异常只用于「代码写错了」这类真正的意外;
   runner 捕获后统一记为 `failure = 'internal_error'`
+
+### 3.1b `warnings` — 非致命异常通道(评审修订 P0-R5)
+
+成功不等于干净。任何返回值(成功或失败)都可以附带:
+
+```powershell
+@{ ok = $true; records = $r
+   warnings = @(
+     @{ code    = 'unparsed_lines'
+        message = '3 lines not recognized as data rows'
+        data    = @{ count = 3; lines = @('...') } }
+   ) }
+```
+
+runner 对 warnings 的处理是**强制**的:写进 trace、计入 run 末尾汇总、
+`--guided` 模式下当场显示。**不许**用私有输出字段代替 —— 那样 runner 看不见,
+就回到了「静默丢行」:旧工具最恶劣的 bug 正是解析器把认不出的行悄悄扔掉,
+页面上明明有的文件被判「不在列表里」。warnings 不改变控制流(不触发 onError)。
 
 ### 3.2 `$Ctx` 提供什么(只读)
 
@@ -361,7 +382,7 @@ item `ABC123__JOB_A` 已完成 `page_text`(留档 txt)和 `shot`(存了 PNG),
 - 每个 step 文件都能被 dot-source 且不含 `param()`
 - `$Manifest.id` == 文件名
 - `inputs` 里 `required` 和 `default` 不同时出现
-- `failures` 非空
+- `failures` 非空,且每项是 `@{ id=..; transient=.. }`(P0-R5)
 - `example` 里用到的参数都在 `inputs` 里声明过
 - 源码纯 ASCII
 - `outputs` 声明的类型都是 §2.2 的可序列化类型(句柄 / COM 走 §3.4 的 Session)
@@ -399,7 +420,11 @@ $Manifest = @{
     width  = @{ type='int' }
     height = @{ type='int' }
   }
-  failures   = @('file_not_found', 'crop_exceeds_image', 'image_read_error')
+  failures   = @(
+    @{ id='file_not_found';    transient=$false }
+    @{ id='crop_exceeds_image';transient=$false }
+    @{ id='image_read_error';  transient=$true  }   # 文件可能正被写入
+  )
   example    = @{
     use  = 'screen.crop'
     with = @{ path='{{steps.shot.out.path}}'; left=6; top=6; right=6; bottom=6 }
