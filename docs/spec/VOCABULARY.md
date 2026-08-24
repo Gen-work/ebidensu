@@ -64,56 +64,86 @@
 
 ## 2. 页面角色(page role)
 
-**按用途分,不按系统名分。** 工作流写 `page: list`,profile 把 `list` 绑定到
-真实的 URL / 页面指纹 / 解析规则。
+> **v2 修订。** 初版把 role 定义成「你要从这页拿什么」,这是错的:
+> 一页上经常要取好几份证据 —— 既要截图存档,又要点某行的链接下载,
+> 文档页也可能既要截图又要下载。用途不唯一,所以不能拿用途当分类轴。
+>
+> **修正:role 描述页面的「形状」,即"怎么在这页上找到东西";
+> 在一页上做几件事是 action 的事,可以有任意多个。**
 
-| role | 定义 | 判断方法 | 例子 |
-|------|------|----------|------|
-| `entry` | 起点页,通常需要人工打开或登录 | 「这页本身没有信息,只是入口」 | 各系统首页 |
-| `query` | 输入 key、提交查询 | 「这页有输入框,我要填东西」 | 检索画面、查询表单 |
-| `record` | 单条记录的详情,判定的主要依据 | 「这页只讲一件事」 | 处理结果画面 |
-| `list` | 多行表格,需要在里面**定位到目标行** | 「这页有很多行,我要找出我那一行」 | 転送状態一覧、バッチ処理一覧、文件列表、作业列表 |
-| `artifact` | 可下载产物的入口 | 「这页上有个链接,点了会下载东西」 | 下载页、日志下载 |
-| `document` | 排版好的文档预览 | 「这页是给人看的成品,不是数据表」 | 帳票 preview |
+### 2.1 role = 页面的结构
 
-### 2.1 为什么不设 `monitor` / `status` 这类角色
+| role | 结构特征 | 定位方式 | 例子 |
+|------|----------|----------|------|
+| `entry` | 没有目标数据,只是入口 / 导航 | 不需要定位 | 各系统首页、登录后首屏 |
+| `form` | 有输入框,要填要提交 | 焦点序列(Tab / 点击) | 検索画面、查询表单 |
+| `record` | 单条记录,「标签: 值」结构 | 按标签取值 | 処理結果画面 |
+| `list` | 多行表格 | **解析全表 → 定位目标行** | 転送状態一覧、バッチ処理一覧、文件列表、作业列表 |
+| `document` | 排版好的成品,不是数据结构 | 整页 / 按区域 | 帳票 preview、PDF 预览 |
 
-「転送状態一覧」本质上就是一个**要在里面找到目标行**的表格,和「Jenkins 文件
-列表」「作业一览」是同一种东西,应该用同一套 step 处理(`verify.parse_text` →
-`verify.match_record` → `verify.assert`)。
+**5 个,不是 6 个。** 初版的 `artifact`(可下载产物入口)被删掉了 ——
+下载链接是**长在某一页上的一个元素**,不是一种页面形状。一个 `list` 页的每行
+可能都有下载链接;一个 `document` 页可能也能下载。所以下载是 action。
 
-按系统叫法分角色,会让三个一模一样的东西变成三套代码 —— 这正是旧工具犯的错。
+### 2.2 action = 在这一页上做什么(可以有多个)
 
-### 2.2 一个系统可以有多个角色页
+| action | 含义 | 依赖的 role 能力 |
+|--------|------|------------------|
+| `read` | 取页面文本并解析 | 任意 |
+| `locate` | 定位到目标行 / 目标字段 | `list` / `record` |
+| `capture` | 截图取证(**同一页可多次**,不同区域/滚动位置) | 任意 |
+| `download` | 点链接 / 按钮下载文件 | 任意 |
+| `input` | 填写并提交 | `form` |
+| `navigate` | 跳转到下一页 | 任意 |
+
+一页上典型的组合:
 
 ```
-系统 A: entry → query → record
-系统 B: entry → list → artifact
-系统 C: list(バッチ処理一覧) → document(帳票preview)
+list 页:  read → locate(找到我那一行) → capture(截图) → download(点那行的链接)
+                                       └→ capture(再截一张别的区域)
+document 页: capture(整页截图) → download(下载 PDF)
+form 页:  input → navigate
 ```
 
-角色是**这一页在流程里干什么**,不是**它属于谁**。
+### 2.3 为什么不设 `monitor` / `status` 这类 role
 
-### 2.3 拿不准怎么办
+「転送状態一覧」的结构就是一张多行表格,和「文件列表」「作业一览」**完全同型**,
+用同一套定位机制(`verify.parse_text` → `verify.match_record`)。
 
-问一句:**「我在这页上要做的最主要的动作是什么?」**
+按系统叫法分 role,会让三个同型的东西变成三套代码 —— 这正是旧工具犯的错。
 
-- 填东西 → `query`
-- 找我那一行 → `list`
-- 读一件事的结论 → `record`
-- 点下载 → `artifact`
-- 看排版 → `document`
-- 什么都不做,只是路过 → `entry`
+### 2.4 拿不准怎么办
 
-如果一页同时是 `query` 和 `list`(填了就在同一页出结果),按**你要从它身上拿
-什么**来定:要拿结果行 → `list`。
+问的**不是**「我要拿什么」(那是 action),而是:
+
+> **「这一页上的东西是怎么排列的?我要靠什么找到目标?」**
+
+- 靠 Tab 找到输入框 → `form`
+- 靠标签找到值 → `record`
+- 靠在表里找我那一行 → `list`
+- 它就是一张排好版的图,没有可定位的结构 → `document`
+- 上面根本没有我要的东西 → `entry`
+
+### 2.5 一页多份证据的命名
+
+同一页多次 `capture` 时,产物加 tag 区分:
+
+```
+capture/<side>_<role>/<key>.png            默认(单张)
+capture/<side>_<role>/<key>__<tag>.png     多张时,tag 由工作流指定
+```
+
+例:`capture/before_list/ABC123__row.png`、`capture/before_list/ABC123__total.png`
 
 ---
 
-## 3. 动作(工作流命名)
+## 3. 工作流动词(workflow verb)
 
-| 中性动词 | 含义 | 旧名对照 |
-|---------|------|----------|
+**注意和 §2.2 的 action 区分**:action 是「在一页上做的一个动作」(粒度小,
+一页可有多个);verb 是「一条工作流整体在干什么」(粒度大,给工作流起名用)。
+
+| verb | 含义 | 旧名对照 |
+|------|------|----------|
 | `capture` | 抓证据(截图 + 页面文本 + 判定) | `*Snap` 系列 |
 | `collect` | 下载文件并归档 | `GfixLogDownload` / Jenkins 下载 |
 | `compose` | 把证据组装进交付物工作簿 | `Replace*` |
@@ -123,10 +153,20 @@
 | `sync` | 与基线对比 / 同步 | `Align` |
 | `derive` | 从外部表生成工作清单 | `Generate-HostOpenMapping` |
 
-### 3.1 工作流 id 的组成
+### 3.1 这张表是开放的
+
+这 8 个覆盖目前见过的全部场景,但**不是封闭枚举**。加一个新 verb 的成本很低:
+
+- verb 只用于**工作流命名**,没有代码依赖它
+- 加的时候在本表补一行,说清楚它和已有 verb 的区别
+- 只有一条判断标准:**它是不是真的和已有 8 个都不同?**
+  如果只是「同一件事在另一个系统上做」,那不是新 verb,是新 profile
+
+### 3.2 工作流 id 的组成
 
 ```
-<side>.<role>.<action>
+<side>.<role>.<verb>       页面相关的
+<side>.<verb>              工作簿 / 文件相关的(没有特定页面)
 ```
 
 | 新 id | 旧 phase |
@@ -134,11 +174,14 @@
 | `before.record.capture` | `GiftHmSnap` |
 | `before.list.capture` | `GiftMqSnap` |
 | `after.record.capture` | `GfixHmSnap` |
-| `after.artifact.collect` | `GfixLogDownload` |
+| `after.list.collect` | `GfixLogDownload`(在 list 页上点下载) |
 | `before.compose` | `ReplaceGift` |
 | `before.annotate` | `MarkGift` |
 
 只有一面时省略 `side`:`list.capture`。
+
+一条工作流可以同时做几件事(在 list 页上既截图又下载),这时按**主要目的**
+命名,或者拆成两条工作流 —— 拆开的好处是可以分别重跑。
 
 ### 3.2 目录命名
 
@@ -205,7 +248,8 @@ run/<runId>/ledger.jsonl              断点续跑用的完成台账
 | `MQ` 転送状態 | role `list` |
 | `Jenkins` 文件列表 | role `list` |
 | `GoAnywhere` 作业一览 | role `list` |
-| Jenkins 下载 / GFIX 日志下载 | role `artifact` |
+| Jenkins 下载 / GFIX 日志下载 | 在 `list` 页上的 `download` action |
+| 検索画面 | role `form` |
 | `snap/` | `capture/` |
 | phase | workflow |
 | `isReplaced` / `isMarked` / `isReviewed` | profile 声明的 checkpoint 位 |

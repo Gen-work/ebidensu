@@ -140,25 +140,36 @@ profile 数据里。
 | `capture` | 一次截图 + 页面文本归档的产物 | `snap\<folder>\<id>.png` + `.txt` |
 | `verdict` | 一次判定的结论(`ok` / `ng` / `unknown`) | `GIFT_MQ_snap` 的 1/2 |
 
-### 4.2 页面角色(page role)—— 按**用途**分,不按系统名分
+### 4.2 页面角色(page role)—— 按**结构**分,不按用途、不按系统名分
 
-工作流写 `page: list`,profile 把 `list` 绑到真实的 URL / sentinel / 解析规则。
-这样换系统只改 profile。
+> **v2 修订(操作员反馈)**:初版按「你要从这页拿什么」分类,是错的 ——
+> 一页上经常要取好几份证据(既截图又点链接下载,文档页也可能要下载)。
+> 用途不唯一,不能当分类轴。**role 描述页面的形状(怎么找到东西),
+> 在一页上做几件事是 action,可以有任意多个。**
 
-| role | 定义 | 现在对应 | 你提到的 |
-|------|------|----------|----------|
-| `entry` | 起点页,通常需要人工打开 | 各系统首页 | — |
-| `query` | 输入 key、提交查询 | HM 查询画面、MQ 查询表单 | — |
-| `record` | 单条记录详情,判定的主要依据 | HM 处理结果画面 | — |
-| `list` | 多行表格,需要在里面定位到目标行 | MQ 转送状态、Jenkins 文件列表、GoAnywhere 作业列表 | バッチ処理一覧、ETA 页 |
-| `artifact` | 可下载产物的入口 | Jenkins 下载链接、GFIX 日志下载 | — |
-| `document` | 排版好的文档预览 | — | 帳票 preview |
+| role | 结构特征 | 定位方式 | 现在对应 / 你提到的 |
+|------|----------|----------|---------------------|
+| `entry` | 没有目标数据,只是入口 | 不需要定位 | 各系统首页 |
+| `form` | 有输入框,要填要提交 | 焦点序列 | HM / MQ 查询画面 |
+| `record` | 单条记录,「标签: 值」结构 | 按标签取值 | HM 处理结果画面 |
+| `list` | 多行表格 | 解析全表 → 定位目标行 | MQ 转送状态、Jenkins 文件列表、作业列表、バッチ処理一覧、ETA 页 |
+| `document` | 排版好的成品,无可定位结构 | 整页 / 按区域 | 帳票 preview |
 
-**6 个角色覆盖你提到的全部页面。** 一个系统可以有多个角色页,一个角色也可以
-出现在多个系统 —— 这正是正交化。
+**5 个,不是 6 个。** 初版的 `artifact` 删掉了 —— 下载链接是长在某一页上的
+**元素**,不是一种页面形状。下载变成 action。
 
-`monitor` 这类词我**故意不用**:MQ 转送状态本质就是一个「要在里面找到目标行」
-的 `list`,和 Jenkins 文件列表是同一种东西,应该用同一套 step 处理。
+**action(一页可有多个)**:`read` / `locate` / `capture` / `download` /
+`input` / `navigate`。典型组合:
+
+```
+list 页:  read → locate(找到我那一行) → capture(截图) → download(点那行的链接)
+                                      └→ capture(再截一张别的区域)
+```
+
+同一页多次 capture,产物用 tag 区分:`<key>__<tag>.png`。
+
+`monitor` 这类词我**故意不用**:MQ 转送状态的结构就是一张多行表格,和 Jenkins
+文件列表**完全同型**,应该用同一套 step 处理。
 
 ### 4.3 动作(工作流命名)
 
@@ -180,6 +191,56 @@ capture 目录形如 `capture/before_list/<key>.png`,取代 `snap/GIFT_MQ/<id>.p
 - `profiles/<name>/vocabulary.json` 声明本项目的 side 名、role 绑定、列名映射
 - `ebi explain` 输出时**同时显示中性名和本项目显示名**:`list(MQ転送状態)`
 - 换工作时:复制一份 profile,改 vocabulary + 页面绑定 + 规则,工作流 JSON 大部分能直接抄
+- 动词表是**开放的**:加一个新 verb 只是补一行文档,没有代码依赖它
+
+### 4.5 主键:复合 + 规则增量学习
+
+两个来自现场的修正(详见 `docs/spec/PROFILE-SCHEMA.md` §6):
+
+**(a) 主键可以是复合的。** 当前工作里 `Correl_ID_S` 相同但 `JOB_NAME` 不同,
+单列分不开两件事。所以 `key.columns` 是数组,而且工作流可以覆盖成更粗的键。
+
+**(b) 变体规则不是一次声明,是长出来的。** 没人能预先写全:这个系统带时间戳、
+那个不带;同名文件一堆、时间戳还对不上(创建时间 ≠ 接收时间);还混着完全没
+时间戳的文件,而它们可能在别的表里有自己的时间记录。
+
+所以运行时匹配不唯一就走**歧义面板**:
+
+```
+  ⚠ 找不到唯一匹配:key = ABC123 / JOB_A
+  找到 4 个候选,没有一个能靠现有规则确定:
+
+  # │ 候选                       │ 创建时间 │ 接收时间 │ 大小
+  1 │ ABC123.260824.10515511.dat │ 09:51:02 │ 09:50:03 │ 1.2 MB
+  2 │ ABC123.260824.10515533.dat │ 09:53:40 │ 09:53:12 │ 1.2 MB
+  3 │ ABC123.dat                 │ 08:12:00 │ (无)     │ 1.2 MB
+  4 │ ABC123_old.dat             │ 昨天     │ (无)     │ 0.9 MB
+
+  我的建议:#2 —— 接收时间最新且落在本次运行窗口内
+  ⚠ 不确定:#1 和 #2 只差 3 分钟,如果本次是重跑,可能两个都是本次的
+
+  1-4=选  v=看详情  n=都不对(标 unknown)  q=中止
+  选完之后:要不要把这次的判断存成规则?(y/n)
+```
+
+四条要求:**摊开全部候选**(不许只显示"最佳")、**每个候选带全部证据**、
+**给建议+理由+不确定点**、**选完固化成规则**。规则库随使用长大。
+
+对比旧工具:它静默选最新的,只打一行 `[WARN] N 个候选,选了最新的` ——
+人根本不会去看那行。
+
+### 4.6 页面解析器:不猜,用 `ebi grammar tune` 调
+
+四种解析器(分隔符 / 标签-值 / 定宽列 / 正则逃生舱)覆盖不了所有页面,而且
+**即使覆盖得了,参数也没人能一次猜对**。所以配一个交互式调试器:喂一份真实
+页面文本 → 渲染解析结果表格 → 改参数即时重解析 → 满意就存进 profile
+**同时存成 fixture**(每次调 grammar 自动积累一个回归测试)。
+
+关键一条:**未识别的行必须显式报出来**。旧工具最恶劣的 bug 就是静默丢行 ——
+单位数小时的行被正则漏掉,页面上明明有,判定却说"文件不在列表里"。
+
+可选 `a` 键把文本 + 当前结果交给 AI 提议 grammar,**但 AI 的提议同样要在这个
+循环里跑给人看**,不能直接采信。
 
 ---
 
@@ -277,7 +338,7 @@ capture 目录形如 `capture/before_list/<key>.png`,取代 `snap/GIFT_MQ/<id>.p
 | `table.save` | 原子写 | MVP | `MappingStore Export-MappingAtomic` |
 | `table.ensure_columns` | 按 profile schema 补列 | MVP | `Ensure-MappingColumns` |
 | `table.select` | 筛选(pending / 指定 key / owner) | MVP | `Get-PendingRows` |
-| `table.key` | **主键 + 等价规则**(时间戳批次号等变体) | MVP | `Get-CorrelIdAliases` / `Test-CorrelIdEquivalent` → 可配置 normalizer |
+| `table.key` | **复合主键 + 变体规则**;歧义时返回全部候选 + 证据(见 §4.5) | MVP | `Get-CorrelIdAliases` / `Test-CorrelIdEquivalent` → 可配置 normalizer |
 | `table.set` | 写字段 | MVP | `Update-MappingRows` |
 | `flow.checkpoint` | 位掩码 / 值标记完成(位定义来自 profile) | MVP | `Set-MappingBit` |
 | `progress.event` | 追加 jsonl 事件 | MVP | `ProgressLog.ps1` |
@@ -499,6 +560,7 @@ ebi lint     workflows/x.json  # 静态校验:step 存在?参数齐?模板引用
 ebi dryrun   workflows/x.json  # 干跑,不碰真实系统
 ebi run      workflows/x.json  # 真跑    (--guided 引导模式)
 ebi doctor                     # 环境自检:PS 版本、Excel、Edge、编码策略
+ebi grammar tune <text.txt>    # 交互式调页面解析器,存 profile + 存 fixture
 ebi calibrate ocr              # OCR 自校准(见 §6.2)
 ebi trace    <runId>           # 回放一次运行,渲染 ASCII 时间线
 ebi mask     scan|check        # 敏感信息扫描 / CI 门禁
@@ -540,18 +602,59 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 | **MVP 合计** | **≈ 7,000–8,000 行** |
 | 全量 86 step + 迁完所有流程 | ≈ 22,000–26,000 行(与现有同量级,业务逻辑总量不变) |
 
-**工期(业余每周 ~10 小时)**
+### 10.1 排期方式:任务卡,不是周块
 
-| 阶段 | 内容 | 周 |
-|------|------|-----|
-| P0 | 冻结标签、契约定稿、词汇表、骨架、3 个 step 打通 | 1.5 |
-| P1 | kernel + 25 个 MVP step + 文档生成 + 单测 | 3 |
-| P2 | **对拍验证**:迁一条现有流程,与旧脚本并行跑通 | 1.5 |
-| P3 | **新工作实战**:用 INTERVIEW.md 搭下一份工作的第一条流程 | 2 |
-| P4 | excel / file 组补齐,迁 compose + annotate 流程 | 3 |
-| P5 | 掩码模块 + bundle/apply 循环 + OCR 校准 | 2 |
-| P6 | 滚动拼接 / HTML 报告 / 其余流程迁移 | 按需 |
-| | **到 P2 引擎可信 ≈ 6 周;到 P3 能接新工作 ≈ 8 周** | |
+**推进方式是碎片时间(工位上的空档),不是整块的开发日。**
+所以不排「P1 = 3 周」这种块 —— 那种粒度根本没法开工。
+
+改成**任务卡**,每张满足三个条件:
+
+1. **一次坐下能做完**(30–90 分钟)
+2. **做完就能提交**(不留半成品在树上)
+3. **有明确的完成判据**(不靠感觉)
+
+阶段只是卡的分组,没有截止日期。**做完多少算多少,随时可停。**
+
+### 10.2 卡的形态
+
+```
+[P1-07] browser.wait_for
+  做:  轮询页面文本直到匹配/超时,可选归档到文件
+  抄:  MqSnap.ps1 Wait-MqPageReady(去掉 MQ 相关的硬编码)
+  完成:manifest 通过 lint;dryrun 打印正确;Tests 里的纯函数部分绿
+  估:  60 分钟
+```
+
+大部分 step 卡是这个形状 —— **抄现有函数 + 去掉硬编码 + 加 manifest**,
+所以估时准、风险低,适合碎片时间。
+
+真正需要连续思考的只有少数几张(`kernel/Runner.ps1`、`kernel/Context.ps1`),
+这些标 `[需要整块时间]`,攒到有空档再做。
+
+### 10.3 卡的数量(粗估)
+
+| 阶段 | 卡数 | 其中需要整块时间的 |
+|------|------|-------------------|
+| P0 骨架 | ~8 | 1(契约定稿 —— **已完成**) |
+| P1 kernel + 25 step | ~34 | 3(Context / Registry / Runner) |
+| P2 对拍验证 | ~6 | 1(第一次真跑) |
+| P3 新工作实战 | ~8 | 0(主要是访谈 + 填 profile) |
+| P4 excel/file 组 | ~22 | 0 |
+| P5 掩码 + Agent 循环 + 校准 | ~14 | 1(掩码的一致性替换) |
+| **合计到 P3 可接新工作** | **~56 张** | **5 张** |
+
+按每次坐下做 1 张算,**到 P3 大约 56 次空档**。这个数字比"8 周"有用得多 ——
+它不依赖你每周能挤出多少小时。
+
+### 10.4 关于模型
+
+设计阶段(契约、词汇、访谈剧本)需要判断力,用 Opus 5。
+实现阶段的 step 卡是机械的包装工作,换更快/更便宜的模型不影响质量。
+
+**不建议换 Claude Fable 5**:它定位是最难的推理 + 长时程代理任务,价格是
+Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —— 碎片时间
+下这是负作用。它的官方指引还明确说,**写得太细的 prompt 反而会降低它的输出
+质量**,所以"更容易跟随 prompt"恰好不是它的卖点。
 
 ---
 
@@ -561,11 +664,12 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 
 1. **打冻结标签** `spec/gift-gfix`(当前 tip),作为回滚点。旧脚本原地不动,
    继续可运行。
-2. **写三份规格 + 一份词汇表**(先写死再写码):
+2. ~~**写三份规格 + 一份词汇表**~~ —— **已完成(2026-08-24)**:
    - `docs/spec/STEP-CONTRACT.md` — manifest 字段、返回值约定、失败表达、副作用等级
    - `docs/spec/WORKFLOW-SCHEMA.md` — workflow JSON 全字段 + 模板语法
    - `docs/spec/PROFILE-SCHEMA.md` — profile 结构(页面绑定、规则、清单 schema)
    - `docs/spec/VOCABULARY.md` — §4 的完整版,含旧名 → 新名对照表
+   - `docs/INTERVIEW.md` — Agent 访谈剧本(**不依赖代码,现在就能用**)
 3. **建骨架目录**,把基础设施搬进去(改造点已标注):
    - `ProgressLog.ps1` → `kernel/Trace.ps1`(事件字段泛化:去掉 `correl_id_s`/
      `job_name` 硬编码,改成 `key` + `tags{}`)
