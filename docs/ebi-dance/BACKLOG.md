@@ -31,18 +31,125 @@
 
 ## 状态
 
-- 阶段 P0–P3 共 **56 张** = 「能接下一份工作」的最小集
+- 阶段 P0–P3 共 **64 张** = 「能接下一份工作」的最小集
 - 阶段 P4–P5 共 **36 张** = 补齐 Excel/文件组 + Agent 循环
 - `[整块]` 标记 = 需要连续思考,不适合碎片时间,也**不建议交给较小的模型**
 
+> **2026-08-24 评审修订**:开工前审了一遍契约,发现 6 个「现在改是文本、
+> 写完 7000 行再改是重构」的洞,追加为 P0-R1…R6(规格修订卡,全部先于写码);
+> P2 追加 2 张(P2-07/08);受影响的实现卡已就地改写。详见各卡的「问题」段。
+
 ---
 
-# P0 — 骨架(8 张,1 张整块)
+# P0 — 骨架(14 张,2 张整块)
 
 目标:**一条 5 行的 workflow JSON 能真的存下一张 PNG。**
 
 ### [x] P0-00 契约与词汇定稿
 已完成(2026-08-24):`spec/` 四份 + `INTERVIEW.md`。
+
+## P0-R — 规格修订(评审发现的契约洞,全部是改文本,先于任何写码卡)
+
+### [ ] P0-R1 [规格修订] page 身份与 role 解耦
+- **估** 60min | **依赖** — | **改** `spec/PROFILE-SCHEMA.md` §2,3,4,5;`spec/VOCABULARY.md` §2,3;`spec/WORKFLOW-SCHEMA.md` §8
+- **问题**:pages.json / grammar.json / rules.json / 工作流 id / capture 目录全都拿
+  **role 当唯一键**,但一个项目同一侧可以有多个同型页面 —— 当前工作 before 侧
+  就同时有 MQ転送状態(`GIFT_MQ`)和 Jenkins 文件列表(`GIFT_Jenkins`)两个
+  list 页,after 侧还有 GoAnywhere 作业一览。按现规格,`GiftMqSnap` 和
+  `GiftJenkins` 都叫 `before.list.capture`,截图都落 `capture/before_list/<key>.png`,
+  **id 冲突 + 文件互相覆盖**。PROFILE-SCHEMA 的示例其实已经露馅:grammar.json
+  里混着 `list`(role)和 `fileList`(页面名)两种键;vocabulary.json 示例还在用
+  已被删掉的 `artifact` role 和不存在的 `query` role。这是 P2-01 一开工就会撞死的墙。
+- **做**:引入 **page(命名页面实例)** 作为 profile 的第一等公民:pages.json /
+  grammar.json / rules.json 一律按 page 名为键,每个 page 声明一个 `role` 属性
+  (role 只决定「用哪套定位/解析机制」);工作流 id 改为 `<side>.<page>.<verb>`;
+  capture 目录改为 `capture/<side>_<page>/`;清理两份 spec 示例里的 role/page 混用。
+- **完成**:三份 spec 相互一致;把当前工作的全部页面(HM/MQ/Jenkins/GoAnywhere/帳票)
+  逐个写出 page 名 + role,无一冲突
+
+### [ ] P0-R2 [整块][规格修订] 会话资源通道($Ctx.Session)
+- **估** 90min | **依赖** — | **改** `spec/STEP-CONTRACT.md` §3,§6;`spec/WORKFLOW-SCHEMA.md` §4
+- **问题**:契约规定 step 之间**只**通过 `{{steps.X.out.Y}}` 传值,且引用**只限同段**。
+  但 `browser.ensure` 在 `setup` 里拿到的窗口句柄,`each` 里的
+  `screen.capture_window` 根本引用不到(跨段);Excel COM 对象(P4 的 16 个
+  step 全靠它)更不可能塞进 JSON 模板或 trace。规格里 §8 示例的
+  `screen.capture_window` 没有任何窗口输入 —— 它隐式依赖「当前前台窗口」,
+  这正是要消灭的 `$Global:Shell` 换了个马甲。不定这条,25 个 step 的实现者
+  只能各自偷偷用全局变量,P4 时已积重难返。
+- **做**:定义 `$Ctx.Session`:运行期命名资源注册表(browser 窗口句柄、Excel app、
+  打开的工作簿)。规则:(1) 句柄/COM 对象**只进 Session,永不进 outputs**;
+  (2) outputs **必须 JSON-可序列化**(P0-06 检查器强制 —— 这也是 P0-R3 输出重放
+  的前提);(3) manifest 用 `provides` / `needs` 声明谁注册、谁消费哪个资源,
+  `ebi lint` 静态检查「用了 browser 资源但工作流里没人 ensure 过」;
+  (4) `excel.open` 类 step 用 `with.as = <名>` 注册命名资源,后续 step 用名字引用。
+- **完成**:STEP-CONTRACT 新增 Session 一节;P0-08 的三步链(ensure→capture)能够
+  不靠全局变量、不靠跨段 steps 引用写出来
+
+### [ ] P0-R3 [规格修订] 断点续跑 = ledger 输出重放 + setup 重跑
+- **估** 60min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §6;`spec/WORKFLOW-SCHEMA.md` §7
+- **问题**:「重跑按 ledger 跳过已完成的 (item, step)」—— 但跳过 `shot` 之后,
+  下一步 `screen.crop` 引用的 `{{steps.shot.out.path}}` 从哪来?规格没说。
+  不定义,P1-04 的实现者只能自己发明一套,P2-06 的断点续跑验收(中途 Ctrl+C)
+  必然返工。`once: group` 更是双重没定义:它的 ledger 键是什么?组内后续 item
+  引用它的输出算不算「在前面」?
+- **做**:定死三条:(1) ledger 每条记录**连同 outputs 一起持久化**,resume 时被
+  跳过的 step 其 outputs 从 ledger **重放**进模板作用域;(2) `setup` / `teardown`
+  在每次 resume 都**重跑**(负责重建 Session 资源),因此 setup step 必须幂等;
+  (3) `once: group` 的 ledger 键是 **(group, step)**,outputs 对组内所有 item 重放。
+  在 spec 里加一个「中断发生在 shot 与 crop 之间」的完整推演例子。
+- **完成**:P1-04 可照抄此节实现;推演例子覆盖同段引用、跨 item、once:group 三种情况
+
+### [ ] P0-R4 [规格修订] key 单一事实源 + 文件名安全形 + 学习规则落盘
+- **估** 60min | **依赖** — | **改** `spec/PROFILE-SCHEMA.md` §2,§6;`spec/VOCABULARY.md`;`spec/WORKFLOW-SCHEMA.md` §8
+- **问题**:四个会互相放大的小洞:(a) key 被声明了**两次** ——
+  vocabulary.json `columns.key`(单列)和 worklist.json `key.columns`(复合数组),
+  必然漂移;(b) 复合键下 `{{item.key}}` 求值成什么(拼接符?)没定义,而它直接
+  进文件名(`capture/.../{{item.key}}.png`)—— key 含路径非法字符或全角时就出事;
+  (c) 歧义面板确认后追加的 confirmedRules 写到哪没说(git 里的 profile?办公 PC
+  上的部署副本怎么同步回来?);(d) 两份 spec 已经漂移:WORKFLOW-SCHEMA 示例用
+  `profile.key.aliases`,PROFILE-SCHEMA 里叫 `key.confirmedRules`。
+- **做**:worklist.json 是 key 的**唯一事实源**(删除 vocabulary 的 `columns.key`);
+  定义 `{{item.key}}`(显示形,定死拼接符)与 `{{item.keySafe}}`(文件名安全形,
+  定死编码规则,文件/目录名一律用它);学习规则:运行时先落
+  `<WorkDir>/ebi.local.json`,面板提示「已学到 1 条规则,记得回填 profile 并提交」,
+  `ebi profile check` 检测未回填的本地规则;统一命名为 `confirmedRules`。
+  同时定义**候选列表的标准形状**(candidate + evidence{} + suggestion + doubts),
+  `table.key` / `file.find` / `file.newest` / `verify.match_record` 返回它,
+  `human.choose` 渲染它 —— 一个形状,不许四家各造。
+- **完成**:两份 spec + 两个示例一致;P1-21 / P1-22 / P1-27 / P1-34 可直接引用
+
+### [ ] P0-R5 [规格修订] 按失败种类的容错策略 + warnings 通道
+- **估** 60min | **依赖** — | **改** `spec/STEP-CONTRACT.md` §2,§3;`spec/WORKFLOW-SCHEMA.md` §6
+- **问题**:(a) onError 策略是每 step 一刀切:`browser.wait_for` 的 `timeout`
+  该 retry,`not_found` retry 毫无意义(还会对着错误页面连打三轮键盘);失败种类
+  明明已在 `manifest.failures` 里穷举,策略却完全用不上它 —— P2 对拍一定会先
+  撞上这堵墙,然后被迫在 runner 里打补丁。(b) step 返回值只有 ok/failure 两态,
+  **非致命异常没有标准通道** —— 「3 行未识别」这类必须上报的警告(本仓库最痛的
+  静默丢行事故)没有落点,P1-30 只能发明私有输出字段,runner/trace/汇总都看不见它。
+- **做**:(a) `manifest.failures` 从字符串数组升级为
+  `@( @{ id='timeout'; transient=$true }, ... )`;`retry` 只重试 `transient` 的失败,
+  非 transient 直接降到 `ask`;`onError` 增加可选 `byFailure: { <id>: <policy> }`。
+  (b) 返回值约定增加可选 `warnings = @( @{ code=; message=; data= } )`;runner
+  **必须**把 warnings 写进 trace、计入 run 末尾汇总、在 `--guided` 面板即时显示。
+  `internal_error` 声明为保留失败 id,manifest 不必列出。
+- **完成**:两份 spec 更新;P1-30 的「未识别行」改用 warnings 表达
+
+### [ ] P0-R6 [规格修订] 模板 page 绑定 + profile 内模板的求值规则
+- **估** 60min | **依赖** P0-R1 | **改** `spec/WORKFLOW-SCHEMA.md` §1,§4;`spec/PROFILE-SCHEMA.md` §5
+- **问题**:(a) 模板禁止嵌套(这条是对的),但代价是 workflow 里只能写死
+  `{{profile.pages.list.url}}` 这样的完整路径 —— 换一个 page 就要全文替换路径段,
+  「换工作时 workflow 原样抄」的核心卖点直接破产,还会催生一批只差一个路径段的
+  复制粘贴工作流,恰好复刻旧工具的病。(b) rules.json 示例里出现了
+  `{{run.window}}`:profile 数据里的模板到底求不求值、何时求值,规格没说;
+  而且 `run.window` 根本不在 run 作用域的枚举里(runId/startedAt/operator/workDir),
+  是个未定义引用。
+- **做**:(a) workflow 顶层新增 `"page": "<page名>"` 绑定,模板新增 `{{page.X}}`
+  作用域 = `profile.pages[<当前 page>].X`,并让 `{{page.grammar}}` / `{{page.rules}}`
+  解析到 grammar.json / rules.json 的同名条目;嵌套模板依旧禁止。
+  (b) 定死:经 `{{profile...}}` / `{{page...}}` 取出的子树在传给 step 前
+  **递归求值一次**;`run.window` 正式加入 run 作用域(由 human.input 或 CLI
+  `--window` 写入,接线见 P2-07)。
+- **完成**:WORKFLOW-SCHEMA §8 示例改写后,换 page 只改一行;lint 检查项同步(P1-08)
 
 ### [ ] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
@@ -76,24 +183,33 @@
 - **完成**:测试全绿;`legacy/README.md` 写清楚退役条件
 
 ### [ ] P0-06 Tests 适配 + 契约检查器
-- **估** 90min | **依赖** P0-04, P0-05 | **读** `spec/STEP-CONTRACT.md` §7
+- **估** 90min | **依赖** P0-04, P0-05, P0-R2, P0-R5 | **读** `spec/STEP-CONTRACT.md` §7
 - **做**:`Tests/Run-Tests.ps1` 支持新目录树;新增 `Tests/Test-StepContract.ps1`,对
   `modules/**` 的每个 step 检查:能 dot-source、无 `param()`、`$Manifest.id` == 文件名、
   `required` 与 `default` 不共存、`failures` 非空、`example` 的参数都声明过、源码纯 ASCII。
-- **完成**:对一个故意写错的 fixture step 能报出每一类错误
+  评审追加的检查:**outputs 声明的类型必须 JSON-可序列化**(句柄/COM 走 Session,
+  P0-R2);`failures` 每项有 `transient` 布尔(P0-R5);step 文件里除 `Invoke-Step`
+  外的辅助函数**必须带 step 前缀**(如 `BrowserFind-*`)—— 所有 step 会被同一
+  runspace 依次 dot-source,`Invoke-Step` 靠注册表捕获解决(P1-02),裸名辅助函数
+  则会互相覆盖且无人发现。
+- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增三类)
 
 ### [ ] P0-07 [整块] 最小 runner spike
-- **估** 90min | **依赖** P0-06 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2
+- **估** 90min | **依赖** P0-06, P0-R2 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2
 - **做**:**只做能跑通的最小版**:读 workflow JSON → 按顺序 dot-source 并调用 step →
-  打印结果。不做模板求值、不做 foreach、不做 onError。目的是**尽早撞到契约的问题**。
+  打印结果。不做模板求值、不做 foreach、不做 onError。**但 `$Ctx.Session` 从
+  第一天就要在**(哪怕只是个空 hashtable)—— spike 的目的就是验证 ensure→capture
+  的句柄传递走 Session 而不是全局变量。
 - **完成**:能跑一条只有 `setup` 三步的 JSON
 
 ### [ ] P0-08 三个 step + 端到端验收
-- **估** 90min | **依赖** P0-07 | **读** `spec/STEP-CONTRACT.md` §8(完整示例)
+- **估** 90min | **依赖** P0-07 | **读** `spec/STEP-CONTRACT.md` §8(完整示例)+ Session 节(P0-R2)
 - **做**:`human.prepare`(从 `Common.ps1 Wait-PagePrepared`)、`browser.ensure`
   (从 `Common.ps1 Activate-EdgeWindow`,进程句柄优先/标题回退)、
   `screen.capture_window`(从 `Common.ps1 Take-WindowScreenshot`)。
-- **完成**:**办公 PC 上,一条 5 行的 workflow JSON 真的存下一张 PNG**
+- **完成**:**办公 PC 上,一条 5 行的 workflow JSON 真的存下一张 PNG**;
+  窗口句柄经 `$Ctx.Session` 流转,`grep -rn 'Global:' modules/` 为 0,
+  三个 step 的 outputs 全部可 `ConvertTo-Json`
 - ⚠ 这是 P0 的唯一验收标准。做不到就别进 P1。
 
 ---
@@ -103,30 +219,46 @@
 ## kernel(6 张)
 
 ### [ ] P1-01 [整块] kernel/Context.ps1
-- **估** 90min | **依赖** P0-08 | **读** `spec/WORKFLOW-SCHEMA.md` §4
-- **做**:`{{}}` 模板求值。作用域 `vars` / `profile` / `run` / `item` / `steps.<id>.out.<f>`。
+- **估** 90min | **依赖** P0-08, P0-R6 | **读** `spec/WORKFLOW-SCHEMA.md` §4
+- **做**:`{{}}` 模板求值。作用域 `vars` / `profile` / `run` / `item` / `steps.<id>.out.<f>`
+  / **`page`(P0-R6 的绑定间接)** / **`group`(分组遍历时,§7.2 用到但初版作用域表漏了)**。
   **纯函数,先写单测再写实现。**
   规则:只有取值和字符串拼接,**没有运算**;整个值就是一个 `{{}}` 时保留原类型;
-  `\{\{` 转义;引用不存在的路径要能报出**具体是哪一段**解析不到。
-- **完成**:单测覆盖 5 种作用域 + 类型保留 + 转义 + 3 种解析失败的报错信息
+  `\{\{` 转义;引用不存在的路径要能报出**具体是哪一段**解析不到;
+  profile/page 子树**递归求值一次**(P0-R6);复合键的 `{{item.key}}` / `{{item.keySafe}}`
+  按 P0-R4 的定义展开。
+- **完成**:单测覆盖 7 种作用域 + 类型保留 + 转义 + 递归求值 + keySafe + 3 种解析失败的报错信息
 
 ### [ ] P1-02 kernel/Registry.ps1
 - **估** 75min | **依赖** P0-06 | **读** `spec/STEP-CONTRACT.md` §2
 - **做**:扫描 `modules/**`、加载 `$Manifest`、按 `inputs` schema 校验一次调用的参数
   (类型、required、enum、default 填充)。纯函数,单测。
-- **完成**:对缺 required、类型不符、未声明的多余参数,都能报出**参数名**
+  **加载机制**:所有 step 文件定义同名 `Invoke-Step`,依次 dot-source 会互相覆盖 ——
+  Registry 必须在每次 dot-source 后**立刻**把 `${function:Invoke-Step}` 的 scriptblock
+  捕获进按 id 索引的表,运行期从表里调,不再二次 dot-source。
+- **完成**:对缺 required、类型不符、未声明的多余参数,都能报出**参数名**;
+  加载两个 step 后各自的 Invoke-Step 仍能正确调用(单测)
 
 ### [ ] P1-03 [整块] kernel/Runner.ps1 主体
 - **估** 120min | **依赖** P1-01, P1-02 | **读** `spec/WORKFLOW-SCHEMA.md` §1,3,7
 - **做**:`setup` / `each` / `teardown` 三段;`source.select` 的五种 `pendingWhen`;
-  `flow.foreach`(隐式)、`flow.if`(`when` 的四种形式)、`once: group`。
-- **完成**:能跑通一条有 setup+each 的 JSON,遍历 3 行 fixture 数据
+  `flow.foreach`(隐式)、`flow.if`(`when` 的四种形式)、`once: group`
+  (outputs 对组内后续 item 可见,按 P0-R3 的重放规则)。
+  `source.select` 的筛选实现和 `table.select` step **共用同一个函数**,不写两份。
+- **完成**:能跑通一条有 setup+each 的 JSON,遍历 3 行 fixture 数据;
+  含一条 `once: group` 的用例(组内第 2 个 item 能引用第 1 个 item 时跑出的输出)
 
 ### [ ] P1-04 [整块] Runner 的 onError + ledger
-- **估** 120min | **依赖** P1-03 | **读** `spec/WORKFLOW-SCHEMA.md` §6;`STEP-CONTRACT.md` §6
-- **做**:四种 policy(`retry` 退避 / `ask` / `skip` / `fail`);`destructive` 自动插确认关卡;
-  ledger 写 `run/<runId>/ledger.jsonl`,粒度是 **(item, step)**;重跑按 ledger 跳过已完成的。
-- **完成**:中断后重跑不重复执行已完成的 (item, step);`confirm:false` 能跳过自动关卡
+- **估** 120min | **依赖** P1-03, P0-R3, P0-R5 | **读** `spec/WORKFLOW-SCHEMA.md` §6;`STEP-CONTRACT.md` §6
+- **做**:四种 policy(`retry` 退避 / `ask` / `skip` / `fail`)+ **`byFailure` 按失败
+  id 覆盖;`retry` 只重试 manifest 标了 `transient` 的失败**(P0-R5);
+  `destructive` 自动插确认关卡;step 返回的 `warnings` 进 trace + 末尾汇总;
+  ledger 写 `run/<runId>/ledger.jsonl`,粒度 **(item, step)**(`once: group` 为
+  (group, step)),**每条连同 outputs 持久化**;重跑跳过已完成的并**重放其 outputs**,
+  `setup`/`teardown` 每次 resume 重跑(P0-R3)。
+- **完成**:中断后重跑不重复执行已完成的 (item, step),且被跳过 step 的输出仍可被
+  后续步引用;`timeout`(transient)会 retry 而 `not_found` 不会;`confirm:false`
+  能跳过自动关卡
 
 ### [ ] P1-05 kernel/Gate.ps1
 - **估** 75min | **依赖** P1-03 | **读** `Plan.md` §3.3
@@ -146,9 +278,12 @@
 - **完成**:输出纯 ASCII,80 列不折行
 
 ### [ ] P1-08 ebi lint
-- **估** 90min | **依赖** P1-01, P1-02 | **读** `spec/WORKFLOW-SCHEMA.md` §9
-- **做**:§9 的 9 项静态检查全实现,包括 fallback tier 警告和 `confirm:false` 警告
-- **完成**:对一份故意写错的 workflow,9 项都能报出来
+- **估** 90min | **依赖** P1-01, P1-02, P0-R6 | **读** `spec/WORKFLOW-SCHEMA.md` §9
+- **做**:§9 的 9 项静态检查全实现,包括 fallback tier 警告和 `confirm:false` 警告。
+  评审追加:`page` 绑定解析得到(P0-R6);`needs`/`provides` 的 Session 资源配平
+  (「用了 browser 没人 ensure」,P0-R2);`byFailure` 引用的失败 id 在 manifest 里
+  存在(P0-R5)。
+- **完成**:对一份故意写错的 workflow,全部检查项都能报出来
 
 ### [ ] P1-09 ebi explain
 - **估** 90min | **依赖** P1-03 | **读** `Plan.md` §9(输出样例)
@@ -211,16 +346,17 @@
 - **参考**:`spec/STEP-CONTRACT.md` §8 就是这张卡的完整答案
 
 ### [ ] P1-21 screen.save
-- **估** 45min | **做**:按命名模板定位保存;支持 `<key>__<tag>.png` 的多张形式
+- **估** 45min | **做**:按命名模板定位保存;支持 `<keySafe>__<tag>.png` 的多张形式
+  (文件名一律用 P0-R4 的 `keySafe`,不用裸 key)
 - **读** `spec/VOCABULARY.md` §2.5
 
 ## file 组(2 张)
 
 ### [ ] P1-22 file.find
-- **估** 75min | **抄** `WorkbookResolver.ps1 FullWidthFilenameResolver` + `MappingStore.ps1 Resolve-CorrelFilePath`
-- **做**:glob/key 查找,全角回退 + key 变体容忍。**匹配到多个时返回全部候选 + 证据**,
-  不自己挑(挑选交给 `table.key`,见 P1-27)
-- **完成**:同名多文件时返回候选数组而不是单个
+- **估** 75min | **依赖** P0-R4 | **抄** `WorkbookResolver.ps1 FullWidthFilenameResolver` + `MappingStore.ps1 Resolve-CorrelFilePath`
+- **做**:glob/key 查找,全角回退 + key 变体容忍(规范化调 `kernel/Key.ps1`,见 P1-27,
+  自己不写比较)。**匹配到多个时按 P0-R4 的标准候选形状返回全部候选 + 证据**,不自己挑
+- **完成**:同名多文件时返回标准候选数组而不是单个
 
 ### [ ] P1-23 file.assert_exists
 - **估** 30min | **做**:存在性断言,不存在按策略走 gate
@@ -237,20 +373,29 @@
 ### [ ] P1-26 table.select
 - **估** 60min | **抄** `MappingStore.ps1 Get-PendingRows`
 - **注意**:`ng` **仍算 pending**(`spec/WORKFLOW-SCHEMA.md` §3.2)—— 旧的
-  `Get-PendingRows` 把任何非 `0` 都当已完成,会把 NG 行藏起来
+  `Get-PendingRows` 把任何非 `0` 都当已完成,会把 NG 行藏起来。
+  同一份筛选实现同时供 runner 的 `source.select` 用(P1-03),不写两份
 
-### [ ] P1-27 [整块] table.key
-- **估** 120min | **依赖** P1-26 | **读** `spec/PROFILE-SCHEMA.md` §6 全节
-- **做**:**复合主键**(`key.columns` 数组)+ `confirmedRules` 规范化 +
-  **歧义时返回全部候选和每个候选的全部证据**,附建议、理由、**不确定点**
-- **注意**:这是全项目最容易做错的一张。旧工具在**七个地方**各写 `-eq`,
-  症状五花八门。规则必须**只有这一处**。
+### [ ] P1-27 [整块] kernel/Key.ps1 + table.key
+- **估** 120min | **依赖** P1-26, P0-R4 | **读** `spec/PROFILE-SCHEMA.md` §6 全节
+- **做**:核心是 **`kernel/Key.ps1` 纯库**(无 param(),可被任何 step dot-source):
+  复合主键(`key.columns` 数组)规范化、`confirmedRules` 应用、候选排序 + 证据
+  收集,歧义时按 P0-R4 的标准形状返回**全部候选 + 每个候选的全部证据**,附建议、
+  理由、**不确定点**。`table.key` 只是它的 step 包装。
+- **注意**:这是全项目最容易做错的一张。旧工具在**七个地方**各写 `-eq`,症状
+  五花八门。规则必须**只有这一处** —— 做成库而不是只做成 step,正是为了让
+  `file.find` / `file.newest` / `verify.match_record` / `excel.find_anchor` 能直接
+  调它:step 不能调 step,但都能 dot-source 同一个 kernel 库。学习到的新规则按
+  P0-R4 落 `<WorkDir>/ebi.local.json` 待回填。
 - **完成**:单测覆盖 —— 单列键、复合键、后缀变体、全角、大小写、
-  「4 个候选无法确定」返回完整候选表
+  「4 个候选无法确定」返回完整候选表;`grep -rn '\-eq' modules/` 里没有 key 比较
 
 ### [ ] P1-28 table.set + flow.checkpoint
 - **估** 60min | **抄** `MappingStore.ps1 Update-MappingRows` / `Set-MappingBit`
 - **做**:位定义来自 profile 的 `bits`,不硬编码 1/2/4
+- **注意**:`pendingWhen` 的位掩码写法从 `"bit !3"`(数字)改成 **`"bit !<位名>"`**
+  (如 `bit !before`)—— checkpoint 用名字、pendingWhen 用数字是两套口径,
+  必然抄错;顺手改 `spec/WORKFLOW-SCHEMA.md` §3.1
 
 ### [ ] P1-29 progress.event + progress.status
 - **估** 60min | **抄** P0-03 的 Trace + `VerifyTool.ps1 Show-Status`
@@ -259,9 +404,11 @@
 ## verify 组(4 张)
 
 ### [ ] P1-30 verify.parse_text —— delimited
-- **估** 75min | **抄** `GfixJobList.ps1 ConvertFrom-GfixJobListText`;**读** `spec/PROFILE-SCHEMA.md` §4
+- **估** 75min | **依赖** P0-R5 | **抄** `GfixJobList.ps1 ConvertFrom-GfixJobListText`;**读** `spec/PROFILE-SCHEMA.md` §4
 - **做**:分隔符表格,靠 `rowWhen` 正则识别数据行
-- **⚠ 必须**:返回值里带 **未识别行数和内容**(静默丢行是旧工具最恶劣的 bug)
+- **⚠ 必须**:未识别行走 P0-R5 的标准 **`warnings` 通道**(带行数和内容),
+  不发明私有输出字段 —— runner 才会把它进 trace、进末尾汇总(静默丢行是旧工具
+  最恶劣的 bug,光「返回了」不够,必须**有人看见**)
 
 ### [ ] P1-31 verify.parse_text —— labeled + columns + regex
 - **估** 90min | **抄** `SnapVerify.ps1 ConvertFrom-HmPageText` / `ConvertFrom-JenkinsListText`
@@ -270,8 +417,9 @@
 - **完成**:单位数小时的行有专门的回归单测
 
 ### [ ] P1-32 verify.match_record
-- **估** 75min | **抄** `SnapVerify.ps1 Get-MatchedRowIndex` / `Select-JenkinsFileCandidate`
-- **做**:按 key 找行(走 P1-27 的规范化)、`tieBreak: newest`、多候选走歧义流程
+- **估** 75min | **依赖** P1-27 | **抄** `SnapVerify.ps1 Get-MatchedRowIndex` / `Select-JenkinsFileCandidate`
+- **做**:按 key 找行(dot-source `kernel/Key.ps1`,不自己写比较)、`tieBreak: newest`、
+  多候选按 P0-R4 标准候选形状返回,走歧义流程
 
 ### [ ] P1-33 verify.assert
 - **估** 90min | **读** `spec/PROFILE-SCHEMA.md` §5
@@ -281,25 +429,32 @@
 ## human 组(1 张)
 
 ### [ ] P1-34 human.prepare + human.gate + human.choose
-- **估** 75min | **依赖** P1-05 | **做**:三个 step 接到 `kernel/Gate.ps1` 的面板
-- **注意**:`human.choose` 是 P1-27 歧义面板的渲染器
+- **估** 75min | **依赖** P1-05, P0-R4 | **做**:三个 step 接到 `kernel/Gate.ps1` 的面板
+- **注意**:`human.choose` 渲染 P0-R4 的**标准候选形状**(file.find / table.key /
+  verify.match_record 返回的是同一个形状,渲染器只写一份);`human.gate` 的
+  outputs 要在 manifest 里声明(`action`: enter/n/s/q、`note`),后续 step 才能
+  `when` 到它 —— 旧规格没定义 gate 的返回值
 
 ---
 
-# P2 — 对拍验证(6 张,1 张整块)
+# P2 — 对拍验证(8 张,1 张整块)
 
 目标:**用新引擎重跑一条现有流程,产出和旧脚本逐项一致。**
 这一步会暴露契约的全部错误 —— **P1 的设计不必完美,P2 之后重构一次是计划内的。**
 
 ### [ ] P2-01 profiles/host-open 骨架
-- **估** 60min | **读** `spec/PROFILE-SCHEMA.md` §1,2,6
-- **做**:`vocabulary.json`(side/role/列名映射)+ `worklist.json`(列 schema、复合键、位定义)
+- **估** 60min | **依赖** P0-R1, P0-R4 | **读** `spec/PROFILE-SCHEMA.md` §1,2,6
+- **做**:`vocabulary.json`(side/列名映射)+ `worklist.json`(列 schema、复合键、
+  位定义;key 只声明在这里)+ `pages.json` 骨架 —— **按 page 名建条目**
+  (如 `transferStatus`(role list)、`fileList`(role list)),不按 role 建
 
 ### [ ] P2-02 ebi grammar tune
-- **估** 120min | **读** `spec/PROFILE-SCHEMA.md` §4.1
+- **估** 120min | **依赖** P2-08 | **读** `spec/PROFILE-SCHEMA.md` §4.1
 - **做**:交互式解析器调试器 —— 喂真实页面文本 → 渲染解析结果表格 →
   改参数即时重解析 → `s` 存进 profile **同时存成 fixture**
-- **⚠ 必须**:未识别的行显式列出,不能藏
+- **⚠ 必须**:未识别的行显式列出,不能藏;`s` 保存 fixture 前**必须过 P2-08 的
+  脱敏门禁**(fixture 的原料是真实内网页面文本 —— 这一步会自动积累敏感文件,
+  掩码不能等到 P5)
 - **完成**:调一次 grammar 自动留下一个回归测试
 
 ### [ ] P2-03 用 grammar tune 调出 list 页解析
@@ -321,6 +476,24 @@
   - [ ] 故意造一个 NG 页面,两边都判 NG
   - [ ] 中途 Ctrl+C,重跑从断点续上,不重复截图
 - ⚠ 如果旧流程已无真实环境可跑,改用任意一条还能跑的。**对拍验证的是引擎,不是业务。**
+
+### [ ] P2-07 human.input + run.window 接线
+- **估** 60min | **依赖** P1-05, P0-R6
+- **做**:`human.input` step(默认值 + 校验 + 批量一次问,抄旧 Expected_Time 批量
+  提示的交互方式)+ CLI `--window`,写入 run 作用域的 `run.window`
+- **为什么在 P2**:模块表里它排 P2 但原 backlog 漏了卡 —— 而 MqSnap 对拍的判定
+  规则里有 `within {{run.window}}`(时间窗),没有这张卡 P2-04/P2-06 跑不了
+- **完成**:rules.json 里 `within` + `{{run.window}}` 的规则在 fixture 单测里可判
+
+### [ ] P2-08 mask-lite:脱敏门禁前移
+- **估** 60min | **依赖** —(可与 P2-01 并行)
+- **做**:只做规则版 `ebi mask check`(员工号 / 邮箱域 / UNC / `C:\Users\<id>` /
+  内网 URL 的正则 + 一个词典文件),扫 `profiles/**/fixtures/` 和 tracked 文件,
+  命中即失败;挂进 `Tests/Run-Tests.ps1`。交互式决策、一致性替换仍留在 P5。
+- **为什么前移**:P5-03/04 原计划里掩码在 Agent 循环阶段才有,但 fixture 从
+  P2-02 起就在自动积累真实页面文本 —— 等到 P5,git 历史里已经躺满了没洗过的
+  内网数据,再洗要改历史
+- **完成**:对一份埋了 4 类敏感项的 fixture 全部报出;`Run-Tests.ps1` 因此变红
 
 ---
 
@@ -393,7 +566,9 @@
 ### [ ] P4-17 file.backup — 45min — 抄 `BackupJ4.ps1`
 ### [ ] P4-18 file.stat + hash — 45min — 用于共享文件的外部改动检测
 ### [ ] P4-19 browser.download_link + browser.verify_action — 90min
-  `verify_action` 是包装器:动作前后对比页面文本,无变化即判失败
+  ⚠ `verify_action` 原设想是「包装器」,但契约里 **step 不能调 step** ——
+  实现前先在 STEP-CONTRACT 补一段,二选一:做成 ui step 的可选 `verifyChange`
+  输入(fill/submit 自带前后对比),或做成 runner 的 flow 构造。不要发明第三种
 ### [ ] P4-20 layout.json + workflows/*.compose.json — 90min — 读 `spec/PROFILE-SCHEMA.md` §7
 ### [ ] P4-21 workflows/*.annotate.json — 75min
   ⚠ 红框位置会随记录条数上下移动(`baseRow`/`rowHeight`),旧工具在这框错过行
@@ -405,7 +580,7 @@
   ⚠ 同一原文永远映射到同一占位符(`<HOST_1>`),否则 Agent 看 trace 推不出关联
 ### [ ] P5-02 掩码规则库 + 词典 — 75min — 员工号/邮箱域/UNC/`C:\Users\<id>`/内网 URL/人名/公司名
 ### [ ] P5-03 ebi mask scan(交互式) — 90min — 决策存 `.ebi/redaction.json`(**gitignore**)
-### [ ] P5-04 ebi mask check(CI 门禁) — 60min — 挂进 `Tests/Run-Tests.ps1`
+### [ ] P5-04 ebi mask check(CI 门禁) — 60min — **在 P2-08 的规则版上扩展**(词典、白名单、误报处理),不是新建
 ### [ ] P5-05 step 级 trace 落盘 — 75min — 输入/输出/耗时/产物路径/页面文本哈希/判定详情
 ### [ ] P5-06 ebi trace(ASCII 时间线) — 75min
 ### [ ] P5-07 ebi bundle — 75min — 打包 trace + 页面文本 + 截图采样 + workflow/profile,**自动套掩码**
