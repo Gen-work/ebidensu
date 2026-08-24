@@ -64,7 +64,8 @@ $Manifest = @{
 
   # --- 契约 ---
   effects  = 'ui'                # pure | read | ui | write | destructive
-  needs    = @('foreground')     # 运行前置条件,见 §4
+  needs    = @('session:browser')  # 运行前置条件,见 §4
+  provides = @()                 # 本 step 注册的 Session 资源,见 §3.4
   idempotent = $true             # 重复执行是否安全
 
   # --- 输入 ---
@@ -97,6 +98,7 @@ $Manifest = @{
 | `tier` | ✓ | `core` 或 `fallback`(见 §5) |
 | `effects` | ✓ | 副作用等级,见 VOCABULARY §4 |
 | `needs` | | 前置条件数组,见 §4 |
+| `provides` | | 本 step 会注册的 Session 资源(如 `session:browser`),见 §3.4。`ebi lint` 用它做配平检查 |
 | `idempotent` | ✓ | `$false` 的 step,runner 在续跑时不会自动重放 |
 | `inputs` | ✓ | 参数定义。空则 `@{}` |
 | `outputs` | ✓ | 返回字段定义。空则 `@{}` |
@@ -154,6 +156,10 @@ function Invoke-Step {
 - `failure` 的值**必须**在 `$Manifest.failures` 里,否则 runner 判为契约违反
 - `message` 是给人看的一句话,英文,可选
 - 失败时**也可以**带 outputs 字段(比如部分结果),runner 不会用,但会进 trace
+- **outputs 的每个字段必须 JSON-可序列化**(§2.2 的类型即可)。窗口句柄、
+  COM 对象一律走 `$Ctx.Session`(§3.4),永不放进返回值 —— outputs 要进
+  trace,也要进 ledger 供断点续跑时重放(§6),塞不进 JSON 的东西放进来
+  就是把这两条都弄坏
 - **不许抛异常表达业务失败**。异常只用于「代码写错了」这类真正的意外;
   runner 捕获后统一记为 `failure = 'internal_error'`
 
@@ -166,9 +172,10 @@ function Invoke-Step {
 | `$Ctx.Profile` | 已加载并合并好的 profile(hashtable) |
 | `$Ctx.Log` | `$Ctx.Log.Info('...')` / `.Warn(...)` / `.Debug(...)` |
 | `$Ctx.DryRun` | `$true` 时,有副作用的 step **必须**只打印不执行 |
+| `$Ctx.Session` | 运行期命名资源注册表(**可写**),见 §3.4。唯一允许跨 step 存活的进程内状态 |
 
 **`$Ctx` 里没有别的 step 的输出。** step 之间只通过 workflow JSON 的模板引用
-传值 —— 这是正交性的保证。
+传值 —— 这是正交性的保证。(Session 装的是**资源**,不是输出。)
 
 ### 3.3 `DryRun` 的处理
 
@@ -183,6 +190,33 @@ if ($Ctx.DryRun) {
 
 `pure` / `read` 的 step 可以照常执行。
 
+### 3.4 `$Ctx.Session` — 会话资源(评审修订 P0-R2)
+
+窗口句柄、COM 对象这类**进程内资源**进不了 JSON:不能进模板、不能进 trace、
+不能进 ledger(断点续跑要重放 outputs,见 §6)。而 `steps.X.out` 的引用又
+**只限同段** —— `setup` 里 `browser.ensure` 拿到的句柄,`each` 里的
+`screen.capture_window` 根本引用不到。不给正道,实现者只能回去用全局变量,
+也就是旧工具的 `$Global:Shell`。所以:
+
+- `$Ctx.Session` 是一个命名资源注册表:
+  `$Ctx.Session['browser'] = @{ hwnd = ...; pid = ... }`
+- **句柄 / COM 对象只进 Session,永不出现在 outputs 里**(§3.1;
+  契约检查器强制,见 §7)
+- 注册资源的 step 声明 `provides = @('session:browser')`;消费的 step 声明
+  `needs = @('session:browser')`。`ebi lint` 静态检查:工作流里每个 `needs`
+  在它之前(setup 算在前)都有对应的 `provides`
+- 同类资源可以有多个实例:`excel.open` 用 `with.as = 'wb1'` 注册
+  `session:workbook:wb1`,后续 step 用同一个名字引用
+- **Session 不持久化**。断点续跑时它是空的 —— 所以 `setup` 在每次 resume
+  都重跑,负责重建资源(见 §6)
+- 释放责任:注册了需要释放的资源(COM)的工作流,`teardown` 里必须有对应的
+  释放 step;run 结束(含失败退出)时 Session 里仍存活的可释放资源,
+  runner 打 `[WARN]`
+
+**为什么不直接用全局变量**:`$Global:Shell` / `$Global:Timing` 就是这样长出来
+的 —— 谁都能读写、没人声明依赖、断点续跑后凭空消失。Session 把同一件事变成
+**声明过、可 lint、resume 时被系统性重建**的。
+
 ---
 
 ## 4. `needs` — 前置条件
@@ -192,8 +226,8 @@ runner 在调用前检查,不满足直接失败,不进 step。
 | need | 含义 |
 |------|------|
 | `foreground` | 需要一个前台窗口 |
-| `browser` | 需要浏览器进程在运行 |
-| `excel` | 需要 Excel COM 可用 |
+| `session:<name>` | 需要名为 `<name>` 的 Session 资源已被前置 step 注册(如 `session:browser`、`session:workbook:wb1`),见 §3.4 |
+| `excel` | 需要 Excel COM 可用(能创建实例;已打开的工作簿用 `session:workbook:*`) |
 | `worklist` | 需要工作清单已加载 |
 | `calibrated:ocr` | 需要本机 OCR 校准通过(见 §5) |
 
@@ -271,6 +305,11 @@ OCR 引擎版本可能给出不同结果。
 - `failures` 非空
 - `example` 里用到的参数都在 `inputs` 里声明过
 - 源码纯 ASCII
+- `outputs` 声明的类型都是 §2.2 的可序列化类型(句柄 / COM 走 §3.4 的 Session)
+- 除 `Invoke-Step` 外的辅助函数**必须带 step 前缀**(如 `BrowserFind-*`)——
+  所有 step 被同一 runspace 依次 dot-source:`Invoke-Step` 由 Registry 在每次
+  dot-source 后**立刻捕获** `${function:Invoke-Step}` 进按 id 索引的表来解决
+  同名覆盖;裸名辅助函数则会互相覆盖且无人发现
 
 ---
 

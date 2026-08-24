@@ -138,6 +138,8 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 - 整个值就是一个 `{{}}` 时,保留原类型(不会被转成字符串)。
   `"count": "{{steps.parse.out.total}}"` 得到的是 int
 - 要输出字面的 `{{`,写 `\{\{`
+- `steps.X.out.Y` 只承载 JSON-可序列化的值。窗口句柄、COM 对象这类资源
+  **不经过模板**,走 `$Ctx.Session`(STEP-CONTRACT §3.4)
 
 ---
 
@@ -354,6 +356,8 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 - [ ] 用到 `tier: fallback` 的 step → **警告**,提示需要校准
 - [ ] 有 `destructive` 且 `confirm: false` → **警告**,列出位置
 - [ ] `profile` 字段指向的 profile 存在且能加载
+- [ ] Session 资源配平:每个 step 的 `needs` 里的 `session:<name>`,在它之前
+  (setup 算在前)都有 step `provides` 它(STEP-CONTRACT §3.4)
 
 ---
 

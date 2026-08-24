@@ -67,7 +67,7 @@
 - **完成**:三份 spec 相互一致;把当前工作的全部页面(HM/MQ/Jenkins/GoAnywhere/帳票)
   逐个写出 page 名 + role,无一冲突
 
-### [ ] P0-R2 [整块][规格修订] 会话资源通道($Ctx.Session)
+### [x] P0-R2 [整块][规格修订] 会话资源通道($Ctx.Session)—— 已完成(2026-08-24)
 - **估** 90min | **依赖** — | **改** `spec/STEP-CONTRACT.md` §3,§6;`spec/WORKFLOW-SCHEMA.md` §4
 - **问题**:契约规定 step 之间**只**通过 `{{steps.X.out.Y}}` 传值,且引用**只限同段**。
   但 `browser.ensure` 在 `setup` 里拿到的窗口句柄,`each` 里的
