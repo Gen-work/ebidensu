@@ -102,8 +102,9 @@ profiles/<name>/
 - **同一个 role 可以有任意多个 page**(上例两个都是 `list`)—— 这正是引入
   page 的原因:role 当键会让同侧的第二个同型页面无处安放,而当前工作
   before 侧就同时有転送状態和ファイル一覧。
-- `crop` 这类**页面级参数**也放在 page 条目里,随 page 一起换,
-  工作流经模板引用(见 WORKFLOW-SCHEMA §4)。
+- `crop` 这类**页面级参数**也放在 page 条目里,随 page 一起换。工作流经
+  `{{page.crop.*}}` 引用(顶层 `page` 绑定,见 WORKFLOW-SCHEMA §1/§4)——
+  工作流本体不出现 page 名。
 
 ### 3.1 `fingerprint` — 页面指纹
 
@@ -234,6 +235,11 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
   }
 }
 ```
+
+规则值里可以出现 `{{run.window}}` 这类模板 —— profile 子树在经
+`{{page.rules}}` / `{{profile...}}` 传给 step 时会被**递归求值一次**
+(WORKFLOW-SCHEMA §4.2);`run.window` 由 CLI `--window` 或前置 `human.input`
+写入。
 
 ### 5.1 `op` 一览(**穷举**)
 

@@ -30,6 +30,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
   "title":   "転送状態ページの証跡取得",
   "version": "1.0.0",
   "profile": "host-open",
+  "page":    "transferStatus",
 
   "vars":    { "side": "before" },
 
@@ -48,6 +49,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | `title` | ✓ | 给人看的标题,可用日文/中文 |
 | `version` | ✓ | 语义化版本,改动时手工 bump |
 | `profile` | ✓ | 用哪个 profile |
+| `page` | | 绑定本工作流操作的页面(pages.json 的 page 名)。绑定后模板可用 `{{page.*}}`(§4.1);可被 CLI `--page` 覆盖 —— 同型的另一个页面直接复用同一条工作流。没有特定页面的工作流(compose 等)省略 |
 | `vars` | | 工作流级常量,可被 CLI `--var k=v` 覆盖 |
 | `source` | | 没有则不遍历,只跑 `setup` + `teardown` |
 | `onError` | | 默认 `{ "policy": "ask" }` |
@@ -123,7 +125,9 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 |------|------|----------|
 | `{{vars.X}}` | 工作流常量 | 全部 |
 | `{{profile.X.Y}}` | profile 数据 | 全部 |
-| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir`) | 全部 |
+| `{{page.X}}` | 顶层 `page` 绑定的页面数据:pages.json 该条目的字段,外加 `name`(page 名本身)、`grammar`(grammar.json 同名条目)、`rules`(rules.json 同名条目) | 全部(需要顶层 `page`) |
+| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir` / `window` —— `window` 是本次运行的时间窗,由 CLI `--window` 或前置 `human.input` 写入) | 全部 |
+| `{{group.X}}` | 分组遍历的当前组:`key`(组键值)+ 组内第一行的各列(§7.2 用到,初版作用域表漏了它) | 仅 `each`,且 `source.groupBy` 已设 |
 | `{{item.X}}` | 当前行的某列 | 仅 `each` |
 | `{{item.key}}` | 当前行的主键**显示形**(复合键按 PROFILE-SCHEMA §6.1b 拼接) | 仅 `each` |
 | `{{item.keySafe}}` | 主键的**文件名安全形**(§6.1b)。路径模板里必须用它,裸 `item.key` 进路径是 lint 警告 | 仅 `each` |
@@ -132,7 +136,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 ### 4.2 规则
 
 - **只有取值和字符串拼接**,没有运算:
-  `"capture/{{vars.side}}_transferStatus/{{item.keySafe}}.png"` ✓
+  `"capture/{{vars.side}}_{{page.name}}/{{item.keySafe}}.png"` ✓
   `"{{item.count + 1}}"` ✗
 - 引用不存在的路径 → `ebi lint` **静态报错**(不是运行时才发现)
 - 引用了尚未执行的 step → `ebi lint` 报错
@@ -141,6 +145,12 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 - 要输出字面的 `{{`,写 `\{\{`
 - `steps.X.out.Y` 只承载 JSON-可序列化的值。窗口句柄、COM 对象这类资源
   **不经过模板**,走 `$Ctx.Session`(STEP-CONTRACT §3.4)
+- **嵌套模板禁止**(`{{profile.pages.{{vars.x}}.url}}` ✗)。「按变量选 page」
+  的需求由顶层 `page` 绑定 + CLI `--page` 覆盖满足,不靠模板运算
+- 经 `{{profile...}}` / `{{page...}}` 取出的**子树**(map / list)在传给 step
+  前会被**递归求值一次** —— 所以 rules.json 里可以写 `{{run.window}}`,
+  它在规则表传给 `verify.assert` 时解析。只求值一层,求值结果里再出现的
+  `{{}}` 不会二次展开(防注入:页面文本里的花括号永远不会被求值)
 
 ---
 
@@ -282,6 +292,7 @@ step 返回的 `warnings`(STEP-CONTRACT §3.1b)不触发 onError,但 runner 必�
   "title": "転送状態ページの証跡取得",
   "version": "1.0.0",
   "profile": "host-open",
+  "page": "transferStatus",
 
   "vars": { "side": "before" },
 
@@ -294,8 +305,8 @@ step 返回的 `warnings`(STEP-CONTRACT §3.1b)不触发 onError,但 runner 必�
 
   "setup": [
     { "use": "human.prepare",
-      "with": { "message": "{{profile.pages.transferStatus.openHint}}",
-                "url":     "{{profile.pages.transferStatus.url}}" } },
+      "with": { "message": "{{page.openHint}}",
+                "url":     "{{page.url}}" } },
     { "use": "browser.ensure" },
     { "use": "screen.fit_window",
       "with": { "width":  "{{profile.window.width}}",
@@ -305,34 +316,34 @@ step 返回的 `warnings`(STEP-CONTRACT §3.1b)不触发 onError,但 runner 必�
   "each": [
     { "use": "browser.focus_body" },
 
-    { "use": "browser.tab_to", "with": { "count": "{{profile.pages.transferStatus.tabsToForm}}" } },
+    { "use": "browser.tab_to", "with": { "count": "{{page.tabsToForm}}" } },
     { "use": "browser.submit" },
-    { "use": "browser.tab_to", "with": { "count": "{{profile.pages.transferStatus.tabsToInput}}" } },
+    { "use": "browser.tab_to", "with": { "count": "{{page.tabsToInput}}" } },
     { "use": "browser.fill",   "with": { "text": "{{item.key}}" } },
     { "use": "browser.submit" },
 
     { "id": "page", "use": "browser.wait_for",
       "with": { "contains":   "{{item.key}}",
-                "timeoutSec": "{{profile.pages.transferStatus.timeoutSec}}",
-                "archiveTo":  "capture/{{vars.side}}_transferStatus/{{item.keySafe}}.txt" } },
+                "timeoutSec": "{{page.timeoutSec}}",
+                "archiveTo":  "capture/{{vars.side}}_{{page.name}}/{{item.keySafe}}.txt" } },
 
     { "use": "browser.assert_page",
       "with": { "text": "{{steps.page.out.text}}",
-                "fingerprint": "{{profile.pages.transferStatus.fingerprint}}" } },
+                "fingerprint": "{{page.fingerprint}}" } },
 
     { "id": "shot", "use": "screen.capture_window",
-      "with": { "saveAs": "capture/{{vars.side}}_transferStatus/{{item.keySafe}}.png" } },
+      "with": { "saveAs": "capture/{{vars.side}}_{{page.name}}/{{item.keySafe}}.png" } },
 
     { "use": "screen.crop",
       "with": { "path":  "{{steps.shot.out.path}}",
-                "left":  "{{profile.pages.transferStatus.crop.left}}",
-                "top":   "{{profile.pages.transferStatus.crop.top}}",
-                "right": "{{profile.pages.transferStatus.crop.right}}",
-                "bottom":"{{profile.pages.transferStatus.crop.bottom}}" } },
+                "left":  "{{page.crop.left}}",
+                "top":   "{{page.crop.top}}",
+                "right": "{{page.crop.right}}",
+                "bottom":"{{page.crop.bottom}}" } },
 
     { "id": "rec", "use": "verify.parse_text",
       "with": { "text":    "{{steps.page.out.text}}",
-                "grammar": "{{profile.grammar.transferStatus}}" } },
+                "grammar": "{{page.grammar}}" } },
 
     { "id": "row", "use": "verify.match_record",
       "with": { "records": "{{steps.rec.out.records}}",
@@ -343,7 +354,7 @@ step 返回的 `warnings`(STEP-CONTRACT §3.1b)不触发 onError,但 runner 必�
 
     { "id": "verdict", "use": "verify.assert",
       "with": { "record": "{{steps.row.out.record}}",
-                "rules":  "{{profile.rules.transferStatus}}" } },
+                "rules":  "{{page.rules}}" } },
 
     { "use": "human.gate",
       "when": "steps.verdict.out.code == unknown",
@@ -360,8 +371,13 @@ step 返回的 `warnings`(STEP-CONTRACT §3.1b)不触发 onError,但 runner 必�
 }
 ```
 
-**注意这份 JSON 里没有一个具体系统的名字。** 全部在 `profile` 和 `vars` 里。
-换一份工作,这份文件基本能原样抄。
+**注意这份 JSON 里没有一个具体系统的名字**,而且页面身份只出现在顶层
+`page` 绑定这**一处** —— 步骤里全是 `{{page.*}}`。所以:
+
+- 同型的另一个页面(比如 `fileList`)可以 `ebi run --page fileList` 直接复用
+  这条工作流,或复制后只改一行
+- 换一份工作,这份文件基本能原样抄 —— 要是没有 `page` 间接层,每条工作流里
+  会散布十几处 `profile.pages.<名字>.` 路径段,复制改名的老病就回来了
 
 ---
 
@@ -382,6 +398,10 @@ step 返回的 `warnings`(STEP-CONTRACT §3.1b)不触发 onError,但 runner 必�
   (setup 算在前)都有 step `provides` 它(STEP-CONTRACT §3.4)
 - [ ] `onError.byFailure` 的键都在该 step manifest 的 `failures` 里(P0-R5)
 - [ ] 路径形态的模板值里用了裸 `{{item.key}}` → **警告**,提示用 `{{item.keySafe}}`
+- [ ] 用了 `{{page.*}}` 但顶层没有 `page` 绑定 → 错误;`page` 指向的 page 在
+  profile 的 pages.json 里存在 → 否则错误(P0-R6)
+- [ ] 引用了 `{{run.window}}` 但既无 CLI `--window` 约定也无前置 `human.input`
+  写入 → **警告**(P0-R6)
 
 ---
 

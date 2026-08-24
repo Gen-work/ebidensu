@@ -134,7 +134,7 @@
   `internal_error` 声明为保留失败 id,manifest 不必列出。
 - **完成**:两份 spec 更新;P1-30 的「未识别行」改用 warnings 表达
 
-### [ ] P0-R6 [规格修订] 模板 page 绑定 + profile 内模板的求值规则
+### [x] P0-R6 [规格修订] 模板 page 绑定 + profile 内模板的求值规则 —— 已完成(2026-08-24)
 - **估** 60min | **依赖** P0-R1 | **改** `spec/WORKFLOW-SCHEMA.md` §1,§4;`spec/PROFILE-SCHEMA.md` §5
 - **问题**:(a) 模板禁止嵌套(这条是对的),但代价是 workflow 里只能写死
   `{{profile.pages.list.url}}` 这样的完整路径 —— 换一个 page 就要全文替换路径段,
