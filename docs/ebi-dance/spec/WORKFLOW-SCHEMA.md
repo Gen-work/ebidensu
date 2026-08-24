@@ -26,12 +26,12 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
 ```jsonc
 {
-  "id":      "before.list.capture",
+  "id":      "before.transferStatus.capture",
   "title":   "転送状態ページの証跡取得",
   "version": "1.0.0",
   "profile": "host-open",
 
-  "vars":    { "side": "before", "role": "list" },
+  "vars":    { "side": "before" },
 
   "source":  { ... },      // 遍历什么,见 §3
   "onError": { ... },      // 默认容错策略,见 §6
@@ -84,7 +84,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 "source": {
   "table":  "worklist",
   "select": {
-    "field":       "before_list",
+    "field":       "before_transferStatus",
     "pendingWhen": "!= ok"
   },
   "groupBy": "group",       // 可选:按此列分组,见 §7
@@ -131,7 +131,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 ### 4.2 规则
 
 - **只有取值和字符串拼接**,没有运算:
-  `"capture/{{vars.side}}_{{vars.role}}/{{item.key}}.png"` ✓
+  `"capture/{{vars.side}}_transferStatus/{{item.key}}.png"` ✓
   `"{{item.count + 1}}"` ✗
 - 引用不存在的路径 → `ebi lint` **静态报错**(不是运行时才发现)
 - 引用了尚未执行的 step → `ebi lint` 报错
@@ -227,7 +227,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
 ```jsonc
 { "use": "flow.checkpoint",
-  "with": { "field": "before_list", "value": "{{steps.verdict.out.code}}" } }
+  "with": { "field": "before_transferStatus", "value": "{{steps.verdict.out.code}}" } }
 ```
 
 写工作清单 + 写 ledger。**这是断点续跑的唯一依据。**
@@ -255,24 +255,24 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
 ```jsonc
 {
-  "id": "before.list.capture",
+  "id": "before.transferStatus.capture",
   "title": "転送状態ページの証跡取得",
   "version": "1.0.0",
   "profile": "host-open",
 
-  "vars": { "side": "before", "role": "list" },
+  "vars": { "side": "before" },
 
   "source": {
     "table": "worklist",
-    "select": { "field": "before_list", "pendingWhen": "!= ok" }
+    "select": { "field": "before_transferStatus", "pendingWhen": "!= ok" }
   },
 
   "onError": { "policy": "ask" },
 
   "setup": [
     { "use": "human.prepare",
-      "with": { "message": "{{profile.pages.list.openHint}}",
-                "url":     "{{profile.pages.list.url}}" } },
+      "with": { "message": "{{profile.pages.transferStatus.openHint}}",
+                "url":     "{{profile.pages.transferStatus.url}}" } },
     { "use": "browser.ensure" },
     { "use": "screen.fit_window",
       "with": { "width":  "{{profile.window.width}}",
@@ -282,34 +282,34 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
   "each": [
     { "use": "browser.focus_body" },
 
-    { "use": "browser.tab_to", "with": { "count": "{{profile.pages.list.tabsToForm}}" } },
+    { "use": "browser.tab_to", "with": { "count": "{{profile.pages.transferStatus.tabsToForm}}" } },
     { "use": "browser.submit" },
-    { "use": "browser.tab_to", "with": { "count": "{{profile.pages.list.tabsToInput}}" } },
+    { "use": "browser.tab_to", "with": { "count": "{{profile.pages.transferStatus.tabsToInput}}" } },
     { "use": "browser.fill",   "with": { "text": "{{item.key}}" } },
     { "use": "browser.submit" },
 
     { "id": "page", "use": "browser.wait_for",
       "with": { "contains":   "{{item.key}}",
-                "timeoutSec": "{{profile.pages.list.timeoutSec}}",
-                "archiveTo":  "capture/{{vars.side}}_{{vars.role}}/{{item.key}}.txt" } },
+                "timeoutSec": "{{profile.pages.transferStatus.timeoutSec}}",
+                "archiveTo":  "capture/{{vars.side}}_transferStatus/{{item.key}}.txt" } },
 
     { "use": "browser.assert_page",
       "with": { "text": "{{steps.page.out.text}}",
-                "fingerprint": "{{profile.pages.list.fingerprint}}" } },
+                "fingerprint": "{{profile.pages.transferStatus.fingerprint}}" } },
 
     { "id": "shot", "use": "screen.capture_window",
-      "with": { "saveAs": "capture/{{vars.side}}_{{vars.role}}/{{item.key}}.png" } },
+      "with": { "saveAs": "capture/{{vars.side}}_transferStatus/{{item.key}}.png" } },
 
     { "use": "screen.crop",
       "with": { "path":  "{{steps.shot.out.path}}",
-                "left":  "{{profile.crop.list.left}}",
-                "top":   "{{profile.crop.list.top}}",
-                "right": "{{profile.crop.list.right}}",
-                "bottom":"{{profile.crop.list.bottom}}" } },
+                "left":  "{{profile.pages.transferStatus.crop.left}}",
+                "top":   "{{profile.pages.transferStatus.crop.top}}",
+                "right": "{{profile.pages.transferStatus.crop.right}}",
+                "bottom":"{{profile.pages.transferStatus.crop.bottom}}" } },
 
     { "id": "rec", "use": "verify.parse_text",
       "with": { "text":    "{{steps.page.out.text}}",
-                "grammar": "{{profile.grammar.list}}" } },
+                "grammar": "{{profile.grammar.transferStatus}}" } },
 
     { "id": "row", "use": "verify.match_record",
       "with": { "records": "{{steps.rec.out.records}}",
@@ -319,7 +319,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
     { "id": "verdict", "use": "verify.assert",
       "with": { "record": "{{steps.row.out.record}}",
-                "rules":  "{{profile.rules.list}}" } },
+                "rules":  "{{profile.rules.transferStatus}}" } },
 
     { "use": "human.gate",
       "when": "steps.verdict.out.code == unknown",
@@ -327,11 +327,11 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
                 "evidence": "{{steps.shot.out.path}}" } },
 
     { "use": "flow.checkpoint",
-      "with": { "field": "before_list", "value": "{{steps.verdict.out.code}}" } }
+      "with": { "field": "before_transferStatus", "value": "{{steps.verdict.out.code}}" } }
   ],
 
   "teardown": [
-    { "use": "progress.status", "with": { "field": "before_list" } }
+    { "use": "progress.status", "with": { "field": "before_transferStatus" } }
   ]
 }
 ```

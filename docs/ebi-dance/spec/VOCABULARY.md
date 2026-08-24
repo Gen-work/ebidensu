@@ -28,6 +28,7 @@
 | `owner` | 清单的归属人(用于分工筛选) | `Owner` |
 | `deliverable` | 交付物工作簿 | `Excel_NAME` 指向的证据簿 |
 | `side` | 对照面。profile 声明有哪几面及显示名 | `GIFT` / `GFIX` |
+| `page` | **命名页面实例**:一个具体画面。pages.json 按 page 名声明,每个 page 有一个 role(结构)和显示名 | HM 処理結果 / MQ転送状態 / Jenkins ファイル一覧(各是一个 page) |
 | `capture` | 一次证据抓取的产物(PNG + 页面文本) | `snap\<folder>\<id>.png` / `.txt` |
 | `verdict` | 一次判定的结论 | `GIFT_MQ_snap` 的 0/1/2 |
 | `profile` | 一个项目的全部数据化知识 | `verify_config.json` + 散落的硬编码 |
@@ -71,6 +72,12 @@
 > **修正:role 描述页面的「形状」,即"怎么在这页上找到东西";
 > 在一页上做几件事是 action 的事,可以有任意多个。**
 
+> **v3 修订(开工前评审,P0-R1)**:role 不能当唯一键。一个项目**同一侧可以有
+> 多个同型页面** —— 当前工作 before 侧就同时有 MQ転送状態和 Jenkins ファイル
+> 一覧两个 `list` 页。所以引入 **page(命名页面实例)**:pages.json /
+> grammar.json / rules.json / 工作流 id / capture 目录一律按 **page 名**索引;
+> role 只是 page 的一个属性,决定「用哪套定位 / 解析机制」。
+
 ### 2.1 role = 页面的结构
 
 | role | 结构特征 | 定位方式 | 例子 |
@@ -112,6 +119,10 @@ form 页:  input → navigate
 
 按系统叫法分 role,会让三个同型的东西变成三套代码 —— 这正是旧工具犯的错。
 
+但**同型 ≠ 同一**:它们是三个不同的 **page**(`transferStatus` / `fileList` /
+`jobList`),共享 role `list` 的机制,各有自己的 pages.json 条目、grammar 和
+rules。role 管机制,page 管身份。
+
 ### 2.4 拿不准怎么办
 
 问的**不是**「我要拿什么」(那是 action),而是:
@@ -129,11 +140,16 @@ form 页:  input → navigate
 同一页多次 `capture` 时,产物加 tag 区分:
 
 ```
-capture/<side>_<role>/<key>.png            默认(单张)
-capture/<side>_<role>/<key>__<tag>.png     多张时,tag 由工作流指定
+capture/<side>_<page>/<key>.png            默认(单张)
+capture/<side>_<page>/<key>__<tag>.png     多张时,tag 由工作流指定
 ```
 
-例:`capture/before_list/ABC123__row.png`、`capture/before_list/ABC123__total.png`
+例:`capture/before_transferStatus/ABC123__row.png`、
+`capture/before_transferStatus/ABC123__total.png`
+
+目录按 **page** 分,不按 role 分 —— before 侧的転送状態截图和ファイル一覧
+截图是两个目录(`before_transferStatus` / `before_fileList`),按 role 分
+它们会挤进同一个 `before_list` 互相覆盖。
 
 ---
 
@@ -165,20 +181,26 @@ capture/<side>_<role>/<key>__<tag>.png     多张时,tag 由工作流指定
 ### 3.2 工作流 id 的组成
 
 ```
-<side>.<role>.<verb>       页面相关的
+<side>.<page>.<verb>       页面相关的
 <side>.<verb>              工作簿 / 文件相关的(没有特定页面)
 ```
 
+用 **page 名**,不用 role —— 否则 `GiftMqSnap` 和 `GiftJenkins` 都叫
+`before.list.capture`,直接撞名。page 名要中性(说结构 / 职能,不说系统名):
+`transferStatus` 而不是 `mq`,`fileList` 而不是 `jenkins` —— 系统名只出现在
+pages.json 的 `title`(显示名)里。
+
 | 新 id | 旧 phase |
 |-------|----------|
-| `before.record.capture` | `GiftHmSnap` |
-| `before.list.capture` | `GiftMqSnap` |
-| `after.record.capture` | `GfixHmSnap` |
-| `after.list.collect` | `GfixLogDownload`(在 list 页上点下载) |
+| `before.procResult.capture` | `GiftHmSnap` |
+| `before.transferStatus.capture` | `GiftMqSnap` |
+| `before.fileList.capture` | `GiftJenkins` |
+| `after.procResult.capture` | `GfixHmSnap` |
+| `after.jobList.collect` | `GfixLogDownload`(在 jobList 页上点下载) |
 | `before.compose` | `ReplaceGift` |
 | `before.annotate` | `MarkGift` |
 
-只有一面时省略 `side`:`list.capture`。
+只有一面时省略 `side`:`transferStatus.capture`。
 
 一条工作流可以同时做几件事(在 list 页上既截图又下载),这时按**主要目的**
 命名,或者拆成两条工作流 —— 拆开的好处是可以分别重跑。
@@ -187,14 +209,14 @@ capture/<side>_<role>/<key>__<tag>.png     多张时,tag 由工作流指定
 
 ```
 worklist.csv                          工作清单
-capture/<side>_<role>/<key>.png       截图
-capture/<side>_<role>/<key>.txt       页面文本(与截图同时归档)
+capture/<side>_<page>/<key>.png       截图
+capture/<side>_<page>/<key>.txt       页面文本(与截图同时归档)
 run/<runId>/trace.jsonl               本次运行的完整记录
 run/<runId>/ledger.jsonl              断点续跑用的完成台账
 .ebi/                                 本机状态(不进 git)
 ```
 
-旧的 `snap/GIFT_MQ/<id>.png` → 新的 `capture/before_list/<key>.png`。
+旧的 `snap/GIFT_MQ/<id>.png` → 新的 `capture/before_transferStatus/<key>.png`。
 
 ---
 
@@ -222,7 +244,7 @@ run/<runId>/ledger.jsonl              断点续跑用的完成台账
 | 要改 | 不用改 |
 |------|--------|
 | `profiles/<新名>/vocabulary.json`(side 名、role 显示名、列名映射) | `modules/**` 全部 step |
-| `profiles/<新名>/pages.json`(每个 role 绑哪个 URL / 页面指纹 / Tab 序列) | `kernel/**` |
+| `profiles/<新名>/pages.json`(每个 page 的 role / URL / 页面指纹 / Tab 序列) | `kernel/**` |
 | `profiles/<新名>/rules.json`(判定规则表) | `docs/**` |
 | `profiles/<新名>/worklist.json`(清单列 schema、主键、位定义) | 多数 `workflows/*.json`(能直接抄) |
 | `profiles/<新名>/layout.json`(工作簿位置、画框坐标) | |
@@ -244,11 +266,11 @@ run/<runId>/ledger.jsonl              断点续跑用的完成台账
 | `JOB_NAME` | `group` |
 | `Excel_NAME` | `deliverable` |
 | `GIFT` / `GFIX` | `before` / `after`(profile 声明) |
-| `HM` 画面 | role `record` |
-| `MQ` 転送状態 | role `list` |
-| `Jenkins` 文件列表 | role `list` |
-| `GoAnywhere` 作业一览 | role `list` |
-| Jenkins 下载 / GFIX 日志下载 | 在 `list` 页上的 `download` action |
+| `HM` 画面 | page `procResult`(role `record`) |
+| `MQ` 転送状態 | page `transferStatus`(role `list`) |
+| `Jenkins` 文件列表 | page `fileList`(role `list`) |
+| `GoAnywhere` 作业一览 | page `jobList`(role `list`) |
+| Jenkins 下载 / GFIX 日志下载 | 在 `fileList` / `jobList` 页上的 `download` action |
 | 検索画面 | role `form` |
 | `snap/` | `capture/` |
 | phase | workflow |

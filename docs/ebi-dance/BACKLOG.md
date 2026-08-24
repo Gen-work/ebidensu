@@ -50,7 +50,7 @@
 
 ## P0-R — 规格修订(评审发现的契约洞,全部是改文本,先于任何写码卡)
 
-### [ ] P0-R1 [规格修订] page 身份与 role 解耦
+### [x] P0-R1 [规格修订] page 身份与 role 解耦 —— 已完成(2026-08-24)
 - **估** 60min | **依赖** — | **改** `spec/PROFILE-SCHEMA.md` §2,3,4,5;`spec/VOCABULARY.md` §2,3;`spec/WORKFLOW-SCHEMA.md` §8
 - **问题**:pages.json / grammar.json / rules.json / 工作流 id / capture 目录全都拿
   **role 当唯一键**,但一个项目同一侧可以有多个同型页面 —— 当前工作 before 侧

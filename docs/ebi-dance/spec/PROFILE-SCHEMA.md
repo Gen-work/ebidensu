@@ -22,10 +22,10 @@
 
 ```
 profiles/<name>/
-  vocabulary.json     side 名、role 显示名、列名映射
-  pages.json          每个 role 绑哪个页面:URL / 指纹 / 导航 / 超时
-  grammar.json        页面文本 → records 的解析规则
-  rules.json          判定规则表
+  vocabulary.json     side 名(显示名)、列名映射
+  pages.json          命名页面实例(page):role、显示名、URL / 指纹 / 导航 / 超时
+  grammar.json        页面文本 → records 的解析规则(按 page 名)
+  rules.json          判定规则表(按 page 名)
   worklist.json       清单列 schema、主键、变体规则、checkpoint 位
   layout.json         工作簿位置、画框坐标(有 compose/annotate 才需要)
   calibration.json    降级层的阈值和有效期(用到 fallback 才需要)
@@ -46,12 +46,6 @@ profiles/<name>/
     "before": "移行前",
     "after":  "移行後"
   },
-  "roles": {
-    "query":  "検索画面",
-    "record": "処理結果画面",
-    "list":   "転送状態一覧",
-    "artifact": "ファイル一覧"
-  },
   "columns": {
     "key":         "Correl_ID_S",
     "group":       "JOB_NAME",
@@ -61,8 +55,11 @@ profiles/<name>/
 }
 ```
 
-`sides` / `roles` 的值只用于**显示**(`ebi explain` 会写成 `list(転送状態一覧)`)。
-工作流里永远只出现左边的中性名。
+`sides` 的值只用于**显示**。工作流里永远只出现中性名。
+
+> **v3 修订(P0-R1)**:初版还有一个 `roles` 显示名映射,已删 —— 页面的显示名
+> 归 pages.json 每个 **page** 条目自己的 `title`(`ebi explain` 写成
+> `transferStatus(MQ転送状態一覧)`);role 是结构枚举,不需要每个项目起显示名。
 
 `columns` 把中性名映射到清单 CSV 的实际列名。**`{{item.key}}` 就是靠这个解析的。**
 
@@ -70,11 +67,14 @@ profiles/<name>/
 
 ## 3. `pages.json`
 
-每个 role 一个条目。
+每个 **page(命名页面实例)** 一个条目,**键是 page 名**。
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
+    "role":     "list",
+    "title":    "MQ転送状態一覧",
+
     "url":        "https://<host>/path/index.html",
     "openHint":   "ブラウザで転送状態ページを開いてください",
 
@@ -88,10 +88,26 @@ profiles/<name>/
     "tabsToForm":  1,
     "tabsToInput": 4,
     "timeoutSec":  12,
-    "pollMs":      800
+    "pollMs":      800,
+    "crop":        { "left": 6, "top": 6, "right": 6, "bottom": 6 }
+  },
+
+  "fileList": {
+    "role":  "list",
+    "title": "受信ファイル一覧",
+    "url":   "https://<host2>/files/",
+    "fingerprint": { "ok": ["ファイル名", "更新日時"] }
   }
 }
 ```
+
+- `role` 决定用哪套定位 / 解析机制(VOCABULARY §2.1 的 5 个枚举);
+  `title` 是显示名,系统名只出现在这里。
+- **同一个 role 可以有任意多个 page**(上例两个都是 `list`)—— 这正是引入
+  page 的原因:role 当键会让同侧的第二个同型页面无处安放,而当前工作
+  before 侧就同时有転送状態和ファイル一覧。
+- `crop` 这类**页面级参数**也放在 page 条目里,随 page 一起换,
+  工作流经模板引用(见 WORKFLOW-SCHEMA §4)。
 
 ### 3.1 `fingerprint` — 页面指纹
 
@@ -113,19 +129,20 @@ profiles/<name>/
 ## 4. `grammar.json`
 
 页面文本(`Ctrl+A` 得到的整页纯文本)→ 结构化 records。
+**键是 page 名**,与 pages.json 一一对应。
 
 支持三种解析器,够覆盖旧仓库里全部三套手写解析:
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
     "parser": "delimited",
     "delimiter": "\t",
     "rowWhen": { "field": 0, "matches": "^\\d+$" },
     "fields": ["jobNo", "key", "status", "recvTime", "count", "rtncd"]
   },
 
-  "record": {
+  "procResult": {
     "parser": "labeled",
     "pairs": {
       "status":   { "after": "状態", "take": "line" },
@@ -155,7 +172,7 @@ profiles/<name>/
 得多:
 
 ```
-ebi grammar tune capture/before_list/ABC123.txt --profile host-open --role list
+ebi grammar tune capture/before_transferStatus/ABC123.txt --profile host-open --page transferStatus
 ```
 
 循环:
@@ -202,11 +219,11 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
 
 ## 5. `rules.json`
 
-判定规则表。`verify.assert` 按顺序跑,**第一条不满足的决定结论**。
+判定规则表。**键是 page 名。**`verify.assert` 按顺序跑,**第一条不满足的决定结论**。
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
     "rules": [
       { "field": "status",   "op": "equals", "value": "正常終了", "else": "ng",
         "message": "状態が正常終了ではない" },
@@ -272,8 +289,8 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
     { "name": "Correl_ID_S",  "role": "key" },
     { "name": "JOB_NAME",     "role": "key" },
     { "name": "Excel_NAME",   "role": "deliverable" },
-    { "name": "before_list",  "role": "verdict", "default": "" },
-    { "name": "before_record","role": "verdict", "default": "" },
+    { "name": "before_transferStatus", "role": "verdict", "default": "" },
+    { "name": "before_procResult",     "role": "verdict", "default": "" },
     { "name": "composed",     "role": "bitmask",
       "bits": { "before": 1, "after": 2, "compare": 4 } },
     { "name": "note",         "role": "text" }
@@ -393,10 +410,10 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
   },
   "anchor": { "column": "A", "matchesKey": true },
   "pictures": {
-    "before_list": { "offsetX": 0, "offsetY": 20, "scale": 1.0 }
+    "before_transferStatus": { "offsetX": 0, "offsetY": 20, "scale": 1.0 }
   },
   "boxes": {
-    "before_list": [
+    "before_transferStatus": [
       { "offsetX": 167.9, "offsetY": 176.9, "width": 528.8, "height": 63,
         "baseRow": 2, "rowHeight": 63.8 }
     ]
@@ -432,22 +449,22 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
 
 ```
 fixtures/
-  list-ok.txt          正常页面的 Ctrl+A 文本(已脱敏)
-  list-ng-rtncd.txt    返回码非 0
-  list-empty.txt       查询结果为空
-  list-expired.txt     会话超时
-  list-multi-row.txt   同一 key 多行
+  transferStatus-ok.txt          正常页面的 Ctrl+A 文本(已脱敏)
+  transferStatus-ng-rtncd.txt    返回码非 0
+  transferStatus-empty.txt       查询结果为空
+  transferStatus-expired.txt     会话超时
+  transferStatus-multi-row.txt   同一 key 多行
 ```
 
-每个 fixture 配一个期望结论,组成单测:
+文件名前缀是 **page 名**。每个 fixture 配一个期望结论,组成单测:
 
 ```jsonc
 // fixtures/expected.json
 {
-  "list-ok.txt":        { "verdict": "ok" },
-  "list-ng-rtncd.txt":  { "verdict": "ng", "message": "リターンコードが0以外" },
-  "list-empty.txt":     { "verdict": "unknown" },
-  "list-multi-row.txt": { "verdict": "ok", "matchedRow": 3 }
+  "transferStatus-ok.txt":        { "verdict": "ok" },
+  "transferStatus-ng-rtncd.txt":  { "verdict": "ng", "message": "リターンコードが0以外" },
+  "transferStatus-empty.txt":     { "verdict": "unknown" },
+  "transferStatus-multi-row.txt": { "verdict": "ok", "matchedRow": 3 }
 }
 ```
 
