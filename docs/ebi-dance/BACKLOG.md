@@ -85,7 +85,7 @@
 - **完成**:STEP-CONTRACT 新增 Session 一节;P0-08 的三步链(ensure→capture)能够
   不靠全局变量、不靠跨段 steps 引用写出来
 
-### [ ] P0-R3 [规格修订] 断点续跑 = ledger 输出重放 + setup 重跑
+### [x] P0-R3 [规格修订] 断点续跑 = ledger 输出重放 + setup 重跑 —— 已完成(2026-08-24)
 - **估** 60min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §6;`spec/WORKFLOW-SCHEMA.md` §7
 - **问题**:「重跑按 ledger 跳过已完成的 (item, step)」—— 但跳过 `shot` 之后,
   下一步 `screen.crop` 引用的 `{{steps.shot.out.path}}` 从哪来?规格没说。

@@ -302,19 +302,49 @@ OCR 引擎版本可能给出不同结果。
 
 ---
 
-## 6. 幂等与 checkpoint
+## 6. 幂等、ledger 与断点续跑(评审修订 P0-R3)
 
-`idempotent = $true` 的 step,runner 在断点续跑时可以安全重放。
+ledger 是断点续跑的唯一依据,写 `run/<runId>/ledger.jsonl`。
+粒度是 **(item, step)**,不是 (item);`once: "group"` 的 step 是 **(group, step)**。
+item 字段用 `keySafe`(PROFILE-SCHEMA §6.1b)。
 
-`idempotent = $false` 的例子:`file.move`(源文件已经不在了)、
-`browser.download_link`(会重复下载)。这类 step 必须紧跟一个
-`flow.checkpoint`,让 runner 知道它已经做过了。
-
-**checkpoint 的粒度是 (item, step),不是 (item)。** ledger 记录:
+每条记录**连同 outputs 一起持久化**:
 
 ```json
-{"runId":"...","item":"ABC123","step":"shot","status":"ok","ts":"..."}
+{"runId":"...","item":"ABC123__JOB_A","step":"shot","status":"ok",
+ "out":{"path":"capture/before_transferStatus/ABC123__JOB_A.png"},"ts":"..."}
 ```
+
+这是 outputs 必须 JSON-可序列化(§3.1 / §3.4)的第二个原因。
+
+### 6.1 resume 的四条规则
+
+1. **`setup` / `teardown` 每次 resume 都重跑**(Session 是空的,setup 负责重建
+   资源,§3.4)→ setup 里的 step 必须幂等
+2. `each` 里已完成的 (item, step) 按 ledger **跳过**,其 outputs 从 ledger
+   **重放**进模板作用域 —— 后续 step 的 `{{steps.X.out.Y}}` 照常解析,
+   不需要真的重新执行 X
+3. `once: "group"` 的 step:组内任何 item 上 resume,其 outputs 同样重放
+4. `idempotent = $false` 的 step(`file.move`、`browser.download_link`)规则
+   相同 —— ledger 里有就跳过;**没有就会重新执行**,所以这类 step 必须紧跟
+   `flow.checkpoint`,把「已经做过」尽快落进 ledger
+
+### 6.2 推演例子(中断发生在 shot 与 crop 之间)
+
+item `ABC123__JOB_A` 已完成 `page_text`(留档 txt)和 `shot`(存了 PNG),
+操作员 Ctrl+C,晚些时候重跑同一条 workflow:
+
+1. `setup` 重跑:`browser.ensure` 重新注册 `session:browser`(旧句柄早已失效)
+2. 前面已 checkpoint 的 item 被 `source.select` 直接过滤(字段已是 `ok`)
+3. 轮到 `ABC123__JOB_A`:`page_text`、`shot` 在 ledger 里 → 跳过,不再打键盘、
+   不再截图;它们的 outputs(含 `steps.shot.out.path`)从 ledger 重放
+4. `crop` 是这个 item 第一个真正执行的 step,`{{steps.shot.out.path}}`
+   解析到重放的路径,照常裁剪
+5. 之后照常直到 `flow.checkpoint`
+
+**没有这套规则时的两种典型返工**:重放缺失 → crop 解析不到 shot 的输出,只能
+整 item 重跑(重复截图,P2-06 验收直接不过);Session 不重建 → 跳过 setup 的
+「优化」让 capture 拿着失效句柄截黑屏。
 
 ---
 

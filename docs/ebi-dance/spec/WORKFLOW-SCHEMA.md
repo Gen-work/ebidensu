@@ -252,6 +252,15 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
 子工作流只有 `each` 段的内容会被内联。用于抽出重复片段。
 
+### 7.5 断点续跑怎么工作(评审修订 P0-R3)
+
+- `flow.checkpoint` 写工作清单 + 写 ledger;ledger 的粒度是 **(item, step)**
+  (`once: "group"` 为 (group, step)),**每条连同该 step 的 outputs 持久化**
+- resume 时:`setup` / `teardown` **重跑**(重建 Session 资源);`each` 里
+  已完成的 (item, step) 跳过,outputs 从 ledger **重放**,所以后续 step 的
+  `{{steps.X.out.Y}}` 引用照常成立
+- 完整规则和推演例子见 `STEP-CONTRACT.md` §6
+
 ---
 
 ## 8. 完整示例
