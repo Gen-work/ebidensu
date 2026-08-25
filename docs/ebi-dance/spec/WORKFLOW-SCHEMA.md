@@ -155,7 +155,10 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 - **`$Ctx.Session` 里的资源(窗口句柄、Excel COM 对象)不能被模板引用。**
   只有 `outputs` 声明的、JSON-可序列化的字段才能进 `{{steps.X.out.Y}}`
   (`STEP-CONTRACT.md` §3.4,P0-R2)。需要用到某个 step 注册的窗口/工作簿,
-  在 `with` 里用它注册时的名字(`with.as` 的值)引用,不走模板
+  在消费方 `type='session'` 的参数里填**这条工作流自己起的名字**(某个
+  更早的 `with.as` 用过的字符串字面量),不走模板 —— manifest 的
+  `provides`/`needs` 声明的是资源*种类*(如 `window`),具体叫什么名字
+  永远由工作流决定,不是 manifest 写死的
 - **禁止嵌套模板**(`{{profile.pages.{{vars.page}}.url}}` 这种写法不合法)
   ——这正是为什么需要 `page` 顶层绑定 + `{{page.X}}` 简写,而不是让
   `vars` 里存一个 page 名再拼进路径
@@ -448,10 +451,13 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 
 其余几处值得注意:
 
-- `browser.ensure` 用 `with.as` 把窗口句柄注册进 `$Ctx.Session['mainWindow']`,
-  后续需要这个窗口的 step(`screen.fit_window`、`browser.focus_body`、
-  `screen.capture_window`)都用 `with.window: "mainWindow"` 引用同一个
-  名字,不是各自重新去找前台窗口(`STEP-CONTRACT.md` §3.4,P0-R2)。
+- `browser.ensure` 的 manifest 声明 `provides = @('window')`(资源
+  **种类**,不是名字);这条工作流用 `with.as: "mainWindow"` 把它注册
+  进 `$Ctx.Session['mainWindow']`——`mainWindow` 是这条工作流自己起的
+  名字,换一条工作流完全可以叫别的。后续需要这个窗口的 step
+  (`screen.fit_window`、`browser.focus_body`、`screen.capture_window`)
+  在自己 `type='session', sessionKind='window'` 的 `window` 参数里填同一个
+  名字字符串,不是各自重新去找前台窗口(`STEP-CONTRACT.md` §3.4,P0-R2)。
 - `browser.fill` / `browser.wait_for` 的 `contains` 用的是
   `{{item.Correl_ID_S}}`(具体列),不是 `{{item.key}}`——要打进搜索框、
   要在页面里找的是这一列的原始值,不是复合键拼出来的显示字符串
@@ -479,7 +485,10 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 - [ ] 有 `destructive` 且 `confirm: false` → **警告**,列出位置
 - [ ] `profile` 字段指向的 profile 存在且能加载
 - [ ] `page` 字段(有的话)指向的 page 在 `pages.json` 里存在(P0-R6)
-- [ ] `needs = @('session:X')` 的 step,前面有 `provides = @('X')` 的 step 跑过(P0-R2)
+- [ ] 每个 `type='session'` 参数的字面量名字,都能在它前面找到一个
+      `with.as` 等于这个名字、且目标 step 的 `provides` 含匹配种类的调用
+      (种类配平,不是名字硬编码在 manifest 里比对,见 `STEP-CONTRACT.md`
+      §3.4,P0-R2)
 - [ ] `onError.byFailure` 里 `policy: retry` 只用在 `transient = $true` 的失败 id 上(P0-R5)
 
 ---

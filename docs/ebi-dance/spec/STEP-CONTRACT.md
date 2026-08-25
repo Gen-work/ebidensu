@@ -65,7 +65,7 @@ $Manifest = @{
   # --- 契约 ---
   effects  = 'ui'                # pure | read | ui | write | destructive
   needs    = @('foreground')     # 运行前置条件 / Session 资源依赖,见 §4、§3.4
-  provides = @()                 # 本 step 会注册进 $Ctx.Session 的资源名,见 §3.4
+  provides = @()                 # 本 step 能注册进 $Ctx.Session 的资源种类,见 §3.4
   idempotent = $true             # 重复执行是否安全
 
   # --- 输入 ---
@@ -100,8 +100,8 @@ $Manifest = @{
 | `summary` | ✓ | **一句话,英文,不超过 80 字符**。这是 Agent 挑 step 的主要依据 |
 | `tier` | ✓ | `core` 或 `fallback`(见 §5) |
 | `effects` | ✓ | 副作用等级,见 VOCABULARY §4 |
-| `needs` | | 前置条件数组,见 §4;`session:<名>` 形式声明依赖某个已注册的 Session 资源,见 §3.4 |
-| `provides` | | 本 step 会注册进 `$Ctx.Session` 的资源名数组,见 §3.4。空则 `@()` |
+| `needs` | | 前置条件数组,见 §4;`session:<种类>` 形式声明依赖某种已注册的 Session 资源,见 §3.4 |
+| `provides` | | 本 step 能注册进 `$Ctx.Session` 的资源**种类**数组(不是实例名),见 §3.4。空则 `@()` |
 | `idempotent` | ✓ | `$false` 的 step,runner 在续跑时不会自动重放 |
 | `inputs` | ✓ | 参数定义。空则 `@{}` |
 | `outputs` | ✓ | 返回字段定义。空则 `@{}` |
@@ -120,7 +120,11 @@ $Manifest = @{
 | `rect` | hashtable | `@{ X=; Y=; W=; H= }` |
 | `list` | `[object[]]` | |
 | `map` | hashtable | |
+| `session` | `[string]` | `$Ctx.Session` 里某个已注册资源的名字(字面量,不是 `{{}}` 模板);必须带 `sessionKind`,见 §3.4 |
 | `any` | — | 尽量避免 |
+
+`type = 'session'` 的参数额外必填 `sessionKind`(字符串,资源种类,如
+`'window'`),`ebi lint` 用它做 §3.4 的种类配平检查。
 
 每个参数可有:`required`(bool)、`default`、`desc`(英文一句话)、
 `enum`(允许值数组)。
@@ -218,21 +222,38 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
    JSON-可序列化(`ConvertTo-Json` 不报错、不丢字段)—— 这条由 P0-06 的
    契约检查器强制,也是 P0-R3 断点续跑"ledger 重放 outputs"的前提:
    outputs 进不了 ledger 的东西,重放就无从谈起。
-2. **谁注册、谁消费,manifest 显式声明**:
-   - `provides = @('mainWindow')` —— 本 step 成功后会把一个资源注册进
-     `$Ctx.Session['mainWindow']`
-   - `needs = @('session:mainWindow')` —— 本 step 要求 `$Ctx.Session` 里
-     已经有名为 `mainWindow` 的资源,不满足直接失败,不进 `Invoke-Step`
-     (`session:` 前缀的 `needs` 项和 §4 的前置条件项走同一个数组,runner
-     按前缀区分)
-   `ebi lint` 用这两个字段做静态检查:一条工作流里用了
-   `needs=@('session:X')` 的 step,前面必须有 `provides=@('X')` 的 step
-   跑过 —— 这就是"用了 browser 资源但没人 ensure 过"的检测(P1-08)。
-3. **命名资源的注册方式是 `with.as`。** 会产出资源的 step(如
-   `browser.ensure`、`excel.open`)在 `with` 里加 `as: "<名>"`,消费方在
-   自己的 `with` 里用同一个名字引用(具体参数名由该 step 的 `inputs`
-   声明,例如 `screen.capture_window` 的 `window` 参数)。名字的作用域是
-   一次 `run`(setup 里注册的资源,`each`/`teardown` 都能用)。
+
+2. **manifest 声明的是资源*种类*(kind),不是实例名。** `provides` 是
+   本 step 能注册的资源种类数组,如 `provides = @('window')`(不是
+   `@('mainWindow')`——`mainWindow` 是某一条工作流给它起的名字,manifest
+   是通用的,不能替所有工作流预先决定叫什么)。同理,消费方的 `needs`
+   写 `session:<kind>`,如 `needs = @('session:window')`。**实例名永远由
+   工作流决定**,manifest 里不出现任何具体名字。
+
+3. **实例名怎么产生和引用**:
+   - 会产出资源的 step,调用点(不是 manifest!)在 `with` 里加
+     `as: "<名>"` 完成注册,如 `{ "use": "browser.ensure", "with": { "as": "mainWindow" } }`。
+     一个 step 调用最多注册一个资源,种类是其 `provides` 唯一的一项(本
+     项目目前的 step 都只 `provides` 一种;需要注册多种资源的 step 请拆
+     成多个 step,不要在一次调用里塞两个)。
+   - 消费方在自己的 `inputs` 里声明一个 `type = 'session'` 的参数,并带
+     `sessionKind`(比如 `screen.capture_window` 的 `window` 参数是
+     `@{ type='session'; sessionKind='window'; required=$true }`)。工作流
+     调用时把这个参数的值填成某个 `with.as` 用过的名字字符串(**不走
+     `{{}}` 模板** —— 这是给 runner 做资源查找用的字面量,不是数据)。
+   - 名字的作用域是一次 `run`(`setup` 里注册的资源,`each`/`teardown`
+     都能用)。
+
+4. **`ebi lint` 怎么配平**:静态走一遍 `setup` → `each` → `teardown`(按
+   写在 JSON 里的顺序,不模拟 `once`/`foreach` 的运行期分支),维护一张
+   `名字 -> 种类` 表:
+   - 遇到 `with.as: "<名>"` 且目标 step 的 `provides` 含种类 `K` → 表里
+     记 `<名> -> K`
+   - 遇到某个 `type='session'` 参数的字面量值 `<名>`,要求它已经在表里,
+     且对应的种类等于该参数声明的 `sessionKind`,否则报错(要么"这个
+     名字从没被 `with.as` 注册过",要么"注册的是别的种类的资源")
+   这就是"用了 browser 资源但没人 `ensure` 过"的检测(P1-08),现在是
+   **种类匹配 + 名字存在**两道检查,不是名字本身写死在 manifest 里比对。
 
 `$Ctx.Session` 本身**不持久化**、**不写进 ledger**、**不出现在 trace 里**
 (trace 只记 `outputs`)。它在每次进程启动时都是空的 —— 断点续跑时怎么
@@ -251,11 +272,11 @@ runner 在调用前检查,不满足直接失败,不进 step。
 | `excel` | 需要 Excel COM 可用 |
 | `worklist` | 需要工作清单已加载 |
 | `calibrated:ocr` | 需要本机 OCR 校准通过(见 §5) |
-| `session:<名>` | 需要 `$Ctx.Session` 里已经有名为 `<名>` 的资源(见 §3.4) |
+| `session:<种类>` | 需要 `$Ctx.Session` 里已经有这个种类的资源注册过(见 §3.4;实例名由消费该资源的 `type='session'` 参数在调用点给出,不在 `needs` 里) |
 
 `needs` 的意义是**把失败提前到运行前**,并且让 `ebi lint` 能在不运行的情况下
-警告「这条工作流需要 Excel,你确定这台机器有吗」——`session:<名>` 这一类
-额外能让 `ebi lint` 检查「用了这个资源但没有任何 step 声明 `provides` 过它」。
+警告「这条工作流需要 Excel,你确定这台机器有吗」——`session:<种类>` 这一类
+额外能让 `ebi lint` 检查「用了这种资源但没有任何 step 用 `with.as` 注册过」。
 
 ---
 
