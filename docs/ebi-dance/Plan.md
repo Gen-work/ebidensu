@@ -96,7 +96,10 @@ $Manifest = @{
     hit  = @{ type='bool' }
     rect = @{ type='rect'; desc='活动高亮行的像素矩形,未命中为 null' }
   }
-  failures = @('not_found','no_foreground_window')
+  failures = @(                # 每项带 transient:重试是否可能自愈(P0-R5)
+    @{ id='not_found';            transient=$false }
+    @{ id='no_foreground_window'; transient=$true  }
+  )
   example  = @{ use='browser.find'; with=@{ term='{{item.key}}' } }
 }
 function Invoke-Step { param($In, $Ctx) ...; return @{ ok=$true; hit=$true; rect=$r } }
@@ -106,15 +109,22 @@ function Invoke-Step { param($In, $Ctx) ...; return @{ ok=$true; hit=$true; rect
 - **step 不知道自己在什么业务里**。`browser.find` 只认识字符串,不认识「相关 ID」。
 - 所有业务知识通过 `with:` 从 workflow JSON 注入。
 - step 之间**只**通过返回值通信(现有的 `$Global:Timing` / `$Global:Shell` 要消掉)。
-- 失败用返回值表达(`@{ ok=$false; failure='not_found' }`),不靠异常。
+  返回值必须 JSON-可序列化;窗口句柄 / COM 对象这类进程内资源走 `$Ctx.Session`
+  的命名注册表(`provides`/`needs` 声明、可 lint、resume 时由 setup 重建),
+  见 `spec/STEP-CONTRACT.md` §3.4(P0-R2)。
+- 失败用返回值表达(`@{ ok=$false; failure='not_found' }`),不靠异常;
+  非致命异常(如「3 行未识别」)走标准 `warnings` 通道,由 runner 写 trace +
+  汇总(P0-R5)。
 
 ### 3.2 Runner 的四个横切能力
 
 1. **容错策略**:`onError: { policy: retry|ask|skip|fail, times: 3, backoffMs: 800 }`,
    顶层声明一次、单步可覆盖。现在这套逻辑散在各个 `do { $attempt++ } while` 里。
-2. **幂等 + 断点续跑**:每个 item 的每个 step 写 ledger(`run/<runId>/ledger.jsonl`),
-   重跑按 `idempotencyKey` 跳过。把现有 bitmask(1/2/4)通用化为 `flow.checkpoint`,
-   位定义由 profile 声明。
+2. **幂等 + 断点续跑**:每个 (item, step) 写 ledger(`run/<runId>/ledger.jsonl`),
+   **连同该步的 outputs**;重跑跳过已完成的并**重放其 outputs**,所以后续步的
+   `{{steps.X.out.Y}}` 照常解析(`setup` 每次 resume 重跑以重建 Session 资源,
+   P0-R3)。把现有 bitmask(1/2/4)通用化为 `flow.checkpoint`,位定义由 profile
+   声明(用**位名**,不用数字)。
 3. **Trace**:每步写输入、输出、耗时、产物路径、页面文本哈希、判定详情。
    这是 Agent 优化循环的燃料。
 4. **人工关卡**:`human.gate` 统一渲染 ASCII 面板(发生了什么 / 下一步会做什么 /
@@ -133,12 +143,13 @@ profile 数据里。
 |--------|------|----------|
 | `worklist` | 工作清单 CSV,一行 = 一件要做的事 | `mapping_<Owner>.csv` |
 | `item` | 清单里的一行 | 一个 correl 行 |
-| `key` | item 的主键(profile 声明是哪一列) | `Correl_ID_S` |
+| `key` | item 的主键,**可以是复合的**(profile 的 `worklist.json` 声明是哪几列)。文件名用它的安全形 `keySafe` | `Correl_ID_S` |
 | `group` | item 的分组属性(用于合并页面访问) | `JOB_NAME` / `TO_code` |
 | `deliverable` | 交付物工作簿 | `Excel_NAME` 指向的证据簿 |
 | `side` | 对照面。profile 声明有哪几面及其显示名 | `GIFT` / `GFIX` → 建议 `before` / `after` |
 | `capture` | 一次截图 + 页面文本归档的产物 | `snap\<folder>\<id>.png` + `.txt` |
 | `verdict` | 一次判定的结论(`ok` / `ng` / `unknown`) | `GIFT_MQ_snap` 的 1/2 |
+| `page` | **命名页面实例**:一个具体画面,带一个 role 属性 | HM 処理結果 / MQ転送状態 / Jenkins ファイル一覧 |
 
 ### 4.2 页面角色(page role)—— 按**结构**分,不按用途、不按系统名分
 
@@ -166,10 +177,13 @@ list 页:  read → locate(找到我那一行) → capture(截图) → download(
                                       └→ capture(再截一张别的区域)
 ```
 
-同一页多次 capture,产物用 tag 区分:`<key>__<tag>.png`。
+同一页多次 capture,产物用 tag 区分:`<keySafe>__<tag>.png`。
 
 `monitor` 这类词我**故意不用**:MQ 转送状态的结构就是一张多行表格,和 Jenkins
 文件列表**完全同型**,应该用同一套 step 处理。
+
+但**同型 ≠ 同一**(P0-R1):它们是两个不同的 **page**,共享 role `list` 的机制,
+各有自己的 pages/grammar/rules 条目和 capture 目录。role 管机制,page 管身份。
 
 ### 4.3 动作(工作流命名)
 
@@ -183,12 +197,20 @@ list 页:  read → locate(找到我那一行) → capture(截图) → download(
 | `deliver` | 交付(文件 / 邮件 / 检查表) | `Deliver*` / `CheckSheet` |
 | `sync` | 与基线对比 / 同步 | `Align` |
 
-工作流 id 形如 `before.list.capture`,取代 `GiftMqSnap`。
-capture 目录形如 `capture/before_list/<key>.png`,取代 `snap/GIFT_MQ/<id>.png`。
+工作流 id 形如 `before.transferStatus.capture`,取代 `GiftMqSnap`。
+capture 目录形如 `capture/before_transferStatus/<keySafe>.png`,取代
+`snap/GIFT_MQ/<id>.png`。
+
+> **开工前评审修订(P0-R1)**:id 和目录用的是 **page 名**(命名页面实例),
+> 不是 role。role 当键会撞名 —— 当前工作 before 侧就同时有 MQ転送状態和
+> Jenkins ファイル一覧两个 `list` 页,按 role 命名两条工作流会同名、截图会
+> 互相覆盖。role 降为 page 的一个属性(决定用哪套定位/解析机制)。
+> 详见 `spec/VOCABULARY.md` §2、`spec/PROFILE-SCHEMA.md` §3。
 
 ### 4.4 命名怎么落地
 
-- `profiles/<name>/vocabulary.json` 声明本项目的 side 名、role 绑定、列名映射
+- `profiles/<name>/vocabulary.json` 只声明 side 显示名;page 的 role 绑定和显示名
+  在 `pages.json`,列名映射(含主键)在 `worklist.json` —— 同一事实只声明一处(P0-R4)
 - `ebi explain` 输出时**同时显示中性名和本项目显示名**:`list(MQ転送状態)`
 - 换工作时:复制一份 profile,改 vocabulary + 页面绑定 + 规则,工作流 JSON 大部分能直接抄
 - 动词表是**开放的**:加一个新 verb 只是补一行文档,没有代码依赖它
@@ -571,8 +593,8 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 `ebi explain` 输出形态(人和 Agent 审阅同一份):
 
 ```
-  before.list.capture  ── 転送状態ページの証跡取得
-  ┌ 数据源: worklist.csv  →  before_list != ok   (待处理 37 行)
+  before.transferStatus.capture  ── 転送状態ページの証跡取得
+  ┌ 数据源: worklist.csv  →  before_transferStatus != ok   (待处理 37 行)
   │
   ├ setup
   │   [人工] 请打开 list(MQ転送状態) 页面
@@ -580,10 +602,10 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
   │
   ├ each  (× 37)
   │   [UI  ] 点击正文 → Tab×1 → Enter → Tab×4 → 粘贴 {{item.key}} → Enter
-  │   [读  ] 轮询页面文本 (≤12s)     → 留档 pagetext/before_list/<key>.txt
-  │   [写  ] 截图 + 裁剪             → capture/before_list/<key>.png
+  │   [读  ] 轮询页面文本 (≤12s)     → 留档 capture/before_transferStatus/<k>.txt
+  │   [写  ] 截图 + 裁剪             → capture/before_transferStatus/<k>.png
   │   [纯  ] 解析 → 找行 → 判定      → ok / ng / unknown
-  │   [写  ] 标记 before_list        ← worklist 原子写
+  │   [写  ] 标记 before_transferStatus ← worklist 原子写
   │
   └ 容错: 默认 ask   人工关卡: 1 处   破坏性操作: 0 处   降级层: 未使用 ✓
 ```
@@ -637,20 +659,21 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 
 | 阶段 | 卡数 | 其中 `[整块]` |
 |------|------|--------------|
-| P0 骨架 | 8 | 1(最小 runner spike) |
-| P1 kernel + 25 个 step + 文档生成 | 34 | 3(Context / Runner 主体 / Runner 容错+ledger)+ 1(table.key) |
-| P2 对拍验证 | 6 | 1(办公 PC 首跑) |
+| P0 规格修订(R1–R6,评审追加,**已完成**)+ 骨架 | 14 | 2(会话资源规格 / 最小 runner spike) |
+| P1 kernel + 25 个 step + 文档生成 | 34 | 3(Context / Runner 主体 / Runner 容错+ledger)+ 1(kernel/Key + table.key) |
+| P2 对拍验证 | 8 | 1(办公 PC 首跑) |
 | P3 新工作实战 | 8 | 0(主要是访谈 + 填 profile) |
-| **合计到 P3 可接新工作** | **56 张** | **6 张** |
+| **合计到 P3 可接新工作** | **64 张** | **7 张** |
 | P4 excel/file 组 | 22 | 1(办公 PC 冒烟) |
 | P5 掩码 + Agent 循环 + 校准 | 14 | 1(掩码一致性替换) |
-| **全部** | **92 张** | **8 张** |
+| **全部** | **100 张** | **9 张** |
 
-按每次坐下做 1 张算,**到 P3 大约 56 次空档**。这个数字比"8 周"有用得多 ——
-它不依赖你每周能挤出多少小时。
+按每次坐下做 1 张算,**到 P3 大约 64 次空档**(其中 6 张 P0-R 规格修订卡已于
+2026-08-24 做完,剩 58)。这个数字比"8 周"有用得多 —— 它不依赖你每周能挤出
+多少小时。
 
-`[整块]` 的 8 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
-其余 84 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
+`[整块]` 的 9 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
+其余 91 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
 
 ### 10.4 关于模型
 
@@ -670,7 +693,10 @@ Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —�
 
 1. **打冻结标签** `spec/gift-gfix`(当前 tip),作为回滚点。旧脚本原地不动,
    继续可运行。
-2. ~~**写三份规格 + 一份词汇表**~~ —— **已完成(2026-08-24)**:
+2. ~~**写三份规格 + 一份词汇表**~~ —— **已完成(2026-08-24)**,并已按开工前评审
+   修订一轮(`BACKLOG.md` 的 P0-R1…R6:page/role 解耦、`$Ctx.Session`、resume
+   输出重放、key 单一事实源 + `keySafe`、失败种类容错 + `warnings`、page 绑定
+   与 profile 内模板求值):
    - `docs/ebi-dance/spec/STEP-CONTRACT.md` — manifest 字段、返回值约定、失败表达、副作用等级
    - `docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` — workflow JSON 全字段 + 模板语法
    - `docs/ebi-dance/spec/PROFILE-SCHEMA.md` — profile 结构(页面绑定、规则、清单 schema)
@@ -703,7 +729,8 @@ Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —�
 
 ### P2 — 对拍验证(1.5 周)
 
-把 `MqSnap.ps1`(673 行)重写成 `workflows/before.list.capture.json`(约 30 行)
+把 `MqSnap.ps1`(673 行)重写成 `workflows/before.transferStatus.capture.json`
+(约 30 行)
 + `profiles/host-open/`。
 
 **验收(必须在办公 PC 上做)**:
@@ -798,3 +825,8 @@ P0 的第 2 项 —— **写四份规格文档**:
 
 **在写码之前把契约和词汇吵清楚,是这个项目唯一真正需要"想"的地方。**
 而 `INTERVIEW.md` 甚至不用等代码 —— 写完当天就能拿去给下一份工作做访谈。
+
+> **进度(2026-08-24)**:规格已定稿并经一轮开工前评审(P0-R1…R6 六张修订卡
+> 全部做完)。评审找的正是「现在改是改文本、写完 7,000 行再改是重构」的洞 ——
+> 六个里有两个(page/role 撞名、句柄没有传递通道)会在 P0-08 / P2-01 当场撞墙。
+> 下一张卡是 `P0-01 打冻结标签`,之后按 `BACKLOG.md` 顺序推进。
