@@ -64,7 +64,8 @@ $Manifest = @{
 
   # --- 契约 ---
   effects  = 'ui'                # pure | read | ui | write | destructive
-  needs    = @('foreground')     # 运行前置条件,见 §4
+  needs    = @('foreground')     # 运行前置条件 / Session 资源依赖,见 §4、§3.4
+  provides = @()                 # 本 step 会注册进 $Ctx.Session 的资源名,见 §3.4
   idempotent = $true             # 重复执行是否安全
 
   # --- 输入 ---
@@ -96,7 +97,8 @@ $Manifest = @{
 | `summary` | ✓ | **一句话,英文,不超过 80 字符**。这是 Agent 挑 step 的主要依据 |
 | `tier` | ✓ | `core` 或 `fallback`(见 §5) |
 | `effects` | ✓ | 副作用等级,见 VOCABULARY §4 |
-| `needs` | | 前置条件数组,见 §4 |
+| `needs` | | 前置条件数组,见 §4;`session:<名>` 形式声明依赖某个已注册的 Session 资源,见 §3.4 |
+| `provides` | | 本 step 会注册进 `$Ctx.Session` 的资源名数组,见 §3.4。空则 `@()` |
 | `idempotent` | ✓ | `$false` 的 step,runner 在续跑时不会自动重放 |
 | `inputs` | ✓ | 参数定义。空则 `@{}` |
 | `outputs` | ✓ | 返回字段定义。空则 `@{}` |
@@ -183,6 +185,39 @@ if ($Ctx.DryRun) {
 
 `pure` / `read` 的 step 可以照常执行。
 
+### 3.4 `$Ctx.Session` —— 跨 step 的资源通道(P0-R2)
+
+`{{steps.X.out.Y}}` 只能传 JSON 值,而句柄(浏览器窗口)、COM 对象
+(Excel app、打开的工作簿)既不能塞进模板,也不该被 trace 序列化。但下一个
+step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。旧工具的解法是
+`$Global:Shell` 这类全局变量 —— 这正是要消灭的东西。
+
+`$Ctx.Session` 是运行期的**命名资源注册表**(一个 hashtable),规则:
+
+1. **句柄 / COM 对象只进 Session,永不进 `outputs`。** `outputs` 必须
+   JSON-可序列化(`ConvertTo-Json` 不报错、不丢字段)—— 这条由 P0-06 的
+   契约检查器强制,也是 P0-R3 断点续跑"ledger 重放 outputs"的前提:
+   outputs 进不了 ledger 的东西,重放就无从谈起。
+2. **谁注册、谁消费,manifest 显式声明**:
+   - `provides = @('mainWindow')` —— 本 step 成功后会把一个资源注册进
+     `$Ctx.Session['mainWindow']`
+   - `needs = @('session:mainWindow')` —— 本 step 要求 `$Ctx.Session` 里
+     已经有名为 `mainWindow` 的资源,不满足直接失败,不进 `Invoke-Step`
+     (`session:` 前缀的 `needs` 项和 §4 的前置条件项走同一个数组,runner
+     按前缀区分)
+   `ebi lint` 用这两个字段做静态检查:一条工作流里用了
+   `needs=@('session:X')` 的 step,前面必须有 `provides=@('X')` 的 step
+   跑过 —— 这就是"用了 browser 资源但没人 ensure 过"的检测(P1-08)。
+3. **命名资源的注册方式是 `with.as`。** 会产出资源的 step(如
+   `browser.ensure`、`excel.open`)在 `with` 里加 `as: "<名>"`,消费方在
+   自己的 `with` 里用同一个名字引用(具体参数名由该 step 的 `inputs`
+   声明,例如 `screen.capture_window` 的 `window` 参数)。名字的作用域是
+   一次 `run`(setup 里注册的资源,`each`/`teardown` 都能用)。
+
+`$Ctx.Session` 本身**不持久化**、**不写进 ledger**、**不出现在 trace 里**
+(trace 只记 `outputs`)。它在每次进程启动时都是空的 —— 断点续跑时怎么
+重建它,见 §6.2(P0-R3)。
+
 ---
 
 ## 4. `needs` — 前置条件
@@ -196,9 +231,11 @@ runner 在调用前检查,不满足直接失败,不进 step。
 | `excel` | 需要 Excel COM 可用 |
 | `worklist` | 需要工作清单已加载 |
 | `calibrated:ocr` | 需要本机 OCR 校准通过(见 §5) |
+| `session:<名>` | 需要 `$Ctx.Session` 里已经有名为 `<名>` 的资源(见 §3.4) |
 
 `needs` 的意义是**把失败提前到运行前**,并且让 `ebi lint` 能在不运行的情况下
-警告「这条工作流需要 Excel,你确定这台机器有吗」。
+警告「这条工作流需要 Excel,你确定这台机器有吗」——`session:<名>` 这一类
+额外能让 `ebi lint` 检查「用了这个资源但没有任何 step 声明 `provides` 过它」。
 
 ---
 

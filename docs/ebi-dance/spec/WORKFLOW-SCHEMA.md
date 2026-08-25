@@ -138,6 +138,10 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 - 整个值就是一个 `{{}}` 时,保留原类型(不会被转成字符串)。
   `"count": "{{steps.parse.out.total}}"` 得到的是 int
 - 要输出字面的 `{{`,写 `\{\{`
+- **`$Ctx.Session` 里的资源(窗口句柄、Excel COM 对象)不能被模板引用。**
+  只有 `outputs` 声明的、JSON-可序列化的字段才能进 `{{steps.X.out.Y}}`
+  (`STEP-CONTRACT.md` §3.4,P0-R2)。需要用到某个 step 注册的窗口/工作簿,
+  在 `with` 里用它注册时的名字(`with.as` 的值)引用,不走模板
 
 ---
 
