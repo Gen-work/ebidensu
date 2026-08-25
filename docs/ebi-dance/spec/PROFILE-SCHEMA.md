@@ -23,7 +23,7 @@
 ```
 profiles/<name>/
   vocabulary.json     side 名、role 显示名、列名映射
-  pages.json          每个 role 绑哪个页面:URL / 指纹 / 导航 / 超时
+  pages.json          每个 page(命名页面实例)声明 role + URL / 指纹 / 导航 / 超时
   grammar.json        页面文本 → records 的解析规则
   rules.json          判定规则表
   worklist.json       清单列 schema、主键、变体规则、checkpoint 位
@@ -47,13 +47,13 @@ profiles/<name>/
     "after":  "移行後"
   },
   "roles": {
-    "query":  "検索画面",
-    "record": "処理結果画面",
-    "list":   "転送状態一覧",
-    "artifact": "ファイル一覧"
+    "entry":    "入口",
+    "form":     "検索画面",
+    "record":   "結果画面",
+    "list":     "一覧",
+    "document": "帳票"
   },
   "columns": {
-    "key":         "Correl_ID_S",
     "group":       "JOB_NAME",
     "owner":       "Owner",
     "deliverable": "Excel_NAME"
@@ -61,20 +61,41 @@ profiles/<name>/
 }
 ```
 
-`sides` / `roles` 的值只用于**显示**(`ebi explain` 会写成 `list(転送状態一覧)`)。
-工作流里永远只出现左边的中性名。
+`sides` / `roles` 的值只用于**显示**。`roles` 只有 5 个键(`VOCABULARY.md` §2.1
+的 5 个 role,穷举,不能多也不能少),给的是**角色的通用显示名**——注意
+`list` 这里只能填「一覧」这种泛称,**不能**填某一个具体页面的名字(比如
+「転送状態一覧」)。原因见 §3:同一个 role 下**可以有多个 page**,每个
+page 各有各的具体名字,那个名字属于 `pages.json` 的 `label` 字段,不属于
+这里。`ebi explain` 的 `list(転送状態一覧)` 这种输出,`list` 来自这里、
+`転送状態一覧` 来自对应 page 的 `label`,两者拼在一起显示,不是同一个字段。
 
-`columns` 把中性名映射到清单 CSV 的实际列名。**`{{item.key}}` 就是靠这个解析的。**
+工作流里永远只出现左边的中性名(`role` 的 5 个枚举值,或者具体的 `page` 名)。
+
+`columns` 把中性名映射到清单 CSV 的实际列名 —— **不包含 `key`**。key 只
+在 `worklist.json` 里声明一次(见 §6.1,P0-R4),这里重复声明会导致两处
+漂移,已经删掉。
 
 ---
 
-## 3. `pages.json`
+## 3. `pages.json`(P0-R1:按 page 名为键,不按 role 为键)
 
-每个 role 一个条目。
+**每个 page(命名页面实例)一个条目,不是每个 role 一个条目。**
+
+一个项目同一侧经常有**好几个结构相同的页面**——当前工作里 before 侧同时
+有 MQ 転送状態一覧(role `list`)和 Jenkins 文件列表(role `list`),after
+侧还有 GoAnywhere 作业一览(也是 role `list`)。三个页面结构相同、用同一套
+定位/解析机制,但 URL、指纹、字段完全不同,是**三个不同的 page**。如果拿
+role 当 `pages.json` 的键,三个 page 会互相覆盖(同一个 `"list"` 键只能存
+一份数据)—— 这正是本卡要堵的洞。
+
+每个 page 条目里的 `role` 属性**只决定用哪套定位/解析机制**(见
+`VOCABULARY.md` §2.1 的 5 个 role),不代表这个 page 的身份。
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
+    "role":       "list",
+    "label":      "転送状態一覧",
     "url":        "https://<host>/path/index.html",
     "openHint":   "ブラウザで転送状態ページを開いてください",
 
@@ -88,10 +109,47 @@ profiles/<name>/
     "tabsToForm":  1,
     "tabsToInput": 4,
     "timeoutSec":  12,
-    "pollMs":      800
+    "pollMs":      800,
+
+    "crop": { "left": 6, "top": 6, "right": 6, "bottom": 6 }
+  },
+
+  "fileList": {
+    "role":  "list",
+    "label": "ファイル一覧",
+    "url":   "https://<host>/jenkins/files.html",
+    "fingerprint": {
+      "ok":      ["ファイル名", "更新日時"],
+      "expired": ["ログイン"]
+    },
+    "timeoutSec": 12
   }
 }
 ```
+
+`label` 是这个 page 的**具体显示名**(`ebi explain` 拼成
+`list(転送状態一覧)` 时,`list` 来自 `vocabulary.json` 的 role 通用名,
+`転送状態一覧` 来自这里的 `label`)。`crop` 是这个 page 专属的截图裁剪
+边距(不同页面的窗口边框/内容区可能不一样,同role 的两个 page 未必能共用
+一份裁剪参数)。
+
+### 3.0 当前工作的 5 个 page(验证:role 相同也不冲突)
+
+这是 P0-R1 的验收:把当前 Host→Open 迁移工作里全部会用到的页面按新规格
+逐个列出 page 名 + role,确认没有 id 冲突、没有 capture 目录冲突。
+
+| page 名 | role | 现在对应 | capture 目录 |
+|---------|------|----------|---------------|
+| `hmResult` | `record` | HM 処理結果画面 | `capture/<side>_hmResult/` |
+| `transferStatus` | `list` | MQ 転送状態一覧 | `capture/<side>_transferStatus/` |
+| `fileList` | `list` | Jenkins 文件列表 | `capture/<side>_fileList/` |
+| `jobList` | `list` | GoAnywhere 作业一览 | `capture/<side>_jobList/` |
+| `reportPreview` | `document` | 帳票 preview | `capture/<side>_reportPreview/` |
+
+5 个 page 名互不相同 → 5 个 capture 目录互不相同,即使其中 3 个都是
+role `list` 也不会互相覆盖。这就是 R1 要修的洞:旧设计下
+`transferStatus` / `fileList` / `jobList` 会全部落到同一个
+`capture/<side>_list/` 目录,互相覆盖对方的截图。
 
 ### 3.1 `fingerprint` — 页面指纹
 
@@ -110,22 +168,24 @@ profiles/<name>/
 
 ---
 
-## 4. `grammar.json`
+## 4. `grammar.json`(P0-R1:按 page 名为键)
 
-页面文本(`Ctrl+A` 得到的整页纯文本)→ 结构化 records。
+页面文本(`Ctrl+A` 得到的整页纯文本)→ 结构化 records。**键是 page 名,
+和 `pages.json` 一一对应** —— 旧示例这里混用过 `list`(role)和
+`fileList`(page 名)两种键,已经修正为清一色的 page 名。
 
 支持三种解析器,够覆盖旧仓库里全部三套手写解析:
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
     "parser": "delimited",
     "delimiter": "\t",
     "rowWhen": { "field": 0, "matches": "^\\d+$" },
     "fields": ["jobNo", "key", "status", "recvTime", "count", "rtncd"]
   },
 
-  "record": {
+  "hmResult": {
     "parser": "labeled",
     "pairs": {
       "status":   { "after": "状態", "take": "line" },
@@ -155,7 +215,7 @@ profiles/<name>/
 得多:
 
 ```
-ebi grammar tune capture/before_list/ABC123.txt --profile host-open --role list
+ebi grammar tune capture/before_transferStatus/ABC123.txt --profile host-open --page transferStatus
 ```
 
 循环:
@@ -200,13 +260,16 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
 
 ---
 
-## 5. `rules.json`
+## 5. `rules.json`(P0-R1:按 page 名为键)
 
-判定规则表。`verify.assert` 按顺序跑,**第一条不满足的决定结论**。
+判定规则表。`verify.assert` 按顺序跑,**第一条不满足的决定结论**。**键是
+page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页判定
+规则通常完全不同(MQ 転送状態的规则和 Jenkins 文件列表的规则没有理由一样),
+按 role 为键就会强迫它们共用一份规则表。
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
     "rules": [
       { "field": "status",   "op": "equals", "value": "正常終了", "else": "ng",
         "message": "状態が正常終了ではない" },

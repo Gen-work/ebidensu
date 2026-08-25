@@ -129,11 +129,31 @@ form 页:  input → navigate
 同一页多次 `capture` 时,产物加 tag 区分:
 
 ```
-capture/<side>_<role>/<key>.png            默认(单张)
-capture/<side>_<role>/<key>__<tag>.png     多张时,tag 由工作流指定
+capture/<side>_<page>/<key>.png            默认(单张)
+capture/<side>_<page>/<key>__<tag>.png     多张时,tag 由工作流指定
 ```
 
-例:`capture/before_list/ABC123__row.png`、`capture/before_list/ABC123__total.png`
+例:`capture/before_transferStatus/ABC123__row.png`、
+`capture/before_transferStatus/ABC123__total.png`
+
+**注意是 `<page>`,不是 `<role>`。** 见 §2.6。
+
+### 2.6 page:role 的命名实例(P0-R1)
+
+role 是「怎么定位」的分类(§2.1 的 5 选一);**page** 是 profile 里一个
+具体页面的**命名实例**(如 `transferStatus`、`fileList`),在
+`pages.json` 里声明,每个 page 挂一个 role。
+
+**一个 role 可以对应多个 page**——这是最容易漏掉的一点。当前工作里
+`transferStatus`(MQ 転送状態一覧)、`fileList`(Jenkins 文件列表)、
+`jobList`(GoAnywhere 作业一览)三个 page 全都是 role `list`,但页面本身
+——URL、指纹、grammar、判定规则——完全不同。如果拿 role 当键(旧设计的
+错误),三个 page 会互相覆盖:同一个 workflow id、同一个 capture 目录、
+同一份 `grammar.json`/`rules.json` 条目。
+
+**因此 workflow id、`grammar.json`、`rules.json`、capture 目录一律按
+page 名为键,不按 role 为键**(见 `PROFILE-SCHEMA.md` §3、§4、§5)。
+role 只用来决定"用哪套定位/解析机制",不代表页面身份。
 
 ---
 
@@ -162,39 +182,44 @@ capture/<side>_<role>/<key>__<tag>.png     多张时,tag 由工作流指定
 - 只有一条判断标准:**它是不是真的和已有 8 个都不同?**
   如果只是「同一件事在另一个系统上做」,那不是新 verb,是新 profile
 
-### 3.2 工作流 id 的组成
+### 3.2 工作流 id 的组成(P0-R1:按 page 名,不按 role)
 
 ```
-<side>.<role>.<verb>       页面相关的
+<side>.<page>.<verb>       页面相关的
 <side>.<verb>              工作簿 / 文件相关的(没有特定页面)
 ```
 
+**用 page 名,不用 role。** 用 role 会让同 role 的多个 page 撞 id ——
+当前工作里 `GiftMqSnap` 和 `GiftJenkins` 都是 before 侧的 `list` 页,
+按 role 命名会同时叫 `before.list.capture`。
+
 | 新 id | 旧 phase |
 |-------|----------|
-| `before.record.capture` | `GiftHmSnap` |
-| `before.list.capture` | `GiftMqSnap` |
-| `after.record.capture` | `GfixHmSnap` |
-| `after.list.collect` | `GfixLogDownload`(在 list 页上点下载) |
+| `before.hmResult.capture` | `GiftHmSnap` |
+| `before.transferStatus.capture` | `GiftMqSnap` |
+| `after.hmResult.capture` | `GfixHmSnap` |
+| `after.jobList.collect` | `GfixLogDownload`(在 job list 页上点下载) |
 | `before.compose` | `ReplaceGift` |
 | `before.annotate` | `MarkGift` |
 
-只有一面时省略 `side`:`list.capture`。
+只有一个 page、不会和别的页面混淆时可以省略更具体的区分,但 `<page>`
+本身不能省略成 role —— 省略的是 `<side>`(见下),不是 `<page>`。
 
 一条工作流可以同时做几件事(在 list 页上既截图又下载),这时按**主要目的**
 命名,或者拆成两条工作流 —— 拆开的好处是可以分别重跑。
 
-### 3.2 目录命名
+### 3.3 目录命名(P0-R1:capture 按 page 名分目录)
 
 ```
 worklist.csv                          工作清单
-capture/<side>_<role>/<key>.png       截图
-capture/<side>_<role>/<key>.txt       页面文本(与截图同时归档)
+capture/<side>_<page>/<key>.png       截图
+capture/<side>_<page>/<key>.txt       页面文本(与截图同时归档)
 run/<runId>/trace.jsonl               本次运行的完整记录
 run/<runId>/ledger.jsonl              断点续跑用的完成台账
 .ebi/                                 本机状态(不进 git)
 ```
 
-旧的 `snap/GIFT_MQ/<id>.png` → 新的 `capture/before_list/<key>.png`。
+旧的 `snap/GIFT_MQ/<id>.png` → 新的 `capture/before_transferStatus/<key>.png`。
 
 ---
 
@@ -244,12 +269,12 @@ run/<runId>/ledger.jsonl              断点续跑用的完成台账
 | `JOB_NAME` | `group` |
 | `Excel_NAME` | `deliverable` |
 | `GIFT` / `GFIX` | `before` / `after`(profile 声明) |
-| `HM` 画面 | role `record` |
-| `MQ` 転送状態 | role `list` |
-| `Jenkins` 文件列表 | role `list` |
-| `GoAnywhere` 作业一览 | role `list` |
+| `HM` 画面 | page `hmResult`(role `record`) |
+| `MQ` 転送状態 | page `transferStatus`(role `list`) |
+| `Jenkins` 文件列表 | page `fileList`(role `list`) |
+| `GoAnywhere` 作业一览 | page `jobList`(role `list`) |
 | Jenkins 下载 / GFIX 日志下载 | 在 `list` 页上的 `download` action |
-| 検索画面 | role `form` |
+| 検索画面 | role `form`(page 因系统而异,如 `hmSearch` / `mqSearch`) |
 | `snap/` | `capture/` |
 | phase | workflow |
 | `isReplaced` / `isMarked` / `isReviewed` | profile 声明的 checkpoint 位 |
