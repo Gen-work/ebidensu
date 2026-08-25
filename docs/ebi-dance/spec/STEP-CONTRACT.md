@@ -80,8 +80,11 @@ $Manifest = @{
     rect = @{ type='rect'; desc='pixel rect of the active match, null when no hit' }
   }
 
-  # --- 失败模式 ---
-  failures = @('not_found', 'no_foreground_window')
+  # --- 失败模式(P0-R5:每项标 transient) ---
+  failures = @(
+    @{ id = 'not_found';            transient = $false }
+    @{ id = 'no_foreground_window'; transient = $true  }
+  )
 
   # --- 给 Agent 的示例 ---
   example  = @{ use='browser.find'; with=@{ term='{{item.key}}' } }
@@ -102,7 +105,7 @@ $Manifest = @{
 | `idempotent` | ✓ | `$false` 的 step,runner 在续跑时不会自动重放 |
 | `inputs` | ✓ | 参数定义。空则 `@{}` |
 | `outputs` | ✓ | 返回字段定义。空则 `@{}` |
-| `failures` | ✓ | **穷举**所有可能的失败标识。runner 用它校验返回值 |
+| `failures` | ✓ | **穷举**所有可能的失败标识,每项 `@{ id=; transient=<bool> }`(P0-R5)。runner 用它校验返回值,`transient=$true` 是 `onError.policy=retry` 能重试的必要条件(见 `WORKFLOW-SCHEMA.md` §6);`internal_error` 是保留失败 id(§3.1),不需要在这里列出 |
 | `example` | ✓ | 至少一个可运行的调用例 |
 | `notes` | | 补充说明,支持多行。会渲染进 CATALOG.md |
 
@@ -153,11 +156,28 @@ function Invoke-Step {
 ```
 
 规则:
-- `failure` 的值**必须**在 `$Manifest.failures` 里,否则 runner 判为契约违反
+- `failure` 的值**必须**等于 `$Manifest.failures` 某一项的 `id`,否则 runner 判为契约违反
 - `message` 是给人看的一句话,英文,可选
 - 失败时**也可以**带 outputs 字段(比如部分结果),runner 不会用,但会进 trace
 - **不许抛异常表达业务失败**。异常只用于「代码写错了」这类真正的意外;
-  runner 捕获后统一记为 `failure = 'internal_error'`
+  runner 捕获后统一记为 `failure = 'internal_error'`(这是**保留**失败
+  id,不需要出现在 `$Manifest.failures` 里)
+
+**可选的 `warnings`(P0-R5,非致命异常的标准通道)。** 成功或失败都可以带:
+
+```powershell
+@{ ok = $true; hit = $true; rect = $r;
+   warnings = @(
+     @{ code = 'unrecognized_line'; message = '3 lines did not match any row pattern';
+        data = @{ lines = @(4, 9, 12) } }
+   ) }
+```
+
+`warnings` 不影响 `ok` 的值,但 runner **必须**:1) 写进 trace;2) 计入
+run 结束时的汇总;3) `--guided` 模式下立即显示在面板上。**不要为"需要
+上报但不算失败"的情况发明私有输出字段**——这正是旧工具"静默丢行"事故
+(`SnapVerify`/`GfixJobList` 解析时,页面上明明有的行被正则漏掉、返回值
+没有任何字段能表达"我漏了几行")的根因:数据返回了,但没人看得见。
 
 ### 3.2 `$Ctx` 提供什么(只读)
 
@@ -362,8 +382,9 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
 - 每个 step 文件都能被 dot-source 且不含 `param()`
 - `$Manifest.id` == 文件名
 - `inputs` 里 `required` 和 `default` 不同时出现
-- `failures` 非空
+- `failures` 非空,且每一项都有 `id` 和布尔类型的 `transient`(P0-R5)
 - `example` 里用到的参数都在 `inputs` 里声明过
+- `outputs` 声明的类型都是 JSON-可序列化的(句柄 / COM 走 `$Ctx.Session`,不进 `outputs`,P0-R2)
 - 源码纯 ASCII
 
 ---
@@ -395,7 +416,11 @@ $Manifest = @{
     width  = @{ type='int' }
     height = @{ type='int' }
   }
-  failures   = @('file_not_found', 'crop_exceeds_image', 'image_read_error')
+  failures   = @(
+    @{ id = 'file_not_found';     transient = $false }
+    @{ id = 'crop_exceeds_image'; transient = $false }
+    @{ id = 'image_read_error';   transient = $true  }
+  )
   example    = @{
     use  = 'screen.crop'
     with = @{ path='{{steps.shot.out.path}}'; left=6; top=6; right=6; bottom=6 }

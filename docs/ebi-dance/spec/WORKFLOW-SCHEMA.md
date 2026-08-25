@@ -201,7 +201,11 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 "onError": {
   "policy":   "ask",     // retry | ask | skip | fail
   "times":    3,         // policy=retry 时
-  "backoffMs": 800       // policy=retry 时,每次翻倍
+  "backoffMs": 800,      // policy=retry 时,每次翻倍
+  "byFailure": {         // 按失败 id 覆盖顶层策略,见 §6.0(P0-R5)
+    "timeout":   { "policy": "retry", "times": 3 },
+    "not_found": { "policy": "ask" }
+  }
 }
 ```
 
@@ -211,6 +215,25 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 | `ask` | **默认。** 停下,渲染 `human.gate` 面板:失败原因、上下文、证据路径,让人选 r=重试 / s=跳过这条 / q=中止 |
 | `skip` | 记录后跳过这条 item,继续下一条 |
 | `fail` | 中止整个 run |
+
+### 6.0 按失败种类覆盖:`byFailure`(P0-R5)
+
+顶层 `policy` 是一刀切的,但失败种类天差地别:`browser.wait_for` 超时
+(`timeout`)重试是合理的,`not_found`(页面已经加载完、内容确实没有)
+重试只会对着同一个错误页面再敲三遍键盘。`manifest.failures` 已经把每种
+失败标成了 `transient`(`STEP-CONTRACT.md` §2.1),`onError.byFailure`
+把这个信息用起来:
+
+- `byFailure` 里没列出的失败 id,走顶层 `policy`
+- **`policy: retry` 只对 `transient = $true` 的失败 id 生效。** 对
+  `transient = $false` 的 id 在 `byFailure` 里写 `retry` 是配置错误,
+  `ebi lint` 报错(§9,呼应 P1-08)
+- `internal_error`(保留 id)默认不重试,除非显式在 `byFailure` 里覆盖
+
+**`warnings`(`STEP-CONTRACT.md` §3.1)不受 `onError` 影响。** 带
+`warnings` 的返回值仍然是 `ok = $true`,`onError` 只处理 `ok = $false`
+的情形 —— `warnings` 走的是"写进 trace + 计入汇总 + `--guided` 即时显示"
+那条路,不会触发关卡或重试。
 
 ### 6.1 为什么默认是 `ask`
 
@@ -455,6 +478,9 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 - [ ] 用到 `tier: fallback` 的 step → **警告**,提示需要校准
 - [ ] 有 `destructive` 且 `confirm: false` → **警告**,列出位置
 - [ ] `profile` 字段指向的 profile 存在且能加载
+- [ ] `page` 字段(有的话)指向的 page 在 `pages.json` 里存在(P0-R6)
+- [ ] `needs = @('session:X')` 的 step,前面有 `provides = @('X')` 的 step 跑过(P0-R2)
+- [ ] `onError.byFailure` 里 `policy: retry` 只用在 `transient = $true` 的失败 id 上(P0-R5)
 
 ---
 
