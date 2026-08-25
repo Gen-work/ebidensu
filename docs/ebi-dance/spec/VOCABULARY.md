@@ -23,7 +23,7 @@
 |--------|------|----------|
 | `worklist` | 工作清单 CSV,一行 = 一件要做的事 | `mapping_<Owner>.csv` |
 | `item` | 清单里的一行 | 一个 correl 行 |
-| `key` | item 的主键。profile 声明它是哪一列 | `Correl_ID_S` |
+| `key` | item 的主键,可以是复合的(`worklist.json` 的 `key.columns` 数组声明是哪些列,**唯一事实源**,见 `PROFILE-SCHEMA.md` §6.6) | `Correl_ID_S`(+ `JOB_NAME`) |
 | `group` | item 的分组属性,用于合并页面访问 | `JOB_NAME` / `TO_code` |
 | `owner` | 清单的归属人(用于分工筛选) | `Owner` |
 | `deliverable` | 交付物工作簿 | `Excel_NAME` 指向的证据簿 |

@@ -442,6 +442,60 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 
 启动时按此 schema 自动补齐缺失的列(沿用 `Ensure-MappingColumns` 的行为)。
 
+### 6.6 `{{item.key}}` / `{{item.keySafe}}`、规则落盘、标准候选形状(P0-R4)
+
+三个之前没定义、会互相放大的洞,在这里一次定死。
+
+**(a) `{{item.key}}` 是显示形,`{{item.keySafe}}` 是文件名安全形,不是
+同一个东西:**
+
+| 模板 | 定义 | 用途 |
+|------|------|------|
+| `{{item.key}}` | `key.columns` 按声明顺序取值,单列键就是该列原值;复合键用固定分隔符 `" / "` 拼接(`ABC123 / JOB_A`) | 人看的地方:`human.gate` 面板、歧义列表、trace 里的标签 |
+| `{{item.keySafe}}` | 每列值先做**全角转半角**规范化(和 `table.key` 规范化候选用同一套函数,不另造),替换 Windows 文件名非法字符(`\ / : * ? " < > \|` 及控制字符)为 `_`,多列用 `_` 拼接 | **文件名 / 目录名一律用它**,`{{item.key}}` 不许出现在路径模板里 |
+
+**二者都不是系统交互的入参。** 需要往搜索框里填、往 Ctrl+F 里塞的是**某一
+列的原始值**,直接用 `{{item.<列名>}}`(如 `{{item.Correl_ID_S}}`)—— 拼
+出来的显示形字符串(`"ABC123 / JOB_A"`)打进目标系统的输入框大概率是错的。
+
+**(b) `confirmedRules` 的落盘位置:** 运行时新学到一条规则(§6.3 的歧义
+面板问完"要不要固化"、人选 y 之后),**先写 `<WorkDir>/ebi.local.json`**
+(§0 已有的"本机/本次作业临时覆盖"层),不是直接改 `profiles/<name>/
+worklist.json`(那份文件在 git 里,office PC 上的部署副本不一定能同步
+回去)。面板同时提示:
+
+```
+已学到 1 条规则,记得回填 profile 并提交:
+  confirmedRules += { kind: "suffix", pattern: "...", note: "..." }
+```
+
+`ebi profile check` 检测 `<WorkDir>/ebi.local.json` 里有 `worklist.key.
+confirmedRules` 但对应 profile 的 `worklist.json` 里没有同款规则的情况,
+报「N 条学到的规则还没回填」。
+
+**(c) 候选列表的标准形状。** `table.key` / `file.find` / `file.newest` /
+`verify.match_record` 遇到歧义时**返回同一个形状**,`human.choose` 只写
+**一份**渲染逻辑:
+
+```jsonc
+{
+  "candidates": [
+    { "id": "c1", "candidate": "ABC123.260824.10515511.dat",
+      "evidence": { "source": "下载目录", "createdAt": "09:51:02",
+                     "receivedAt": "09:50:03", "size": "1.2 MB" } },
+    { "id": "c2", "candidate": "ABC123.260824.10515533.dat",
+      "evidence": { "source": "下载目录", "createdAt": "09:53:40",
+                     "receivedAt": "09:53:12", "size": "1.2 MB" } }
+  ],
+  "suggestion": { "id": "c2", "reason": "接收时间最新且落在本次运行窗口内" },
+  "doubts": "#1 和 #2 只差 3 分钟,如果本次是重跑,可能两个都是本次的"
+}
+```
+
+`evidence` 是自由字段的 map —— 证据不够就少填几个字段,**不要**编一个
+假值。`suggestion` / `doubts` 都是可选的(证据实在不够时可以不给建议,
+只摊开候选)。§6.3 的歧义面板就是这个形状的 ASCII 渲染。
+
 ---
 
 ## 7. `layout.json`
@@ -456,10 +510,10 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
   },
   "anchor": { "column": "A", "matchesKey": true },
   "pictures": {
-    "before_list": { "offsetX": 0, "offsetY": 20, "scale": 1.0 }
+    "before_transferStatus": { "offsetX": 0, "offsetY": 20, "scale": 1.0 }
   },
   "boxes": {
-    "before_list": [
+    "before_transferStatus": [
       { "offsetX": 167.9, "offsetY": 176.9, "width": 528.8, "height": 63,
         "baseRow": 2, "rowHeight": 63.8 }
     ]
