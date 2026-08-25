@@ -183,8 +183,13 @@ list 页:  read → locate(找到我那一行) → capture(截图) → download(
 | `deliver` | 交付(文件 / 邮件 / 检查表) | `Deliver*` / `CheckSheet` |
 | `sync` | 与基线对比 / 同步 | `Align` |
 
-工作流 id 形如 `before.list.capture`,取代 `GiftMqSnap`。
-capture 目录形如 `capture/before_list/<key>.png`,取代 `snap/GIFT_MQ/<id>.png`。
+工作流 id 形如 `before.transferStatus.capture`,取代 `GiftMqSnap`
+——**注意用的是 page 名(`transferStatus`),不是 role 名(`list`)**:
+同一侧经常有好几个同 role 的页面(当前工作里 MQ 転送状态一览和 Jenkins
+文件列表都是 role `list`),按 role 命名会互相撞 id(`spec/PROFILE-SCHEMA.md`
+§3、`spec/VOCABULARY.md` §2.6,P0-R1)。
+capture 目录形如 `capture/before_transferStatus/<key>.png`,取代
+`snap/GIFT_MQ/<id>.png`。
 
 ### 4.4 命名怎么落地
 
@@ -571,19 +576,19 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 `ebi explain` 输出形态(人和 Agent 审阅同一份):
 
 ```
-  before.list.capture  ── 転送状態ページの証跡取得
-  ┌ 数据源: worklist.csv  →  before_list != ok   (待处理 37 行)
+  before.transferStatus.capture  ── 転送状態ページの証跡取得
+  ┌ 数据源: worklist.csv  →  before_transferStatus != ok   (待处理 37 行)
   │
   ├ setup
   │   [人工] 请打开 list(MQ転送状態) 页面
   │   [UI  ] 激活浏览器 → 调整窗口 1050x761
   │
   ├ each  (× 37)
-  │   [UI  ] 点击正文 → Tab×1 → Enter → Tab×4 → 粘贴 {{item.key}} → Enter
-  │   [读  ] 轮询页面文本 (≤12s)     → 留档 pagetext/before_list/<key>.txt
-  │   [写  ] 截图 + 裁剪             → capture/before_list/<key>.png
+  │   [UI  ] 点击正文 → Tab×1 → Enter → Tab×4 → 粘贴 {{item.Correl_ID_S}} → Enter
+  │   [读  ] 轮询页面文本 (≤12s)     → 留档 capture/before_transferStatus/<keySafe>.txt
+  │   [写  ] 截图 + 裁剪             → capture/before_transferStatus/<keySafe>.png
   │   [纯  ] 解析 → 找行 → 判定      → ok / ng / unknown
-  │   [写  ] 标记 before_list        ← worklist 原子写
+  │   [写  ] 标记 before_transferStatus  ← worklist 原子写
   │
   └ 容错: 默认 ask   人工关卡: 1 处   破坏性操作: 0 处   降级层: 未使用 ✓
 ```
@@ -637,16 +642,21 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 
 | 阶段 | 卡数 | 其中 `[整块]` |
 |------|------|--------------|
-| P0 骨架 | 8 | 1(最小 runner spike) |
+| P0 骨架(含 9 张规格修订卡 P0-R1…R9) | 17 | 2(会话资源通道 / 最小 runner spike) |
 | P1 kernel + 25 个 step + 文档生成 | 34 | 3(Context / Runner 主体 / Runner 容错+ledger)+ 1(table.key) |
-| P2 对拍验证 | 6 | 1(办公 PC 首跑) |
+| P2 对拍验证(含 human.input/run.window、mask-lite 前移两张) | 8 | 1(办公 PC 首跑) |
 | P3 新工作实战 | 8 | 0(主要是访谈 + 填 profile) |
-| **合计到 P3 可接新工作** | **56 张** | **6 张** |
+| **合计到 P3 可接新工作** | **67 张** | **7 张** |
 | P4 excel/file 组 | 22 | 1(办公 PC 冒烟) |
 | P5 掩码 + Agent 循环 + 校准 | 14 | 1(掩码一致性替换) |
-| **全部** | **92 张** | **8 张** |
+| **全部** | **103 张** | **9 张** |
 
-按每次坐下做 1 张算,**到 P3 大约 56 次空档**。这个数字比"8 周"有用得多 ——
+> 2026-08-24 契约审查追加了 P0-R1…R6(规格修订)和 P2-07/08;
+> 2026-08-25 又追加了 P0-R7…R9(冻结标签改名、Plan/README 同步、
+> P0-00 状态修正)。完整卡片列表和当前状态**始终以
+> `docs/ebi-dance/BACKLOG.md` 为准**——这张表只做数量级参考。
+
+按每次坐下做 1 张算,**到 P3 大约 67 次空档**。这个数字比"8 周"有用得多 ——
 它不依赖你每周能挤出多少小时。
 
 `[整块]` 的 8 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
@@ -704,7 +714,7 @@ Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —�
 
 ### P2 — 对拍验证(1.5 周)
 
-把 `MqSnap.ps1`(673 行)重写成 `workflows/before.list.capture.json`(约 30 行)
+把 `MqSnap.ps1`(673 行)重写成 `workflows/before.transferStatus.capture.json`(约 30 行)
 + `profiles/host-open/`。
 
 **验收(必须在办公 PC 上做)**:

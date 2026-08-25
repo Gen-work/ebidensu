@@ -469,7 +469,7 @@
 - **估** 90min | **抄** `SnapVerify.ps1 Test-MqRecord` 的判定语义**翻译成规则表**
 - **⚠ 判定语义一行不改**,靠 `Tests/Test-SnapVerify.ps1` 的既有 fixture 护住
 
-### [ ] P2-05 workflows/before.list.capture.json
+### [ ] P2-05 workflows/before.transferStatus.capture.json
 - **估** 60min | **读** `spec/WORKFLOW-SCHEMA.md` §8(完整示例)
 - **完成**:`ebi lint` 全绿;`ebi explain` 的输出人工逐行确认过
 

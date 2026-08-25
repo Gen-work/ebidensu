@@ -341,8 +341,8 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
     { "name": "Correl_ID_S",  "role": "key" },
     { "name": "JOB_NAME",     "role": "key" },
     { "name": "Excel_NAME",   "role": "deliverable" },
-    { "name": "before_list",  "role": "verdict", "default": "" },
-    { "name": "before_record","role": "verdict", "default": "" },
+    { "name": "before_transferStatus", "role": "verdict", "default": "" },
+    { "name": "before_hmResult",       "role": "verdict", "default": "" },
     { "name": "composed",     "role": "bitmask",
       "bits": { "before": 1, "after": 2, "compare": 4 } },
     { "name": "note",         "role": "text" }

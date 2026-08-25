@@ -98,7 +98,9 @@
 
 看完素材,你应该已经能自己回答:
 
-- 有几个页面,分别是 `VOCABULARY.md` 里的哪个 role
+- 有几个页面,每个页面起一个 page 名(如 `transferStatus`),分别是
+  `VOCABULARY.md` 里的哪个 role —— **两个页面结构相同(role 一样)也要给
+  不同的 page 名**,不能拿 role 当页面名字用(`PROFILE-SCHEMA.md` §3)
 - 每页的页面指纹(sentinel)—— 哪几个字符串是这一页独有的
 - 表格页的列结构 —— 用哪种 grammar 解析(列锚定 / 正则 / tab 分隔)
 - key 长什么样(格式、长度、有没有变体)
@@ -377,7 +379,7 @@
 | 5.2 | 会不会查出来是空的 / 查不到? | 加 `empty` 分支 → `unknown` |
 | 5.3 | 会话会超时吗?超时之后什么样? | `browser.assert_page` 识别登录页 → gate |
 | 5.4 | 列表会分页吗?你那行可能在第二页吗? | `browser.scroll` / 翻页逻辑 |
-| 5.5 | key 会有变体吗?(见 1.3) | `key.aliases` 规则 |
+| 5.5 | key 会有变体吗?(见 1.3) | `confirmedRules` 规则 |
 | 5.6 | 同一个 key 会出现多行吗?(见 2.5) | 挑选规则 |
 | 5.7 | 时间戳 / 日期会影响判定吗? | `verify.time_window` |
 | 5.8 | 下载的文件名是固定的吗?会重名吗? | `file.wait_for_download` + 重命名规则 |
@@ -417,7 +419,7 @@
 
 ```
 profiles/<name>/vocabulary.json    side 名、role 显示名、列名映射
-profiles/<name>/pages.json         每个 role 的 URL / 指纹 / 导航序列
+profiles/<name>/pages.json         每个 page(命名页面实例)的 role / URL / 指纹 / 导航序列
 profiles/<name>/rules.json         判定规则表
 profiles/<name>/worklist.json      清单列 schema、主键、checkpoint 位
 profiles/<name>/layout.json        工作簿位置、画框坐标(如果有 compose/annotate)
