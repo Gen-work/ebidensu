@@ -153,8 +153,13 @@
 
 ### [ ] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
-- **做**:`git tag spec/gift-gfix <当前 main tip>` 并推送。作为整个重构期的回滚点。
-- **完成**:远程能看到该 tag;`git show spec/gift-gfix --stat` 正常
+- **做**:`git tag freeze/pre-ebi-dance <当前 main tip>` 并推送。作为整个重构期的回滚点。
+- ⚠ **不用 `spec/gift-gfix`**:远端已经存在一个同名**分支**
+  `refs/heads/spec/gift-gfix`(指向旧提交 `0f5343e`,PR #103)。git 允许
+  同名 branch + tag 共存,但那样 `git checkout spec/gift-gfix` 会变成
+  歧义引用,`git show spec/gift-gfix` 也会警告 —— 换成 `freeze/pre-ebi-dance`
+  彻底避开冲突,不要图省事换回 `spec/gift-gfix`。
+- **完成**:远程能看到该 tag;`git show freeze/pre-ebi-dance --stat` 正常
 
 ### [ ] P0-02 建目录骨架
 - **估** 30min | **依赖** P0-01 | **读** `Plan.md` §3
