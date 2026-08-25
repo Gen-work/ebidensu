@@ -274,7 +274,7 @@ run/<runId>/ledger.jsonl              断点续跑用的完成台账
 | `Jenkins` 文件列表 | page `fileList`(role `list`) |
 | `GoAnywhere` 作业一览 | page `jobList`(role `list`) |
 | Jenkins 下载 / GFIX 日志下载 | 在 `list` 页上的 `download` action |
-| 検索画面 | role `form`(page 因系统而异,如 `hmSearch` / `mqSearch`) |
+| 検索画面 | **不一定是独立 page**:HM 是独立 URL,role `form`,page 名 `hmSearch`;MQ 的搜索框长在 `transferStatus`(list)页自己身上,没有单独的 page(见 `PROFILE-SCHEMA.md` §3.0"两页流程 vs 单页自带表单") |
 | `snap/` | `capture/` |
 | phase | workflow |
 | `isReplaced` / `isMarked` / `isReviewed` | profile 声明的 checkpoint 位 |

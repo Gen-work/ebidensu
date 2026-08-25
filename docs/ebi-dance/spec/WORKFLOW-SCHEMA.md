@@ -49,7 +49,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | `title` | ✓ | 给人看的标题,可用日文/中文 |
 | `version` | ✓ | 语义化版本,改动时手工 bump |
 | `profile` | ✓ | 用哪个 profile |
-| `page` | | 绑定到 `profile.pages` 里的哪个 page(P0-R6)。省略则 `{{page.X}}` 作用域不可用,工作流只能写 `{{profile.pages.<名>.X}}` 的完整路径 |
+| `page` | | 绑定到 `profile.pages` 里的哪个 page(P0-R6)——通常是这条工作流**要截图/要判定**的那一个。省略则 `{{page.X}}` 作用域不可用。**只是 `{{page.X}}` 简写的绑定,不是"整条工作流只能碰这一个 page"的限制**:流程里要经过别的 page(比如先填一个独立的检索画面表单,再跳到结果页)时,那个未绑定的 page 依旧可以用完整路径 `{{profile.pages.<名>.X}}` 引用,只是没有简写(`PROFILE-SCHEMA.md` §3.0"两页流程") |
 | `vars` | | 工作流级常量,可被 CLI `--var k=v` 覆盖 |
 | `source` | | 没有则不遍历,只跑 `setup` + `teardown` |
 | `onError` | | 默认 `{ "policy": "ask" }` |

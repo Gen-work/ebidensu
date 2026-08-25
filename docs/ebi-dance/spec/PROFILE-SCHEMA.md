@@ -140,16 +140,40 @@ role 当 `pages.json` 的键,三个 page 会互相覆盖(同一个 `"list"` 键�
 
 | page 名 | role | 现在对应 | capture 目录 |
 |---------|------|----------|---------------|
+| `hmSearch` | `form` | HM 検索画面 | (不截图,见下方"两页流程") |
 | `hmResult` | `record` | HM 処理結果画面 | `capture/<side>_hmResult/` |
-| `transferStatus` | `list` | MQ 転送状態一覧 | `capture/<side>_transferStatus/` |
+| `transferStatus` | `list` | MQ 転送状態一覧(自带搜索框,见下方) | `capture/<side>_transferStatus/` |
 | `fileList` | `list` | Jenkins 文件列表 | `capture/<side>_fileList/` |
 | `jobList` | `list` | GoAnywhere 作业一览 | `capture/<side>_jobList/` |
 | `reportPreview` | `document` | 帳票 preview | `capture/<side>_reportPreview/` |
 
-5 个 page 名互不相同 → 5 个 capture 目录互不相同,即使其中 3 个都是
-role `list` 也不会互相覆盖。这就是 R1 要修的洞:旧设计下
-`transferStatus` / `fileList` / `jobList` 会全部落到同一个
-`capture/<side>_list/` 目录,互相覆盖对方的截图。
+6 个 page 名互不相同 → 5 个 capture 目录互不相同(`hmSearch` 是入口/表单
+页,不出证据,不落 capture 目录),即使其中 3 个都是 role `list` 也不会
+互相覆盖。这就是 R1 要修的洞:旧设计下 `transferStatus` / `fileList` /
+`jobList` 会全部落到同一个 `capture/<side>_list/` 目录,互相覆盖对方的
+截图。
+
+**两页流程 vs 单页自带表单 —— 这条容易漏,一并验证清楚。** `VOCABULARY.md`
+§6 说「検索画面 → role `form`」,但不是每个目标系统都有一个独立的检索
+画面:
+
+- **MQ(单页自带表单)**:`transferStatus` 这一个 page 上既有输入框
+  (Tab 到字段、填 key、提交)又有结果表格 —— 提交后**同一个 URL**
+  刷新出匹配的行。这种情况下 `pages.json` 的 `transferStatus` 条目自己
+  带 `tabsToForm`/`tabsToInput`(`WORKFLOW-SCHEMA.md` §8 的示例就是这种,
+  `page` 顶层只绑 `transferStatus` 一个 page,够用)。
+- **HM(两页)**:先到 `hmSearch`(独立 URL,只有输入框)填 key、提交,
+  浏览器跳转到**另一个 URL**才是 `hmResult`。这种情况下工作流仍然只
+  `"page": "hmResult"` 绑定一个(要截图、要判定的是 `hmResult`),但
+  `each` 段开头的导航/填表步骤引用 `hmSearch` 的数据时,写**完整路径**
+  `{{profile.pages.hmSearch.url}}` / `{{profile.pages.hmSearch.tabsToInput}}`
+  ——不是 `{{page.X}}`(那只指向已绑定的 `hmResult`)。**这不需要新机制**:
+  `{{page.X}}` 是"当前绑定 page"的简写,不代表工作流只能引用绑定的那一个
+  page;引用别的 page 的数据,原来的完整路径写法永远可用,只是没有简写。
+
+判断走哪种的问题(访谈时问,见 `INTERVIEW.md` §4 的 2.2):填完搜索表单
+提交后,地址栏 / 页面指纹变了吗?变了 → 两页;没变(只是同一页面刷新出
+结果)→ 单页自带表单。
 
 ### 3.1 `fingerprint` — 页面指纹
 
