@@ -31,26 +31,35 @@
 
 ## 状态
 
-- 阶段 P0–P3 共 **64 张** = 「能接下一份工作」的最小集
+- 阶段 P0–P3 共 **67 张** = 「能接下一份工作」的最小集
 - 阶段 P4–P5 共 **36 张** = 补齐 Excel/文件组 + Agent 循环
 - `[整块]` 标记 = 需要连续思考,不适合碎片时间,也**不建议交给较小的模型**
 
 > **2026-08-24 评审修订**:开工前审了一遍契约,发现 6 个「现在改是文本、
 > 写完 7000 行再改是重构」的洞,追加为 P0-R1…R6(规格修订卡,全部先于写码);
 > P2 追加 2 张(P2-07/08);受影响的实现卡已就地改写。详见各卡的「问题」段。
+>
+> **2026-08-25 追加执行**:P0-R1…R6 全部执行完毕(纯文档改动,四份 spec +
+> `Plan.md` + `docs/README.md` + `INTERVIEW.md` 同步到位),另追加三张卡
+> P0-R7(冻结标签改名,避开远端已有的同名分支)、P0-R8(`Plan.md`/
+> `docs/README.md` 与 BACKLOG 同步)、P0-R9(修正 P0-00 的虚假完成状态)。
+> 九张 R 卡全部 `[x]`。
 
 ---
 
-# P0 — 骨架(14 张,2 张整块)
+# P0 — 骨架(17 张,2 张整块)
 
 目标:**一条 5 行的 workflow JSON 能真的存下一张 PNG。**
 
 ### [x] P0-00 契约与词汇定稿
-已完成(2026-08-24):`spec/` 四份 + `INTERVIEW.md`。
+已完成(2026-08-24):`spec/` 四份 + `INTERVIEW.md`。**状态修正记录
+(P0-R9)**:2026-08-24 首次标记 `[x]` 时评审随即发现 P0-R1…R6 六个契约洞——
+这份"定稿"当时其实并不算数,`[x]` 是假的;2026-08-25 P0-R1…R9 全部执行
+并复核完毕后,才实至名归地恢复 `[x]`。
 
 ## P0-R — 规格修订(评审发现的契约洞,全部是改文本,先于任何写码卡)
 
-### [ ] P0-R1 [规格修订] page 身份与 role 解耦
+### [x] P0-R1 [规格修订] page 身份与 role 解耦
 - **估** 60min | **依赖** — | **改** `spec/PROFILE-SCHEMA.md` §2,3,4,5;`spec/VOCABULARY.md` §2,3;`spec/WORKFLOW-SCHEMA.md` §8
 - **问题**:pages.json / grammar.json / rules.json / 工作流 id / capture 目录全都拿
   **role 当唯一键**,但一个项目同一侧可以有多个同型页面 —— 当前工作 before 侧
@@ -67,7 +76,7 @@
 - **完成**:三份 spec 相互一致;把当前工作的全部页面(HM/MQ/Jenkins/GoAnywhere/帳票)
   逐个写出 page 名 + role,无一冲突
 
-### [ ] P0-R2 [整块][规格修订] 会话资源通道($Ctx.Session)
+### [x] P0-R2 [整块][规格修订] 会话资源通道($Ctx.Session)
 - **估** 90min | **依赖** — | **改** `spec/STEP-CONTRACT.md` §3,§6;`spec/WORKFLOW-SCHEMA.md` §4
 - **问题**:契约规定 step 之间**只**通过 `{{steps.X.out.Y}}` 传值,且引用**只限同段**。
   但 `browser.ensure` 在 `setup` 里拿到的窗口句柄,`each` 里的
@@ -85,7 +94,7 @@
 - **完成**:STEP-CONTRACT 新增 Session 一节;P0-08 的三步链(ensure→capture)能够
   不靠全局变量、不靠跨段 steps 引用写出来
 
-### [ ] P0-R3 [规格修订] 断点续跑 = ledger 输出重放 + setup 重跑
+### [x] P0-R3 [规格修订] 断点续跑 = ledger 输出重放 + setup 重跑
 - **估** 60min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §6;`spec/WORKFLOW-SCHEMA.md` §7
 - **问题**:「重跑按 ledger 跳过已完成的 (item, step)」—— 但跳过 `shot` 之后,
   下一步 `screen.crop` 引用的 `{{steps.shot.out.path}}` 从哪来?规格没说。
@@ -99,7 +108,7 @@
   在 spec 里加一个「中断发生在 shot 与 crop 之间」的完整推演例子。
 - **完成**:P1-04 可照抄此节实现;推演例子覆盖同段引用、跨 item、once:group 三种情况
 
-### [ ] P0-R4 [规格修订] key 单一事实源 + 文件名安全形 + 学习规则落盘
+### [x] P0-R4 [规格修订] key 单一事实源 + 文件名安全形 + 学习规则落盘
 - **估** 60min | **依赖** — | **改** `spec/PROFILE-SCHEMA.md` §2,§6;`spec/VOCABULARY.md`;`spec/WORKFLOW-SCHEMA.md` §8
 - **问题**:四个会互相放大的小洞:(a) key 被声明了**两次** ——
   vocabulary.json `columns.key`(单列)和 worklist.json `key.columns`(复合数组),
@@ -118,7 +127,7 @@
   `human.choose` 渲染它 —— 一个形状,不许四家各造。
 - **完成**:两份 spec + 两个示例一致;P1-21 / P1-22 / P1-27 / P1-34 可直接引用
 
-### [ ] P0-R5 [规格修订] 按失败种类的容错策略 + warnings 通道
+### [x] P0-R5 [规格修订] 按失败种类的容错策略 + warnings 通道
 - **估** 60min | **依赖** — | **改** `spec/STEP-CONTRACT.md` §2,§3;`spec/WORKFLOW-SCHEMA.md` §6
 - **问题**:(a) onError 策略是每 step 一刀切:`browser.wait_for` 的 `timeout`
   该 retry,`not_found` retry 毫无意义(还会对着错误页面连打三轮键盘);失败种类
@@ -134,7 +143,7 @@
   `internal_error` 声明为保留失败 id,manifest 不必列出。
 - **完成**:两份 spec 更新;P1-30 的「未识别行」改用 warnings 表达
 
-### [ ] P0-R6 [规格修订] 模板 page 绑定 + profile 内模板的求值规则
+### [x] P0-R6 [规格修订] 模板 page 绑定 + profile 内模板的求值规则
 - **估** 60min | **依赖** P0-R1 | **改** `spec/WORKFLOW-SCHEMA.md` §1,§4;`spec/PROFILE-SCHEMA.md` §5
 - **问题**:(a) 模板禁止嵌套(这条是对的),但代价是 workflow 里只能写死
   `{{profile.pages.list.url}}` 这样的完整路径 —— 换一个 page 就要全文替换路径段,
@@ -150,6 +159,49 @@
   **递归求值一次**;`run.window` 正式加入 run 作用域(由 human.input 或 CLI
   `--window` 写入,接线见 P2-07)。
 - **完成**:WORKFLOW-SCHEMA §8 示例改写后,换 page 只改一行;lint 检查项同步(P1-08)
+
+### [x] P0-R7 [规格修订] 冻结标签改名
+- **估** 10min | **依赖** — | **改** `BACKLOG.md`(P0-01 卡本身)、`Plan.md`
+- **问题**:P0-01 要 `git tag spec/gift-gfix <tip>`,但远端**已经存在一个同名分支**
+  `refs/heads/spec/gift-gfix`(旧 `docs/Generalization-Roadmap.md` 计划留下的
+  冻结/热修分支,指向 `0f5343e`,PR #103,`git ls-remote` 验证过仍然存在)。
+  git 允许同名 branch + tag 共存,但之后 `git checkout spec/gift-gfix` 会变成
+  歧义引用,`git show spec/gift-gfix` 也会警告。
+- **做**:P0-01 的标签名改成 `freeze/pre-ebi-dance`,卡里加一行说明为什么不用
+  `spec/gift-gfix`(避免后人再踩同一个坑);同步 `Plan.md` 里全部提到
+  `spec/gift-gfix` 的地方(D1 决策表、§11 P0 步骤、§14 风险表)。
+  `docs/Generalization-Roadmap.md` 自己对 `spec/gift-gfix` 分支的引用不动——
+  那是另一份仍然有效的计划的产物,不是这次要改的东西。
+- **完成**:BACKLOG / Plan.md / `docs/README.md` 里不再出现 `spec/gift-gfix` 这个
+  **标签**名(分支名本身当然还在,不受影响)
+
+### [x] P0-R8 [规格修订] Plan.md 与 README.md 同步
+- **估** 90min | **依赖** P0-R1…R7 | **改** `Plan.md` §4.3/§9/§10.3/§11/§14、
+  `docs/README.md`、`INTERVIEW.md`
+- **问题**:PR #140 只改了 `BACKLOG.md`,`Plan.md` 和 `docs/README.md` 没跟上,
+  当时互相矛盾:`Plan.md` §4.3/§9/§11 还写着 `<side>.<role>.<verb>` 和
+  `before.list.capture`(R1 已推翻的口径);§10.3 的卡数表是「56/6、92/8」而
+  BACKLOG 已经是「64/更多」;§9 的 `ebi explain` 样例用旧 workflow id 和
+  `pagetext/before_list/`(连 `pagetext/` 这个目录名本身都是过时的,
+  VOCABULARY.md 从来只有 `capture/`);`docs/README.md` 里 `P0-R` 和 `64`
+  出现次数为 0。`INTERVIEW.md` 也有三处同款漂移(`key.aliases`、pages.json
+  按 role 描述、页面盘点提示词没提醒 page≠role)。
+- **做**:R1…R7 每改一处规格,同步检查并修正 `Plan.md`/`docs/README.md`/
+  `INTERVIEW.md` 里因此过期的内容;卡数表按 BACKLOG 实际卡数重新数一遍
+  (发现 P2 也已经从 6 张长到 8 张,表格之前没跟上——这一条原始审查没提到)。
+- **完成**:四份 spec + `Plan.md` + `docs/README.md` + `INTERVIEW.md` +
+  `BACKLOG.md` 之间没有再发现矛盾的 id 命名 / 卡数 / 标签名
+
+### [x] P0-R9 P0-00 状态修正
+- **估** 5min | **依赖** P0-R1…R8 | **改** `BACKLOG.md`(P0-00 卡本身)
+- **问题**:`P0-00 契约与词汇定稿` 一直标着 `[x]` 已完成,但 P0-R1…R6 六个
+  契约洞恰恰是评审在 P0-00 标完成**当天**就发现的——那个 `[x]` 从落笔起
+  就是假的,一直没人回去改。
+- **做**:R1…R8 全部执行、复核完毕后,把 P0-00 的状态说明补上这段历史
+  (曾经是假 `[x]`,现在是真 `[x]`),而不是让下一个会话以为它从一开始
+  就经得起审查。
+- **完成**:P0-00 卡文本里能看到这段状态修正记录;本文件顶部「状态」段落
+  和 P0 分组标题的卡数统计已更新(17 张,2 张整块)
 
 ### [ ] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
