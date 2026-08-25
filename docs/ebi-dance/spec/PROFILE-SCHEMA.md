@@ -133,6 +133,13 @@ role 当 `pages.json` 的键,三个 page 会互相覆盖(同一个 `"list"` 键�
 边距(不同页面的窗口边框/内容区可能不一样,同role 的两个 page 未必能共用
 一份裁剪参数)。
 
+**保留键**:`grammar` / `rules` / `id` 不是 page 自己的数据字段,而是
+`{{page.X}}` 的三个特例(`WORKFLOW-SCHEMA.md` §4.1)——`{{page.grammar}}`
+/ `{{page.rules}}` 解析到 `grammar.json`/`rules.json` 的同名条目,
+`{{page.id}}` 是 page 名本身。**不要**在某个 page 的 `pages.json` 条目里
+自己加一个叫 `grammar`、`rules` 或 `id` 的字段——会被这三个特例遮蔽,
+静默读到错的东西。
+
 ### 3.0 当前工作的 5 个 page(验证:role 相同也不冲突)
 
 这是 P0-R1 的验收:把当前 Host→Open 迁移工作里全部会用到的页面按新规格
