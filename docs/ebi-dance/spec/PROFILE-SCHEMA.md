@@ -285,6 +285,12 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 }
 ```
 
+`{{run.window}}` 是合法引用:`run` 作用域正式包含 `window`(`runId` /
+`startedAt` / `operator` / `workDir` / `window`,`WORKFLOW-SCHEMA.md`
+§4.1),由 `human.input` 或 CLI `--window` 写入(P2-07 接线,P0-R6)。
+`rules.json` 里的模板和 `pages.json` 一样,在传给 `verify.assert` 之前会
+被**递归求值一次**(`WORKFLOW-SCHEMA.md` §4.3)。
+
 ### 5.1 `op` 一览(**穷举**)
 
 | op | 含义 |

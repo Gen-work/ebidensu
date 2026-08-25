@@ -30,8 +30,9 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
   "title":   "転送状態ページの証跡取得",
   "version": "1.0.0",
   "profile": "host-open",
+  "page":    "transferStatus",
 
-  "vars":    { "side": "before", "page": "transferStatus" },
+  "vars":    { "side": "before" },
 
   "source":  { ... },      // 遍历什么,见 §3
   "onError": { ... },      // 默认容错策略,见 §6
@@ -48,6 +49,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | `title` | ✓ | 给人看的标题,可用日文/中文 |
 | `version` | ✓ | 语义化版本,改动时手工 bump |
 | `profile` | ✓ | 用哪个 profile |
+| `page` | | 绑定到 `profile.pages` 里的哪个 page(P0-R6)。省略则 `{{page.X}}` 作用域不可用,工作流只能写 `{{profile.pages.<名>.X}}` 的完整路径 |
 | `vars` | | 工作流级常量,可被 CLI `--var k=v` 覆盖 |
 | `source` | | 没有则不遍历,只跑 `setup` + `teardown` |
 | `onError` | | 默认 `{ "policy": "ask" }` |
@@ -123,15 +125,27 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 |------|------|----------|
 | `{{vars.X}}` | 工作流常量 | 全部 |
 | `{{profile.X.Y}}` | profile 数据 | 全部 |
-| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir`) | 全部 |
+| `{{page.X}}` | 顶层 `page` 绑定的那个 page 的数据(`profile.pages[<page>].X` 的简写),`{{page.id}}` 是 page 名本身 | 全部,且顶层声明了 `page` 字段时才可用(P0-R6) |
+| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir` / `window`) | 全部 |
 | `{{item.X}}` | 当前行的某列 | 仅 `each` |
-| `{{item.key}}` | 当前行的主键(profile 声明是哪列) | 仅 `each` |
+| `{{item.key}}` | 当前行的主键显示形(复合键按声明顺序用 `" / "` 拼接) | 仅 `each` |
+| `{{item.keySafe}}` | 当前行的主键**文件名安全形**,文件/目录名一律用它,见 `PROFILE-SCHEMA.md` §6.6 | 仅 `each` |
 | `{{steps.<id>.out.<field>}}` | 同段内先前 step 的输出 | 同段内,且被引用的 step 必须在前面 |
+
+`{{page.grammar}}` / `{{page.rules}}` 是两个特别的 `{{page.X}}` 路径:它们
+不解析进 page 自己的数据,而是解析到 `grammar.json` / `rules.json` 里和
+当前 page **同名**的条目(`profile.grammar[<page>]` / `profile.rules[<page>]`
+的简写)—— 这两份文件本来就是按 page 名为键的(`PROFILE-SCHEMA.md` §4、§5,
+P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
+
+`run.window` 由 `human.input` 或 CLI `--window` 写入(P2-07 接线),用于
+`rules.json` 里 `op: "within"` 的时间窗判定,例如
+`{{run.window}}`(`PROFILE-SCHEMA.md` §5)。
 
 ### 4.2 规则
 
 - **只有取值和字符串拼接**,没有运算:
-  `"capture/{{vars.side}}_{{vars.page}}/{{item.key}}.png"` ✓
+  `"capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.png"` ✓
   `"{{item.count + 1}}"` ✗
 - 引用不存在的路径 → `ebi lint` **静态报错**(不是运行时才发现)
 - 引用了尚未执行的 step → `ebi lint` 报错
@@ -142,6 +156,18 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
   只有 `outputs` 声明的、JSON-可序列化的字段才能进 `{{steps.X.out.Y}}`
   (`STEP-CONTRACT.md` §3.4,P0-R2)。需要用到某个 step 注册的窗口/工作簿,
   在 `with` 里用它注册时的名字(`with.as` 的值)引用,不走模板
+- **禁止嵌套模板**(`{{profile.pages.{{vars.page}}.url}}` 这种写法不合法)
+  ——这正是为什么需要 `page` 顶层绑定 + `{{page.X}}` 简写,而不是让
+  `vars` 里存一个 page 名再拼进路径
+
+### 4.3 `profile` / `page` 子树的求值(P0-R6)
+
+`{{profile...}}` / `{{page...}}` 取出的**可能是一整棵子树**,不是标量
+——比如 `{{page.fingerprint}}` 取出的是 `{ ok:[...], loading:[...], ... }`
+整个对象,`{{page.grammar}}` 取出的是一整份 grammar 条目。这些子树内部
+如果本身含有 `{{...}}`(比如 `rules.json` 里的 `{{run.window}}`),
+**在传给 step 之前递归求值一次**——不会递归到第二层(取出来的结果里
+不再解析新的 `{{...}}`),源 JSON 里手写嵌套模板依旧不合法(见 §4.2)。
 
 ---
 
@@ -311,8 +337,9 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
   "title": "転送状態ページの証跡取得",
   "version": "1.0.0",
   "profile": "host-open",
+  "page": "transferStatus",
 
-  "vars": { "side": "before", "page": "transferStatus" },
+  "vars": { "side": "before" },
 
   "source": {
     "table": "worklist",
@@ -323,45 +350,47 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 
   "setup": [
     { "use": "human.prepare",
-      "with": { "message": "{{profile.pages.transferStatus.openHint}}",
-                "url":     "{{profile.pages.transferStatus.url}}" } },
-    { "use": "browser.ensure" },
+      "with": { "message": "{{page.openHint}}",
+                "url":     "{{page.url}}" } },
+    { "use": "browser.ensure", "with": { "as": "mainWindow" } },
     { "use": "screen.fit_window",
-      "with": { "width":  "{{profile.window.width}}",
+      "with": { "window": "mainWindow",
+                "width":  "{{profile.window.width}}",
                 "height": "{{profile.window.height}}" } }
   ],
 
   "each": [
-    { "use": "browser.focus_body" },
+    { "use": "browser.focus_body", "with": { "window": "mainWindow" } },
 
-    { "use": "browser.tab_to", "with": { "count": "{{profile.pages.transferStatus.tabsToForm}}" } },
+    { "use": "browser.tab_to", "with": { "count": "{{page.tabsToForm}}" } },
     { "use": "browser.submit" },
-    { "use": "browser.tab_to", "with": { "count": "{{profile.pages.transferStatus.tabsToInput}}" } },
-    { "use": "browser.fill",   "with": { "text": "{{item.key}}" } },
+    { "use": "browser.tab_to", "with": { "count": "{{page.tabsToInput}}" } },
+    { "use": "browser.fill",   "with": { "text": "{{item.Correl_ID_S}}" } },
     { "use": "browser.submit" },
 
     { "id": "wait", "use": "browser.wait_for",
-      "with": { "contains":   "{{item.key}}",
-                "timeoutSec": "{{profile.pages.transferStatus.timeoutSec}}",
-                "archiveTo":  "capture/{{vars.side}}_{{vars.page}}/{{item.key}}.txt" } },
+      "with": { "contains":   "{{item.Correl_ID_S}}",
+                "timeoutSec": "{{page.timeoutSec}}",
+                "archiveTo":  "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.txt" } },
 
     { "use": "browser.assert_page",
       "with": { "text": "{{steps.wait.out.text}}",
-                "fingerprint": "{{profile.pages.transferStatus.fingerprint}}" } },
+                "fingerprint": "{{page.fingerprint}}" } },
 
     { "id": "shot", "use": "screen.capture_window",
-      "with": { "saveAs": "capture/{{vars.side}}_{{vars.page}}/{{item.key}}.png" } },
+      "with": { "window": "mainWindow",
+                "saveAs": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.png" } },
 
     { "use": "screen.crop",
       "with": { "path":  "{{steps.shot.out.path}}",
-                "left":  "{{profile.pages.transferStatus.crop.left}}",
-                "top":   "{{profile.pages.transferStatus.crop.top}}",
-                "right": "{{profile.pages.transferStatus.crop.right}}",
-                "bottom":"{{profile.pages.transferStatus.crop.bottom}}" } },
+                "left":  "{{page.crop.left}}",
+                "top":   "{{page.crop.top}}",
+                "right": "{{page.crop.right}}",
+                "bottom":"{{page.crop.bottom}}" } },
 
     { "id": "rec", "use": "verify.parse_text",
       "with": { "text":    "{{steps.wait.out.text}}",
-                "grammar": "{{profile.grammar.transferStatus}}" } },
+                "grammar": "{{page.grammar}}" } },
 
     { "id": "row", "use": "verify.match_record",
       "with": { "records": "{{steps.rec.out.records}}",
@@ -370,7 +399,7 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 
     { "id": "verdict", "use": "verify.assert",
       "with": { "record": "{{steps.row.out.record}}",
-                "rules":  "{{profile.rules.transferStatus}}" } },
+                "rules":  "{{page.rules}}" } },
 
     { "use": "human.gate",
       "when": "steps.verdict.out.code == unknown",
@@ -387,16 +416,29 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 }
 ```
 
-**注意这份 JSON 里没有一个具体系统的名字。** 全部在 `profile` 和 `vars` 里。
-换一份工作,这份文件基本能原样抄 —— 除了一个明显的代价:`page` 名
-(`transferStatus`)被写死在了六七个不同的 `profile.pages.transferStatus.X`
-路径段里,换一个 page 要全文替换。这正是 P0-R6 要解决的问题(见 §1 的
-`page` 顶层绑定和 `{{page.X}}` 作用域)。
+**注意这份 JSON 里没有一个具体系统的名字。** 全部在 `profile`、`page`、
+`vars` 里。换一份工作,这份文件基本能原样抄 —— 而且现在换 **page**(比如
+从 `transferStatus` 换到 `fileList`)也只改一行:顶层的 `"page":
+"transferStatus"`。之前(P0-R1 刚落地、P0-R6 还没做时)`page` 名被写死在
+六七个 `profile.pages.transferStatus.X` 路径段里,换页面要全文替换 ——
+`{{page.X}}` 就是为了消掉这个代价。
 
-同时注意 `verify.match_record` 不再有 `aliases` 输入 —— 复合键的变体规则
-(`confirmedRules`)由它 dot-source 的 `kernel/Key.ps1` 直接从已加载的
-worklist 数据里读,不是工作流显式传进去的参数(P0-R4,`PROFILE-SCHEMA.md`
-§6.6)。
+其余几处值得注意:
+
+- `browser.ensure` 用 `with.as` 把窗口句柄注册进 `$Ctx.Session['mainWindow']`,
+  后续需要这个窗口的 step(`screen.fit_window`、`browser.focus_body`、
+  `screen.capture_window`)都用 `with.window: "mainWindow"` 引用同一个
+  名字,不是各自重新去找前台窗口(`STEP-CONTRACT.md` §3.4,P0-R2)。
+- `browser.fill` / `browser.wait_for` 的 `contains` 用的是
+  `{{item.Correl_ID_S}}`(具体列),不是 `{{item.key}}`——要打进搜索框、
+  要在页面里找的是这一列的原始值,不是复合键拼出来的显示字符串
+  (`PROFILE-SCHEMA.md` §6.6)。`verify.match_record` 的 `key` 输入用的
+  仍是 `{{item.key}}`,因为它经 `kernel/Key.ps1` 处理,吃的是显示形。
+- `archiveTo` / `saveAs` 的文件名用 `{{item.keySafe}}`,不是
+  `{{item.key}}`——文件名安全形,见 `PROFILE-SCHEMA.md` §6.6。
+- `verify.match_record` 没有 `aliases` 输入 —— 复合键的变体规则
+  (`confirmedRules`)由它 dot-source 的 `kernel/Key.ps1` 直接从已加载的
+  worklist 数据里读,不是工作流显式传进去的参数(P0-R4)。
 
 ---
 
