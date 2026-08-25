@@ -344,6 +344,12 @@ ledger 记录形状(比旧版多了 `outputs`):
  "ts":"..."}
 ```
 
+`step` 字段的值是这次调用的 `id`(`WORKFLOW-SCHEMA.md` §2.1 起 `id` 是
+每个 step 调用的**必填**字段,不再是可选的)。这不是随口选的键 —— 同一段
+里出现两次同一个 `use`(比如先后两次 `browser.tab_to`)完全合法,如果
+ledger 拿 `use` 当键,第二次调用会和第一次共用一条记录,resume 时被误判
+成"已经做过"而跳过。
+
 这就是 §3.4 反复强调"`outputs` 必须 JSON-可序列化"的真正原因:句柄 / COM
 对象进 `$Ctx.Session`、永不进 `outputs`,所以 `outputs` 天然能整体塞进
 ledger 的一行 JSON 并原样读回。

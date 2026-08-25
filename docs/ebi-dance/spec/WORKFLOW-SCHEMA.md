@@ -61,7 +61,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
 ```jsonc
 {
-  "id":   "shot",                    // 可选,但被别人引用时必填
+  "id":   "shot",                    // 必填(P0-R3 起):ledger 的记账键
   "use":  "screen.capture_window",   // step id
   "with": { "crop": 6 },             // 参数
   "when": "...",                     // 可选条件,见 §5
@@ -72,11 +72,22 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | 字段 | 说明 |
 |------|------|
 | `use` | **必填**,必须存在于 `catalog.json` |
-| `id` | 步骤局部 id。同一段(setup/each/teardown)内唯一。要被 `{{steps.X.out.Y}}` 引用就必须有 |
+| `id` | **必填**,步骤局部 id。同一段(setup/each/teardown)内唯一 |
 | `with` | 参数。按 step manifest 的 `inputs` 校验 |
 | `when` | 条件,见 §5 |
 | `onError` | 覆盖顶层策略 |
 | `label` | 可选,`ebi explain` 里显示的说明文字 |
+
+### 2.1 `id` 为什么是必填的(P0-R3)
+
+`STEP-CONTRACT.md` §6.1 起,ledger 按 **(item, step)** 记账,`step` 就是
+这里的 `id` —— 断点续跑靠它判断"这一步做过没有"。如果 `id` 可以省略,
+runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一个 `use`
+是完全合法的**(比如先 `browser.tab_to` 到表单区、填完再 `browser.tab_to`
+到别处),两次调用会共用一条 ledger 记录 —— 第二次会被误判为"已完成"而
+在 resume 时跳过。所以 `id` 改成必填,不再是"被引用时才需要"。
+
+`ebi lint` 检查:每个 step 调用都有非空 `id`,且同段内不重复。
 
 ---
 
@@ -130,6 +141,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | `{{item.X}}` | 当前行的某列 | 仅 `each` |
 | `{{item.key}}` | 当前行的主键显示形(复合键按声明顺序用 `" / "` 拼接) | 仅 `each` |
 | `{{item.keySafe}}` | 当前行的主键**文件名安全形**,文件/目录名一律用它,见 `PROFILE-SCHEMA.md` §6.6 | 仅 `each` |
+| `{{item.group}}` | 当前行的分组列值(`vocabulary.json` 的 `columns.group` 声明是哪一列,和 `key` 同一种映射方式)。`source.groupBy` 设了之后,**没有单独的 `group` 作用域** —— `"once":"group"` 的 step 就是靠这个访问代表整组的那条 item 的分组值,见 §7.2 | 仅 `each` |
 | `{{steps.<id>.out.<field>}}` | 同段内先前 step 的输出 | 同段内,且被引用的 step 必须在前面 |
 
 `{{page.grammar}}` / `{{page.rules}}` 是两个特别的 `{{page.X}}` 路径:它们
@@ -179,7 +191,7 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 和 `pendingWhen` 一样,是**固定枚举**,不是表达式:
 
 ```jsonc
-{ "use": "human.gate", "when": "steps.verdict.out.code == unknown" }
+{ "id": "gate", "use": "human.gate", "when": "steps.verdict.out.code == unknown" }
 ```
 
 允许的形式**只有**:
@@ -252,7 +264,7 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 不管 `onError` 设成什么。要关掉必须显式写:
 
 ```jsonc
-{ "use": "excel.replace_sheet", "with": {...}, "confirm": false }
+{ "id": "replaceSheet", "use": "excel.replace_sheet", "with": {...}, "confirm": false }
 ```
 
 `ebi explain` 会把所有 `confirm: false` 高亮出来。
@@ -267,11 +279,16 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 
 ### 7.2 `flow.group_by` — 分组访问
 
-`source.groupBy` 设了之后,runner 提供额外作用域:
+`source.groupBy` 设了之后,`each` 段仍然只有 `item` 一个作用域(见
+§4.1)——**没有单独的 `group` 前缀**。`"once": "group"` 的 step 在组内
+第一条 item 上执行,此时 `{{item.X}}` 自然就是这条(代表整个组的)item
+的数据,包括 `{{item.group}}`(分组列的值,和 `{{item.key}}` 一样是
+profile 声明哪一列的派生访问,见 §4.1):
 
 ```jsonc
 "each": [
-  { "use": "browser.navigate", "with": { "url": "{{group.url}}" },
+  { "id": "navigate", "use": "browser.navigate",
+    "with": { "url": "{{profile.pages.hmResult.url}}?appl={{item.group}}" },
     "once": "group" }                          // 每组只跑一次
 ]
 ```
@@ -282,7 +299,7 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 ### 7.3 `flow.checkpoint` — 标记完成
 
 ```jsonc
-{ "use": "flow.checkpoint",
+{ "id": "checkpoint", "use": "flow.checkpoint",
   "with": { "field": "before_transferStatus", "value": "{{steps.verdict.out.code}}" } }
 ```
 
@@ -291,7 +308,7 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 位掩码形式:
 
 ```jsonc
-{ "use": "flow.checkpoint", "with": { "field": "composed", "bit": "before" } }
+{ "id": "checkpoint", "use": "flow.checkpoint", "with": { "field": "composed", "bit": "before" } }
 ```
 
 `bit` 的名字 → 位值映射在 profile 的 `worklist.json` 里声明。
@@ -299,8 +316,9 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 ### 7.4 `flow.call` — 子工作流
 
 ```jsonc
-{ "use": "flow.call", "with": { "workflow": "shared/refocus-and-search.json",
-                                 "vars": { "term": "{{item.key}}" } } }
+{ "id": "refocusAndSearch", "use": "flow.call",
+  "with": { "workflow": "shared/refocus-and-search.json",
+            "vars": { "term": "{{item.key}}" } } }
 ```
 
 子工作流只有 `each` 段的内容会被内联。用于抽出重复片段。
@@ -375,31 +393,31 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
   "onError": { "policy": "ask" },
 
   "setup": [
-    { "use": "human.prepare",
+    { "id": "prepare", "use": "human.prepare",
       "with": { "message": "{{page.openHint}}",
                 "url":     "{{page.url}}" } },
-    { "use": "browser.ensure", "with": { "as": "mainWindow" } },
-    { "use": "screen.fit_window",
+    { "id": "ensure", "use": "browser.ensure", "with": { "as": "mainWindow" } },
+    { "id": "fit", "use": "screen.fit_window",
       "with": { "window": "mainWindow",
                 "width":  "{{profile.window.width}}",
                 "height": "{{profile.window.height}}" } }
   ],
 
   "each": [
-    { "use": "browser.focus_body", "with": { "window": "mainWindow" } },
+    { "id": "focus", "use": "browser.focus_body", "with": { "window": "mainWindow" } },
 
-    { "use": "browser.tab_to", "with": { "count": "{{page.tabsToForm}}" } },
-    { "use": "browser.submit" },
-    { "use": "browser.tab_to", "with": { "count": "{{page.tabsToInput}}" } },
-    { "use": "browser.fill",   "with": { "text": "{{item.Correl_ID_S}}" } },
-    { "use": "browser.submit" },
+    { "id": "tabToForm", "use": "browser.tab_to", "with": { "count": "{{page.tabsToForm}}" } },
+    { "id": "submitForm", "use": "browser.submit" },
+    { "id": "tabToInput", "use": "browser.tab_to", "with": { "count": "{{page.tabsToInput}}" } },
+    { "id": "fill", "use": "browser.fill", "with": { "text": "{{item.Correl_ID_S}}" } },
+    { "id": "submitQuery", "use": "browser.submit" },
 
     { "id": "wait", "use": "browser.wait_for",
       "with": { "contains":   "{{item.Correl_ID_S}}",
                 "timeoutSec": "{{page.timeoutSec}}",
                 "archiveTo":  "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.txt" } },
 
-    { "use": "browser.assert_page",
+    { "id": "assert", "use": "browser.assert_page",
       "with": { "text": "{{steps.wait.out.text}}",
                 "fingerprint": "{{page.fingerprint}}" } },
 
@@ -407,7 +425,7 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
       "with": { "window": "mainWindow",
                 "saveAs": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.png" } },
 
-    { "use": "screen.crop",
+    { "id": "crop", "use": "screen.crop",
       "with": { "path":  "{{steps.shot.out.path}}",
                 "left":  "{{page.crop.left}}",
                 "top":   "{{page.crop.top}}",
@@ -427,17 +445,17 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
       "with": { "record": "{{steps.row.out.record}}",
                 "rules":  "{{page.rules}}" } },
 
-    { "use": "human.gate",
+    { "id": "gate", "use": "human.gate",
       "when": "steps.verdict.out.code == unknown",
       "with": { "reason":   "{{steps.verdict.out.message}}",
                 "evidence": "{{steps.shot.out.path}}" } },
 
-    { "use": "flow.checkpoint",
+    { "id": "checkpoint", "use": "flow.checkpoint",
       "with": { "field": "before_transferStatus", "value": "{{steps.verdict.out.code}}" } }
   ],
 
   "teardown": [
-    { "use": "progress.status", "with": { "field": "before_transferStatus" } }
+    { "id": "status", "use": "progress.status", "with": { "field": "before_transferStatus" } }
   ]
 }
 ```
@@ -480,7 +498,7 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 - [ ] `required` 的参数都给了
 - [ ] 所有 `{{}}` 引用都解析得到(profile 路径存在、step id 存在且在前面)
 - [ ] `when` / `pendingWhen` 是允许的枚举形式
-- [ ] `id` 在同段内唯一
+- [ ] 每个 step 调用都有非空 `id`,且在同段内唯一(P0-R3:ledger 记账键,§2.1)
 - [ ] 用到 `tier: fallback` 的 step → **警告**,提示需要校准
 - [ ] 有 `destructive` 且 `confirm: false` → **警告**,列出位置
 - [ ] `profile` 字段指向的 profile 存在且能加载
