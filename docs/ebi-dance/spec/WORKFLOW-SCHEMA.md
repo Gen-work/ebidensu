@@ -253,6 +253,54 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
 子工作流只有 `each` 段的内容会被内联。用于抽出重复片段。
 
+### 7.5 断点续跑推演例子(P0-R3)
+
+「重跑跳过已完成的 (item, step)」没说清楚跳过之后,后续 step 引用它的
+输出该从哪来 —— 这个例子把 `STEP-CONTRACT.md` §6 的三条规则(ledger 记
+outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中断里
+过一遍,覆盖**同段引用**、**跨 item**、**`once: group`** 三种情况。
+
+三个 item:`A`、`B` 同组 `G1`,`C` 单独一组 `G2`。`each` 段依次是
+`navigate`(`once: group`)→ `shot` → `crop` → `verdict` → `checkpoint`。
+
+跑到 A 做完 `shot`、还没跑 `crop` 时进程被打断(比如 Ctrl+C)。此刻
+`run/<runId>/ledger.jsonl` 的内容:
+
+```json
+{"runId":"r1","group":"G1","step":"navigate","status":"ok","outputs":{"url":"https://.../G1"},"ts":"..."}
+{"runId":"r1","item":"A","step":"shot","status":"ok","outputs":{"path":"capture/before_transferStatus/A.png","width":1280,"height":800},"ts":"..."}
+```
+
+（B、C 的任何 step 都还没有记录 —— runner 是按 item 顺序遍历的,还没轮到
+它们。）
+
+重跑(`ebi run` 同一个 `runId`)时依次发生:
+
+1. **`setup` 完整重跑**(`STEP-CONTRACT.md` §6.2),`$Ctx.Session` 里的
+   浏览器窗口句柄重新注册好 —— ledger 完全不影响这一步。
+2. 遍历到 item A,段内第一个 step `navigate`:ledger 里有
+   `(group=G1, step=navigate)` 的记录 → **跳过执行**,把它的 `outputs`
+   重放进 `steps.navigate.out.*`(这条记录接下来对 B 也生效,见第 6 步)。
+3. 仍在 item A,`shot`:ledger 里有 `(item=A, step=shot)` → **跳过执行**,
+   重放 `steps.shot.out.path = "capture/before_transferStatus/A.png"` 等
+   字段。**这就是"跳过 `shot` 之后 `crop` 引用的输出从哪来"的答案** ——
+   从 ledger 重放,不是重新截一次图。
+4. 仍在 item A,`crop`:ledger 里**没有** `(item=A, step=crop)` →
+   **真正执行**,拿到的 `{{steps.shot.out.path}}` 就是上一步重放出来的
+   值 —— 对 `crop` 这个 step 完全透明,它不知道自己上游是重放还是真跑。
+5. `verdict`、`checkpoint` 对 A 正常执行,写入新的 ledger 记录。
+6. 遍历到 item B(同组 G1),`navigate`:ledger 里已经有
+   `(group=G1, step=navigate)` → 跳过,重放**同一条**记录的 `outputs`
+   (跨 item 复用,不需要 B 自己再有一条 navigate 记录)。B 的
+   `shot`/`crop`/`verdict` 之前从未跑过 → 全部真正执行。
+7. 遍历到 item C(组 G2),`navigate` 从未为 G2 跑过(ledger 里没有
+   `(group=G2, step=navigate)`)→ 真正执行;后续也全部真正执行。
+
+**不重复截图**(A 的 `shot` 没有再跑一次)、**crop 仍然拿得到正确路径**
+(靠重放,不是靠重新执行上游)、**B 不用重新打开页面**(navigate 靠
+`once: group` 的重放跨 item 复用)——三点都验证了 P2-06 的断点续跑
+验收标准。
+
 ---
 
 ## 8. 完整示例

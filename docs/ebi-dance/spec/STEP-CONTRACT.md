@@ -276,19 +276,76 @@ OCR 引擎版本可能给出不同结果。
 
 ---
 
-## 6. 幂等与 checkpoint
+## 6. 幂等、checkpoint 与断点续跑(P0-R3)
 
-`idempotent = $true` 的 step,runner 在断点续跑时可以安全重放。
+「重跑按 ledger 跳过已完成的 (item, step)」这句话本身没说清楚一件事:跳过
+`shot` 之后,下一个 `crop` 引用的 `{{steps.shot.out.path}}` 从哪来?下面
+三条定死这个问题。
+
+### 6.1 ledger 记录连同 outputs 一起持久化,resume 时重放
+
+`idempotent = $true` 的 step,runner 在断点续跑时**可以**安全重新执行 ——
+但绝大多数情况下**不需要真的重跑**:断点续跑的意义就是跳过已完成的
+(item, step),而跳过之后,后续 step 如果引用了它的
+`{{steps.<id>.out.<field>}}`,这个值必须能拿到,不能因为"跳过了"就变成
+未定义引用。
+
+**规则:ledger 每条记录里的 `outputs` 是完整的 step 返回值(不只是
+`status`)。** resume 时,runner 按顺序把 ledger 里每条记录的 `outputs`
+写回模板作用域(`steps.<id>.out.*`)—— 这叫**重放**。只有 ledger 里
+**没有**记录的 (item, step) 才真正调用 `Invoke-Step`。
+
+ledger 记录形状(比旧版多了 `outputs`):
+
+```json
+{"runId":"...","item":"ABC123","step":"shot","status":"ok",
+ "outputs":{"path":"capture/before_transferStatus/ABC123.png","width":1280,"height":800},
+ "ts":"..."}
+```
+
+这就是 §3.4 反复强调"`outputs` 必须 JSON-可序列化"的真正原因:句柄 / COM
+对象进 `$Ctx.Session`、永不进 `outputs`,所以 `outputs` 天然能整体塞进
+ledger 的一行 JSON 并原样读回。
+
+### 6.2 `setup` / `teardown` 每次 resume 都重跑
+
+`setup` 段负责建立 `$Ctx.Session`(浏览器窗口句柄、Excel COM……)——
+这些资源本身不持久化(§3.4),进程重启后 Session 总是空的。所以
+**`setup` 和 `teardown` 不走 §6.1 的跳过/重放逻辑,每次 resume 都完整
+重跑一遍**,负责把 Session 重新建起来。
+
+推论:**`setup` 里的每个 step 必须是 `idempotent = $true`。**
+`browser.ensure` 重复执行的语义是"已经在前台就什么都不做,不是再开一个
+浏览器窗口";`idempotent = $false` 的 step 不允许出现在 `setup` 里,
+`ebi lint` 检查这一条。
+
+### 6.3 `once: group` 的 ledger 键是 (group, step)
+
+`"once": "group"` 的 step(`WORKFLOW-SCHEMA.md` §7.2)不是按 item 记账的
+——它只在组内第一条 item 上真正跑一次。ledger 键因此是
+**(group, step)**,不是 (item, step):
+
+```json
+{"runId":"...","group":"JOB_A","step":"navigate","status":"ok",
+ "outputs":{"url":"https://.../JOB_A"},"ts":"..."}
+```
+
+resume 时,这条记录的 `outputs` 对**同组的全部 item** 重放,不只是当初
+触发执行的那一条 —— 组里排在后面的 item 引用 `{{steps.navigate.out.X}}`
+时,拿到的是这同一条记录的值。
+
+### 6.4 幂等的一般规则
 
 `idempotent = $false` 的例子:`file.move`(源文件已经不在了)、
 `browser.download_link`(会重复下载)。这类 step 必须紧跟一个
-`flow.checkpoint`,让 runner 知道它已经做过了。
+`flow.checkpoint`,让 runner 知道它已经做过了 —— checkpoint 走 §6.1 的
+ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
+(group, step)。
 
-**checkpoint 的粒度是 (item, step),不是 (item)。** ledger 记录:
-
-```json
-{"runId":"...","item":"ABC123","step":"shot","status":"ok","ts":"..."}
-```
+**完整的"中断发生在 `shot` 与 `crop` 之间"推演例子在
+`WORKFLOW-SCHEMA.md` §7.5** —— 断点续跑是 runner 遍历 `source` 和
+`flow.*` 构造的行为,例子里同时要用到 `once: group`,放在那份文档里
+和 §7 的其余 `flow.*` 说明放在一起更合适。
 
 ---
 
