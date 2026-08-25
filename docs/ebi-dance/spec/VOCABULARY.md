@@ -247,7 +247,7 @@ run/<runId>/ledger.jsonl              断点续跑用的完成台账
 | 要改 | 不用改 |
 |------|--------|
 | `profiles/<新名>/vocabulary.json`(side 名、role 显示名、列名映射) | `modules/**` 全部 step |
-| `profiles/<新名>/pages.json`(每个 role 绑哪个 URL / 页面指纹 / Tab 序列) | `kernel/**` |
+| `profiles/<新名>/pages.json`(每个 page 声明 role + URL / 页面指纹 / Tab 序列) | `kernel/**` |
 | `profiles/<新名>/rules.json`(判定规则表) | `docs/**` |
 | `profiles/<新名>/worklist.json`(清单列 schema、主键、位定义) | 多数 `workflows/*.json`(能直接抄) |
 | `profiles/<新名>/layout.json`(工作簿位置、画框坐标) | |

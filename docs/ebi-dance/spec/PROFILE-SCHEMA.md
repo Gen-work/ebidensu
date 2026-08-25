@@ -299,7 +299,7 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
         "message": "状態が正常終了ではない" },
       { "field": "rtncd",    "op": "equals", "value": "0",        "else": "ng",
         "message": "リターンコードが0以外" },
-      { "field": "recvTime", "op": "within", "value": "{{run.window}}", "else": "ng",
+      { "field": "recvTime", "op": "within", "value": "{{run.timeWindow}}", "else": "ng",
         "message": "受信時刻が実行時間帯の外" },
       { "field": "count",    "op": "present",                      "else": "unknown",
         "message": "件数が読み取れない" }
@@ -309,9 +309,13 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 }
 ```
 
-`{{run.window}}` 是合法引用:`run` 作用域正式包含 `window`(`runId` /
-`startedAt` / `operator` / `workDir` / `window`,`WORKFLOW-SCHEMA.md`
-§4.1),由 `human.input` 或 CLI `--window` 写入(P2-07 接线,P0-R6)。
+`{{run.timeWindow}}` 是合法引用:`run` 作用域正式包含 `timeWindow`
+(`runId` / `startedAt` / `operator` / `workDir` / `timeWindow`,
+`WORKFLOW-SCHEMA.md` §4.1),由 `human.input` 或 CLI `--window` 写入
+(P2-07 接线,P0-R6)。形状是 `{ "from": "<ISO8601>", "to": "<ISO8601>" }`
+——`op: "within"` 拿字段值和这两端比较,在窗口内(含端点)才算通过。
+叫 `timeWindow` 不叫 `window`,是为了不和 `profile.window`(浏览器窗口
+尺寸)、`$Ctx.Session` 里的窗口句柄名撞概念(`WORKFLOW-SCHEMA.md` §4.1)。
 `rules.json` 里的模板和 `pages.json` 一样,在传给 `verify.assert` 之前会
 被**递归求值一次**(`WORKFLOW-SCHEMA.md` §4.3)。
 
@@ -488,6 +492,16 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 列的原始值**,直接用 `{{item.<列名>}}`(如 `{{item.Correl_ID_S}}`)—— 拼
 出来的显示形字符串(`"ABC123 / JOB_A"`)打进目标系统的输入框大概率是错的。
 
+**`keySafe` 不保证跨行唯一,这是已知代价,必须在加载时挡住。**
+「非法字符转 `_`、多列用 `_` 拼接」这套规则本身会制造新的重名:
+`("A_B", "C")` 和 `("A", "B_C")` 拼出来都是 `A_B_C`;`ABC/1` 和 `ABC_1`
+都变成 `ABC_1`;`ABC` 和 `ＡＢＣ`(全角)全角转半角后也是同一个值。
+`capture/<side>_<page>/{{item.keySafe}}.png` 一旦撞车就是**静默互相
+覆盖**——R1 刚刚在 page 这一层堵掉的同一种失败,不能在 item 这一层
+重新打开一个缺口。**`table.load` 必须在读入 worklist 时,对全表算一遍
+每行的 `keySafe`,发现重复直接判失败并列出撞车的行**(不是运行到某个
+`each` 迭代时才发现);`ebi lint`/`ebi profile check` 复查同一条规则。
+
 **(b) `confirmedRules` 的落盘位置:** 运行时新学到一条规则(§6.3 的歧义
 面板问完"要不要固化"、人选 y 之后),**先写 `<WorkDir>/ebi.local.json`**
 (§0 已有的"本机/本次作业临时覆盖"层),不是直接改 `profiles/<name>/
@@ -575,28 +589,44 @@ confirmedRules` 但对应 profile 的 `worklist.json` 里没有同款规则的�
 
 ---
 
-## 9. `fixtures/` —— 让规则能在家里测
+## 9. `fixtures/` —— 让规则能在家里测(按 page 分目录,P0-R1 呼应)
+
+**fixture 按 page 名分子目录,不是所有页面的文本堆在一起按 role 命名。**
+当前工作有三个 role `list` 的 page(`transferStatus` / `fileList` /
+`jobList`,§3.0),各自的 grammar 和 rules 完全不同——如果 fixture 叫
+`list-ok.txt`,`ebi profile check` 没法知道该拿哪个 page 的规则去跑它。
+这是 R1 在 `pages.json`/`grammar.json`/`rules.json` 上堵住的同一种
+role-当键问题,fixture 目录漏了一次,这里补上。
 
 ```
 fixtures/
-  list-ok.txt          正常页面的 Ctrl+A 文本(已脱敏)
-  list-ng-rtncd.txt    返回码非 0
-  list-empty.txt       查询结果为空
-  list-expired.txt     会话超时
-  list-multi-row.txt   同一 key 多行
+  transferStatus/
+    ok.txt              正常页面的 Ctrl+A 文本(已脱敏)
+    ng-rtncd.txt         返回码非 0
+    empty.txt            查询结果为空
+    expired.txt          会话超时
+    multi-row.txt        同一 key 多行
+    expected.json
+  fileList/
+    ok.txt
+    expected.json
 ```
 
-每个 fixture 配一个期望结论,组成单测:
+每个 page 目录下的 `expected.json` 只需要用**目录内**的文件名做键(不用
+再拼 page 名,目录本身就是命名空间):
 
 ```jsonc
-// fixtures/expected.json
+// fixtures/transferStatus/expected.json
 {
-  "list-ok.txt":        { "verdict": "ok" },
-  "list-ng-rtncd.txt":  { "verdict": "ng", "message": "リターンコードが0以外" },
-  "list-empty.txt":     { "verdict": "unknown" },
-  "list-multi-row.txt": { "verdict": "ok", "matchedRow": 3 }
+  "ok.txt":        { "verdict": "ok" },
+  "ng-rtncd.txt":  { "verdict": "ng", "message": "リターンコードが0以外" },
+  "empty.txt":     { "verdict": "unknown" },
+  "multi-row.txt": { "verdict": "ok", "matchedRow": 3 }
 }
 ```
+
+`ebi grammar tune`(§4.1)的 `s`(存进 profile + 存成 fixture)按当前调试
+的 `--page` 参数写进对应子目录,不需要额外指定。
 
 **这是整套设计里性价比最高的一环**:grammar + rules 是纯数据,fixture 是纯文本,
 所以**判定逻辑可以完全在没有办公环境的机器上验证**。旧仓库已经用这招保住了

@@ -287,7 +287,7 @@
   "rules": [
     { "field": "status",   "op": "equals",     "value": "正常終了", "else": "ng" },
     { "field": "rtncd",    "op": "equals",     "value": "0",        "else": "ng" },
-    { "field": "recvTime", "op": "within",     "value": "{{run.window}}", "else": "ng" },
+    { "field": "recvTime", "op": "within",     "value": "{{run.timeWindow}}", "else": "ng" },
     { "field": "count",    "op": "present",                          "else": "unknown" }
   ],
   "default": "ok"

@@ -156,8 +156,10 @@
   作用域 = `profile.pages[<当前 page>].X`,并让 `{{page.grammar}}` / `{{page.rules}}`
   解析到 grammar.json / rules.json 的同名条目;嵌套模板依旧禁止。
   (b) 定死:经 `{{profile...}}` / `{{page...}}` 取出的子树在传给 step 前
-  **递归求值一次**;`run.window` 正式加入 run 作用域(由 human.input 或 CLI
-  `--window` 写入,接线见 P2-07)。
+  **递归求值一次**;时间窗正式加入 run 作用域(由 human.input 或 CLI
+  `--window` 写入,接线见 P2-07)——**执行时改名为 `run.timeWindow`**,
+  不叫 `run.window`(和 `profile.window`、Session 窗口句柄名撞概念,
+  复核时发现,见 PR #141 的审查记录)。
 - **完成**:WORKFLOW-SCHEMA §8 示例改写后,换 page 只改一行;lint 检查项同步(P1-08)
 
 ### [x] P0-R7 [规格修订] 冻结标签改名
@@ -421,8 +423,12 @@
 ## table / progress 组(6 张)
 
 ### [ ] P1-24 table.load + table.save
-- **估** 60min | **抄** `MappingStore.ps1 Import-Mapping` / `Export-MappingAtomic`
-- **注意**:CSV 是 UTF-8 **带 BOM**(Excel 需要);写入必须原子(临时文件 + 改名)
+- **估** 60min | **依赖** P0-R4 | **抄** `MappingStore.ps1 Import-Mapping` / `Export-MappingAtomic`
+- **注意**:CSV 是 UTF-8 **带 BOM**(Excel 需要);写入必须原子(临时文件 + 改名)。
+  `table.load` 必须对全表算一遍 `keySafe`(`PROFILE-SCHEMA.md` §6.6),撞车的行
+  直接判失败并列出来——`keySafe` 的规范化规则本身会制造新的重名
+  (`A_B`+`C` 和 `A`+`B_C` 都拼成 `A_B_C`),不在加载时挡住就会在 capture
+  阶段静默互相覆盖截图
 
 ### [ ] P1-25 table.ensure_columns
 - **估** 45min | **抄** `MappingStore.ps1 Ensure-MappingColumns`;列 schema 来自 profile
@@ -534,13 +540,16 @@
   - [ ] 中途 Ctrl+C,重跑从断点续上,不重复截图
 - ⚠ 如果旧流程已无真实环境可跑,改用任意一条还能跑的。**对拍验证的是引擎,不是业务。**
 
-### [ ] P2-07 human.input + run.window 接线
+### [ ] P2-07 human.input + run.timeWindow 接线
 - **估** 60min | **依赖** P1-05, P0-R6
 - **做**:`human.input` step(默认值 + 校验 + 批量一次问,抄旧 Expected_Time 批量
-  提示的交互方式)+ CLI `--window`,写入 run 作用域的 `run.window`
+  提示的交互方式)+ CLI `--window`,写入 run 作用域的 `run.timeWindow`
+  (形状 `{ "from": "<ISO8601>", "to": "<ISO8601>" }`,见
+  `spec/WORKFLOW-SCHEMA.md` §4.1;字段叫 `timeWindow` 不叫 `window`,
+  避免和 `profile.window`、Session 窗口句柄名撞概念)
 - **为什么在 P2**:模块表里它排 P2 但原 backlog 漏了卡 —— 而 MqSnap 对拍的判定
-  规则里有 `within {{run.window}}`(时间窗),没有这张卡 P2-04/P2-06 跑不了
-- **完成**:rules.json 里 `within` + `{{run.window}}` 的规则在 fixture 单测里可判
+  规则里有 `within {{run.timeWindow}}`(时间窗),没有这张卡 P2-04/P2-06 跑不了
+- **完成**:rules.json 里 `within` + `{{run.timeWindow}}` 的规则在 fixture 单测里可判
 
 ### [ ] P2-08 mask-lite:脱敏门禁前移
 - **估** 60min | **依赖** —(可与 P2-01 并行)

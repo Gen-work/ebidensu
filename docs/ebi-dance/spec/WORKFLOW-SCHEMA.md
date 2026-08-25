@@ -137,7 +137,7 @@ runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一
 | `{{vars.X}}` | 工作流常量 | 全部 |
 | `{{profile.X.Y}}` | profile 数据 | 全部 |
 | `{{page.X}}` | 顶层 `page` 绑定的那个 page 的数据(`profile.pages[<page>].X` 的简写),`{{page.id}}` 是 page 名本身 | 全部,且顶层声明了 `page` 字段时才可用(P0-R6) |
-| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir` / `window`) | 全部 |
+| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir` / `timeWindow`) | 全部 |
 | `{{item.X}}` | 当前行的某列 | 仅 `each` |
 | `{{item.key}}` | 当前行的主键显示形(复合键按声明顺序用 `" / "` 拼接) | 仅 `each` |
 | `{{item.keySafe}}` | 当前行的主键**文件名安全形**,文件/目录名一律用它,见 `PROFILE-SCHEMA.md` §6.6 | 仅 `each` |
@@ -150,9 +150,13 @@ runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一
 的简写)—— 这两份文件本来就是按 page 名为键的(`PROFILE-SCHEMA.md` §4、§5,
 P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 
-`run.window` 由 `human.input` 或 CLI `--window` 写入(P2-07 接线),用于
-`rules.json` 里 `op: "within"` 的时间窗判定,例如
-`{{run.window}}`(`PROFILE-SCHEMA.md` §5)。
+`run.timeWindow` 由 `human.input` 或 CLI `--window` 写入(P2-07 接线),
+形状是 `{ "from": "<ISO8601>", "to": "<ISO8601>" }`,用于 `rules.json` 里
+`op: "within"` 的时间窗判定,例如 `{{run.timeWindow}}`
+(`PROFILE-SCHEMA.md` §5)。**故意不叫 `run.window`**:同一份 §8 示例里
+还有 `profile.window.width/height`(浏览器窗口尺寸)和字面量
+`"mainWindow"`(`$Ctx.Session` 里的窗口句柄名,§3.4)——三个概念都叫
+"window" 太容易读串,`timeWindow` 消掉这一个。
 
 ### 4.2 规则
 
@@ -180,7 +184,7 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 `{{profile...}}` / `{{page...}}` 取出的**可能是一整棵子树**,不是标量
 ——比如 `{{page.fingerprint}}` 取出的是 `{ ok:[...], loading:[...], ... }`
 整个对象,`{{page.grammar}}` 取出的是一整份 grammar 条目。这些子树内部
-如果本身含有 `{{...}}`(比如 `rules.json` 里的 `{{run.window}}`),
+如果本身含有 `{{...}}`(比如 `rules.json` 里的 `{{run.timeWindow}}`),
 **在传给 step 之前递归求值一次**——不会递归到第二层(取出来的结果里
 不再解析新的 `{{...}}`),源 JSON 里手写嵌套模板依旧不合法(见 §4.2)。
 
@@ -508,6 +512,14 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
       (种类配平,不是名字硬编码在 manifest 里比对,见 `STEP-CONTRACT.md`
       §3.4,P0-R2)
 - [ ] `onError.byFailure` 里 `policy: retry` 只用在 `transient = $true` 的失败 id 上(P0-R5)
+- [ ] `setup` 段里的每个 step 都是 `idempotent = $true`(`STEP-CONTRACT.md` §6.2,P0-R3——`setup` 每次 resume 都重跑,非幂等 step 出现在这里是契约违反)
+- [ ] worklist 里所有 `role: key` 的列都出现在 `key.columns` 里,反之亦然(`PROFILE-SCHEMA.md` §6.1)
+- [ ] 涉及 key 比较的 step(`verify.match_record`/`file.find`/`file.newest`/`excel.find_anchor`……)都走 `table.key` 的规范化,没有 step 自己写比较绕过它(`PROFILE-SCHEMA.md` §6.4)
+
+> 这四项(连同上面 `page`/`session`/`onError.byFailure` 三项)散落声明在
+> `STEP-CONTRACT.md` 和 `PROFILE-SCHEMA.md` 各自的章节里,**这份清单是
+> 唯一汇总处**——P1-08 只读这一份,散在别处的规则如果没抄过来会被
+> 实现直接漏掉。新增任何一条 lint 规则,定义它的章节和这份清单都要改。
 
 ---
 

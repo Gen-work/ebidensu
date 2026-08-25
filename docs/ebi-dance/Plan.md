@@ -644,7 +644,7 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 |------|------|--------------|
 | P0 骨架(含 9 张规格修订卡 P0-R1…R9) | 17 | 2(会话资源通道 / 最小 runner spike) |
 | P1 kernel + 25 个 step + 文档生成 | 34 | 3(Context / Runner 主体 / Runner 容错+ledger)+ 1(table.key) |
-| P2 对拍验证(含 human.input/run.window、mask-lite 前移两张) | 8 | 1(办公 PC 首跑) |
+| P2 对拍验证(含 human.input/run.timeWindow、mask-lite 前移两张) | 8 | 1(办公 PC 首跑) |
 | P3 新工作实战 | 8 | 0(主要是访谈 + 填 profile) |
 | **合计到 P3 可接新工作** | **67 张** | **7 张** |
 | P4 excel/file 组 | 22 | 1(办公 PC 冒烟) |
@@ -659,8 +659,8 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 按每次坐下做 1 张算,**到 P3 大约 67 次空档**。这个数字比"8 周"有用得多 ——
 它不依赖你每周能挤出多少小时。
 
-`[整块]` 的 8 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
-其余 84 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
+`[整块]` 的 9 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
+其余 94 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
 
 ### 10.4 关于模型
 
