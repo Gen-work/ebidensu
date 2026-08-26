@@ -231,11 +231,21 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
    工作流决定**,manifest 里不出现任何具体名字。
 
 3. **实例名怎么产生和引用**:
-   - 会产出资源的 step,调用点(不是 manifest!)在 `with` 里加
-     `as: "<名>"` 完成注册,如 `{ "use": "browser.ensure", "with": { "as": "mainWindow" } }`。
+   - **`as` 是 runner 保留字段,不是 step 的 `inputs`。** 任何 `provides`
+     非空的 step,它的调用点(不是 manifest!)都可以在 `with` 里加
+     `as: "<名>"` 完成注册,如
+     `{ "id": "ensure", "use": "browser.ensure", "with": { "as": "mainWindow" } }`
+     ——`as` 不需要、也不允许出现在该 step 的 `$Manifest.inputs` 里,
+     runner 在按 `inputs` 校验 `with` 之前就把它摘出来单独处理(§2 的
+     "`with` 的参数按 `inputs` 校验"这条规则,`as` 是唯一的例外)。
      一个 step 调用最多注册一个资源,种类是其 `provides` 唯一的一项(本
      项目目前的 step 都只 `provides` 一种;需要注册多种资源的 step 请拆
-     成多个 step,不要在一次调用里塞两个)。
+     成多个 step,不要在一次调用里塞两个;`provides` 元素数 > 1 的 step
+     不合法,P0-06 的契约检查器强制)。
+   - **`provides` 非空但调用没写 `as` 是合法的**:资源正常产出、正常
+     被这次调用内部使用,只是不注册进 `$Ctx.Session` 给后面的 step 引用
+     ——适用于"这个窗口/工作簿只用这一次,不需要跨 step 复用"的场景。
+     没有默认名这回事:不写 `as` 就是不注册,不是注册成某个隐含名字。
    - 消费方在自己的 `inputs` 里声明一个 `type = 'session'` 的参数,并带
      `sessionKind`(比如 `screen.capture_window` 的 `window` 参数是
      `@{ type='session'; sessionKind='window'; required=$true }`)。工作流

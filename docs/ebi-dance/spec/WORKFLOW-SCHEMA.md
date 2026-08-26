@@ -73,7 +73,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 |------|------|
 | `use` | **必填**,必须存在于 `catalog.json` |
 | `id` | **必填**,步骤局部 id。同一段(setup/each/teardown)内唯一 |
-| `with` | 参数。按 step manifest 的 `inputs` 校验 |
+| `with` | 参数。按 step manifest 的 `inputs` 校验,唯一例外是 `as`(见 `STEP-CONTRACT.md` §3.4)——runner 保留字段,不进 `inputs`,`provides` 非空的 step 才能用 |
 | `when` | 条件,见 §5 |
 | `onError` | 覆盖顶层策略 |
 | `label` | 可选,`ebi explain` 里显示的说明文字 |
