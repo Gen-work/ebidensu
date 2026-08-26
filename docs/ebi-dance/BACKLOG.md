@@ -161,7 +161,7 @@
   解析到 grammar.json / rules.json 的同名条目;嵌套模板依旧禁止。
   (b) 定死:经 `{{profile...}}` / `{{page...}}` 取出的子树在传给 step 前
   **递归求值一次**;时间窗正式加入 run 作用域(由 human.input 或 CLI
-  `--window` 写入,接线见 P2-07)——**执行时改名为 `run.timeWindow`**,
+  `--time-window` 写入,接线见 P2-07)——**执行时改名为 `run.timeWindow`**,
   不叫 `run.window`(和 `profile.window`、Session 窗口句柄名撞概念,
   复核时发现,见 PR #141 的审查记录)。
 - **完成**:WORKFLOW-SCHEMA §8 示例改写后,换 page 只改一行;lint 检查项同步(P1-08)
@@ -550,7 +550,7 @@
 ### [ ] P2-07 human.input + run.timeWindow 接线
 - **估** 60min | **依赖** P1-05, P0-R6
 - **做**:`human.input` step(默认值 + 校验 + 批量一次问,抄旧 Expected_Time 批量
-  提示的交互方式)+ CLI `--window`,写入 run 作用域的 `run.timeWindow`
+  提示的交互方式)+ CLI `--time-window`,写入 run 作用域的 `run.timeWindow`
   (形状 `{ "from": "<ISO8601>", "to": "<ISO8601>" }`,见
   `spec/WORKFLOW-SCHEMA.md` §4.1;字段叫 `timeWindow` 不叫 `window`,
   避免和 `profile.window`、Session 窗口句柄名撞概念)

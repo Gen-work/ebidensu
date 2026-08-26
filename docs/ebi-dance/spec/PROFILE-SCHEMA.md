@@ -319,7 +319,7 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 
 `{{run.timeWindow}}` 是合法引用:`run` 作用域正式包含 `timeWindow`
 (`runId` / `startedAt` / `operator` / `workDir` / `timeWindow`,
-`WORKFLOW-SCHEMA.md` §4.1),由 `human.input` 或 CLI `--window` 写入
+`WORKFLOW-SCHEMA.md` §4.1),由 `human.input` 或 CLI `--time-window` 写入
 (P2-07 接线,P0-R6)。形状是 `{ "from": "<ISO8601>", "to": "<ISO8601>" }`
 ——`op: "within"` 拿字段值和这两端比较,在窗口内(含端点)才算通过。
 叫 `timeWindow` 不叫 `window`,是为了不和 `profile.window`(浏览器窗口

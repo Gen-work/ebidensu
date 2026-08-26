@@ -150,7 +150,14 @@ runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一
 的简写)—— 这两份文件本来就是按 page 名为键的(`PROFILE-SCHEMA.md` §4、§5,
 P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 
-`run.timeWindow` 由 `human.input` 或 CLI `--window` 写入(P2-07 接线),
+**`item.key` / `item.keySafe` / `item.group` 也是保留键,和 `pages.json` 的
+`grammar`/`rules`/`id`(`PROFILE-SCHEMA.md` §3)是同一类问题**:它们是派生
+访问,不是 worklist 里真实存在的列名。如果 worklist 恰好有一列**字面**就叫
+`key`、`keySafe` 或 `group`,`{{item.key}}` 解析到的是派生形,不是那一列的
+原始值——原始值仍然可以按列名单独访问(`{{item.key}}` 这个具体列名恰好和
+保留名相同时无法区分,建议 worklist 设计阶段避开这三个作为真实列名)。
+
+`run.timeWindow` 由 `human.input` 或 CLI `--time-window` 写入(P2-07 接线),
 形状是 `{ "from": "<ISO8601>", "to": "<ISO8601>" }`,用于 `rules.json` 里
 `op: "within"` 的时间窗判定,例如 `{{run.timeWindow}}`
 (`PROFILE-SCHEMA.md` §5)。**故意不叫 `run.window`**:同一份 §8 示例里
