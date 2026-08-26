@@ -635,11 +635,16 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 - [ ] `setup` 段里的每个 step 都是 `idempotent = $true`(`STEP-CONTRACT.md` §6.2,P0-R3——`setup` 每次 resume 都重跑,非幂等 step 出现在这里是契约违反)
 - [ ] `"once": "groupEnd"` 只在 `source.groupBy` 有值时合法,没有 `groupBy`
       的 `each` 段里出现 `once:"groupEnd"` → 报错(§7.2,P0-R10 第四轮)
-- [ ] 每个通过 `with.as` 注册的资源名,如果它的种类在 catalog 里存在带
-      `releases` 覆盖该种类的 step,`teardown` 段必须有一次对**同一个
-      名字**的释放调用;种类在 catalog 里没有任何 `releases` 覆盖(比如
-      `window`——窗口句柄泄漏无害,没有对应的释放 step)→ 不要求
-      (`STEP-CONTRACT.md` §3.4 第 5 点,P0-R10)
+- [ ] 每个通过 `with.as` 注册的资源名,如果它的种类在 `STEP-CONTRACT.md`
+      §3.4 第 6 点的种类表里标了 `mustRelease = $true`,必须存在一个同名、
+      种类匹配的释放调用(`releases` 覆盖该种类的 step),且这个释放调用
+      在**同一段的更后面**(`each` 里 `once:"group"` 注册 → `each` 里
+      `once:"groupEnd"` 释放)或**更后的段**(`setup` 注册 → `teardown`
+      释放);配不上就报错。种类标了 `mustRelease = $false`(比如
+      `window`——窗口句柄泄漏无害)→ 不要求。**判据是种类表,不是
+      "catalog 里现在有没有恰好带 `releases` 的 step"**——后者会让新增
+      一个释放 step 使所有已有工作流集体变红,而它们一行都没改
+      (`STEP-CONTRACT.md` §3.4 第 6 点,P0-R10 第四轮)
 - [ ] worklist 里所有 `role: key` 的列都出现在 `key.columns` 里,反之亦然(`PROFILE-SCHEMA.md` §6.1)
 - [ ] 涉及 key 比较的 step(`verify.match_record`/`file.find`/`file.newest`/`excel.find_anchor`……)都走 `table.key` 的规范化,没有 step 自己写比较绕过它(`PROFILE-SCHEMA.md` §6.4)
 

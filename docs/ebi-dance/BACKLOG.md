@@ -301,6 +301,14 @@
      报错。于是 compose 工作流的正确写法是 `open` 用 `once:"group"`、
      `close` 用 `once:"groupEnd"`,两者在 `each` 段内配对;`teardown`
      只管 `setup` 里注册的东西,不再兼管组级资源。
+  6. **(第四轮)`ebi lint` 判断某种类要不要求释放调用,读一张显式声明的
+     `mustRelease` 种类表(`STEP-CONTRACT.md` §3.4 第 6 点),不读"catalog
+     里现在有没有恰好带 `releases` 的 step"**。原来的判据是后者——某天
+     往 catalog 里新增一个释放 step,所有已经注册过那个种类、从没写释放
+     调用的老工作流会同一天集体变红,而它们一行都没改;依赖方向是反的,
+     "这种资源要不要释放"是资源种类自身的属性,不该从 catalog 当前长什么
+     样反推。种类表放在 `STEP-CONTRACT.md`(不放自动生成的
+     `catalog.json`),手工维护,新增种类时随 `provides`/`releases` 一起补。
 - **完成**:`STEP-CONTRACT.md` 新增 `releases` 字段(manifest 骨架 + §2.1
   字段表 + §3.4 新增第 5 点 + §4 needs/sessionKind 去重说明 + §6.2 补
   teardown 幂等要求 + §7 Run-Tests.ps1 清单新增一条);`WORKFLOW-SCHEMA.md`
@@ -365,8 +373,9 @@
   则会互相覆盖且无人发现;`inputs` 里 `type='session'` 的参数都带 `sessionKind`
   (P0-R2);`provides` 最多一项(P0-R2 §3.4——一次调用最多注册一个资源);
   `releases` 声明的种类都能在该 step 自己的某个 `type='session'` 输入的
-  `sessionKind` 里找到(P0-R10)。
-- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增六类)
+  `sessionKind` 里找到(P0-R10);`provides`/`releases` 里出现的每个种类都
+  能在 §3.4 第 6 点的 `mustRelease` 种类表里找到对应声明(P0-R10 第四轮)。
+- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增七类)
 
 ### [ ] P0-07 [整块] 最小 runner spike
 - **估** 90min | **依赖** P0-06, P0-R2 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2
@@ -468,8 +477,12 @@
   的 Session 资源配平(「用了 browser 没人 ensure」,不读 `needs`——P0-R2 的
   配平算法本来就只看 `type='session'` 输入,P0-R10 把 `needs:session:<kind>`
   从 manifest 里整个删掉之后更是如此);`byFailure` 引用的失败 id 在 manifest 里
-  存在(P0-R5);`with.as` 注册过、且种类在 catalog 里有 `releases` 覆盖的资源名,
-  `teardown` 里必须有对应的释放调用(P0-R10)。
+  存在(P0-R5);`with.as` 注册过、且种类在 `STEP-CONTRACT.md` §3.4 第 6 点
+  `mustRelease` 种类表里标了 `$true` 的资源名,必须有一个同段更后面/更后段
+  的同名释放调用(P0-R10;判据是种类表,**不是**"catalog 里现在有没有恰好
+  带 `releases` 的 step"——第四轮改的,原判据会让新增一个释放 step 使所有
+  已有工作流集体变红);`once:"groupEnd"` 只在 `source.groupBy` 有值时合法
+  (P0-R10 第四轮)。
 - **完成**:对一份故意写错的 workflow,全部检查项都能报出来
 
 ### [ ] P1-09 ebi explain

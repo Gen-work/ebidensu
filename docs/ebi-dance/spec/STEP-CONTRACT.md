@@ -320,10 +320,41 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
    `ExcelHelpers.ps1` 一直以来的写法——`Close-Workbook` / `Close-ExcelApp`
    从来是调用方显式调用,从没有框架自动挡在中间。
 
-   `ebi lint` 的配平检查(种类在 catalog 里有没有对应的 `releases` 覆盖
-   →有就要求 `teardown` 里出现对应释放调用,没有则不要求,比如
-   `window`)见 `WORKFLOW-SCHEMA.md` §9;`teardown` 每次 resume 都重跑、
-   释放 step 必须能安全面对"目标资源本来就不存在",见 §6.2。
+   `ebi lint` 的配平检查(某种类要不要求释放调用,判据是下面第 6 点的
+   `mustRelease` 种类表——**不是**"catalog 里现在有没有恰好带 `releases`
+   的 step",见第四轮的修正)见 `WORKFLOW-SCHEMA.md` §9;`teardown` 每次
+   resume 都重跑、释放 step 必须能安全面对"目标资源本来就不存在",见
+   §6.2。
+
+6. **哪些种类必须释放:`mustRelease`,种类表里显式声明,不从 catalog 里
+   有没有对应 step 推出来(P0-R10 第四轮)。**
+
+   | 种类 | `mustRelease` | 说明 |
+   |------|---------------|------|
+   | `window` | `$false` | 窗口句柄,泄漏无害,人工关掉即可(见 §1.1) |
+   | `workbook` | `$true` | Excel `Workbook` COM 对象,泄漏会累积,需要人工杀 `EXCEL.EXE` |
+   | `excelApp` | `$true` | Excel `Application` COM 对象,同上 |
+
+   **不选"某个种类在 catalog 里有没有 `releases` 覆盖"当判据的理由**:
+   那是拿"当前 catalog 恰好长什么样"反推"这种资源要不要释放",依赖方向
+   是反的——哪天有人往 catalog 里新增一个 `browser.close`
+   (`releases = @('window')`),所有已经注册过 `window`、从来没写释放
+   调用的老工作流会在同一天集体变红,而它们一行都没改。`mustRelease` 是
+   资源**种类自身**的属性(泄漏会不会累积、需不需要人工清理),和 catalog
+   里现在有没有恰好写出释放它的 step 无关,必须独立声明,不能派生。
+
+   **放在这里(`STEP-CONTRACT.md` §3.4),不放 `catalog.json`**:
+   `catalog.json` 是 `kernel/Docs.ps1`(P1-06)从 `modules/**` 的 manifest
+   扫描**自动生成**的产物(见文件地图,标注"自动生成"),`mustRelease`
+   恰恰不能从 manifest 扫描出来——`provides`/`releases` 只声明"哪个 step
+   产出/消费/释放哪种资源",不声明"这种资源泄漏了要不要紧",从这两个
+   字段反推 `mustRelease` 正是上一段要避免的循环。放进一份需要独立
+   人工维护的表,和这份契约本身其它人工声明(比如 §2.1 `failures[].
+   transient`)是同一类东西——不是从代码扫出来的,是写契约的人对这个
+   世界的事实判断。**新增一个此前没出现过的资源种类时,连同它第一次
+   出现的 `provides`/`releases` 一起,把它加进这张表**——这是 §7 底下
+   元规则要求的"新增契约事实,定义处和汇总处一起改"的又一个例子;§7
+   的 Run-Tests.ps1 清单有一条静态检查兜底这条纪律(见下方)。
 
 `$Ctx.Session` 本身**不持久化**、**不写进 ledger**、**不出现在 trace 里**
 (trace 只记 `outputs`)。它在每次进程启动时都是空的 —— 断点续跑时怎么
@@ -514,6 +545,9 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
 - `releases` 声明的种类,必须能在该 step 自己某个 `type='session'` 输入的
   `sessionKind` 里找到(否则声明了要释放,却没有输入能确定释放哪个实例)
   (§3.4 第 5 点,P0-R10)
+- `provides`/`releases` 数组里出现的每个种类,都能在 §3.4 第 6 点的
+  `mustRelease` 种类表里找到对应声明(否则是引入了一个新种类,却没有
+  声明它泄漏了要不要紧)(§3.4 第 6 点,P0-R10 第四轮)
 - 源码纯 ASCII
 
 > 上面这份清单和 `WORKFLOW-SCHEMA.md` §9 的 `ebi lint` 清单是**同一类
