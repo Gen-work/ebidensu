@@ -66,6 +66,7 @@ $Manifest = @{
   effects  = 'ui'                # pure | read | ui | write | destructive
   needs    = @('foreground')     # 运行前置条件 / Session 资源依赖,见 §4、§3.4
   provides = @()                 # 本 step 能注册进 $Ctx.Session 的资源种类,见 §3.4
+  releases = @()                 # 本 step 会释放 $Ctx.Session 里哪个种类的资源,见 §3.4 第 5 点(P0-R10)
   idempotent = $true             # 重复执行是否安全
 
   # --- 输入 ---
@@ -100,8 +101,9 @@ $Manifest = @{
 | `summary` | ✓ | **一句话,英文,不超过 80 字符**。这是 Agent 挑 step 的主要依据 |
 | `tier` | ✓ | `core` 或 `fallback`(见 §5) |
 | `effects` | ✓ | 副作用等级,见 VOCABULARY §4 |
-| `needs` | | 前置条件数组,见 §4;`session:<种类>` 形式声明依赖某种已注册的 Session 资源,见 §3.4 |
+| `needs` | | 前置条件数组,见 §4。**不写** `session:<种类>` 这一类(P0-R10):消费某种 Session 资源这件事,已经由 `inputs` 里那个 `type='session'` 参数的 `sessionKind` 说清楚了,见 §3.4 |
 | `provides` | | 本 step 能注册进 `$Ctx.Session` 的资源**种类**数组(不是实例名),见 §3.4。空则 `@()` |
+| `releases` | | 本 step 会释放 `$Ctx.Session` 里哪个种类的资源(与 `provides` 对称,声明的也是**种类**不是实例名),见 §3.4 第 5 点(P0-R10)。空则 `@()` |
 | `idempotent` | ✓ | `$false` 的 step,runner 在续跑时不会自动重放 |
 | `inputs` | ✓ | 参数定义。空则 `@{}` |
 | `outputs` | ✓ | 返回字段定义。空则 `@{}` |
@@ -246,6 +248,15 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
      被这次调用内部使用,只是不注册进 `$Ctx.Session` 给后面的 step 引用
      ——适用于"这个窗口/工作簿只用这一次,不需要跨 step 复用"的场景。
      没有默认名这回事:不写 `as` 就是不注册,不是注册成某个隐含名字。
+     **未注册的资源必须在产生它的这次 step 调用返回之前,由该 step 自己
+     完成释放**(比如函数内部对临时 `New-Object -ComObject` 出来的对象
+     做 `ReleaseComObject`)——它没有名字,后面没有任何 step 有机会引用
+     到它,`$Ctx.Session` 之外没有第二条路能找回它(P0-R10)。**任何需要
+     跨 step 存活、或者需要显式释放的资源都必须注册**:窗口句柄这类
+     "泄漏了也无害"的资源可以不注册;但 COM 对象(Excel `Application`/
+     `Workbook` 一类)"泄漏了会累积、需要人工杀进程",不注册就等于把
+     自己锁死在无法释放的状态——这正是这条约束存在的原因。释放侧完整
+     规则见下面第 5 点。
    - 消费方在自己的 `inputs` 里声明一个 `type = 'session'` 的参数,并带
      `sessionKind`(比如 `screen.capture_window` 的 `window` 参数是
      `@{ type='session'; sessionKind='window'; required=$true }`)。工作流
@@ -264,6 +275,28 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
      名字从没被 `with.as` 注册过",要么"注册的是别的种类的资源")
    这就是"用了 browser 资源但没人 `ensure` 过"的检测(P1-08),现在是
    **种类匹配 + 名字存在**两道检查,不是名字本身写死在 manifest 里比对。
+
+5. **释放:显式调用 `releases` 非空的 step,不是 runner 自动清理
+   (P0-R10)**。manifest 新增可选字段 `releases = @(<kind>, ...)`(与
+   `provides` 对称,默认 `@()`),声明这个 step 会释放 `$Ctx.Session` 里
+   哪个种类的资源——它照样通过自己 `inputs` 里某个 `type='session'` 的
+   参数拿到具体实例名(和普通消费方用同一套机制,`releases` 只是多一条
+   "这次调用等于释放"的元信息,不改变参数怎么传)。工作流作者必须在
+   `teardown` 里显式调用这类 step(如 `excel.close`)来释放 `setup`/
+   `each` 里注册过的资源。
+
+   **不选"runner 在 run 结束时自动清空 Session"的理由**:不同种类资源
+   的释放顺序/方式完全不同(工作簿要先 `Close` 再让 App `Quit`,窗口
+   句柄什么都不用做)——让 runner 内置一套按种类分发的释放逻辑,等于
+   让 runner 替 workflow 做"计算",违反 `WORKFLOW-SCHEMA.md` §0 的设计
+   铁律("workflow JSON 只做连线,不做计算");这也是本仓库
+   `ExcelHelpers.ps1` 一直以来的写法——`Close-Workbook` / `Close-ExcelApp`
+   从来是调用方显式调用,从没有框架自动挡在中间。
+
+   `ebi lint` 的配平检查(种类在 catalog 里有没有对应的 `releases` 覆盖
+   →有就要求 `teardown` 里出现对应释放调用,没有则不要求,比如
+   `window`)见 `WORKFLOW-SCHEMA.md` §9;`teardown` 每次 resume 都重跑、
+   释放 step 必须能安全面对"目标资源本来就不存在",见 §6.2。
 
 `$Ctx.Session` 本身**不持久化**、**不写进 ledger**、**不出现在 trace 里**
 (trace 只记 `outputs`)。它在每次进程启动时都是空的 —— 断点续跑时怎么
@@ -376,6 +409,17 @@ ledger 的一行 JSON 并原样读回。
 浏览器窗口";`idempotent = $false` 的 step 不允许出现在 `setup` 里,
 `ebi lint` 检查这一条。
 
+**`teardown` 里负责释放的 step(`releases` 非空)同样每次 resume 都会
+真的执行(P0-R10)**——包括"这次进程里这个名字根本没被注册过"的情况:
+上一次运行是被 Ctrl+C 打断的(`WORKFLOW-SCHEMA.md` §1.1:硬中断不保证
+跑 teardown),注册可能压根没发生;或者发生了,但这次重跑走的是另一次
+`setup`,注册到的是另一个实例。这类释放 step 必须能安全处理"目标资源
+不存在"(`$Ctx.Session` 里查不到这个名字,或者名字存在但底层句柄/COM
+对象已经失效)——照抄本仓库 `ExcelHelpers.ps1` 现有的写法:每个释放
+动作包一层 `try { ... } catch {}`,吞掉"本来就没有"这一类异常,不要让
+`teardown` 因为清理一个不存在的资源而中止,连累后面该释放的资源也释放
+不到。
+
 ### 6.3 `once: group` 的 ledger 键是 (group, step)
 
 `"once": "group"` 的 step(`WORKFLOW-SCHEMA.md` §7.2)不是按 item 记账的
@@ -425,6 +469,9 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
 - `outputs` 声明的类型都是 JSON-可序列化的(句柄 / COM 走 `$Ctx.Session`,不进 `outputs`,P0-R2)
 - `inputs` 里 `type='session'` 的参数都带了 `sessionKind`(§2.2,P0-R2)
 - `provides` 最多一项(§3.4 点 3 —— 一次调用最多注册一个资源;需要多个的 step 拆开写)
+- `releases` 声明的种类,必须能在该 step 自己某个 `type='session'` 输入的
+  `sessionKind` 里找到(否则声明了要释放,却没有输入能确定释放哪个实例)
+  (§3.4 第 5 点,P0-R10)
 - 源码纯 ASCII
 
 > 上面这份清单和 `WORKFLOW-SCHEMA.md` §9 的 `ebi lint` 清单是**同一类

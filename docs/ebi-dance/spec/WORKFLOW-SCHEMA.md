@@ -39,7 +39,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
   "setup":    [ ... ],     // 整个 run 开始前跑一次
   "each":     [ ... ],     // 每个 item 跑一次
-  "teardown": [ ... ]      // 整个 run 结束后跑一次(含失败退出)
+  "teardown": [ ... ]      // 整个 run 结束后跑一次;哪些退出路径有这个保证见 §1.1
 }
 ```
 
@@ -180,8 +180,10 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
   (`STEP-CONTRACT.md` §3.4,P0-R2)。需要用到某个 step 注册的窗口/工作簿,
   在消费方 `type='session'` 的参数里填**这条工作流自己起的名字**(某个
   更早的 `with.as` 用过的字符串字面量),不走模板 —— manifest 的
-  `provides`/`needs` 声明的是资源*种类*(如 `window`),具体叫什么名字
-  永远由工作流决定,不是 manifest 写死的
+  `provides`(注册方)和 `inputs` 里 `type='session'` 参数的 `sessionKind`
+  (消费方,P0-R10:`needs` 里不重复声明这件事,见 `STEP-CONTRACT.md` §4)
+  声明的都是资源*种类*(如 `window`),具体叫什么名字永远由工作流决定,
+  不是 manifest 写死的
 - **禁止嵌套模板**(`{{profile.pages.{{vars.page}}.url}}` 这种写法不合法)
   ——这正是为什么需要 `page` 顶层绑定 + `{{page.X}}` 简写,而不是让
   `vars` 里存一个 page 名再拼进路径
@@ -536,6 +538,11 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
       §3.4,P0-R2)
 - [ ] `onError.byFailure` 里 `policy: retry` 只用在 `transient = $true` 的失败 id 上(P0-R5)
 - [ ] `setup` 段里的每个 step 都是 `idempotent = $true`(`STEP-CONTRACT.md` §6.2,P0-R3——`setup` 每次 resume 都重跑,非幂等 step 出现在这里是契约违反)
+- [ ] 每个通过 `with.as` 注册的资源名,如果它的种类在 catalog 里存在带
+      `releases` 覆盖该种类的 step,`teardown` 段必须有一次对**同一个
+      名字**的释放调用;种类在 catalog 里没有任何 `releases` 覆盖(比如
+      `window`——窗口句柄泄漏无害,没有对应的释放 step)→ 不要求
+      (`STEP-CONTRACT.md` §3.4 第 5 点,P0-R10)
 - [ ] worklist 里所有 `role: key` 的列都出现在 `key.columns` 里,反之亦然(`PROFILE-SCHEMA.md` §6.1)
 - [ ] 涉及 key 比较的 step(`verify.match_record`/`file.find`/`file.newest`/`excel.find_anchor`……)都走 `table.key` 的规范化,没有 step 自己写比较绕过它(`PROFILE-SCHEMA.md` §6.4)
 

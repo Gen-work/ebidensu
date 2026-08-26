@@ -48,10 +48,22 @@
 > P0-R7(冻结标签改名,避开远端已有的同名分支)、P0-R8(`Plan.md`/
 > `docs/README.md` 与 BACKLOG 同步)、P0-R9(修正 P0-00 的虚假完成状态)。
 > 九张 R 卡全部 `[x]`。
+>
+> **2026-08-26 第三轮评审追加**:P0-R2 只定义了 Session 资源的注册侧,
+> 释放侧(谁在什么时候关掉 Excel/浏览器窗口、Ctrl+C 算不算数)从没定义,
+> 追加第十张 R 卡 P0-R10(`[整块]`,Session 资源的生命周期·释放侧),
+> 三条决定(显式释放 + 穷举异常退出路径 + 未注册资源必须自释放)已在
+> 同一批提交里落进 `STEP-CONTRACT.md`/`WORKFLOW-SCHEMA.md`,`[x]`。**十张
+> R 卡全部 `[x]`**。同批还修了一处悬空章节引用(`WORKFLOW-SCHEMA.md` §1
+> 指向 `PROFILE-SCHEMA.md` 一个已被删掉的子标题)、`needs:session:<kind>`
+> 与 `sessionKind` 的重复声明(改成只由 `sessionKind` 一处声明,`needs`
+> 不再出现 `session:<kind>`)、`flow.call` 命名空间规则的两处遗漏(子
+> 工作流内部引用改写、id 含 `.` 后 `.out.` 边界解析)、P1-12「抄」列表
+> 漏掉的 `Send-ShiftTab`。
 
 ---
 
-# P0 — 骨架(17 张,2 张整块)
+# P0 — 骨架(18 张,3 张整块)
 
 目标:**一条 5 行的 workflow JSON 能真的存下一张 PNG。**
 
@@ -209,6 +221,67 @@
 - **完成**:P0-00 卡文本里能看到这段状态修正记录;本文件顶部「状态」段落
   和 P0 分组标题的卡数统计已更新(17 张,2 张整块)
 
+### [x] P0-R10 [整块][规格修订] Session 资源的生命周期(释放侧)
+- **估** 75min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §2.1,§3.4,§4,
+  §6.2,§7;`spec/WORKFLOW-SCHEMA.md` §1(新增 §1.1),§7.4,§7.5,§9
+- **问题**:P0-R2 只定义了 Session 资源的**注册侧**(`provides` 声明种类、
+  `with.as` 注册实例名、`type='session'` 输入消费),**释放侧从没定义**,
+  留下三个洞:(a) P4-01 卡标题写着 `excel.close`,但契约里没有任何一条
+  规则要求它必须出现在 `teardown` 里——写不写、由谁触发,全凭实现者自觉。
+  (b) `WORKFLOW-SCHEMA.md` §1 说 teardown「整个 run 结束后跑一次(含失败
+  退出)」,但没说 Ctrl+C 算不算「失败退出」——而 §7.5 的断点续跑推演
+  例子字面意思就是一次 Ctrl+C 中断,例子里完整过了一遍 setup 重跑、
+  ledger 重放,却从头到尾没提 teardown,也没提这次中断对 Session 里已经
+  注册过的资源意味着什么——如果 Ctrl+C 不保证跑 teardown,重复
+  Ctrl+C/resume 循环会不会在系统里堆出一串没人关掉的 Excel COM 进程,
+  规格没有答案。(c) P0-R2 定的「`provides` 非空但不写 `as` 是合法的」
+  这条规则,副作用是造出了一批**注册不了、因而也释放不了**的资源:
+  `excel.close` 要靠名字在 Session 里找到要关的工作簿,没写 `as` 的资源
+  没有名字——这条规则对窗口句柄(泄漏无害)没问题,对 COM 对象(泄漏会
+  累积、需要人工杀进程)是个漏洞。
+- **做**:三条决定,不留 TBD——
+  1. **谁负责释放:显式,不是 runner 自动**。manifest 新增可选字段
+     `releases = @(<kind>, ...)`(与 `provides` 对称,默认 `@()`),声明
+     这个 step 会释放 `$Ctx.Session` 里哪个种类的资源(它照样通过自己
+     `inputs` 里 `type='session'` 的参数拿到具体实例名)。工作流作者
+     必须在 `teardown` 里显式调这类 step(比如 `excel.close`)。不选
+     runner 自动释放的理由:不同种类资源的释放顺序/方式完全不同(工作簿
+     要先 `Close` 再让 App `Quit`、句柄类资源什么都不用做)——让 runner
+     替 Session 里每个种类内置一套释放逻辑,等于让 runner 替工作流做
+     「计算」,违反 `WORKFLOW-SCHEMA.md` §0 的设计铁律;而且这本来就是
+     本仓库 `ExcelHelpers.ps1` 的既有写法(`Close-Workbook`/
+     `Close-ExcelApp` 从来是调用方显式调用,从没有框架自动挡在中间)。
+     对应 `ebi lint` 检查(§9 新增项):某个种类如果在 catalog 里**存在**
+     带 `releases` 覆盖它的 step,那么任何一次 `with.as` 注册过这个种类
+     的调用,`teardown` 里就必须有一次对**同名**实例的释放调用;种类在
+     catalog 里根本没有 `releases` 覆盖(比如 `window`)→ 不要求。
+  2. **异常退出路径,穷举,不用"含失败退出"这种含糊说法**:正常跑完、
+     `onError.policy=fail` 中止、step 抛出未预期异常(`internal_error`)
+     ——这三种都发生在同一个 PowerShell 进程的正常控制流里,runner 用
+     `try { ... } finally { 跑 teardown }` 包住整条执行路径就能保证,
+     **这三种 teardown 保证跑**。**Ctrl+C(以及被杀进程/终端被关/系统
+     重启这类硬中断)——不保证**:PowerShell 5.1 的 Ctrl+C 默认直接
+     终止进程,不触发 `finally`;就算 runner 注册 `CancelKeyPress` 尽力
+     兜底,中断到达时线程可能正卡在一次还没返回的 COM 调用里,teardown
+     想开始跑都进不去。**泄漏怎么办:接受泄漏,不做孤儿检测,但要有
+     文档警告**——不新增任何"下次启动扫描孤儿进程"的基础设施,如实
+     写清楚这就是本项目 Excel COM 场景一直以来的真实运维方式(操作员
+     手动在任务管理器里杀多余的 `EXCEL.EXE`)。
+  3. **`STEP-CONTRACT.md` §3.4 第 3 点里"没有默认名这回事……"这句后面
+     加一条约束**:没注册(没写 `as`)的资源,必须在产生它的这次 step
+     调用**返回之前**由 step 自己释放完——它没有名字,后面没有任何
+     step 能引用到它。任何需要跨 step 存活、或者需要显式释放的资源
+     (尤其是 COM 对象)都必须注册。
+- **完成**:`STEP-CONTRACT.md` 新增 `releases` 字段(manifest 骨架 + §2.1
+  字段表 + §3.4 新增第 5 点 + §4 needs/sessionKind 去重说明 + §6.2 补
+  teardown 幂等要求 + §7 Run-Tests.ps1 清单新增一条);`WORKFLOW-SCHEMA.md`
+  新增 §1.1"退出路径 x teardown 保证"表格、§7.5 补一段 Ctrl+C 场景下
+  Session 资源的说明、§9 `ebi lint` 清单新增一条;`BACKLOG.md` P0-06 /
+  P1-08 两张卡各追加一条对应的检查项。`grep -c 'releases' spec/STEP-CONTRACT.md
+  spec/WORKFLOW-SCHEMA.md` 两个文件合计 ≥ 8 处命中(字段定义、示例骨架、
+  §2.1 表格、§3.4 决定、§4 衔接句、§6.2 幂等句、§7 清单、§9 清单——不是
+  只在一处提了一句就算数)
+
 ### [ ] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
 - **做**:`git tag freeze/pre-ebi-dance <当前 main tip>` 并推送。作为整个重构期的回滚点。
@@ -255,8 +328,10 @@
   外的辅助函数**必须带 step 前缀**(如 `BrowserFind-*`)—— 所有 step 会被同一
   runspace 依次 dot-source,`Invoke-Step` 靠注册表捕获解决(P1-02),裸名辅助函数
   则会互相覆盖且无人发现;`inputs` 里 `type='session'` 的参数都带 `sessionKind`
-  (P0-R2);`provides` 最多一项(P0-R2 §3.4——一次调用最多注册一个资源)。
-- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增五类)
+  (P0-R2);`provides` 最多一项(P0-R2 §3.4——一次调用最多注册一个资源);
+  `releases` 声明的种类都能在该 step 自己的某个 `type='session'` 输入的
+  `sessionKind` 里找到(P0-R10)。
+- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增六类)
 
 ### [ ] P0-07 [整块] 最小 runner spike
 - **估** 90min | **依赖** P0-06, P0-R2 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2
@@ -344,9 +419,12 @@
 ### [ ] P1-08 ebi lint
 - **估** 90min | **依赖** P1-01, P1-02, P0-R6 | **读** `spec/WORKFLOW-SCHEMA.md` §9
 - **做**:§9 的 9 项静态检查全实现,包括 fallback tier 警告和 `confirm:false` 警告。
-  评审追加:`page` 绑定解析得到(P0-R6);`needs`/`provides` 的 Session 资源配平
-  (「用了 browser 没人 ensure」,P0-R2);`byFailure` 引用的失败 id 在 manifest 里
-  存在(P0-R5)。
+  评审追加:`page` 绑定解析得到(P0-R6);`inputs` 的 `sessionKind`/`provides`
+  的 Session 资源配平(「用了 browser 没人 ensure」,不读 `needs`——P0-R2 的
+  配平算法本来就只看 `type='session'` 输入,P0-R10 把 `needs:session:<kind>`
+  从 manifest 里整个删掉之后更是如此);`byFailure` 引用的失败 id 在 manifest 里
+  存在(P0-R5);`with.as` 注册过、且种类在 catalog 里有 `releases` 覆盖的资源名,
+  `teardown` 里必须有对应的释放调用(P0-R10)。
 - **完成**:对一份故意写错的 workflow,全部检查项都能报出来
 
 ### [ ] P1-09 ebi explain
