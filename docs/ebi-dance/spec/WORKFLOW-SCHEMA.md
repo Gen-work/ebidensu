@@ -334,6 +334,48 @@ profile 声明哪一列的派生访问,见 §4.1):
 `"once": "group"` 表示这一步在同组的第一条 item 上跑,后续跳过。
 用于「一个页面上能查同组的多条」这种场景(旧工具里 HmSnap 的 per-appl 分组)。
 
+**`"once": "groupEnd"` —— 和 `"once": "group"` 对偶,组尾钩子(P0-R10
+第四轮)。** 在同组**最后一条** item 处理完之后跑一次,用来释放
+`once:"group"` 在组开头注册进 `$Ctx.Session` 的组级资源。
+
+为什么需要它:按交付物分组、每组开一个工作簿的 compose 类工作流,长这样
+
+```jsonc
+"source": { "table": "worklist", "groupBy": "deliverable" },
+"each": [
+  { "id": "open", "use": "excel.open",
+    "with": { "path": "{{item.group}}.xlsx", "as": "wb" },
+    "once": "group" },
+  { "id": "insert", "use": "excel.insert_picture",
+    "with": { "workbook": "wb", "path": "{{steps.shot.out.path}}" } },
+  { "id": "close", "use": "excel.close",
+    "with": { "workbook": "wb" },
+    "once": "groupEnd" }              // 组尾释放,不是 teardown
+]
+```
+
+如果没有 `once:"groupEnd"`、只能靠 `teardown` 释放:`open` 每组都用**同一个**
+`with.as` 名字 `wb` 重新注册(`with.as` 是字符串字面量,不走 `{{}}` 模板,见
+`STEP-CONTRACT.md` §3.4 第 3 点,**不能**按组变化)——第 2 组的 `open` 一跑,
+`$Ctx.Session['wb']` 就被覆盖成新工作簿的引用,第 1 组那个 Workbook/Application
+COM 对象当场变成孤儿:没有名字能传给 `excel.close`,谁也关不掉。`teardown`
+只跑一次、只关得掉最后一组,前面所有组全部泄漏成挂起的 `EXCEL.EXE`
+——`ReplaceEvidence.ps1:148` 的 `Group-Object Excel_NAME`、以及它在这里的
+替代品 `P4-20 workflows/*.compose.json`,就是这个按交付物分组开工作簿的
+真实场景。`STEP-CONTRACT.md` §3.4 第 3 点新增的"同名重复注册在名字仍然
+活着时是运行期失败"这条规则,就是为了让这种覆盖在第 2 组一开始就报错,
+而不是悄悄泄漏。`once:"groupEnd"` 把释放挪到组尾,和组头的注册配对,
+`teardown` 只管 `setup` 里注册的东西——这正是 `STEP-CONTRACT.md` §3.4
+第 5 点"释放点必须紧跟注册点所在的作用域"的落地。
+
+规则:
+- ledger 键和 `once:"group"` 一样是 **(group, step)**(`STEP-CONTRACT.md`
+  §6.3)
+- `source.groupBy` 没设时用 `once:"groupEnd"` 是配置错误,`ebi lint` 报错
+  (见 §9)
+- runner 怎么知道"最后一条":`source` 按 `groupBy` 排序后遍历,组切换时
+  (或整个 `source` 遍历结束时)触发上一组的 `groupEnd` step
+
 ### 7.3 `flow.checkpoint` — 标记完成
 
 ```jsonc
@@ -591,6 +633,8 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
       §3.4,P0-R2)
 - [ ] `onError.byFailure` 里 `policy: retry` 只用在 `transient = $true` 的失败 id 上(P0-R5)
 - [ ] `setup` 段里的每个 step 都是 `idempotent = $true`(`STEP-CONTRACT.md` §6.2,P0-R3——`setup` 每次 resume 都重跑,非幂等 step 出现在这里是契约违反)
+- [ ] `"once": "groupEnd"` 只在 `source.groupBy` 有值时合法,没有 `groupBy`
+      的 `each` 段里出现 `once:"groupEnd"` → 报错(§7.2,P0-R10 第四轮)
 - [ ] 每个通过 `with.as` 注册的资源名,如果它的种类在 catalog 里存在带
       `releases` 覆盖该种类的 step,`teardown` 段必须有一次对**同一个
       名字**的释放调用;种类在 catalog 里没有任何 `releases` 覆盖(比如

@@ -223,7 +223,7 @@
 
 ### [x] P0-R10 [整块][规格修订] Session 资源的生命周期(释放侧)
 - **估** 75min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §2.1,§3.4,§4,
-  §6.2,§7;`spec/WORKFLOW-SCHEMA.md` §1(新增 §1.1),§7.4,§7.5,§9
+  §6.2,§6.3,§7;`spec/WORKFLOW-SCHEMA.md` §1(新增 §1.1),§7.2,§7.4,§7.5,§9
 - **问题**:P0-R2 只定义了 Session 资源的**注册侧**(`provides` 声明种类、
   `with.as` 注册实例名、`type='session'` 输入消费),**释放侧从没定义**,
   留下三个洞:(a) P4-01 卡标题写着 `excel.close`,但契约里没有任何一条
@@ -238,7 +238,23 @@
   这条规则,副作用是造出了一批**注册不了、因而也释放不了**的资源:
   `excel.close` 要靠名字在 Session 里找到要关的工作簿,没写 `as` 的资源
   没有名字——这条规则对窗口句柄(泄漏无害)没问题,对 COM 对象(泄漏会
-  累积、需要人工杀进程)是个漏洞。
+  累积、需要人工杀进程)是个漏洞。(d,第四轮追加)**(a)(b)(c) 三条决定
+  堵上了"资源怎么释放",但没堵上"同一个名字被重复注册,旧的那个悄悄
+  没人管了"**:`with.as` 的值是字符串字面量、不走 `{{}}` 模板(§3.4 第 3
+  点),所以注册名不能随 item/group 变化;而"名字的作用域是一次 run"
+  (同一节)又明说 `each` 里可以注册。`groupBy` 分组的 compose 类工作流
+  典型写法是「每个交付物开一个工作簿」:`once:"group"` 在每组开头调
+  `excel.open` 注册同一个名字(比如 `wb`)。第 2 组的 `open` 一跑,
+  `$Ctx.Session['wb']` 被同名覆盖,第 1 组那个 Workbook/Application COM
+  对象当场变成孤儿——没有名字能传给 `excel.close`。而 `WORKFLOW-SCHEMA.md`
+  §7.2 现在只有 `once:"group"` 这个"组开头"钩子,没有"组结束"钩子,连
+  想在组尾释放都做不到,只能拖到 `teardown`——但 `teardown` 只跑一次,只
+  关得掉最后一组,前面全部泄漏。§9 现在那条 lint(检查 `teardown` 里有
+  释放调用)是**满足**的,照样泄漏。不是假想:`ReplaceEvidence.ps1:148`
+  就是 `Group-Object Excel_NAME`,`P4-20 workflows/*.compose.json` 是它的
+  替代品。"不注册、自己释放"这条路走不通——同一个 item 内部要跨好几个
+  step 用同一个工作簿(open → find_sheet → insert_picture → save),不注册
+  后面的 step 根本拿不到它。
 - **做**:三条决定,不留 TBD——
   1. **谁负责释放:显式,不是 runner 自动**。manifest 新增可选字段
      `releases = @(<kind>, ...)`(与 `provides` 对称,默认 `@()`),声明
@@ -272,6 +288,19 @@
      调用**返回之前**由 step 自己释放完——它没有名字,后面没有任何
      step 能引用到它。任何需要跨 step 存活、或者需要显式释放的资源
      (尤其是 COM 对象)都必须注册。
+  4. **(第四轮)同一个名字重复注册,如果它当前仍然活着,是运行期
+     失败,不是静默覆盖**。runner 在真正执行 `with.as: "<名>"` 之前先查
+     `$Ctx.Session` 里这个名字是否已经存在,存在就直接失败,不进
+     `Invoke-Step`。不选"runner 自动释放旧的再注册新的"——理由和第 1 点
+     否掉"runner 自动清理"一样:不同种类资源释放方式不同,不该让 runner
+     替工作流做这个决定。
+  5. **(第四轮)新增 `"once": "groupEnd"`,和 `"once": "group"` 对偶**:
+     在同组最后一条 item 处理完之后跑一次,专门释放 `once:"group"` 在
+     组开头注册的组级资源。ledger 键和 `once:"group"` 一样是
+     (group, step);`source.groupBy` 没设时用它是配置错误,`ebi lint`
+     报错。于是 compose 工作流的正确写法是 `open` 用 `once:"group"`、
+     `close` 用 `once:"groupEnd"`,两者在 `each` 段内配对;`teardown`
+     只管 `setup` 里注册的东西,不再兼管组级资源。
 - **完成**:`STEP-CONTRACT.md` 新增 `releases` 字段(manifest 骨架 + §2.1
   字段表 + §3.4 新增第 5 点 + §4 needs/sessionKind 去重说明 + §6.2 补
   teardown 幂等要求 + §7 Run-Tests.ps1 清单新增一条);`WORKFLOW-SCHEMA.md`
@@ -280,7 +309,13 @@
   P1-08 两张卡各追加一条对应的检查项。`grep -c 'releases' spec/STEP-CONTRACT.md
   spec/WORKFLOW-SCHEMA.md` 两个文件合计 ≥ 8 处命中(字段定义、示例骨架、
   §2.1 表格、§3.4 决定、§4 衔接句、§6.2 幂等句、§7 清单、§9 清单——不是
-  只在一处提了一句就算数)
+  只在一处提了一句就算数)。**(第四轮追加)**:`grep -rn 'groupEnd'
+  docs/ebi-dance/` 命中 `STEP-CONTRACT.md`(§3.4 第 3/5 点、§6.3)、
+  `WORKFLOW-SCHEMA.md`(§7.2 定义+例子、§9 两条 lint)、`BACKLOG.md`
+  (本卡 + P1-04 + P1-08 + P4-01 + P4-20)——不是只在 §7.2 写了语法;
+  `STEP-CONTRACT.md` §3.4 新增第 6 点的 `mustRelease` 种类表存在,
+  `WORKFLOW-SCHEMA.md` §9 的释放判据条目改成读这张表,不再读"catalog
+  里有没有恰好带 `releases` 的 step"。
 
 ### [ ] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
@@ -394,10 +429,20 @@
   `destructive` 自动插确认关卡;step 返回的 `warnings` 进 trace + 末尾汇总;
   ledger 写 `run/<runId>/ledger.jsonl`,粒度 **(item, step)**(`once: group` 为
   (group, step)),**每条连同 outputs 持久化**;重跑跳过已完成的并**重放其 outputs**,
-  `setup`/`teardown` 每次 resume 重跑(P0-R3)。
+  `setup`/`teardown` 每次 resume 重跑(P0-R3)。**(第四轮追加)**
+  `once: "groupEnd"`(`WORKFLOW-SCHEMA.md` §7.2,P0-R10)在同组最后一条
+  item 处理完之后触发一次,ledger 键同样是 (group, step);runner 按
+  `groupBy` 排序遍历 `source`,组切换(或整个遍历结束)时触发上一组的
+  `groupEnd`。**运行期同名重复注册检查**(`STEP-CONTRACT.md` §3.4 第 3
+  点,P0-R10):执行 `with.as: "<名>"` 之前,先查 `$Ctx.Session` 里这个
+  名字是否已注册且尚未释放,是则直接失败(不进 `Invoke-Step`),不静默
+  覆盖——这是运行期检查,`ebi lint`(P1-08)静态走一遍 JSON 时看不出
+  `once:"group"` 会在运行时对同一个名字重复调用几次,只能检查组头/组尾
+  的注册-释放配对结构对不对,不能替代这条运行期检查。
 - **完成**:中断后重跑不重复执行已完成的 (item, step),且被跳过 step 的输出仍可被
   后续步引用;`timeout`(transient)会 retry 而 `not_found` 不会;`confirm:false`
-  能跳过自动关卡
+  能跳过自动关卡;`once:"groupEnd"` 在同组最后一条 item 后触发且仅触发一次;
+  对一个已注册且未释放的名字重复 `with.as` → 运行期失败,不静默覆盖
 
 ### [ ] P1-05 kernel/Gate.ps1
 - **估** 75min | **依赖** P1-03 | **读** `Plan.md` §3.3
@@ -699,6 +744,11 @@
 
 ### [ ] P4-01 excel.open + close + save — 60min — 抄 `ExcelHelpers.ps1 New-ExcelApp/Open-Workbook/Close-Workbook`
   ⚠ `$xl.Visible=$true` 要在 `DisplayAlerts=$false` 之前;COM 对象反序释放
+  ⚠ (第四轮)`close` 必须能安全面对"这个名字在 Session 里不存在"——照抄
+    `ExcelHelpers.ps1 Close-Workbook` 的写法:`$null` 直接 `return`,不报错。
+    典型调用点是 `once:"groupEnd"`(每组一个工作簿的 compose 场景),不是
+    `teardown`——`teardown` 只管 `setup` 里注册的资源(`STEP-CONTRACT.md`
+    §3.4 第 5 点,`WORKFLOW-SCHEMA.md` §7.2,P0-R10)
 ### [ ] P4-02 excel.find_workbook — 45min — 抄 `WorkbookResolver.ps1 Find-WorkbookByExcelName`
 ### [ ] P4-03 excel.find_sheet + list_sheets — 45min — 抄 `ExcelHelpers.ps1 Get-SheetByName/Unhide-AllSheets`
 ### [ ] P4-04 excel.find_anchor — 60min — 抄 `ExcelHelpers.ps1 Get-NextAnchorRow/Get-RowAtOrBelow`
@@ -724,6 +774,9 @@
   实现前先在 STEP-CONTRACT 补一段,二选一:做成 ui step 的可选 `verifyChange`
   输入(fill/submit 自带前后对比),或做成 runner 的 flow 构造。不要发明第三种
 ### [ ] P4-20 layout.json + workflows/*.compose.json — 90min — 读 `spec/PROFILE-SCHEMA.md` §7
+  ⚠ (第四轮)每个交付物一个工作簿 = `once:"group"` 开 + `once:"groupEnd"` 关,
+    两者在 `each` 段内配对;**别写成 `teardown` 里关**——`teardown` 只跑一次,
+    只关得掉最后一组,前面的组全部泄漏(`WORKFLOW-SCHEMA.md` §7.2,P0-R10)
 ### [ ] P4-21 workflows/*.annotate.json — 75min
   ⚠ 红框位置会随记录条数上下移动(`baseRow`/`rowHeight`),旧工具在这框错过行
 ### [ ] P4-22 办公 PC 冒烟 compose + annotate — 120min [整块]
