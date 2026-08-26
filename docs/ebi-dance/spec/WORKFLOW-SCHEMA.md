@@ -49,11 +49,36 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | `title` | ✓ | 给人看的标题,可用日文/中文 |
 | `version` | ✓ | 语义化版本,改动时手工 bump |
 | `profile` | ✓ | 用哪个 profile |
-| `page` | | 绑定到 `profile.pages` 里的哪个 page(P0-R6)——通常是这条工作流**要截图/要判定**的那一个。省略则 `{{page.X}}` 作用域不可用。**只是 `{{page.X}}` 简写的绑定,不是"整条工作流只能碰这一个 page"的限制**:流程里要经过别的 page(比如先填一个独立的检索画面表单,再跳到结果页)时,那个未绑定的 page 依旧可以用完整路径 `{{profile.pages.<名>.X}}` 引用,只是没有简写(`PROFILE-SCHEMA.md` §3.0"两页流程") |
+| `page` | | 绑定到 `profile.pages` 里的哪个 page(P0-R6)——通常是这条工作流**要截图/要判定**的那一个。省略则 `{{page.X}}` 作用域不可用。**只是 `{{page.X}}` 简写的绑定,不是"整条工作流只能碰这一个 page"的限制**:流程里要经过别的 page(比如先填一个独立的检索画面表单,再跳到结果页)时,那个未绑定的 page 依旧可以用完整路径 `{{profile.pages.<名>.X}}` 引用,只是没有简写(见 `PROFILE-SCHEMA.md` §3.0) |
 | `vars` | | 工作流级常量,可被 CLI `--var k=v` 覆盖 |
 | `source` | | 没有则不遍历,只跑 `setup` + `teardown` |
 | `onError` | | 默认 `{ "policy": "ask" }` |
-| `setup` / `each` / `teardown` | | step 数组,都可省略 |
+| `setup` / `each` / `teardown` | | step 数组,都可省略。`teardown` 的执行保证(哪些退出路径算数)见 §1.1 |
+
+### 1.1 `teardown` 的执行保证(P0-R10)
+
+「整个 run 结束后跑一次」不是无条件的。穷举 runner 能走到的每一条退出
+路径:
+
+| 退出路径 | `teardown` 保证跑吗 |
+|---------|-------------------|
+| 正常跑完(所有 item 处理完) | 保证 |
+| `onError.policy=fail` 触发中止 | 保证 |
+| step 抛出未预期异常(`internal_error`,`STEP-CONTRACT.md` §3.1) | 保证 |
+| Ctrl+C / 进程被杀 / 终端被关 / 系统重启 | **不保证** |
+
+前三种都发生在同一个 PowerShell 进程的正常控制流里(跑到头,或者被
+runner 自己的 `catch` 接住),runner 用 `try { ... } finally { 跑
+teardown }` 包住整条执行路径就能保证。Ctrl+C 这类硬中断不一样:
+PowerShell 5.1 默认直接终止进程,不触发 `finally`;就算 runner 注册
+`Console.CancelKeyPress` 尽力兜底,中断到达时线程完全可能正卡在一次
+还没返回的 COM 调用里,`teardown` 连开始跑的机会都没有。
+
+**不保证发生时,资源会怎样**:接受泄漏,不做孤儿检测——这就是这个
+项目里 Excel COM 场景一直以来的真实运维方式(操作员手动在任务管理器
+里杀多余的 `EXCEL.EXE`),规格如实写清楚这一点,不假装有一套自动回收
+机制。哪些资源需要显式释放、由谁释放,见 `STEP-CONTRACT.md` §3.4 第 5
+点;一次真实的 Ctrl+C 场景下 Session 资源怎么处理,见 §7.5 的推演例子。
 
 ---
 
@@ -352,6 +377,20 @@ BACKLOG 里,P1 的 25 个 MVP step 也没排它** —— 实现前先读下面�
 引用子工作流内某个 step 的输出时,写全前缀:
 `{{steps.refocusAndSearch.shot.out.path}}`。
 
+**子工作流自己内部的引用也要一起改写。** 子工作流是独立文件,写的时候
+按自己的 step id 写引用(比如 `crop` 引用同一个子工作流里的
+`{{steps.shot.out.path}}`)——内联时如果只改写 id 本身、不改写子工作流
+内部这些引用,`shot` 变成了 `refocusAndSearch.shot`,但 `crop` 里那句
+`{{steps.shot.out.path}}` 还在找一个不存在的 `shot`,变成未定义引用。
+内联必须同时改写子工作流内部对自己 step 的所有引用,加上同一个前缀。
+
+**id 里出现 `.` 之后,`{{steps.<id>.out.<field>}}` 的解析不能再朴素地按
+`.` 切分。** `refocusAndSearch.shot` 本身就带一个 `.`,
+`{{steps.refocusAndSearch.shot.out.path}}` 这个字符串里有三个 `.`——
+解析器必须专门找 `.out.` 这个边界(`steps` 和 `out` 之间的一切都是 id,
+`out` 之后的一切都是字段路径),而不是假设"第二段就是 id、第三段就是
+`out`"这种位置写死的切法。
+
 ### 7.5 断点续跑推演例子(P0-R3)
 
 「重跑跳过已完成的 (item, step)」没说清楚跳过之后,后续 step 引用它的
@@ -372,6 +411,20 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 
 （B、C 的任何 step 都还没有记录 —— runner 是按 item 顺序遍历的,还没轮到
 它们。）
+
+**这次 Ctrl+C 没有跑 `teardown`**(§1.1,P0-R10:硬中断不保证)——如果
+这条工作流的 `setup` 里有一步用 `with.as` 注册过浏览器窗口(常见情况,
+`browser.ensure` 一类 step 通常这么做),那个实例名和它背后的真实窗口
+就跟着这次中断一起停在半空,没有任何释放 step 被调用。下面的重跑是
+全新进程,`$Ctx.Session` 从空表开始——第 1 步 `setup` 重跑会重新
+`ensure` 一个窗口并重新注册**同一个名字**,旧的那个窗口不会被专门找
+出来处理:是被动接受的泄漏(浏览器窗口泄漏无害,人工关掉即可),不是
+这个例子要验证的东西——这个例子验证的是 ledger 重放,不是资源回收。
+换成 Excel 场景(`with.as` 注册的是工作簿/COM 对象)结论完全一样,只是
+泄漏的代价从"多一个窗口"变成"多一个挂起的 `EXCEL.EXE` 进程",这正是
+`STEP-CONTRACT.md` §3.4 第 5 点要求 `teardown` 里显式调用释放 step 的
+理由——但这条要求管的是"跑到 teardown 时会不会释放",管不了"这次
+根本没跑到 teardown"。
 
 重跑(`ebi run` 同一个 `runId`)时依次发生:
 

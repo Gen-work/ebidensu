@@ -228,9 +228,16 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
 2. **manifest 声明的是资源*种类*(kind),不是实例名。** `provides` 是
    本 step 能注册的资源种类数组,如 `provides = @('window')`(不是
    `@('mainWindow')`——`mainWindow` 是某一条工作流给它起的名字,manifest
-   是通用的,不能替所有工作流预先决定叫什么)。同理,消费方的 `needs`
-   写 `session:<kind>`,如 `needs = @('session:window')`。**实例名永远由
-   工作流决定**,manifest 里不出现任何具体名字。
+   是通用的,不能替所有工作流预先决定叫什么)。消费方**不**在 `needs`
+   里重复声明种类:一个 `type='session'` 的 `inputs` 参数,连同它必填的
+   `sessionKind`,本身就是"这个 step 需要某种 Session 资源"的完整声明
+   ——`needs` 里再写一遍 `session:<kind>` 是同一件事说两次,两处必然会
+   漂移(某天改了 `sessionKind` 却忘了同步改 `needs`,或者反过来),
+   和 P0-R4 修的 `columns.key`/`key.columns` 双写是同一类洞。**`needs`
+   数组不出现 `session:<kind>` 这个形式**(P0-R10,详见 §4);runner
+   / `ebi lint` 一律从 `inputs` 里的 `type='session'` 参数推导"这个
+   step 消费哪个种类的资源"。**实例名永远由工作流决定**,manifest 里
+   不出现任何具体名字。
 
 3. **实例名怎么产生和引用**:
    - **`as` 是 runner 保留字段,不是 step 的 `inputs`。** 任何 `provides`
@@ -315,11 +322,21 @@ runner 在调用前检查,不满足直接失败,不进 step。
 | `excel` | 需要 Excel COM 可用 |
 | `worklist` | 需要工作清单已加载 |
 | `calibrated:ocr` | 需要本机 OCR 校准通过(见 §5) |
-| `session:<种类>` | 需要 `$Ctx.Session` 里已经有这个种类的资源注册过(见 §3.4;实例名由消费该资源的 `type='session'` 参数在调用点给出,不在 `needs` 里) |
 
 `needs` 的意义是**把失败提前到运行前**,并且让 `ebi lint` 能在不运行的情况下
-警告「这条工作流需要 Excel,你确定这台机器有吗」——`session:<种类>` 这一类
-额外能让 `ebi lint` 检查「用了这种资源但没有任何 step 用 `with.as` 注册过」。
+警告「这条工作流需要 Excel,你确定这台机器有吗」。
+
+**`needs` 里没有 `session:<种类>` 这一项(P0-R10)。** 早先的草案里这个
+形式和 §3.4/§2.2 的 `type='session'` + `sessionKind` 是同一件事的两处
+声明——一个 step 需要哪种 Session 资源,只由它 `inputs` 里那个
+`type='session'` 参数的 `sessionKind` 决定,不再额外写进 `needs`。理由
+见 §3.4 点 2:两处声明会漂移(改了其中一处忘了改另一处,`ebi lint` 也
+无从检查两处到底对不对得上,因为压根不存在第二份独立事实)。「用了这种
+资源但没有任何 step 用 `with.as` 注册过」的检查(P1-08)因此**只**读
+`inputs` 的 `type='session'`/`sessionKind`,不读 `needs`——具体算法见
+§3.4 点 4。`releases` 非空的 step(§3.4 第 5 点,P0-R10)同样如此:它
+消费哪个种类,一样只由它自己 `inputs` 里的 `sessionKind` 决定,`needs`
+里不重复声明。
 
 ---
 

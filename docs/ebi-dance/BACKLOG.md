@@ -444,7 +444,10 @@
 - **完成**:manifest 过 lint;dryrun 打印正确
 
 ### [ ] P1-12 browser.send_keys + tab_to + fill + submit
-- **估** 75min | **抄** `Common.ps1` `Send-Key` / `Send-Tab` / `Paste-Replace` / `Send-Enter`
+- **估** 75min | **抄** `Common.ps1` `Send-Key` / `Send-Tab` / `Send-ShiftTab` / `Paste-Replace` / `Send-Enter`
+  ⚠ 少不了 `Send-ShiftTab`(`Common.ps1:174`):`spec/PROFILE-SCHEMA.md` §3.0
+  写明 HM 的按键序列是 `Tab n → 粘贴 → Shift+Tab m → 回车`,没有它这条序列
+  实现不出来
 - **注意**:时序参数(`waitMs`)走 step 输入,**不要用 `$Global:Timing`**
 - **完成**:4 个 manifest 过 lint;全局变量依赖为 0
 
