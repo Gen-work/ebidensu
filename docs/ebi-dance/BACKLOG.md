@@ -254,8 +254,9 @@
   P0-R2);`failures` 每项有 `transient` 布尔(P0-R5);step 文件里除 `Invoke-Step`
   外的辅助函数**必须带 step 前缀**(如 `BrowserFind-*`)—— 所有 step 会被同一
   runspace 依次 dot-source,`Invoke-Step` 靠注册表捕获解决(P1-02),裸名辅助函数
-  则会互相覆盖且无人发现。
-- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增三类)
+  则会互相覆盖且无人发现;`inputs` 里 `type='session'` 的参数都带 `sessionKind`
+  (P0-R2);`provides` 最多一项(P0-R2 §3.4——一次调用最多注册一个资源)。
+- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增五类)
 
 ### [ ] P0-07 [整块] 最小 runner spike
 - **估** 90min | **依赖** P0-06, P0-R2 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2

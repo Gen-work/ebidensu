@@ -420,9 +420,19 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
 - `$Manifest.id` == 文件名
 - `inputs` 里 `required` 和 `default` 不同时出现
 - `failures` 非空,且每一项都有 `id` 和布尔类型的 `transient`(P0-R5)
-- `example` 里用到的参数都在 `inputs` 里声明过
+- `example` 里用到的参数都在 `inputs` 里声明过(`as` 除外 —— 它是 runner
+  保留字段,不进 `inputs`,§3.4)
 - `outputs` 声明的类型都是 JSON-可序列化的(句柄 / COM 走 `$Ctx.Session`,不进 `outputs`,P0-R2)
+- `inputs` 里 `type='session'` 的参数都带了 `sessionKind`(§2.2,P0-R2)
+- `provides` 最多一项(§3.4 点 3 —— 一次调用最多注册一个资源;需要多个的 step 拆开写)
 - 源码纯 ASCII
+
+> 上面这份清单和 `WORKFLOW-SCHEMA.md` §9 的 `ebi lint` 清单是**同一类
+> 汇总处的两份**——前者管 manifest 本身写得对不对(P0-06 的契约检查器,
+> 静态检查单个 step 文件),后者管一条工作流引用 manifest 引用得对不对
+> (`ebi lint`,静态检查 workflow JSON)。**新增任何一条 manifest 侧的
+> 契约规则,这份清单要跟着改**,散落在 §2/§3.4 别处的规则不会被
+> P0-06 自动捡起来。
 
 ---
 
