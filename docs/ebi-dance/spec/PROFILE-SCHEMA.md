@@ -143,44 +143,45 @@ role 当 `pages.json` 的键,三个 page 会互相覆盖(同一个 `"list"` 键�
 ### 3.0 当前工作的 5 个 page(验证:role 相同也不冲突)
 
 这是 P0-R1 的验收:把当前 Host→Open 迁移工作里全部会用到的页面按新规格
-逐个列出 page 名 + role,确认没有 id 冲突、没有 capture 目录冲突。
+逐个列出 page 名 + role,确认没有 id 冲突、没有 capture 目录冲突。**这张表
+必须核对现有实现代码(`HmSnap.ps1` / `MqSnap.ps1` 等),不能凭"这套系统
+一般都有独立检索画面"的直觉猜。**
 
 | page 名 | role | 现在对应 | capture 目录 |
 |---------|------|----------|---------------|
-| `hmSearch` | `form` | HM 検索画面 | (不截图,见下方"两页流程") |
 | `hmResult` | `record` | HM 処理結果画面 | `capture/<side>_hmResult/` |
-| `transferStatus` | `list` | MQ 転送状態一覧(自带搜索框,见下方) | `capture/<side>_transferStatus/` |
+| `transferStatus` | `list` | MQ 転送状態一覧 | `capture/<side>_transferStatus/` |
 | `fileList` | `list` | Jenkins 文件列表 | `capture/<side>_fileList/` |
 | `jobList` | `list` | GoAnywhere 作业一览 | `capture/<side>_jobList/` |
 | `reportPreview` | `document` | 帳票 preview | `capture/<side>_reportPreview/` |
 
-6 个 page 名互不相同 → 5 个 capture 目录互不相同(`hmSearch` 是入口/表单
-页,不出证据,不落 capture 目录),即使其中 3 个都是 role `list` 也不会
-互相覆盖。这就是 R1 要修的洞:旧设计下 `transferStatus` / `fileList` /
-`jobList` 会全部落到同一个 `capture/<side>_list/` 目录,互相覆盖对方的
-截图。
+5 个 page 名互不相同 → 5 个 capture 目录互不相同,即使其中 3 个都是
+role `list` 也不会互相覆盖。这就是 R1 要修的洞:旧设计下
+`transferStatus` / `fileList` / `jobList` 会全部落到同一个
+`capture/<side>_list/` 目录,互相覆盖对方的截图。
 
-**两页流程 vs 单页自带表单 —— 这条容易漏,一并验证清楚。** `VOCABULARY.md`
-§6 说「検索画面 → role `form`」,但不是每个目标系统都有一个独立的检索
-画面:
+**HM 和 MQ 都是单页自带表单,当前工作没有独立检索画面 page。** 对着
+`HmSnap.ps1` 核对过:一个 appl 只 `open` 一次 URL(`{appl}X0011A.do`),
+之后每个 correl 走的是同一页面上的 `Send-Tab HM_ToCorrelid` → 粘贴 →
+`Send-ShiftTab HM_ShiftTabToSearch` → 回车 提交查询,查完再
+`Send-Tab HM_BackToInput` 跳回输入框处理下一条 —— 全程停在
+`hmResult` 这一个 page 上,没有跳转到另一个 URL。`pages.json` 的
+`hmResult` 条目因此也和 `transferStatus` 一样自带表单相关的
+tab 计数(HM 比 MQ 多一步"回跳",字段是 `tabsToForm` / `tabsToBack`
+这类,具体名字由 profile 自定,不是固定两个)。
 
-- **MQ(单页自带表单)**:`transferStatus` 这一个 page 上既有输入框
-  (Tab 到字段、填 key、提交)又有结果表格 —— 提交后**同一个 URL**
-  刷新出匹配的行。这种情况下 `pages.json` 的 `transferStatus` 条目自己
-  带 `tabsToForm`/`tabsToInput`(`WORKFLOW-SCHEMA.md` §8 的示例就是这种,
-  `page` 顶层只绑 `transferStatus` 一个 page,够用)。
-- **HM(两页)**:先到 `hmSearch`(独立 URL,只有输入框)填 key、提交,
-  浏览器跳转到**另一个 URL**才是 `hmResult`。这种情况下工作流仍然只
-  `"page": "hmResult"` 绑定一个(要截图、要判定的是 `hmResult`),但
-  `each` 段开头的导航/填表步骤引用 `hmSearch` 的数据时,写**完整路径**
-  `{{profile.pages.hmSearch.url}}` / `{{profile.pages.hmSearch.tabsToInput}}`
-  ——不是 `{{page.X}}`(那只指向已绑定的 `hmResult`)。**这不需要新机制**:
-  `{{page.X}}` 是"当前绑定 page"的简写,不代表工作流只能引用绑定的那一个
-  page;引用别的 page 的数据,原来的完整路径写法永远可用,只是没有简写。
-
-判断走哪种的问题(访谈时问,见 `INTERVIEW.md` §4 的 2.2):填完搜索表单
-提交后,地址栏 / 页面指纹变了吗?变了 → 两页;没变(只是同一页面刷新出
-结果)→ 单页自带表单。
+**独立检索画面(role `form`)是这套 schema 支持的一种*形状*,但不是
+当前工作真实存在的 page** —— `VOCABULARY.md` §6 提过这种可能性,别把
+它错当成本项目的既有事实照抄进 `pages.json`。如果将来接的新工作确实有
+独立检索画面(提交表单后地址栏 / 页面指纹变成另一个 URL),接法是:
+工作流仍然只 `"page"` 绑定要截图判定的那一个(比如结果页),但
+`each` 段里引用检索画面数据时写**完整路径**
+`{{profile.pages.<检索页名>.X}}`(不是 `{{page.X}}`,那只指向已绑定的
+page)——**这不需要新机制**,`{{page.X}}` 只是"当前绑定 page"的简写,
+引用未绑定 page 的完整路径写法永远可用。访谈时用这一问判断走哪种
+(见 `INTERVIEW.md` §4 的 2.2):提交表单后,地址栏 / 页面指纹变了吗?
+变了 → 独立检索画面;没变(同一页面刷新出结果)→ 单页自带表单,像
+HM/MQ 这样。
 
 ### 3.1 `fingerprint` — 页面指纹
 
