@@ -317,7 +317,7 @@ profile 声明哪一列的派生访问,见 §4.1):
 
 `bit` 的名字 → 位值映射在 profile 的 `worklist.json` 里声明。
 
-### 7.4 `flow.call` — 子工作流
+### 7.4 `flow.call` — 子工作流 ⚠ 暂未排期
 
 ```jsonc
 { "id": "refocusAndSearch", "use": "flow.call",
@@ -325,7 +325,23 @@ profile 声明哪一列的派生访问,见 §4.1):
             "vars": { "term": "{{item.key}}" } } }
 ```
 
-子工作流只有 `each` 段的内容会被内联。用于抽出重复片段。
+子工作流只有 `each` 段的内容会被内联。用于抽出重复片段。**这张卡不在
+BACKLOG 里,P1 的 25 个 MVP step 也没排它** —— 实现前先读下面的命名空间
+规则,不要假设内联的 id 会自动避让。
+
+**内联 id 必须加前缀,否则会撞上 P0-R3 刚堵上的 ledger 键冲突。**
+`flow.call` 的用途写明是"抽出重复片段"(预期被多处调用,或同一处循环
+调用),而 `each` 内联进父工作流后,子工作流自己的 step id(如
+`shot`/`crop`)会和父工作流里同名的 step,或者**同一个子工作流被调用
+两次**产生的两份 `shot`/`crop`,直接重名 —— 违反 §2.1 的"同段内唯一"、
+也会让 §6.1 的 ledger 记账把两次调用的 outputs 记成一条,resume 时把
+从没跑过的那次误判为"已完成"跳过。这正是 P0-R3 把 `id` 改成必填想消灭
+的那类 bug,不能让 `flow.call` 从后门带回来。
+
+规则:内联时,子工作流每个 step 的 id 自动加上
+`<flow.call 调用点的 id>.` 前缀(如 `refocusAndSearch.shot`)。父工作流
+引用子工作流内某个 step 的输出时,写全前缀:
+`{{steps.refocusAndSearch.shot.out.path}}`。
 
 ### 7.5 断点续跑推演例子(P0-R3)
 
