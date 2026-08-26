@@ -85,9 +85,13 @@
 $Manifest = @{
   id       = 'browser.find'
   group    = 'browser'
-  summary  = '在当前页面用 Ctrl+F 查找指定文本,返回是否命中'
-  effects  = 'ui'              # pure | read | write | ui | destructive
+  summary  = 'Ctrl+F search for an exact string; report whether it hit'
+  tier     = 'core'            # core | fallback
+  effects  = 'ui'              # pure | read | ui | write | destructive
   needs    = @('foreground')
+  provides = @()
+  releases = @()
+  idempotent = $true
   inputs   = @{
     term       = @{ type='string'; required=$true; desc='要查找的完整字符串' }
     closeAfter = @{ type='bool';   default=$true;  desc='查完是否 Esc 关闭查找框' }
@@ -96,7 +100,10 @@ $Manifest = @{
     hit  = @{ type='bool' }
     rect = @{ type='rect'; desc='活动高亮行的像素矩形,未命中为 null' }
   }
-  failures = @('not_found','no_foreground_window')
+  failures = @(
+    @{ id = 'not_found';            transient = $false }
+    @{ id = 'no_foreground_window'; transient = $true  }
+  )
   example  = @{ use='browser.find'; with=@{ term='{{item.key}}' } }
 }
 function Invoke-Step { param($In, $Ctx) ...; return @{ ok=$true; hit=$true; rect=$r } }
@@ -253,6 +260,10 @@ capture 目录形如 `capture/before_transferStatus/<key>.png`,取代
 
 `[MVP]` 进第一版(25 个),其余按阶段。「来源」指明可直接复用的现有实现 ——
 **多数 step 是包装,不是新写**。
+
+> 本节下面 8 张表的「阶段」列是 `BACKLOG.md` 定稿前的旧分档
+> (`MVP`/`P2`/`P3`/`P4`/`P5`),和现在的 `P0`–`P5` 卡号不是同一套体系,
+> 只做数量级参考;**排期一律以 `BACKLOG.md` 为准**。
 
 ### G1 `browser.*` — 浏览器 / 前台驱动(17)
 
