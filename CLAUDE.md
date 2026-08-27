@@ -336,7 +336,11 @@ BackupJ4.ps1            Phase BackupJ4 ("bk"): read-only against J4 --
 Validate.ps1            Phase Validate (read-only diagnostic)
 Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
 Check-Encoding.ps1      read-only encoding policy checker + label self-test
-Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1
+Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1.
+                        Test-Docs.ps1 + DocsCheck.ps1 + docs-checks.json make the
+                        ebi-dance docs self-checking: retired spellings, card-count
+                        agreement across BACKLOG/Plan/README, cross-file section
+                        refs, and workflow-example integrity.
 docs/Parked-Ideas.md    designed-then-deliberately-shelved work, with what
                         it would take to resume. NOT on the TODO list.
                         Currently holds the whole D2 image-check line

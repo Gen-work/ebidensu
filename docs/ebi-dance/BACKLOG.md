@@ -31,26 +31,51 @@
 
 ## 状态
 
-- 阶段 P0–P3 共 **64 张** = 「能接下一份工作」的最小集
+- 阶段 P0–P3 共 **68 张** = 「能接下一份工作」的最小集
 - 阶段 P4–P5 共 **36 张** = 补齐 Excel/文件组 + Agent 循环
 - `[整块]` 标记 = 需要连续思考,不适合碎片时间,也**不建议交给较小的模型**
+- **计数口径**:「P0–P3 共 68 张」**不算 `P0-00`**(它已经是历史状态说明,
+  不是一张待执行的卡);「P4–P5 共 36 张」不涉及 `P0-00`,和直接
+  `grep -c '^### \['` 数出来的一致。只在数 P0–P3 时,直接 grep 会多数出
+  1 张(69)——那 1 张就是 `P0-00`,不是漏卡也不是多算。
 
 > **2026-08-24 评审修订**:开工前审了一遍契约,发现 6 个「现在改是文本、
 > 写完 7000 行再改是重构」的洞,追加为 P0-R1…R6(规格修订卡,全部先于写码);
 > P2 追加 2 张(P2-07/08);受影响的实现卡已就地改写。详见各卡的「问题」段。
+>
+> **2026-08-25 追加执行**:P0-R1…R6 全部执行完毕(纯文档改动,四份 spec +
+> `Plan.md` + `docs/README.md` + `INTERVIEW.md` 同步到位),另追加三张卡
+> P0-R7(冻结标签改名,避开远端已有的同名分支)、P0-R8(`Plan.md`/
+> `docs/README.md` 与 BACKLOG 同步)、P0-R9(修正 P0-00 的虚假完成状态)。
+> 九张 R 卡全部 `[x]`。
+>
+> **2026-08-26 第三轮评审追加**:P0-R2 只定义了 Session 资源的注册侧,
+> 释放侧(谁在什么时候关掉 Excel/浏览器窗口、Ctrl+C 算不算数)从没定义,
+> 追加第十张 R 卡 P0-R10(`[整块]`,Session 资源的生命周期·释放侧),
+> 三条决定(显式释放 + 穷举异常退出路径 + 未注册资源必须自释放)已在
+> 同一批提交里落进 `STEP-CONTRACT.md`/`WORKFLOW-SCHEMA.md`,`[x]`。**十张
+> R 卡全部 `[x]`**。同批还修了一处悬空章节引用(`WORKFLOW-SCHEMA.md` §1
+> 指向 `PROFILE-SCHEMA.md` 一个已被删掉的子标题)、`needs:session:<kind>`
+> 与 `sessionKind` 的重复声明(改成只由 `sessionKind` 一处声明,`needs`
+> 不再出现 `session:<kind>`)、`flow.call` 命名空间规则的两处遗漏(子
+> 工作流内部引用改写、id 含 `.` 后 `.out.` 边界解析)、P1-12「抄」列表
+> 漏掉的 `Send-ShiftTab`。
 
 ---
 
-# P0 — 骨架(14 张,2 张整块)
+# P0 — 骨架(18 张,3 张整块)
 
 目标:**一条 5 行的 workflow JSON 能真的存下一张 PNG。**
 
 ### [x] P0-00 契约与词汇定稿
-已完成(2026-08-24):`spec/` 四份 + `INTERVIEW.md`。
+已完成(2026-08-24):`spec/` 四份 + `INTERVIEW.md`。**状态修正记录
+(P0-R9)**:2026-08-24 首次标记 `[x]` 时评审随即发现 P0-R1…R6 六个契约洞——
+这份"定稿"当时其实并不算数,`[x]` 是假的;2026-08-25 P0-R1…R9 全部执行
+并复核完毕后,才实至名归地恢复 `[x]`。
 
 ## P0-R — 规格修订(评审发现的契约洞,全部是改文本,先于任何写码卡)
 
-### [ ] P0-R1 [规格修订] page 身份与 role 解耦
+### [x] P0-R1 [规格修订] page 身份与 role 解耦
 - **估** 60min | **依赖** — | **改** `spec/PROFILE-SCHEMA.md` §2,3,4,5;`spec/VOCABULARY.md` §2,3;`spec/WORKFLOW-SCHEMA.md` §8
 - **问题**:pages.json / grammar.json / rules.json / 工作流 id / capture 目录全都拿
   **role 当唯一键**,但一个项目同一侧可以有多个同型页面 —— 当前工作 before 侧
@@ -67,7 +92,7 @@
 - **完成**:三份 spec 相互一致;把当前工作的全部页面(HM/MQ/Jenkins/GoAnywhere/帳票)
   逐个写出 page 名 + role,无一冲突
 
-### [ ] P0-R2 [整块][规格修订] 会话资源通道($Ctx.Session)
+### [x] P0-R2 [整块][规格修订] 会话资源通道($Ctx.Session)
 - **估** 90min | **依赖** — | **改** `spec/STEP-CONTRACT.md` §3,§6;`spec/WORKFLOW-SCHEMA.md` §4
 - **问题**:契约规定 step 之间**只**通过 `{{steps.X.out.Y}}` 传值,且引用**只限同段**。
   但 `browser.ensure` 在 `setup` 里拿到的窗口句柄,`each` 里的
@@ -85,7 +110,7 @@
 - **完成**:STEP-CONTRACT 新增 Session 一节;P0-08 的三步链(ensure→capture)能够
   不靠全局变量、不靠跨段 steps 引用写出来
 
-### [ ] P0-R3 [规格修订] 断点续跑 = ledger 输出重放 + setup 重跑
+### [x] P0-R3 [规格修订] 断点续跑 = ledger 输出重放 + setup 重跑
 - **估** 60min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §6;`spec/WORKFLOW-SCHEMA.md` §7
 - **问题**:「重跑按 ledger 跳过已完成的 (item, step)」—— 但跳过 `shot` 之后,
   下一步 `screen.crop` 引用的 `{{steps.shot.out.path}}` 从哪来?规格没说。
@@ -99,7 +124,7 @@
   在 spec 里加一个「中断发生在 shot 与 crop 之间」的完整推演例子。
 - **完成**:P1-04 可照抄此节实现;推演例子覆盖同段引用、跨 item、once:group 三种情况
 
-### [ ] P0-R4 [规格修订] key 单一事实源 + 文件名安全形 + 学习规则落盘
+### [x] P0-R4 [规格修订] key 单一事实源 + 文件名安全形 + 学习规则落盘
 - **估** 60min | **依赖** — | **改** `spec/PROFILE-SCHEMA.md` §2,§6;`spec/VOCABULARY.md`;`spec/WORKFLOW-SCHEMA.md` §8
 - **问题**:四个会互相放大的小洞:(a) key 被声明了**两次** ——
   vocabulary.json `columns.key`(单列)和 worklist.json `key.columns`(复合数组),
@@ -118,7 +143,7 @@
   `human.choose` 渲染它 —— 一个形状,不许四家各造。
 - **完成**:两份 spec + 两个示例一致;P1-21 / P1-22 / P1-27 / P1-34 可直接引用
 
-### [ ] P0-R5 [规格修订] 按失败种类的容错策略 + warnings 通道
+### [x] P0-R5 [规格修订] 按失败种类的容错策略 + warnings 通道
 - **估** 60min | **依赖** — | **改** `spec/STEP-CONTRACT.md` §2,§3;`spec/WORKFLOW-SCHEMA.md` §6
 - **问题**:(a) onError 策略是每 step 一刀切:`browser.wait_for` 的 `timeout`
   该 retry,`not_found` retry 毫无意义(还会对着错误页面连打三轮键盘);失败种类
@@ -134,7 +159,7 @@
   `internal_error` 声明为保留失败 id,manifest 不必列出。
 - **完成**:两份 spec 更新;P1-30 的「未识别行」改用 warnings 表达
 
-### [ ] P0-R6 [规格修订] 模板 page 绑定 + profile 内模板的求值规则
+### [x] P0-R6 [规格修订] 模板 page 绑定 + profile 内模板的求值规则
 - **估** 60min | **依赖** P0-R1 | **改** `spec/WORKFLOW-SCHEMA.md` §1,§4;`spec/PROFILE-SCHEMA.md` §5
 - **问题**:(a) 模板禁止嵌套(这条是对的),但代价是 workflow 里只能写死
   `{{profile.pages.list.url}}` 这样的完整路径 —— 换一个 page 就要全文替换路径段,
@@ -147,14 +172,198 @@
   作用域 = `profile.pages[<当前 page>].X`,并让 `{{page.grammar}}` / `{{page.rules}}`
   解析到 grammar.json / rules.json 的同名条目;嵌套模板依旧禁止。
   (b) 定死:经 `{{profile...}}` / `{{page...}}` 取出的子树在传给 step 前
-  **递归求值一次**;`run.window` 正式加入 run 作用域(由 human.input 或 CLI
-  `--window` 写入,接线见 P2-07)。
+  **递归求值一次**;时间窗正式加入 run 作用域(由 human.input 或 CLI
+  `--time-window` 写入,接线见 P2-07)——**执行时改名为 `run.timeWindow`**,
+  不叫 `run.window`(和 `profile.window`、Session 窗口句柄名撞概念,
+  复核时发现,见 PR #141 的审查记录)。
 - **完成**:WORKFLOW-SCHEMA §8 示例改写后,换 page 只改一行;lint 检查项同步(P1-08)
+
+### [x] P0-R7 [规格修订] 冻结标签改名
+- **估** 10min | **依赖** — | **改** `BACKLOG.md`(P0-01 卡本身)、`Plan.md`
+- **问题**:P0-01 要 `git tag spec/gift-gfix <tip>`,但远端**已经存在一个同名分支**
+  `refs/heads/spec/gift-gfix`(旧 `docs/Generalization-Roadmap.md` 计划留下的
+  冻结/热修分支,指向 `0f5343e`,PR #103,`git ls-remote` 验证过仍然存在)。
+  git 允许同名 branch + tag 共存,但之后 `git checkout spec/gift-gfix` 会变成
+  歧义引用,`git show spec/gift-gfix` 也会警告。
+- **做**:P0-01 的标签名改成 `freeze/pre-ebi-dance`,卡里加一行说明为什么不用
+  `spec/gift-gfix`(避免后人再踩同一个坑);同步 `Plan.md` 里全部提到
+  `spec/gift-gfix` 的地方(D1 决策表、§11 P0 步骤、§14 风险表)。
+  `docs/Generalization-Roadmap.md` 自己对 `spec/gift-gfix` 分支的引用不动——
+  那是另一份仍然有效的计划的产物,不是这次要改的东西。
+- **完成**:BACKLOG / Plan.md / `docs/README.md` 里不再出现 `spec/gift-gfix` 这个
+  **标签**名(分支名本身当然还在,不受影响)
+
+### [x] P0-R8 [规格修订] Plan.md 与 README.md 同步
+- **估** 90min | **依赖** P0-R1…R7 | **改** `Plan.md` §4.3/§9/§10.3/§11/§14、
+  `docs/README.md`、`INTERVIEW.md`
+- **问题**:PR #140 只改了 `BACKLOG.md`,`Plan.md` 和 `docs/README.md` 没跟上,
+  当时互相矛盾:`Plan.md` §4.3/§9/§11 还写着 `<side>.<role>.<verb>` 和
+  `before.list.capture`(R1 已推翻的口径);§10.3 的卡数表是「56/6、92/8」而
+  BACKLOG 已经是「64/更多」;§9 的 `ebi explain` 样例用旧 workflow id 和
+  `pagetext/before_list/`(连 `pagetext/` 这个目录名本身都是过时的,
+  VOCABULARY.md 从来只有 `capture/`);`docs/README.md` 里 `P0-R` 和 `64`
+  出现次数为 0。`INTERVIEW.md` 也有三处同款漂移(`key.aliases`、pages.json
+  按 role 描述、页面盘点提示词没提醒 page≠role)。
+- **做**:R1…R7 每改一处规格,同步检查并修正 `Plan.md`/`docs/README.md`/
+  `INTERVIEW.md` 里因此过期的内容;卡数表按 BACKLOG 实际卡数重新数一遍
+  (发现 P2 也已经从 6 张长到 8 张,表格之前没跟上——这一条原始审查没提到)。
+- **完成**:四份 spec + `Plan.md` + `docs/README.md` + `INTERVIEW.md` +
+  `BACKLOG.md` 之间没有再发现矛盾的 id 命名 / 卡数 / 标签名
+
+### [x] P0-R9 P0-00 状态修正
+- **估** 5min | **依赖** P0-R1…R8 | **改** `BACKLOG.md`(P0-00 卡本身)
+- **问题**:`P0-00 契约与词汇定稿` 一直标着 `[x]` 已完成,但 P0-R1…R6 六个
+  契约洞恰恰是评审在 P0-00 标完成**当天**就发现的——那个 `[x]` 从落笔起
+  就是假的,一直没人回去改。
+- **做**:R1…R8 全部执行、复核完毕后,把 P0-00 的状态说明补上这段历史
+  (曾经是假 `[x]`,现在是真 `[x]`),而不是让下一个会话以为它从一开始
+  就经得起审查。
+- **完成**:P0-00 卡文本里能看到这段状态修正记录;本文件顶部「状态」段落
+  和 P0 分组标题的卡数统计已更新(17 张,2 张整块)
+
+### [x] P0-R10 [整块][规格修订] Session 资源的生命周期(释放侧)
+- **估** 75min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §2.1,§3.4,§4,
+  §6.2,§6.3,§7;`spec/WORKFLOW-SCHEMA.md` §1(新增 §1.1),§7.2,§7.4,§7.5,§9
+- **问题**:P0-R2 只定义了 Session 资源的**注册侧**(`provides` 声明种类、
+  `with.as` 注册实例名、`type='session'` 输入消费),**释放侧从没定义**,
+  留下三个洞:(a) P4-01 卡标题写着 `excel.close`,但契约里没有任何一条
+  规则要求它必须出现在 `teardown` 里——写不写、由谁触发,全凭实现者自觉。
+  (b) `WORKFLOW-SCHEMA.md` §1 说 teardown「整个 run 结束后跑一次(含失败
+  退出)」,但没说 Ctrl+C 算不算「失败退出」——而 §7.5 的断点续跑推演
+  例子字面意思就是一次 Ctrl+C 中断,例子里完整过了一遍 setup 重跑、
+  ledger 重放,却从头到尾没提 teardown,也没提这次中断对 Session 里已经
+  注册过的资源意味着什么——如果 Ctrl+C 不保证跑 teardown,重复
+  Ctrl+C/resume 循环会不会在系统里堆出一串没人关掉的 Excel COM 进程,
+  规格没有答案。(c) P0-R2 定的「`provides` 非空但不写 `as` 是合法的」
+  这条规则,副作用是造出了一批**注册不了、因而也释放不了**的资源:
+  `excel.close` 要靠名字在 Session 里找到要关的工作簿,没写 `as` 的资源
+  没有名字——这条规则对窗口句柄(泄漏无害)没问题,对 COM 对象(泄漏会
+  累积、需要人工杀进程)是个漏洞。(d,第四轮追加)**(a)(b)(c) 三条决定
+  堵上了"资源怎么释放",但没堵上"同一个名字被重复注册,旧的那个悄悄
+  没人管了"**:`with.as` 的值是字符串字面量、不走 `{{}}` 模板(§3.4 第 3
+  点),所以注册名不能随 item/group 变化;而"名字的作用域是一次 run"
+  (同一节)又明说 `each` 里可以注册。`groupBy` 分组的 compose 类工作流
+  典型写法是「每个交付物开一个工作簿」:`once:"group"` 在每组开头调
+  `excel.open` 注册同一个名字(比如 `wb`)。第 2 组的 `open` 一跑,
+  `$Ctx.Session['wb']` 被同名覆盖,第 1 组那个 Workbook/Application COM
+  对象当场变成孤儿——没有名字能传给 `excel.close`。而 `WORKFLOW-SCHEMA.md`
+  §7.2 现在只有 `once:"group"` 这个"组开头"钩子,没有"组结束"钩子,连
+  想在组尾释放都做不到,只能拖到 `teardown`——但 `teardown` 只跑一次,只
+  关得掉最后一组,前面全部泄漏。§9 现在那条 lint(检查 `teardown` 里有
+  释放调用)是**满足**的,照样泄漏。不是假想:`ReplaceEvidence.ps1:148`
+  就是 `Group-Object Excel_NAME`,`P4-20 workflows/*.compose.json` 是它的
+  替代品。"不注册、自己释放"这条路走不通——同一个 item 内部要跨好几个
+  step 用同一个工作簿(open → find_sheet → insert_picture → save),不注册
+  后面的 step 根本拿不到它。(e,第五轮追加)**决定 5 的 `once:"groupEnd"`
+  让 `each` 里注册资源成了推荐写法,但 §6.1 的 ledger 跳过规则没跟着改**:
+  §6.2 当时只豁免 `setup`/`teardown`("每次 resume 都重跑,负责把 Session
+  重新建起来"),`each` 不在内。于是 `open`(`once:"group"`)一旦记进
+  ledger,resume 时就被跳过,`wb` 在新进程里永远不再进 Session,组里剩下
+  的 item 一引用这个名字就失败——而 ledger 记录是永久的,每次重试都撞同
+  一堵墙,这条工作流**永久**跑不完,直接违反 P2-06「中途 Ctrl+C,重跑从
+  断点续上」和 P4-22 的验收。(f,第五轮追加)决定 6 的 `mustRelease` 表里
+  `excelApp` 是**死条目**:全仓库没有任何 step 产出或释放它;而 P4-01 抄的
+  `New-ExcelApp` + `Open-Workbook` 意味着一个 `excel.open` 要同时产出
+  Application 和 Workbook,和 §3.4 第 3 点「`provides` 最多一项」「未注册
+  的资源必须在本次调用返回前自己释放」直接矛盾(Application 必须活到 run
+  结束)。P0-06 那条检查是单向的,正好漏过这个洞。
+- **做**:逐条决定,不留 TBD(第一轮 3 条,第四轮 +2,第五轮 +2)——
+  1. **谁负责释放:显式,不是 runner 自动**。manifest 新增可选字段
+     `releases = @(<kind>, ...)`(与 `provides` 对称,默认 `@()`),声明
+     这个 step 会释放 `$Ctx.Session` 里哪个种类的资源(它照样通过自己
+     `inputs` 里 `type='session'` 的参数拿到具体实例名)。工作流作者
+     必须在 `teardown` 里显式调这类 step(比如 `excel.close`)。不选
+     runner 自动释放的理由:不同种类资源的释放顺序/方式完全不同(工作簿
+     要先 `Close` 再让 App `Quit`、句柄类资源什么都不用做)——让 runner
+     替 Session 里每个种类内置一套释放逻辑,等于让 runner 替工作流做
+     「计算」,违反 `WORKFLOW-SCHEMA.md` §0 的设计铁律;而且这本来就是
+     本仓库 `ExcelHelpers.ps1` 的既有写法(`Close-Workbook`/
+     `Close-ExcelApp` 从来是调用方显式调用,从没有框架自动挡在中间)。
+     对应 `ebi lint` 检查(§9 新增项):某个种类如果在 catalog 里**存在**
+     带 `releases` 覆盖它的 step,那么任何一次 `with.as` 注册过这个种类
+     的调用,`teardown` 里就必须有一次对**同名**实例的释放调用;种类在
+     catalog 里根本没有 `releases` 覆盖(比如 `window`)→ 不要求。
+  2. **异常退出路径,穷举,不用"含失败退出"这种含糊说法**:正常跑完、
+     `onError.policy=fail` 中止、step 抛出未预期异常(`internal_error`)
+     ——这三种都发生在同一个 PowerShell 进程的正常控制流里,runner 用
+     `try { ... } finally { 跑 teardown }` 包住整条执行路径就能保证,
+     **这三种 teardown 保证跑**。**Ctrl+C(以及被杀进程/终端被关/系统
+     重启这类硬中断)——不保证**:PowerShell 5.1 的 Ctrl+C 默认直接
+     终止进程,不触发 `finally`;就算 runner 注册 `CancelKeyPress` 尽力
+     兜底,中断到达时线程可能正卡在一次还没返回的 COM 调用里,teardown
+     想开始跑都进不去。**泄漏怎么办:接受泄漏,不做孤儿检测,但要有
+     文档警告**——不新增任何"下次启动扫描孤儿进程"的基础设施,如实
+     写清楚这就是本项目 Excel COM 场景一直以来的真实运维方式(操作员
+     手动在任务管理器里杀多余的 `EXCEL.EXE`)。
+  3. **`STEP-CONTRACT.md` §3.4 第 3 点里"没有默认名这回事……"这句后面
+     加一条约束**:没注册(没写 `as`)的资源,必须在产生它的这次 step
+     调用**返回之前**由 step 自己释放完——它没有名字,后面没有任何
+     step 能引用到它。任何需要跨 step 存活、或者需要显式释放的资源
+     (尤其是 COM 对象)都必须注册。
+  4. **(第四轮)同一个名字重复注册,如果它当前仍然活着,是运行期
+     失败,不是静默覆盖**。runner 在真正执行 `with.as: "<名>"` 之前先查
+     `$Ctx.Session` 里这个名字是否已经存在,存在就直接失败,不进
+     `Invoke-Step`。不选"runner 自动释放旧的再注册新的"——理由和第 1 点
+     否掉"runner 自动清理"一样:不同种类资源释放方式不同,不该让 runner
+     替工作流做这个决定。
+  5. **(第四轮)新增 `"once": "groupEnd"`,和 `"once": "group"` 对偶**:
+     在同组最后一条 item 处理完之后跑一次,专门释放 `once:"group"` 在
+     组开头注册的组级资源。ledger 键和 `once:"group"` 一样是
+     (group, step);`source.groupBy` 没设时用它是配置错误,`ebi lint`
+     报错。于是 compose 工作流的正确写法是 `open` 用 `once:"group"`、
+     `close` 用 `once:"groupEnd"`,两者在 `each` 段内配对;`teardown`
+     只管 `setup` 里注册的东西,不再兼管组级资源。
+  6. **(第四轮)`ebi lint` 判断某种类要不要求释放调用,读一张显式声明的
+     `mustRelease` 种类表(`STEP-CONTRACT.md` §3.4 第 6 点),不读"catalog
+     里现在有没有恰好带 `releases` 的 step"**。原来的判据是后者——某天
+     往 catalog 里新增一个释放 step,所有已经注册过那个种类、从没写释放
+     调用的老工作流会同一天集体变红,而它们一行都没改;依赖方向是反的,
+     "这种资源要不要释放"是资源种类自身的属性,不该从 catalog 当前长什么
+     样反推。种类表放在 `STEP-CONTRACT.md`(不放自动生成的
+     `catalog.json`),手工维护,新增种类时随 `provides`/`releases` 一起补。
+  7. **(第五轮)ledger 跳过规则对 `provides`/`releases` 非空的 step 不
+     适用**:这类 step resume 时总是真执行(`STEP-CONTRACT.md` §6.1/§6.2)。
+     四个要点缺一不可——① 两边**成对**豁免(只豁免 `provides` 会让 `wb`
+     一直占着名字,下一组 `open` 撞上决定 4 的"同名注册非法");② 豁免的
+     作用点是**加载 ledger 那一刻**(把这类 step 的历史记录排除在"已完成
+     集合"之外),**不是**运行期每次遇到都真执行——后者会连 `once:"group"`
+     的进程内跳过一起废掉,组内第 2 条 item 就重复注册;③ 这类 step 必须
+     `idempotent = $true`,`ebi lint` 与 P0-06 各查一侧;④ 代价写明:上次
+     已整组跑完的组,resume 时会被多开关一次(不写数据)。推演见
+     `WORKFLOW-SCHEMA.md` §7.6。
+  8. **(第五轮)`mustRelease` 表里不许有死条目**:每个种类都必须有 step
+     产出它。因此 Excel 生命周期是**四个 step**——`excel.ensure_app`
+     (`provides=@('excelApp')`)/ `excel.open`(`provides=@('workbook')`)/
+     `excel.close`(`releases=@('workbook')`)/ `excel.quit_app`
+     (`releases=@('excelApp')`)。不是为迁就规则硬拆:`ExcelHelpers.ps1`
+     本来就是 `New-ExcelApp`/`Open-Workbook`/`Close-Workbook`/
+     `Close-ExcelApp` 四个独立函数,而且两者作用域天然不同(app 一次 run
+     一个,workbook 一组一个)。
+- **完成**:`STEP-CONTRACT.md` 新增 `releases` 字段(manifest 骨架 + §2.1
+  字段表 + §3.4 新增第 5 点 + §4 needs/sessionKind 去重说明 + §6.2 补
+  teardown 幂等要求 + §7 Run-Tests.ps1 清单新增一条);`WORKFLOW-SCHEMA.md`
+  新增 §1.1"退出路径 x teardown 保证"表格、§7.5 补一段 Ctrl+C 场景下
+  Session 资源的说明、§9 `ebi lint` 清单新增一条;`BACKLOG.md` P0-06 /
+  P1-08 两张卡各追加一条对应的检查项。`grep -c 'releases' spec/STEP-CONTRACT.md
+  spec/WORKFLOW-SCHEMA.md` 两个文件合计 ≥ 8 处命中(字段定义、示例骨架、
+  §2.1 表格、§3.4 决定、§4 衔接句、§6.2 幂等句、§7 清单、§9 清单——不是
+  只在一处提了一句就算数)。**(第四轮追加)**:`grep -rn 'groupEnd'
+  docs/ebi-dance/` 命中 `STEP-CONTRACT.md`(§3.4 第 3/5 点、§6.3)、
+  `WORKFLOW-SCHEMA.md`(§7.2 定义+例子、§9 两条 lint)、`BACKLOG.md`
+  (本卡 + P1-04 + P1-08 + P4-01 + P4-20)——不是只在 §7.2 写了语法;
+  `STEP-CONTRACT.md` §3.4 新增第 6 点的 `mustRelease` 种类表存在,
+  `WORKFLOW-SCHEMA.md` §9 的释放判据条目改成读这张表,不再读"catalog
+  里有没有恰好带 `releases` 的 step"。
 
 ### [ ] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
-- **做**:`git tag spec/gift-gfix <当前 main tip>` 并推送。作为整个重构期的回滚点。
-- **完成**:远程能看到该 tag;`git show spec/gift-gfix --stat` 正常
+- **做**:`git tag freeze/pre-ebi-dance <当前 main tip>` 并推送。作为整个重构期的回滚点。
+- ⚠ **不用 `spec/gift-gfix`**:远端已经存在一个同名**分支**
+  `refs/heads/spec/gift-gfix`(指向旧提交 `0f5343e`,PR #103)。git 允许
+  同名 branch + tag 共存,但那样 `git checkout spec/gift-gfix` 会变成
+  歧义引用,`git show spec/gift-gfix` 也会警告 —— 换成 `freeze/pre-ebi-dance`
+  彻底避开冲突,不要图省事换回 `spec/gift-gfix`。
+- **完成**:远程能看到该 tag;`git show freeze/pre-ebi-dance --stat` 正常
 
 ### [ ] P0-02 建目录骨架
 - **估** 30min | **依赖** P0-01 | **读** `Plan.md` §3
@@ -191,8 +400,14 @@
   P0-R2);`failures` 每项有 `transient` 布尔(P0-R5);step 文件里除 `Invoke-Step`
   外的辅助函数**必须带 step 前缀**(如 `BrowserFind-*`)—— 所有 step 会被同一
   runspace 依次 dot-source,`Invoke-Step` 靠注册表捕获解决(P1-02),裸名辅助函数
-  则会互相覆盖且无人发现。
-- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增三类)
+  则会互相覆盖且无人发现;`inputs` 里 `type='session'` 的参数都带 `sessionKind`
+  (P0-R2);`provides` 最多一项(P0-R2 §3.4——一次调用最多注册一个资源);
+  `releases` 声明的种类都能在该 step 自己的某个 `type='session'` 输入的
+  `sessionKind` 里找到(P0-R10);`provides`/`releases` 里出现的每个种类都
+  能在 §3.4 第 6 点的 `mustRelease` 种类表里找到对应声明(P0-R10 第四轮);
+  `provides`/`releases` 非空的 step,`idempotent` 必须是 `$true`(P0-R10
+  决定 7——resume 时它们总是真执行)。
+- **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增七类)
 
 ### [ ] P0-07 [整块] 最小 runner spike
 - **估** 90min | **依赖** P0-06, P0-R2 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2
@@ -248,6 +463,10 @@
 - **完成**:能跑通一条有 setup+each 的 JSON,遍历 3 行 fixture 数据;
   含一条 `once: group` 的用例(组内第 2 个 item 能引用第 1 个 item 时跑出的输出)
 
+- **(第五轮)** 加载 `run/<runId>/ledger.jsonl` 构建"已完成集合"时,
+  **排除 `provides`/`releases` 非空的 step 的历史记录**(`STEP-CONTRACT.md`
+  §6.2,P0-R10 决定 7)——跨进程不继承,进程内 `once` 语义照旧。这条写错的
+  后果是 compose 类工作流被 Ctrl+C 之后永久跑不完。
 ### [ ] P1-04 [整块] Runner 的 onError + ledger
 - **估** 120min | **依赖** P1-03, P0-R3, P0-R5 | **读** `spec/WORKFLOW-SCHEMA.md` §6;`STEP-CONTRACT.md` §6
 - **做**:四种 policy(`retry` 退避 / `ask` / `skip` / `fail`)+ **`byFailure` 按失败
@@ -255,13 +474,26 @@
   `destructive` 自动插确认关卡;step 返回的 `warnings` 进 trace + 末尾汇总;
   ledger 写 `run/<runId>/ledger.jsonl`,粒度 **(item, step)**(`once: group` 为
   (group, step)),**每条连同 outputs 持久化**;重跑跳过已完成的并**重放其 outputs**,
-  `setup`/`teardown` 每次 resume 重跑(P0-R3)。
+  `setup`/`teardown` 每次 resume 重跑(P0-R3)。**(第四轮追加)**
+  `once: "groupEnd"`(`WORKFLOW-SCHEMA.md` §7.2,P0-R10)在同组最后一条
+  item 处理完之后触发一次,ledger 键同样是 (group, step);runner 按
+  `groupBy` 排序遍历 `source`,组切换(或整个遍历结束)时触发上一组的
+  `groupEnd`。**运行期同名重复注册检查**(`STEP-CONTRACT.md` §3.4 第 3
+  点,P0-R10):执行 `with.as: "<名>"` 之前,先查 `$Ctx.Session` 里这个
+  名字是否已注册且尚未释放,是则直接失败(不进 `Invoke-Step`),不静默
+  覆盖——这是运行期检查,`ebi lint`(P1-08)静态走一遍 JSON 时看不出
+  `once:"group"` 会在运行时对同一个名字重复调用几次,只能检查组头/组尾
+  的注册-释放配对结构对不对,不能替代这条运行期检查。
 - **完成**:中断后重跑不重复执行已完成的 (item, step),且被跳过 step 的输出仍可被
   后续步引用;`timeout`(transient)会 retry 而 `not_found` 不会;`confirm:false`
-  能跳过自动关卡
+  能跳过自动关卡;`once:"groupEnd"` 在同组最后一条 item 后触发且仅触发一次;
+  对一个已注册且未释放的名字重复 `with.as` → 运行期失败,不静默覆盖;
+  **中途 Ctrl+C 后 resume,`each` 里 `once:"group"` 注册的工作簿会被重新
+  注册,后续 item 不报"名字未注册"**(P0-R10 决定 7,推演见
+  `WORKFLOW-SCHEMA.md` §7.6)
 
 ### [ ] P1-05 kernel/Gate.ps1
-- **估** 75min | **依赖** P1-03 | **读** `Plan.md` §3.3
+- **估** 75min | **依赖** P1-03 | **读** `Plan.md` §3.2 第 4 点(人工关卡)
 - **做**:统一的 ASCII 关卡面板 —— **发生了什么 / 下一步会做什么 / 证据在哪 / 可选动作**。
   替代现在 27 个文件、77 处各写各的 `Read-Host`。
 - **完成**:面板在 80 列终端下不折行;`r/s/q/m` 四个动作都通
@@ -280,9 +512,16 @@
 ### [ ] P1-08 ebi lint
 - **估** 90min | **依赖** P1-01, P1-02, P0-R6 | **读** `spec/WORKFLOW-SCHEMA.md` §9
 - **做**:§9 的 9 项静态检查全实现,包括 fallback tier 警告和 `confirm:false` 警告。
-  评审追加:`page` 绑定解析得到(P0-R6);`needs`/`provides` 的 Session 资源配平
-  (「用了 browser 没人 ensure」,P0-R2);`byFailure` 引用的失败 id 在 manifest 里
-  存在(P0-R5)。
+  评审追加:`page` 绑定解析得到(P0-R6);`inputs` 的 `sessionKind`/`provides`
+  的 Session 资源配平(「用了 browser 没人 ensure」,不读 `needs`——P0-R2 的
+  配平算法本来就只看 `type='session'` 输入,P0-R10 把 `needs:session:<kind>`
+  从 manifest 里整个删掉之后更是如此);`byFailure` 引用的失败 id 在 manifest 里
+  存在(P0-R5);`with.as` 注册过、且种类在 `STEP-CONTRACT.md` §3.4 第 6 点
+  `mustRelease` 种类表里标了 `$true` 的资源名,必须有一个同段更后面/更后段
+  的同名释放调用(P0-R10;判据是种类表,**不是**"catalog 里现在有没有恰好
+  带 `releases` 的 step"——第四轮改的,原判据会让新增一个释放 step 使所有
+  已有工作流集体变红);`once:"groupEnd"` 只在 `source.groupBy` 有值时合法
+  (P0-R10 第四轮)。
 - **完成**:对一份故意写错的 workflow,全部检查项都能报出来
 
 ### [ ] P1-09 ebi explain
@@ -302,7 +541,10 @@
 - **完成**:manifest 过 lint;dryrun 打印正确
 
 ### [ ] P1-12 browser.send_keys + tab_to + fill + submit
-- **估** 75min | **抄** `Common.ps1` `Send-Key` / `Send-Tab` / `Paste-Replace` / `Send-Enter`
+- **估** 75min | **抄** `Common.ps1` `Send-Key` / `Send-Tab` / `Send-ShiftTab` / `Paste-Replace` / `Send-Enter`
+  ⚠ 少不了 `Send-ShiftTab`(`Common.ps1:174`):`spec/PROFILE-SCHEMA.md` §3.0
+  写明 HM 的按键序列是 `Tab n → 粘贴 → Shift+Tab m → 回车`,没有它这条序列
+  实现不出来
 - **注意**:时序参数(`waitMs`)走 step 输入,**不要用 `$Global:Timing`**
 - **完成**:4 个 manifest 过 lint;全局变量依赖为 0
 
@@ -364,8 +606,12 @@
 ## table / progress 组(6 张)
 
 ### [ ] P1-24 table.load + table.save
-- **估** 60min | **抄** `MappingStore.ps1 Import-Mapping` / `Export-MappingAtomic`
-- **注意**:CSV 是 UTF-8 **带 BOM**(Excel 需要);写入必须原子(临时文件 + 改名)
+- **估** 60min | **依赖** P0-R4 | **抄** `MappingStore.ps1 Import-Mapping` / `Export-MappingAtomic`
+- **注意**:CSV 是 UTF-8 **带 BOM**(Excel 需要);写入必须原子(临时文件 + 改名)。
+  `table.load` 必须对全表算一遍 `keySafe`(`PROFILE-SCHEMA.md` §6.6),撞车的行
+  直接判失败并列出来——`keySafe` 的规范化规则本身会制造新的重名
+  (`A_B`+`C` 和 `A`+`B_C` 都拼成 `A_B_C`),不在加载时挡住就会在 capture
+  阶段静默互相覆盖截图
 
 ### [ ] P1-25 table.ensure_columns
 - **估** 45min | **抄** `MappingStore.ps1 Ensure-MappingColumns`;列 schema 来自 profile
@@ -423,7 +669,9 @@
 
 ### [ ] P1-33 verify.assert
 - **估** 90min | **读** `spec/PROFILE-SCHEMA.md` §5
-- **做**:规则表引擎,`op` 的 11 种;**`else` 只能是 `ng` 或 `unknown`,校验时拒绝 `ok`**
+- **做**:规则表引擎,`op` 的 12 种(`equals`/`notEquals`/`in`/`notIn`/`matches`/
+  `present`/`empty`/`within`/`gt`/`lt`/`gte`/`lte`);**`else` 只能是 `ng` 或
+  `unknown`,校验时拒绝 `ok`**
 - **完成**:单测覆盖每种 op;`else: ok` 的规则表被拒绝并报错
 
 ## human 组(1 张)
@@ -464,7 +712,7 @@
 - **估** 90min | **抄** `SnapVerify.ps1 Test-MqRecord` 的判定语义**翻译成规则表**
 - **⚠ 判定语义一行不改**,靠 `Tests/Test-SnapVerify.ps1` 的既有 fixture 护住
 
-### [ ] P2-05 workflows/before.list.capture.json
+### [ ] P2-05 workflows/before.transferStatus.capture.json
 - **估** 60min | **读** `spec/WORKFLOW-SCHEMA.md` §8(完整示例)
 - **完成**:`ebi lint` 全绿;`ebi explain` 的输出人工逐行确认过
 
@@ -477,13 +725,16 @@
   - [ ] 中途 Ctrl+C,重跑从断点续上,不重复截图
 - ⚠ 如果旧流程已无真实环境可跑,改用任意一条还能跑的。**对拍验证的是引擎,不是业务。**
 
-### [ ] P2-07 human.input + run.window 接线
+### [ ] P2-07 human.input + run.timeWindow 接线
 - **估** 60min | **依赖** P1-05, P0-R6
 - **做**:`human.input` step(默认值 + 校验 + 批量一次问,抄旧 Expected_Time 批量
-  提示的交互方式)+ CLI `--window`,写入 run 作用域的 `run.window`
+  提示的交互方式)+ CLI `--time-window`,写入 run 作用域的 `run.timeWindow`
+  (形状 `{ "from": "<ISO8601>", "to": "<ISO8601>" }`,见
+  `spec/WORKFLOW-SCHEMA.md` §4.1;字段叫 `timeWindow` 不叫 `window`,
+  避免和 `profile.window`、Session 窗口句柄名撞概念)
 - **为什么在 P2**:模块表里它排 P2 但原 backlog 漏了卡 —— 而 MqSnap 对拍的判定
-  规则里有 `within {{run.window}}`(时间窗),没有这张卡 P2-04/P2-06 跑不了
-- **完成**:rules.json 里 `within` + `{{run.window}}` 的规则在 fixture 单测里可判
+  规则里有 `within {{run.timeWindow}}`(时间窗),没有这张卡 P2-04/P2-06 跑不了
+- **完成**:rules.json 里 `within` + `{{run.timeWindow}}` 的规则在 fixture 单测里可判
 
 ### [ ] P2-08 mask-lite:脱敏门禁前移
 - **估** 60min | **依赖** —(可与 P2-01 并行)
@@ -543,8 +794,19 @@
 
 # P4 — Excel / 文件组(22 张)
 
-### [ ] P4-01 excel.open + close + save — 60min — 抄 `ExcelHelpers.ps1 New-ExcelApp/Open-Workbook/Close-Workbook`
+### [ ] P4-01 excel 生命周期四件套 — 75min — 抄 `ExcelHelpers.ps1 New-ExcelApp/Open-Workbook/Close-Workbook/Close-ExcelApp`
+  ⚠ (第五轮)是**四个 step**,不是一个:`excel.ensure_app`
+    (`provides=@('excelApp')`)/ `excel.open`(`provides=@('workbook')`,用
+    `type='session'` 输入消费 app)/ `excel.close`(`releases=@('workbook')`)/
+    `excel.quit_app`(`releases=@('excelApp')`)——`provides` 最多一项,一个
+    step 产不出两个 COM 对象(`STEP-CONTRACT.md` §3.4 第 6 点,P0-R10 决定 8)。
+    `save` 并进哪个 step 都行,不影响生命周期配对
   ⚠ `$xl.Visible=$true` 要在 `DisplayAlerts=$false` 之前;COM 对象反序释放
+  ⚠ (第四轮)`close` 必须能安全面对"这个名字在 Session 里不存在"——照抄
+    `ExcelHelpers.ps1 Close-Workbook` 的写法:`$null` 直接 `return`,不报错。
+    典型调用点是 `once:"groupEnd"`(每组一个工作簿的 compose 场景),不是
+    `teardown`——`teardown` 只管 `setup` 里注册的资源(`STEP-CONTRACT.md`
+    §3.4 第 5 点,`WORKFLOW-SCHEMA.md` §7.2,P0-R10)
 ### [ ] P4-02 excel.find_workbook — 45min — 抄 `WorkbookResolver.ps1 Find-WorkbookByExcelName`
 ### [ ] P4-03 excel.find_sheet + list_sheets — 45min — 抄 `ExcelHelpers.ps1 Get-SheetByName/Unhide-AllSheets`
 ### [ ] P4-04 excel.find_anchor — 60min — 抄 `ExcelHelpers.ps1 Get-NextAnchorRow/Get-RowAtOrBelow`
@@ -570,6 +832,9 @@
   实现前先在 STEP-CONTRACT 补一段,二选一:做成 ui step 的可选 `verifyChange`
   输入(fill/submit 自带前后对比),或做成 runner 的 flow 构造。不要发明第三种
 ### [ ] P4-20 layout.json + workflows/*.compose.json — 90min — 读 `spec/PROFILE-SCHEMA.md` §7
+  ⚠ (第四轮)每个交付物一个工作簿 = `once:"group"` 开 + `once:"groupEnd"` 关,
+    两者在 `each` 段内配对;**别写成 `teardown` 里关**——`teardown` 只跑一次,
+    只关得掉最后一组,前面的组全部泄漏(`WORKFLOW-SCHEMA.md` §7.2,P0-R10)
 ### [ ] P4-21 workflows/*.annotate.json — 75min
   ⚠ 红框位置会随记录条数上下移动(`baseRow`/`rowHeight`),旧工具在这框错过行
 ### [ ] P4-22 办公 PC 冒烟 compose + annotate — 120min [整块]

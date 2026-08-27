@@ -23,7 +23,7 @@
 ```
 profiles/<name>/
   vocabulary.json     side 名、role 显示名、列名映射
-  pages.json          每个 role 绑哪个页面:URL / 指纹 / 导航 / 超时
+  pages.json          每个 page(命名页面实例)声明 role + URL / 指纹 / 导航 / 超时
   grammar.json        页面文本 → records 的解析规则
   rules.json          判定规则表
   worklist.json       清单列 schema、主键、变体规则、checkpoint 位
@@ -47,13 +47,13 @@ profiles/<name>/
     "after":  "移行後"
   },
   "roles": {
-    "query":  "検索画面",
-    "record": "処理結果画面",
-    "list":   "転送状態一覧",
-    "artifact": "ファイル一覧"
+    "entry":    "入口",
+    "form":     "検索画面",
+    "record":   "結果画面",
+    "list":     "一覧",
+    "document": "帳票"
   },
   "columns": {
-    "key":         "Correl_ID_S",
     "group":       "JOB_NAME",
     "owner":       "Owner",
     "deliverable": "Excel_NAME"
@@ -61,20 +61,41 @@ profiles/<name>/
 }
 ```
 
-`sides` / `roles` 的值只用于**显示**(`ebi explain` 会写成 `list(転送状態一覧)`)。
-工作流里永远只出现左边的中性名。
+`sides` / `roles` 的值只用于**显示**。`roles` 只有 5 个键(`VOCABULARY.md` §2.1
+的 5 个 role,穷举,不能多也不能少),给的是**角色的通用显示名**——注意
+`list` 这里只能填「一覧」这种泛称,**不能**填某一个具体页面的名字(比如
+「転送状態一覧」)。原因见 §3:同一个 role 下**可以有多个 page**,每个
+page 各有各的具体名字,那个名字属于 `pages.json` 的 `label` 字段,不属于
+这里。`ebi explain` 的 `list(転送状態一覧)` 这种输出,`list` 来自这里、
+`転送状態一覧` 来自对应 page 的 `label`,两者拼在一起显示,不是同一个字段。
 
-`columns` 把中性名映射到清单 CSV 的实际列名。**`{{item.key}}` 就是靠这个解析的。**
+工作流里永远只出现左边的中性名(`role` 的 5 个枚举值,或者具体的 `page` 名)。
+
+`columns` 把中性名映射到清单 CSV 的实际列名 —— **不包含 `key`**。key 只
+在 `worklist.json` 里声明一次(见 §6.1,P0-R4),这里重复声明会导致两处
+漂移,已经删掉。
 
 ---
 
-## 3. `pages.json`
+## 3. `pages.json`(P0-R1:按 page 名为键,不按 role 为键)
 
-每个 role 一个条目。
+**每个 page(命名页面实例)一个条目,不是每个 role 一个条目。**
+
+一个项目同一侧经常有**好几个结构相同的页面**——当前工作里 before 侧同时
+有 MQ 転送状態一覧(role `list`)和 Jenkins 文件列表(role `list`),after
+侧还有 GoAnywhere 作业一览(也是 role `list`)。三个页面结构相同、用同一套
+定位/解析机制,但 URL、指纹、字段完全不同,是**三个不同的 page**。如果拿
+role 当 `pages.json` 的键,三个 page 会互相覆盖(同一个 `"list"` 键只能存
+一份数据)—— 这正是本卡要堵的洞。
+
+每个 page 条目里的 `role` 属性**只决定用哪套定位/解析机制**(见
+`VOCABULARY.md` §2.1 的 5 个 role),不代表这个 page 的身份。
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
+    "role":       "list",
+    "label":      "転送状態一覧",
     "url":        "https://<host>/path/index.html",
     "openHint":   "ブラウザで転送状態ページを開いてください",
 
@@ -88,10 +109,79 @@ profiles/<name>/
     "tabsToForm":  1,
     "tabsToInput": 4,
     "timeoutSec":  12,
-    "pollMs":      800
+    "pollMs":      800,
+
+    "crop": { "left": 6, "top": 6, "right": 6, "bottom": 6 }
+  },
+
+  "fileList": {
+    "role":  "list",
+    "label": "ファイル一覧",
+    "url":   "https://<host>/jenkins/files.html",
+    "fingerprint": {
+      "ok":      ["ファイル名", "更新日時"],
+      "expired": ["ログイン"]
+    },
+    "timeoutSec": 12
   }
 }
 ```
+
+`label` 是这个 page 的**具体显示名**(`ebi explain` 拼成
+`list(転送状態一覧)` 时,`list` 来自 `vocabulary.json` 的 role 通用名,
+`転送状態一覧` 来自这里的 `label`)。`crop` 是这个 page 专属的截图裁剪
+边距(不同页面的窗口边框/内容区可能不一样,同role 的两个 page 未必能共用
+一份裁剪参数)。
+
+**保留键**:`grammar` / `rules` / `id` 不是 page 自己的数据字段,而是
+`{{page.X}}` 的三个特例(`WORKFLOW-SCHEMA.md` §4.1)——`{{page.grammar}}`
+/ `{{page.rules}}` 解析到 `grammar.json`/`rules.json` 的同名条目,
+`{{page.id}}` 是 page 名本身。**不要**在某个 page 的 `pages.json` 条目里
+自己加一个叫 `grammar`、`rules` 或 `id` 的字段——会被这三个特例遮蔽,
+静默读到错的东西。
+
+### 3.0 当前工作的 5 个 page(验证:role 相同也不冲突)
+
+这是 P0-R1 的验收:把当前 Host→Open 迁移工作里全部会用到的页面按新规格
+逐个列出 page 名 + role,确认没有 id 冲突、没有 capture 目录冲突。**这张表
+必须核对现有实现代码(`HmSnap.ps1` / `MqSnap.ps1` 等),不能凭"这套系统
+一般都有独立检索画面"的直觉猜。**
+
+| page 名 | role | 现在对应 | capture 目录 |
+|---------|------|----------|---------------|
+| `hmResult` | `record` | HM 処理結果画面 | `capture/<side>_hmResult/` |
+| `transferStatus` | `list` | MQ 転送状態一覧 | `capture/<side>_transferStatus/` |
+| `fileList` | `list` | Jenkins 文件列表 | `capture/<side>_fileList/` |
+| `jobList` | `list` | GoAnywhere 作业一览 | `capture/<side>_jobList/` |
+| `reportPreview` | `document` | 帳票 preview | `capture/<side>_reportPreview/` |
+
+5 个 page 名互不相同 → 5 个 capture 目录互不相同,即使其中 3 个都是
+role `list` 也不会互相覆盖。这就是 R1 要修的洞:旧设计下
+`transferStatus` / `fileList` / `jobList` 会全部落到同一个
+`capture/<side>_list/` 目录,互相覆盖对方的截图。
+
+**HM 和 MQ 都是单页自带表单,当前工作没有独立检索画面 page。** 对着
+`HmSnap.ps1` 核对过:一个 appl 只 `open` 一次 URL(`{appl}X0011A.do`),
+之后每个 correl 走的是同一页面上的 `Send-Tab HM_ToCorrelid` → 粘贴 →
+`Send-ShiftTab HM_ShiftTabToSearch` → 回车 提交查询,查完再
+`Send-Tab HM_BackToInput` 跳回输入框处理下一条 —— 全程停在
+`hmResult` 这一个 page 上,没有跳转到另一个 URL。`pages.json` 的
+`hmResult` 条目因此也和 `transferStatus` 一样自带表单相关的
+tab 计数(HM 比 MQ 多一步"回跳",字段是 `tabsToForm` / `tabsToBack`
+这类,具体名字由 profile 自定,不是固定两个)。
+
+**独立检索画面(role `form`)是这套 schema 支持的一种*形状*,但不是
+当前工作真实存在的 page** —— `VOCABULARY.md` §6 提过这种可能性,别把
+它错当成本项目的既有事实照抄进 `pages.json`。如果将来接的新工作确实有
+独立检索画面(提交表单后地址栏 / 页面指纹变成另一个 URL),接法是:
+工作流仍然只 `"page"` 绑定要截图判定的那一个(比如结果页),但
+`each` 段里引用检索画面数据时写**完整路径**
+`{{profile.pages.<检索页名>.X}}`(不是 `{{page.X}}`,那只指向已绑定的
+page)——**这不需要新机制**,`{{page.X}}` 只是"当前绑定 page"的简写,
+引用未绑定 page 的完整路径写法永远可用。访谈时用这一问判断走哪种
+(见 `INTERVIEW.md` §4 的 2.2):提交表单后,地址栏 / 页面指纹变了吗?
+变了 → 独立检索画面;没变(同一页面刷新出结果)→ 单页自带表单,像
+HM/MQ 这样。
 
 ### 3.1 `fingerprint` — 页面指纹
 
@@ -110,22 +200,24 @@ profiles/<name>/
 
 ---
 
-## 4. `grammar.json`
+## 4. `grammar.json`(P0-R1:按 page 名为键)
 
-页面文本(`Ctrl+A` 得到的整页纯文本)→ 结构化 records。
+页面文本(`Ctrl+A` 得到的整页纯文本)→ 结构化 records。**键是 page 名,
+和 `pages.json` 一一对应** —— 旧示例这里混用过 `list`(role)和
+`fileList`(page 名)两种键,已经修正为清一色的 page 名。
 
 支持三种解析器,够覆盖旧仓库里全部三套手写解析:
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
     "parser": "delimited",
     "delimiter": "\t",
     "rowWhen": { "field": 0, "matches": "^\\d+$" },
     "fields": ["jobNo", "key", "status", "recvTime", "count", "rtncd"]
   },
 
-  "record": {
+  "hmResult": {
     "parser": "labeled",
     "pairs": {
       "status":   { "after": "状態", "take": "line" },
@@ -155,7 +247,7 @@ profiles/<name>/
 得多:
 
 ```
-ebi grammar tune capture/before_list/ABC123.txt --profile host-open --role list
+ebi grammar tune capture/before_transferStatus/ABC123.txt --profile host-open --page transferStatus
 ```
 
 循环:
@@ -200,19 +292,22 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
 
 ---
 
-## 5. `rules.json`
+## 5. `rules.json`(P0-R1:按 page 名为键)
 
-判定规则表。`verify.assert` 按顺序跑,**第一条不满足的决定结论**。
+判定规则表。`verify.assert` 按顺序跑,**第一条不满足的决定结论**。**键是
+page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页判定
+规则通常完全不同(MQ 転送状態的规则和 Jenkins 文件列表的规则没有理由一样),
+按 role 为键就会强迫它们共用一份规则表。
 
 ```jsonc
 {
-  "list": {
+  "transferStatus": {
     "rules": [
       { "field": "status",   "op": "equals", "value": "正常終了", "else": "ng",
         "message": "状態が正常終了ではない" },
       { "field": "rtncd",    "op": "equals", "value": "0",        "else": "ng",
         "message": "リターンコードが0以外" },
-      { "field": "recvTime", "op": "within", "value": "{{run.window}}", "else": "ng",
+      { "field": "recvTime", "op": "within", "value": "{{run.timeWindow}}", "else": "ng",
         "message": "受信時刻が実行時間帯の外" },
       { "field": "count",    "op": "present",                      "else": "unknown",
         "message": "件数が読み取れない" }
@@ -221,6 +316,16 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
   }
 }
 ```
+
+`{{run.timeWindow}}` 是合法引用:`run` 作用域正式包含 `timeWindow`
+(`runId` / `startedAt` / `operator` / `workDir` / `timeWindow`,
+`WORKFLOW-SCHEMA.md` §4.1),由 `human.input` 或 CLI `--time-window` 写入
+(P2-07 接线,P0-R6)。形状是 `{ "from": "<ISO8601>", "to": "<ISO8601>" }`
+——`op: "within"` 拿字段值和这两端比较,在窗口内(含端点)才算通过。
+叫 `timeWindow` 不叫 `window`,是为了不和 `profile.window`(浏览器窗口
+尺寸)、`$Ctx.Session` 里的窗口句柄名撞概念(`WORKFLOW-SCHEMA.md` §4.1)。
+`rules.json` 里的模板和 `pages.json` 一样,在传给 `verify.assert` 之前会
+被**递归求值一次**(`WORKFLOW-SCHEMA.md` §4.3)。
 
 ### 5.1 `op` 一览(**穷举**)
 
@@ -272,8 +377,8 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
     { "name": "Correl_ID_S",  "role": "key" },
     { "name": "JOB_NAME",     "role": "key" },
     { "name": "Excel_NAME",   "role": "deliverable" },
-    { "name": "before_list",  "role": "verdict", "default": "" },
-    { "name": "before_record","role": "verdict", "default": "" },
+    { "name": "before_transferStatus", "role": "verdict", "default": "" },
+    { "name": "before_hmResult",       "role": "verdict", "default": "" },
     { "name": "composed",     "role": "bitmask",
       "bits": { "before": 1, "after": 2, "compare": 4 } },
     { "name": "note",         "role": "text" }
@@ -379,6 +484,70 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
 
 启动时按此 schema 自动补齐缺失的列(沿用 `Ensure-MappingColumns` 的行为)。
 
+### 6.6 `{{item.key}}` / `{{item.keySafe}}`、规则落盘、标准候选形状(P0-R4)
+
+三个之前没定义、会互相放大的洞,在这里一次定死。
+
+**(a) `{{item.key}}` 是显示形,`{{item.keySafe}}` 是文件名安全形,不是
+同一个东西:**
+
+| 模板 | 定义 | 用途 |
+|------|------|------|
+| `{{item.key}}` | `key.columns` 按声明顺序取值,单列键就是该列原值;复合键用固定分隔符 `" / "` 拼接(`ABC123 / JOB_A`) | 人看的地方:`human.gate` 面板、歧义列表、trace 里的标签 |
+| `{{item.keySafe}}` | 每列值先做**全角转半角**规范化(和 `table.key` 规范化候选用同一套函数,不另造),替换 Windows 文件名非法字符(`\ / : * ? " < > \|` 及控制字符)为 `_`,多列用 `_` 拼接 | **文件名 / 目录名一律用它**,`{{item.key}}` 不许出现在路径模板里 |
+
+**二者都不是系统交互的入参。** 需要往搜索框里填、往 Ctrl+F 里塞的是**某一
+列的原始值**,直接用 `{{item.<列名>}}`(如 `{{item.Correl_ID_S}}`)—— 拼
+出来的显示形字符串(`"ABC123 / JOB_A"`)打进目标系统的输入框大概率是错的。
+
+**`keySafe` 不保证跨行唯一,这是已知代价,必须在加载时挡住。**
+「非法字符转 `_`、多列用 `_` 拼接」这套规则本身会制造新的重名:
+`("A_B", "C")` 和 `("A", "B_C")` 拼出来都是 `A_B_C`;`ABC/1` 和 `ABC_1`
+都变成 `ABC_1`;`ABC` 和 `ＡＢＣ`(全角)全角转半角后也是同一个值。
+`capture/<side>_<page>/{{item.keySafe}}.png` 一旦撞车就是**静默互相
+覆盖**——R1 刚刚在 page 这一层堵掉的同一种失败,不能在 item 这一层
+重新打开一个缺口。**`table.load` 必须在读入 worklist 时,对全表算一遍
+每行的 `keySafe`,发现重复直接判失败并列出撞车的行**(不是运行到某个
+`each` 迭代时才发现);`ebi lint`/`ebi profile check` 复查同一条规则。
+
+**(b) `confirmedRules` 的落盘位置:** 运行时新学到一条规则(§6.3 的歧义
+面板问完"要不要固化"、人选 y 之后),**先写 `<WorkDir>/ebi.local.json`**
+(§0 已有的"本机/本次作业临时覆盖"层),不是直接改 `profiles/<name>/
+worklist.json`(那份文件在 git 里,office PC 上的部署副本不一定能同步
+回去)。面板同时提示:
+
+```
+已学到 1 条规则,记得回填 profile 并提交:
+  confirmedRules += { kind: "suffix", pattern: "...", note: "..." }
+```
+
+`ebi profile check` 检测 `<WorkDir>/ebi.local.json` 里有 `worklist.key.
+confirmedRules` 但对应 profile 的 `worklist.json` 里没有同款规则的情况,
+报「N 条学到的规则还没回填」。
+
+**(c) 候选列表的标准形状。** `table.key` / `file.find` / `file.newest` /
+`verify.match_record` 遇到歧义时**返回同一个形状**,`human.choose` 只写
+**一份**渲染逻辑:
+
+```jsonc
+{
+  "candidates": [
+    { "id": "c1", "candidate": "ABC123.260824.10515511.dat",
+      "evidence": { "source": "下载目录", "createdAt": "09:51:02",
+                     "receivedAt": "09:50:03", "size": "1.2 MB" } },
+    { "id": "c2", "candidate": "ABC123.260824.10515533.dat",
+      "evidence": { "source": "下载目录", "createdAt": "09:53:40",
+                     "receivedAt": "09:53:12", "size": "1.2 MB" } }
+  ],
+  "suggestion": { "id": "c2", "reason": "接收时间最新且落在本次运行窗口内" },
+  "doubts": "#1 和 #2 只差 3 分钟,如果本次是重跑,可能两个都是本次的"
+}
+```
+
+`evidence` 是自由字段的 map —— 证据不够就少填几个字段,**不要**编一个
+假值。`suggestion` / `doubts` 都是可选的(证据实在不够时可以不给建议,
+只摊开候选)。§6.3 的歧义面板就是这个形状的 ASCII 渲染。
+
 ---
 
 ## 7. `layout.json`
@@ -393,10 +562,10 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
   },
   "anchor": { "column": "A", "matchesKey": true },
   "pictures": {
-    "before_list": { "offsetX": 0, "offsetY": 20, "scale": 1.0 }
+    "before_transferStatus": { "offsetX": 0, "offsetY": 20, "scale": 1.0 }
   },
   "boxes": {
-    "before_list": [
+    "before_transferStatus": [
       { "offsetX": 167.9, "offsetY": 176.9, "width": 528.8, "height": 63,
         "baseRow": 2, "rowHeight": 63.8 }
     ]
@@ -428,28 +597,44 @@ grammar 里的时间格式一律用 `H:mm:ss` 这种单字符说明符(.NET 的 
 
 ---
 
-## 9. `fixtures/` —— 让规则能在家里测
+## 9. `fixtures/` —— 让规则能在家里测(按 page 分目录,P0-R1 呼应)
+
+**fixture 按 page 名分子目录,不是所有页面的文本堆在一起按 role 命名。**
+当前工作有三个 role `list` 的 page(`transferStatus` / `fileList` /
+`jobList`,§3.0),各自的 grammar 和 rules 完全不同——如果 fixture 叫
+`list-ok.txt`,`ebi profile check` 没法知道该拿哪个 page 的规则去跑它。
+这是 R1 在 `pages.json`/`grammar.json`/`rules.json` 上堵住的同一种
+role-当键问题,fixture 目录漏了一次,这里补上。
 
 ```
 fixtures/
-  list-ok.txt          正常页面的 Ctrl+A 文本(已脱敏)
-  list-ng-rtncd.txt    返回码非 0
-  list-empty.txt       查询结果为空
-  list-expired.txt     会话超时
-  list-multi-row.txt   同一 key 多行
+  transferStatus/
+    ok.txt              正常页面的 Ctrl+A 文本(已脱敏)
+    ng-rtncd.txt         返回码非 0
+    empty.txt            查询结果为空
+    expired.txt          会话超时
+    multi-row.txt        同一 key 多行
+    expected.json
+  fileList/
+    ok.txt
+    expected.json
 ```
 
-每个 fixture 配一个期望结论,组成单测:
+每个 page 目录下的 `expected.json` 只需要用**目录内**的文件名做键(不用
+再拼 page 名,目录本身就是命名空间):
 
 ```jsonc
-// fixtures/expected.json
+// fixtures/transferStatus/expected.json
 {
-  "list-ok.txt":        { "verdict": "ok" },
-  "list-ng-rtncd.txt":  { "verdict": "ng", "message": "リターンコードが0以外" },
-  "list-empty.txt":     { "verdict": "unknown" },
-  "list-multi-row.txt": { "verdict": "ok", "matchedRow": 3 }
+  "ok.txt":        { "verdict": "ok" },
+  "ng-rtncd.txt":  { "verdict": "ng", "message": "リターンコードが0以外" },
+  "empty.txt":     { "verdict": "unknown" },
+  "multi-row.txt": { "verdict": "ok", "matchedRow": 3 }
 }
 ```
+
+`ebi grammar tune`(§4.1)的 `s`(存进 profile + 存成 fixture)按当前调试
+的 `--page` 参数写进对应子目录,不需要额外指定。
 
 **这是整套设计里性价比最高的一环**:grammar + rules 是纯数据,fixture 是纯文本,
 所以**判定逻辑可以完全在没有办公环境的机器上验证**。旧仓库已经用这招保住了

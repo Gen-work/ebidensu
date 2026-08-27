@@ -1,0 +1,173 @@
+{
+  "_note": "Data for Tests/Test-Docs.ps1. Chinese/Japanese patterns live here so the .ps1 stays pure ASCII (CLAUDE.md encoding rule). UTF-8, no BOM.",
+  "blockMarker": "[整块]",
+  "scan": [
+    "docs/ebi-dance",
+    "docs/README.md"
+  ],
+  "deadNames": [
+    {
+      "text": "两页流程",
+      "note": "R4 deleted this subsection title; refs to it dangle"
+    },
+    {
+      "text": "hmSearch",
+      "note": "invented page, removed R4 -- never a real page of this work"
+    },
+    {
+      "text": "mqSearch",
+      "note": "same"
+    },
+    {
+      "text": "`--window`",
+      "note": "renamed to --time-window in R3"
+    },
+    {
+      "text": "{{group.",
+      "note": "group scope was removed; use {{item.group}}"
+    },
+    {
+      "text": "provides = @('mainWindow')",
+      "note": "provides declares a kind, never an instance name"
+    },
+    {
+      "text": "session:<名>",
+      "note": "needs no longer carries session: entries"
+    },
+    {
+      "text": "catalog 里存在带",
+      "note": "release judgment reads mustRelease, not catalog contents"
+    },
+    {
+      "text": "failures = @('",
+      "note": "pre-P0-R5 bare-string failures array"
+    }
+  ],
+  "countChecks": [
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "p0p3"
+      ],
+      "pattern": "阶段 P0.P3 共 \\*\\*(\\d+) 张\\*\\*"
+    },
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "p4p5"
+      ],
+      "pattern": "阶段 P4.P5 共 \\*\\*(\\d+) 张\\*\\*"
+    },
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "p0p3plus1"
+      ],
+      "pattern": "直接 grep 会多数出\\s*1 张\\((\\d+)\\)"
+    },
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "total:P0",
+        "blocks:P0"
+      ],
+      "pattern": "(?m)^# P0 [^(]*\\((\\d+) 张,(\\d+) 张整块\\)"
+    },
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "total:P1",
+        "blocks:P1"
+      ],
+      "pattern": "(?m)^# P1 [^(]*\\((\\d+) 张,(\\d+) 张整块\\)"
+    },
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "total:P2",
+        "blocks:P2"
+      ],
+      "pattern": "(?m)^# P2 [^(]*\\((\\d+) 张,(\\d+) 张整块\\)"
+    },
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "total:P3"
+      ],
+      "pattern": "(?m)^# P3 [^(]*\\((\\d+) 张\\)"
+    },
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "total:P4"
+      ],
+      "pattern": "(?m)^# P4 [^(]*\\((\\d+) 张\\)"
+    },
+    {
+      "file": "BACKLOG.md",
+      "kinds": [
+        "total:P5"
+      ],
+      "pattern": "(?m)^# P5 [^(]*\\((\\d+) 张\\)"
+    },
+    {
+      "file": "Plan.md",
+      "kinds": [
+        "total:P0",
+        "blocks:P0"
+      ],
+      "pattern": "\\| P0 骨架[^|]*\\| (\\d+) \\| (\\d+)"
+    },
+    {
+      "file": "Plan.md",
+      "kinds": [
+        "p0p3",
+        "p0p3Blocks"
+      ],
+      "pattern": "\\| \\*\\*合计到 P3 可接新工作\\*\\* \\| \\*\\*(\\d+) 张\\*\\* \\| \\*\\*(\\d+) 张\\*\\*"
+    },
+    {
+      "file": "Plan.md",
+      "kinds": [
+        "all",
+        "allBlocks"
+      ],
+      "pattern": "\\| \\*\\*全部\\*\\* \\| \\*\\*(\\d+) 张\\*\\* \\| \\*\\*(\\d+) 张\\*\\*"
+    },
+    {
+      "file": "Plan.md",
+      "kinds": [
+        "p0p3"
+      ],
+      "pattern": "\\*\\*到 P3 大约 (\\d+) 次空档\\*\\*"
+    },
+    {
+      "file": "Plan.md",
+      "kinds": [
+        "allBlocks"
+      ],
+      "pattern": "`\\[整块\\]` 的 (\\d+) 张"
+    },
+    {
+      "file": "Plan.md",
+      "kinds": [
+        "rest"
+      ],
+      "pattern": "其余 (\\d+) 张"
+    },
+    {
+      "file": "README.md",
+      "kinds": [
+        "all"
+      ],
+      "pattern": "\\*\\*当前共 (\\d+) 张卡\\*\\*"
+    },
+    {
+      "file": "README.md",
+      "kinds": [
+        "p0p3"
+      ],
+      "pattern": "最小集是 (\\d+) 张"
+    }
+  ]
+}

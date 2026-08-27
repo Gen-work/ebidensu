@@ -47,7 +47,7 @@
 
 | # | 决策 | 取值 | 依据 |
 |---|------|------|------|
-| D1 | 仓库策略 | **就地重构现仓库**。先打 `spec/gift-gfix` 冻结标签当回滚点,再在同一棵树上长出新骨架 | 旧流程不会再用,留着无价值 |
+| D1 | 仓库策略 | **就地重构现仓库**。先打 `freeze/pre-ebi-dance` 冻结标签当回滚点,再在同一棵树上长出新骨架(不用 `spec/gift-gfix`——远端已有同名分支,见 `BACKLOG.md` P0-01) | 旧流程不会再用,留着无价值 |
 | D2 | MVP 范围 | **垂直切片** + **必须能用来搭下一份工作** | 只做工具箱不跑真流程,契约错误会在第一次真跑时才暴露 |
 | D3 | 命名 | **全面中性化**,见 §4 词汇表。所有具体系统名只出现在 profile 数据里 | 下个月换工作不改一行代码 |
 | D4 | 敏感信息 | **交互式掩码模块**:导出 trace/bundle 前逐项问「保留还是掩码」,决策持久化 + 一致性替换 | 用户明确要求 |
@@ -85,9 +85,13 @@
 $Manifest = @{
   id       = 'browser.find'
   group    = 'browser'
-  summary  = '在当前页面用 Ctrl+F 查找指定文本,返回是否命中'
-  effects  = 'ui'              # pure | read | write | ui | destructive
+  summary  = 'Ctrl+F search for an exact string; report whether it hit'
+  tier     = 'core'            # core | fallback
+  effects  = 'ui'              # pure | read | ui | write | destructive
   needs    = @('foreground')
+  provides = @()
+  releases = @()
+  idempotent = $true
   inputs   = @{
     term       = @{ type='string'; required=$true; desc='要查找的完整字符串' }
     closeAfter = @{ type='bool';   default=$true;  desc='查完是否 Esc 关闭查找框' }
@@ -96,7 +100,10 @@ $Manifest = @{
     hit  = @{ type='bool' }
     rect = @{ type='rect'; desc='活动高亮行的像素矩形,未命中为 null' }
   }
-  failures = @('not_found','no_foreground_window')
+  failures = @(
+    @{ id = 'not_found';            transient = $false }
+    @{ id = 'no_foreground_window'; transient = $true  }
+  )
   example  = @{ use='browser.find'; with=@{ term='{{item.key}}' } }
 }
 function Invoke-Step { param($In, $Ctx) ...; return @{ ok=$true; hit=$true; rect=$r } }
@@ -183,8 +190,13 @@ list 页:  read → locate(找到我那一行) → capture(截图) → download(
 | `deliver` | 交付(文件 / 邮件 / 检查表) | `Deliver*` / `CheckSheet` |
 | `sync` | 与基线对比 / 同步 | `Align` |
 
-工作流 id 形如 `before.list.capture`,取代 `GiftMqSnap`。
-capture 目录形如 `capture/before_list/<key>.png`,取代 `snap/GIFT_MQ/<id>.png`。
+工作流 id 形如 `before.transferStatus.capture`,取代 `GiftMqSnap`
+——**注意用的是 page 名(`transferStatus`),不是 role 名(`list`)**:
+同一侧经常有好几个同 role 的页面(当前工作里 MQ 転送状态一览和 Jenkins
+文件列表都是 role `list`),按 role 命名会互相撞 id(`spec/PROFILE-SCHEMA.md`
+§3、`spec/VOCABULARY.md` §2.6,P0-R1)。
+capture 目录形如 `capture/before_transferStatus/<key>.png`,取代
+`snap/GIFT_MQ/<id>.png`。
 
 ### 4.4 命名怎么落地
 
@@ -248,6 +260,10 @@ capture 目录形如 `capture/before_list/<key>.png`,取代 `snap/GIFT_MQ/<id>.p
 
 `[MVP]` 进第一版(25 个),其余按阶段。「来源」指明可直接复用的现有实现 ——
 **多数 step 是包装,不是新写**。
+
+> 本节下面 8 张表的「阶段」列是 `BACKLOG.md` 定稿前的旧分档
+> (`MVP`/`P2`/`P3`/`P4`/`P5`),和现在的 `P0`–`P5` 卡号不是同一套体系,
+> 只做数量级参考;**排期一律以 `BACKLOG.md` 为准**。
 
 ### G1 `browser.*` — 浏览器 / 前台驱动(17)
 
@@ -571,19 +587,19 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 `ebi explain` 输出形态(人和 Agent 审阅同一份):
 
 ```
-  before.list.capture  ── 転送状態ページの証跡取得
-  ┌ 数据源: worklist.csv  →  before_list != ok   (待处理 37 行)
+  before.transferStatus.capture  ── 転送状態ページの証跡取得
+  ┌ 数据源: worklist.csv  →  before_transferStatus != ok   (待处理 37 行)
   │
   ├ setup
   │   [人工] 请打开 list(MQ転送状態) 页面
   │   [UI  ] 激活浏览器 → 调整窗口 1050x761
   │
   ├ each  (× 37)
-  │   [UI  ] 点击正文 → Tab×1 → Enter → Tab×4 → 粘贴 {{item.key}} → Enter
-  │   [读  ] 轮询页面文本 (≤12s)     → 留档 pagetext/before_list/<key>.txt
-  │   [写  ] 截图 + 裁剪             → capture/before_list/<key>.png
+  │   [UI  ] 点击正文 → Tab×1 → Enter → Tab×4 → 粘贴 {{item.Correl_ID_S}} → Enter
+  │   [读  ] 轮询页面文本 (≤12s)     → 留档 capture/before_transferStatus/<keySafe>.txt
+  │   [写  ] 截图 + 裁剪             → capture/before_transferStatus/<keySafe>.png
   │   [纯  ] 解析 → 找行 → 判定      → ok / ng / unknown
-  │   [写  ] 标记 before_list        ← worklist 原子写
+  │   [写  ] 标记 before_transferStatus  ← worklist 原子写
   │
   └ 容错: 默认 ask   人工关卡: 1 处   破坏性操作: 0 处   降级层: 未使用 ✓
 ```
@@ -637,20 +653,27 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 
 | 阶段 | 卡数 | 其中 `[整块]` |
 |------|------|--------------|
-| P0 骨架 | 8 | 1(最小 runner spike) |
+| P0 骨架(含 10 张规格修订卡 P0-R1…R10) | 18 | 3(会话资源通道 / 会话资源生命周期·释放侧 / 最小 runner spike) |
 | P1 kernel + 25 个 step + 文档生成 | 34 | 3(Context / Runner 主体 / Runner 容错+ledger)+ 1(table.key) |
-| P2 对拍验证 | 6 | 1(办公 PC 首跑) |
+| P2 对拍验证(含 human.input/run.timeWindow、mask-lite 前移两张) | 8 | 1(办公 PC 首跑) |
 | P3 新工作实战 | 8 | 0(主要是访谈 + 填 profile) |
-| **合计到 P3 可接新工作** | **56 张** | **6 张** |
+| **合计到 P3 可接新工作** | **68 张** | **8 张** |
 | P4 excel/file 组 | 22 | 1(办公 PC 冒烟) |
 | P5 掩码 + Agent 循环 + 校准 | 14 | 1(掩码一致性替换) |
-| **全部** | **92 张** | **8 张** |
+| **全部** | **104 张** | **10 张** |
 
-按每次坐下做 1 张算,**到 P3 大约 56 次空档**。这个数字比"8 周"有用得多 ——
+> 2026-08-24 契约审查追加了 P0-R1…R6(规格修订)和 P2-07/08;
+> 2026-08-25 又追加了 P0-R7…R9(冻结标签改名、Plan/README 同步、
+> P0-00 状态修正);2026-08-26 第三轮审查又追加了 P0-R10(会话资源的
+> 生命周期·释放侧——P0-R2 当时只定义了注册侧)。完整卡片列表和当前
+> 状态**始终以 `docs/ebi-dance/BACKLOG.md` 为准**——这张表只做数量级
+> 参考。
+
+按每次坐下做 1 张算,**到 P3 大约 68 次空档**。这个数字比"8 周"有用得多 ——
 它不依赖你每周能挤出多少小时。
 
-`[整块]` 的 8 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
-其余 84 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
+`[整块]` 的 10 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
+其余 94 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
 
 ### 10.4 关于模型
 
@@ -668,8 +691,9 @@ Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —�
 
 ### P0 — 冻结与骨架(1.5 周)
 
-1. **打冻结标签** `spec/gift-gfix`(当前 tip),作为回滚点。旧脚本原地不动,
-   继续可运行。
+1. **打冻结标签** `freeze/pre-ebi-dance`(当前 tip),作为回滚点。旧脚本原地
+   不动,继续可运行。(不用 `spec/gift-gfix`——远端已有同名分支,见
+   `BACKLOG.md` P0-01)
 2. ~~**写三份规格 + 一份词汇表**~~ —— **已完成(2026-08-24)**:
    - `docs/ebi-dance/spec/STEP-CONTRACT.md` — manifest 字段、返回值约定、失败表达、副作用等级
    - `docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` — workflow JSON 全字段 + 模板语法
@@ -703,7 +727,7 @@ Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —�
 
 ### P2 — 对拍验证(1.5 周)
 
-把 `MqSnap.ps1`(673 行)重写成 `workflows/before.list.capture.json`(约 30 行)
+把 `MqSnap.ps1`(673 行)重写成 `workflows/before.transferStatus.capture.json`(约 30 行)
 + `profiles/host-open/`。
 
 **验收(必须在办公 PC 上做)**:
@@ -777,7 +801,7 @@ ebi mask  check                          # 敏感信息门禁
 | 风险 | 对策 |
 |------|------|
 | **契约一次做不对** | P2 对拍就是为了尽早撞墙;**计划内允许 P2 后重构一次 kernel**,P1 不追求完美 |
-| **就地重构动了生产工具** | P0 先打 `spec/gift-gfix` 冻结标签;旧脚本迁完一条才删一条,任何时刻都能回滚 |
+| **就地重构动了生产工具** | P0 先打 `freeze/pre-ebi-dance` 冻结标签;旧脚本迁完一条才删一条,任何时刻都能回滚 |
 | **JSON 表达力不够,滑向自制编程语言** | 硬规则:workflow JSON **不引入表达式、不引入函数定义**。判定逻辑一律回到 `verify.*` 的 PowerShell 纯函数 + profile 规则表。JSON 只做"连线" |
 | **中性词汇表设计不当,新工作套不进去** | P3 就是它的考试。套不进去就改词汇表,**在只有一个 profile 时改是廉价的** |
 | **OCR 降级层重新变成负债** | 三条硬规则(§6.1)+ 强制校准闸门;样本集随使用自动增长,不需要专门维护 |
