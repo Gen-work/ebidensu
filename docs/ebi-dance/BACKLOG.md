@@ -254,8 +254,20 @@
   就是 `Group-Object Excel_NAME`,`P4-20 workflows/*.compose.json` 是它的
   替代品。"不注册、自己释放"这条路走不通——同一个 item 内部要跨好几个
   step 用同一个工作簿(open → find_sheet → insert_picture → save),不注册
-  后面的 step 根本拿不到它。
-- **做**:三条决定,不留 TBD——
+  后面的 step 根本拿不到它。(e,第五轮追加)**决定 5 的 `once:"groupEnd"`
+  让 `each` 里注册资源成了推荐写法,但 §6.1 的 ledger 跳过规则没跟着改**:
+  §6.2 当时只豁免 `setup`/`teardown`("每次 resume 都重跑,负责把 Session
+  重新建起来"),`each` 不在内。于是 `open`(`once:"group"`)一旦记进
+  ledger,resume 时就被跳过,`wb` 在新进程里永远不再进 Session,组里剩下
+  的 item 一引用这个名字就失败——而 ledger 记录是永久的,每次重试都撞同
+  一堵墙,这条工作流**永久**跑不完,直接违反 P2-06「中途 Ctrl+C,重跑从
+  断点续上」和 P4-22 的验收。(f,第五轮追加)决定 6 的 `mustRelease` 表里
+  `excelApp` 是**死条目**:全仓库没有任何 step 产出或释放它;而 P4-01 抄的
+  `New-ExcelApp` + `Open-Workbook` 意味着一个 `excel.open` 要同时产出
+  Application 和 Workbook,和 §3.4 第 3 点「`provides` 最多一项」「未注册
+  的资源必须在本次调用返回前自己释放」直接矛盾(Application 必须活到 run
+  结束)。P0-06 那条检查是单向的,正好漏过这个洞。
+- **做**:逐条决定,不留 TBD(第一轮 3 条,第四轮 +2,第五轮 +2)——
   1. **谁负责释放:显式,不是 runner 自动**。manifest 新增可选字段
      `releases = @(<kind>, ...)`(与 `provides` 对称,默认 `@()`),声明
      这个 step 会释放 `$Ctx.Session` 里哪个种类的资源(它照样通过自己
@@ -309,6 +321,24 @@
      "这种资源要不要释放"是资源种类自身的属性,不该从 catalog 当前长什么
      样反推。种类表放在 `STEP-CONTRACT.md`(不放自动生成的
      `catalog.json`),手工维护,新增种类时随 `provides`/`releases` 一起补。
+  7. **(第五轮)ledger 跳过规则对 `provides`/`releases` 非空的 step 不
+     适用**:这类 step resume 时总是真执行(`STEP-CONTRACT.md` §6.1/§6.2)。
+     四个要点缺一不可——① 两边**成对**豁免(只豁免 `provides` 会让 `wb`
+     一直占着名字,下一组 `open` 撞上决定 4 的"同名注册非法");② 豁免的
+     作用点是**加载 ledger 那一刻**(把这类 step 的历史记录排除在"已完成
+     集合"之外),**不是**运行期每次遇到都真执行——后者会连 `once:"group"`
+     的进程内跳过一起废掉,组内第 2 条 item 就重复注册;③ 这类 step 必须
+     `idempotent = $true`,`ebi lint` 与 P0-06 各查一侧;④ 代价写明:上次
+     已整组跑完的组,resume 时会被多开关一次(不写数据)。推演见
+     `WORKFLOW-SCHEMA.md` §7.6。
+  8. **(第五轮)`mustRelease` 表里不许有死条目**:每个种类都必须有 step
+     产出它。因此 Excel 生命周期是**四个 step**——`excel.ensure_app`
+     (`provides=@('excelApp')`)/ `excel.open`(`provides=@('workbook')`)/
+     `excel.close`(`releases=@('workbook')`)/ `excel.quit_app`
+     (`releases=@('excelApp')`)。不是为迁就规则硬拆:`ExcelHelpers.ps1`
+     本来就是 `New-ExcelApp`/`Open-Workbook`/`Close-Workbook`/
+     `Close-ExcelApp` 四个独立函数,而且两者作用域天然不同(app 一次 run
+     一个,workbook 一组一个)。
 - **完成**:`STEP-CONTRACT.md` 新增 `releases` 字段(manifest 骨架 + §2.1
   字段表 + §3.4 新增第 5 点 + §4 needs/sessionKind 去重说明 + §6.2 补
   teardown 幂等要求 + §7 Run-Tests.ps1 清单新增一条);`WORKFLOW-SCHEMA.md`
@@ -374,7 +404,9 @@
   (P0-R2);`provides` 最多一项(P0-R2 §3.4——一次调用最多注册一个资源);
   `releases` 声明的种类都能在该 step 自己的某个 `type='session'` 输入的
   `sessionKind` 里找到(P0-R10);`provides`/`releases` 里出现的每个种类都
-  能在 §3.4 第 6 点的 `mustRelease` 种类表里找到对应声明(P0-R10 第四轮)。
+  能在 §3.4 第 6 点的 `mustRelease` 种类表里找到对应声明(P0-R10 第四轮);
+  `provides`/`releases` 非空的 step,`idempotent` 必须是 `$true`(P0-R10
+  决定 7——resume 时它们总是真执行)。
 - **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增七类)
 
 ### [ ] P0-07 [整块] 最小 runner spike
@@ -431,6 +463,10 @@
 - **完成**:能跑通一条有 setup+each 的 JSON,遍历 3 行 fixture 数据;
   含一条 `once: group` 的用例(组内第 2 个 item 能引用第 1 个 item 时跑出的输出)
 
+- **(第五轮)** 加载 `run/<runId>/ledger.jsonl` 构建"已完成集合"时,
+  **排除 `provides`/`releases` 非空的 step 的历史记录**(`STEP-CONTRACT.md`
+  §6.2,P0-R10 决定 7)——跨进程不继承,进程内 `once` 语义照旧。这条写错的
+  后果是 compose 类工作流被 Ctrl+C 之后永久跑不完。
 ### [ ] P1-04 [整块] Runner 的 onError + ledger
 - **估** 120min | **依赖** P1-03, P0-R3, P0-R5 | **读** `spec/WORKFLOW-SCHEMA.md` §6;`STEP-CONTRACT.md` §6
 - **做**:四种 policy(`retry` 退避 / `ask` / `skip` / `fail`)+ **`byFailure` 按失败
@@ -451,7 +487,10 @@
 - **完成**:中断后重跑不重复执行已完成的 (item, step),且被跳过 step 的输出仍可被
   后续步引用;`timeout`(transient)会 retry 而 `not_found` 不会;`confirm:false`
   能跳过自动关卡;`once:"groupEnd"` 在同组最后一条 item 后触发且仅触发一次;
-  对一个已注册且未释放的名字重复 `with.as` → 运行期失败,不静默覆盖
+  对一个已注册且未释放的名字重复 `with.as` → 运行期失败,不静默覆盖;
+  **中途 Ctrl+C 后 resume,`each` 里 `once:"group"` 注册的工作簿会被重新
+  注册,后续 item 不报"名字未注册"**(P0-R10 决定 7,推演见
+  `WORKFLOW-SCHEMA.md` §7.6)
 
 ### [ ] P1-05 kernel/Gate.ps1
 - **估** 75min | **依赖** P1-03 | **读** `Plan.md` §3.3
@@ -755,7 +794,13 @@
 
 # P4 — Excel / 文件组(22 张)
 
-### [ ] P4-01 excel.open + close + save — 60min — 抄 `ExcelHelpers.ps1 New-ExcelApp/Open-Workbook/Close-Workbook`
+### [ ] P4-01 excel 生命周期四件套 — 75min — 抄 `ExcelHelpers.ps1 New-ExcelApp/Open-Workbook/Close-Workbook/Close-ExcelApp`
+  ⚠ (第五轮)是**四个 step**,不是一个:`excel.ensure_app`
+    (`provides=@('excelApp')`)/ `excel.open`(`provides=@('workbook')`,用
+    `type='session'` 输入消费 app)/ `excel.close`(`releases=@('workbook')`)/
+    `excel.quit_app`(`releases=@('excelApp')`)——`provides` 最多一项,一个
+    step 产不出两个 COM 对象(`STEP-CONTRACT.md` §3.4 第 6 点,P0-R10 决定 8)。
+    `save` 并进哪个 step 都行,不影响生命周期配对
   ⚠ `$xl.Visible=$true` 要在 `DisplayAlerts=$false` 之前;COM 对象反序释放
   ⚠ (第四轮)`close` 必须能安全面对"这个名字在 Session 里不存在"——照抄
     `ExcelHelpers.ps1 Close-Workbook` 的写法:`$null` 直接 `return`,不报错。

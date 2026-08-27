@@ -335,6 +335,22 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
    | `workbook` | `$true` | Excel `Workbook` COM 对象,泄漏会累积,需要人工杀 `EXCEL.EXE` |
    | `excelApp` | `$true` | Excel `Application` COM 对象,同上 |
 
+   **表里的每个种类都必须有 step 产出它,不许有死条目**(P0-R10 第五轮)。
+   这条不是形式主义:`excelApp` 和 `workbook` 分成两个种类,就意味着
+   `excel.open` **不能**一个 step 同时产出 Application 和 Workbook——
+   §3.4 第 3 点规定「一个 step 调用最多注册一个资源」「`provides` 元素数
+   > 1 不合法」,而没被注册的那个又必须「在本次调用返回之前由 step 自己
+   释放完」,可 Application 必须活到整个 run 结束,直接矛盾。所以 Excel
+   的生命周期是**四个 step**:`excel.ensure_app`(`provides=@('excelApp')`)
+   / `excel.open`(`provides=@('workbook')`,用 `type='session'` 输入消费
+   app)/ `excel.close`(`releases=@('workbook')`)/ `excel.quit_app`
+   (`releases=@('excelApp')`)。这不是为了迁就规则硬拆——`ExcelHelpers.ps1`
+   现有代码本来就是 `New-ExcelApp` / `Open-Workbook` / `Close-Workbook` /
+   `Close-ExcelApp` 四个独立函数,拆开反而更贴近要抄的代码;两者的作用域
+   也天然不同:Application 一次 run 一个(`setup` 注册 / `teardown` 释放),
+   Workbook 一组一个(`once:"group"` / `once:"groupEnd"`)。见 `BACKLOG.md`
+   的 P4-01。
+
    **不选"某个种类在 catalog 里有没有 `releases` 覆盖"当判据的理由**:
    那是拿"当前 catalog 恰好长什么样"反推"这种资源要不要释放",依赖方向
    是反的——哪天有人往 catalog 里新增一个 `browser.close`
@@ -447,6 +463,11 @@ OCR 引擎版本可能给出不同结果。
 写回模板作用域(`steps.<id>.out.*`)—— 这叫**重放**。只有 ledger 里
 **没有**记录的 (item, step) 才真正调用 `Invoke-Step`。
 
+**一个例外:`provides` 或 `releases` 非空的 step 不适用这条跳过规则**
+(P0-R10 第五轮)。它们注册/释放的是 `$Ctx.Session` 里的资源,而 Session
+不持久化——跳过它们等于让资源在新进程里永远不再出现,后面引用这个名字的
+step 会直接失败。完整规则见 §6.2。
+
 ledger 记录形状(比旧版多了 `outputs`):
 
 ```json
@@ -476,6 +497,38 @@ ledger 的一行 JSON 并原样读回。
 `browser.ensure` 重复执行的语义是"已经在前台就什么都不做,不是再开一个
 浏览器窗口";`idempotent = $false` 的 step 不允许出现在 `setup` 里,
 `ebi lint` 检查这一条。
+
+**豁免范围不止这两段:任何 `provides` 或 `releases` 非空的 step,不论在
+哪一段,resume 时都总是真执行(P0-R10 第五轮)。** 原来的写法只豁免
+`setup`/`teardown`,漏掉了 `each` 里注册的资源——而 §3.4 第 5 点恰恰把
+"每个交付物一个工作簿"(`once:"group"` 注册 + `once:"groupEnd"` 释放)
+写成了推荐写法。不补这条,那种工作流一旦被 Ctrl+C 就**永久**跑不完:
+ledger 里有 `(G1, open)` 的记录,resume 时按 §6.1 跳过,`wb` 从此不再进
+Session,组里剩下的 item 一引用这个名字就失败,而 ledger 记录是永久的,
+每次重试都撞同一堵墙。
+
+`provides` 和 `releases` **必须成对豁免**,只豁免一边会更糟:如果只豁免
+`provides`,resume 后 `open` 重新注册了 `wb`、`close` 却被跳过,`wb` 一直
+占着名字,下一组的 `open` 撞上 §3.4 第 3 点的"同名重复注册非法"当场失败。
+
+**豁免的作用点是"加载 ledger 的那一刻",不是"每次遇到这个 step"。**
+这条极易实现错,单独说清楚:`once:"group"` 在**同一次运行内**也是靠 ledger
+记录让组内后续 item 跳过的(§6.3)。如果把豁免理解成"运行期每次遇到都真
+执行",组内第 2 条 item 就会再跑一次 `open`,当场撞上"同名重复注册非法"。
+正确做法是——**runner 在进程启动、读 `ledger.jsonl` 构建"已完成集合"时,
+把 `provides`/`releases` 非空的 step 的历史记录排除在外**;本次进程内这些
+step 照常写新记录,`once:"group"` / `once:"groupEnd"` 的组内跳过语义完全
+不受影响。一句话:**跨进程不继承,进程内照旧。**
+
+推论二:**`provides`/`releases` 非空的 step 也必须 `idempotent = $true`**
+(理由和上面对 `setup` 的要求同源:它们会被重复执行),`ebi lint` 和
+P0-06 的契约检查器各查一侧(§7、`WORKFLOW-SCHEMA.md` §9)。
+
+代价说明白,不假装没有:一个上次已经整组跑完的组,resume 时它的
+`open`/`close` 会各自再执行一次(开一次、关一次,不写数据)。这是让
+"注册-释放"在新进程里重新配平必须付的钱;不付这个代价的唯一替代是禁止在
+`each` 里注册资源,那等于撤掉 `once:"groupEnd"` 和整个"每个交付物一个
+工作簿"的写法。**这里选择付这个代价。**
 
 **`teardown` 里负责释放的 step(`releases` 非空)同样每次 resume 都会
 真的执行(P0-R10)**——包括"这次进程里这个名字根本没被注册过"的情况:
@@ -507,6 +560,10 @@ resume 时,这条记录的 `outputs` 对**同组的全部 item** 重放,不只�
 ——在同组**最后一条** item 处理完之后跑一次,和 `once: "group"` 的开头钩子
 对偶——ledger 键**同样是** (group, step),不是 (item, step):跳过/重放的
 规则和上面完全一致,只是触发时机在组尾而不是组头。
+
+这两类 step 如果 `provides`/`releases` 非空(组级资源的注册/释放正是
+典型),resume 时按 §6.2 的例外**总是真执行**,不按本节的 ledger 记录
+跳过;ledger 键规则本身不变。
 
 ### 6.4 幂等的一般规则
 
@@ -548,6 +605,8 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
 - `provides`/`releases` 数组里出现的每个种类,都能在 §3.4 第 6 点的
   `mustRelease` 种类表里找到对应声明(否则是引入了一个新种类,却没有
   声明它泄漏了要不要紧)(§3.4 第 6 点,P0-R10 第四轮)
+- `provides` 或 `releases` 非空的 step,`idempotent` 必须是 `$true`
+  (resume 时它们总是真执行,见 §6.2,P0-R10 第五轮)
 - 源码纯 ASCII
 
 > 上面这份清单和 `WORKFLOW-SCHEMA.md` §9 的 `ebi lint` 清单是**同一类

@@ -342,17 +342,30 @@ profile 声明哪一列的派生访问,见 §4.1):
 
 ```jsonc
 "source": { "table": "worklist", "groupBy": "deliverable" },
+
+"setup": [
+  { "id": "app", "use": "excel.ensure_app", "with": { "as": "xl" } }
+],
 "each": [
   { "id": "open", "use": "excel.open",
-    "with": { "path": "{{item.group}}.xlsx", "as": "wb" },
+    "with": { "app": "xl", "path": "{{item.group}}.xlsx", "as": "wb" },
     "once": "group" },
   { "id": "insert", "use": "excel.insert_picture",
-    "with": { "workbook": "wb", "path": "{{steps.shot.out.path}}" } },
+    "with": { "workbook": "wb",
+              "path": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.png" } },
   { "id": "close", "use": "excel.close",
     "with": { "workbook": "wb" },
     "once": "groupEnd" }              // 组尾释放,不是 teardown
+],
+"teardown": [
+  { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } }
 ]
 ```
+
+两种作用域在这一份里同时出现:Application 一次 run 一个(`setup` 注册 /
+`teardown` 释放),Workbook 一组一个(`once:"group"` / `once:"groupEnd"`)。
+Excel 的生命周期必须是这四个 step,不能让一个 `excel.open` 同时产出
+Application 和 Workbook——原因见 `STEP-CONTRACT.md` §3.4 第 6 点。
 
 如果没有 `once:"groupEnd"`、只能靠 `teardown` 释放:`open` 每组都用**同一个**
 `with.as` 名字 `wb` 重新注册(`with.as` 是字符串字面量,不走 `{{}}` 模板,见
@@ -375,6 +388,14 @@ COM 对象当场变成孤儿:没有名字能传给 `excel.close`,谁也关不掉
   (见 §9)
 - runner 怎么知道"最后一条":`source` 按 `groupBy` 排序后遍历,组切换时
   (或整个 `source` 遍历结束时)触发上一组的 `groupEnd` step
+- **resume 时 `open`/`close` 总是真执行**,不按 ledger 跳过(它们
+  `provides`/`releases` 非空,见 `STEP-CONTRACT.md` §6.2)。代价是一个上次
+  已整组跑完的组,resume 时会被多开关一次(不写数据);不付这个代价,
+  `wb` 在新进程里就永远不会被重新注册,这条工作流被 Ctrl+C 之后**永久**
+  跑不完
+- 组内最后一条 item 被 `onError` 的 `skip` 跳过时,`groupEnd` **照跑**
+  ——资源已经注册了,不释放就泄漏;`policy: fail` 中止时走 §1.1 的
+  `teardown` 保证(硬中断不保证,接受泄漏)
 
 ### 7.3 `flow.checkpoint` — 标记完成
 
@@ -494,6 +515,43 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 (靠重放,不是靠重新执行上游)、**B 不用重新打开页面**(navigate 靠
 `once: group` 的重放跨 item 复用)——三点都验证了 P2-06 的断点续跑
 验收标准。
+
+### 7.6 第二个推演例子:组级资源在 resume 后怎么回来(P0-R10 第五轮)
+
+§7.5 的例子里 `navigate` 不注册任何 Session 资源,所以它只考了 ledger 重放。
+把它换成 §7.2 那条 compose 工作流(`open` 用 `once:"group"` 注册 `wb`),
+中断/重跑的走法就完全不同了——这一节把它单独走一遍,因为**照 §6.1 的
+跳过规则字面理解会得到一条永远跑不完的工作流**。
+
+组 `G1` 有 5 条 item。`open`(`once:"group"`)执行并记进 ledger,item 1-3
+做完,Ctrl+C(§1.1:硬中断不跑 `teardown`,上一进程的 Excel 泄漏,人工清)。
+
+重跑(同一个 `runId`,**新进程,`$Ctx.Session` 空**):
+
+1. runner 读 `ledger.jsonl` 构建"已完成集合"时,**把 `provides`/`releases`
+   非空的 step 的历史记录排除在外**(§6.2)——所以 `(G1, open)` 和
+   `(G1, close)` 不算数,item 1-3 的 `insert` 等记录照常算数。
+2. `setup` 完整重跑,`excel.ensure_app` 重新注册 `xl`。
+3. 遍历到 item 1(属于 G1),`open`:`once:"group"` 看的是**本次进程**的
+   ledger,组内还没有它的新记录 → **真正执行**,`wb` 重新进入
+   `$Ctx.Session`。**这就是"跳过 `open` 之后 `insert` 引用的 `wb` 从哪来"
+   的答案** —— 不是从 ledger 重放(句柄/COM 对象根本不进 ledger),是靠
+   这一步真的重新注册。
+4. item 1-3 的 `insert`:ledger 里有记录 → 跳过。**代价在这里**:这一组前
+   三条其实白开了一次工作簿。这是让"注册-释放"在新进程里重新配平必须付的
+   钱(§6.2)。
+5. item 4、5 的 `insert`:ledger 里没有 → 真正执行,`with.workbook: "wb"`
+   查得到,不再报"名字未注册"。
+6. G1 最后一条 item 处理完 → `close`(`once:"groupEnd"`)同样因为
+   `releases` 非空而不被历史 ledger 跳过 → 真正执行,`wb` 释放。
+7. 进到 G2,`open` 再次注册 `wb` —— 因为第 6 步已经释放过,不触发 §3.4
+   第 3 点的"同名重复注册非法"。**这就是 `provides` 和 `releases` 必须
+   成对豁免的原因**:只豁免 `open` 而跳过 `close`,`wb` 会一直占着名字,
+   G2 在这一步当场失败。
+
+对照 §7.5:那个例子验证的是**输出重放**,这个例子验证的是**资源重建**——
+两条路互不替代,ledger 能重放的只有 JSON 值,Session 资源永远只能靠重新
+执行注册步骤拿回来。
 
 ---
 
@@ -645,6 +703,8 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
       "catalog 里现在有没有恰好带 `releases` 的 step"**——后者会让新增
       一个释放 step 使所有已有工作流集体变红,而它们一行都没改
       (`STEP-CONTRACT.md` §3.4 第 6 点,P0-R10 第四轮)
+- [ ] `provides` 或 `releases` 非空的 step,`idempotent` 必须是 `$true`
+      (resume 时它们总是真执行,`STEP-CONTRACT.md` §6.2,P0-R10 第五轮)
 - [ ] worklist 里所有 `role: key` 的列都出现在 `key.columns` 里,反之亦然(`PROFILE-SCHEMA.md` §6.1)
 - [ ] 涉及 key 比较的 step(`verify.match_record`/`file.find`/`file.newest`/`excel.find_anchor`……)都走 `table.key` 的规范化,没有 step 自己写比较绕过它(`PROFILE-SCHEMA.md` §6.4)
 
