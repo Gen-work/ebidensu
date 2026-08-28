@@ -32,7 +32,9 @@ mark_templates/*.png
 *.zip
 *.log
 
-# --- ebi-dance generated/local state ---
-.ebi/
-run/
-capture/
+# --- ebi-dance generated/local state (anchored: these live in the operator's
+# WorkDir, and an unanchored pattern would also swallow any same-named
+# directory nested anywhere in the tree) ---
+/.ebi/
+/run/
+/capture/

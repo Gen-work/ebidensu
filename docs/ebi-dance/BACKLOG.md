@@ -365,10 +365,16 @@
   彻底避开冲突,不要图省事换回 `spec/gift-gfix`。
 - **完成**:远程能看到该 tag;`git show freeze/pre-ebi-dance --stat` 正常
 
-### [ ] P0-02 建目录骨架
+### [x] P0-02 建目录骨架
 - **估** 30min | **依赖** P0-01 | **读** `Plan.md` §3
-- **做**:建 `kernel/ modules/{browser,screen,file,excel,table,verify,human} workflows/ profiles/ legacy/`,
-  每个目录放一个 `README.md` 说明放什么。更新根 `.gitignore` 加 `.ebi/`、`run/`、`capture/`。
+- **做**:建 `kernel/ modules/{browser,screen,file,excel,table,verify,human,progress,flow} workflows/ profiles/ legacy/`,
+  每个目录放一个 `README.md` 说明放什么。更新根 `.gitignore` 加 `.ebi/`、`run/`、`capture/`
+  (锚定到仓库根,写成 `/.ebi/`、`/run/`、`/capture/`,不然会匹配任意深度的同名目录)。
+- ⚠ **9 个组,不是 7 个**:本卡初版漏了 `progress` 和 `flow`,而 `progress.status`
+  就在 `spec/WORKFLOW-SCHEMA.md` §8 标准示例的 `teardown` 里、`flow.checkpoint` 在
+  §7.3,两者都用 `use` 调,按 `spec/STEP-CONTRACT.md` §1 必须有自己的目录。
+  `flow.foreach` / `flow.group_by` 是 runner 构造不是 step,**不建文件**(见
+  `modules/flow/README.md`)。评审时补齐,`STEP-CONTRACT.md` §2.1 的"8 组"同步改成 9 组并列名。
 - **完成**:目录存在;`git status` 干净;每个目录的 README 说清楚"什么该进来、什么不该"
 
 ### [ ] P0-03 kernel/Trace.ps1
