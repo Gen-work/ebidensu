@@ -31,3 +31,8 @@ mark_templates/*.png
 *.xlsm
 *.zip
 *.log
+
+# --- ebi-dance generated/local state ---
+.ebi/
+run/
+capture/
