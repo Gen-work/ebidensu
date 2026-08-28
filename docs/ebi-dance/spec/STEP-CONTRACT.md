@@ -97,7 +97,7 @@ $Manifest = @{
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `id` | ✓ | 全局唯一,`<group>.<verb>` 形式,必须与文件名一致 |
-| `group` | ✓ | 见 CATALOG 的 8 组 |
+| `group` | ✓ | CATALOG 的 **9 组**:`browser` / `screen` / `file` / `excel` / `table` / `verify` / `human` / `progress` / `flow`,和 `modules/` 下的目录一一对应。注意 `flow` 组只装真的用 `use` 调的 step(`flow.checkpoint` / `flow.call`);`flow.foreach` / `flow.group_by` 是 runner 构造,不是 step,见 `WORKFLOW-SCHEMA.md` §7.1、§7.2 |
 | `summary` | ✓ | **一句话,英文,不超过 80 字符**。这是 Agent 挑 step 的主要依据 |
 | `tier` | ✓ | `core` 或 `fallback`(见 §5) |
 | `effects` | ✓ | 副作用等级,见 VOCABULARY §4 |
