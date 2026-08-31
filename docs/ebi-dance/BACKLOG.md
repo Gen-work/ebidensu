@@ -377,7 +377,7 @@
   `modules/flow/README.md`)。评审时补齐,`STEP-CONTRACT.md` §2.1 的"8 组"同步改成 9 组并列名。
 - **完成**:目录存在;`git status` 干净;每个目录的 README 说清楚"什么该进来、什么不该"
 
-### [ ] P0-03 kernel/Trace.ps1
+### [x] P0-03 kernel/Trace.ps1
 - **估** 60min | **依赖** P0-02 | **读** `spec/STEP-CONTRACT.md` §3.2
 - **做**:从 `ProgressLog.ps1` 搬过来并**字段泛化** —— 去掉硬编码的 `correl_id_s` / `job_name`,
   改成 `key` + `tags{}`。保留 UTF-8 无 BOM 追加写(`UTF8Encoding($false)`,`Set-Content -Encoding UTF8` 会在每次追加时插 BOM,毁掉 jsonl)。
