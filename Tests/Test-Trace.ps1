@@ -22,6 +22,14 @@ try {
     Assert-Equal 2 $tail.Count 'Tail limits returned events'
     Assert-Equal 'capture' $tail[0].action 'Tail returns the last events in order'
 
+    # A reader can see an incomplete final line while a writer is appending.
+    # Tail counts valid events, not raw lines, so that fragment must not hide
+    # the most recent complete event.
+    [System.IO.File]::AppendAllText((Get-TraceFile $temp), '{"timestamp":', [System.Text.UTF8Encoding]::new($false))
+    $tailWithPartialLine = @(Read-TraceEvents -WorkDir $temp -Tail 1)
+    Assert-Equal 1 $tailWithPartialLine.Count 'Tail ignores an incomplete final line'
+    Assert-Equal 'finish' $tailWithPartialLine[0].action 'Tail returns the last complete event'
+
     $bytes = [System.IO.File]::ReadAllBytes((Get-TraceFile $temp))
     $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
     Assert-True (-not $hasBom) 'trace JSONL has no UTF-8 BOM'

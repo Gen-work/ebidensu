@@ -66,10 +66,6 @@ function Read-TraceEvents {
     if (-not (Test-Path -LiteralPath $file)) { return @() }
 
     $lines = @(Get-Content -LiteralPath $file -Encoding UTF8 -ErrorAction SilentlyContinue)
-    if ($Tail -gt 0 -and $lines.Count -gt $Tail) {
-        $lines = @($lines[($lines.Count - $Tail)..($lines.Count - 1)])
-    }
-
     $events = [System.Collections.Generic.List[object]]::new()
     foreach ($line in $lines) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
@@ -79,5 +75,10 @@ function Read-TraceEvents {
             # A partial final line can be observed while another process writes.
         }
     }
-    return $events.ToArray()
+
+    $result = @($events.ToArray())
+    if ($Tail -gt 0 -and $result.Count -gt $Tail) {
+        $result = @($result[($result.Count - $Tail)..($result.Count - 1)])
+    }
+    return $result
 }
