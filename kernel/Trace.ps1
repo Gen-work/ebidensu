@@ -119,9 +119,6 @@ function Read-TraceEvents {
     if (-not (Test-Path -LiteralPath $file)) { return @() }
 
     $lines = @(Get-Content -LiteralPath $file -Encoding UTF8 -ErrorAction SilentlyContinue)
-    if ($Tail -gt 0 -and $lines.Count -gt $Tail) {
-        $lines = @($lines | Select-Object -Last $Tail)
-    }
 
     $events = [System.Collections.Generic.List[object]]::new()
     foreach ($line in $lines) {
@@ -132,5 +129,14 @@ function Read-TraceEvents {
             # A partial final line can be observed while another process writes.
         }
     }
-    return $events.ToArray()
+
+    # Tail counts complete events, not raw lines. Slicing the lines first
+    # would let a half-written final line eat one of the N slots and then
+    # vanish in the parse, so -Tail 1 would return nothing at the exact
+    # moment a reader most wants the newest event.
+    $result = @($events.ToArray())
+    if ($Tail -gt 0 -and $result.Count -gt $Tail) {
+        $result = @($result | Select-Object -Last $Tail)
+    }
+    return $result
 }
