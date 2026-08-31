@@ -378,10 +378,22 @@
 - **完成**:目录存在;`git status` 干净;每个目录的 README 说清楚"什么该进来、什么不该"
 
 ### [x] P0-03 kernel/Trace.ps1
-- **估** 60min | **依赖** P0-02 | **读** `spec/STEP-CONTRACT.md` §3.2
+- **估** 60min | **依赖** P0-02 | **读** `spec/STEP-CONTRACT.md` §3.1-§3.2、`spec/VOCABULARY.md` §3.3
 - **做**:从 `ProgressLog.ps1` 搬过来并**字段泛化** —— 去掉硬编码的 `correl_id_s` / `job_name`,
   改成 `key` + `tags{}`。保留 UTF-8 无 BOM 追加写(`UTF8Encoding($false)`,`Set-Content -Encoding UTF8` 会在每次追加时插 BOM,毁掉 jsonl)。
-- **完成**:`Write-TraceEvent` / `Read-TraceEvents` 可用;单测覆盖「追加 3 条后读回 3 条且无 BOM」
+- ⚠ **落盘位置是 `<WorkDir>/run/<runId>/trace.jsonl`**(`spec/VOCABULARY.md` §3.3 写死的),
+  不是工作目录根下的一个大文件。它和 `run/<runId>/ledger.jsonl` 是兄弟,
+  `ebi trace <runId>`(`Plan.md` §9)和 P5-07 的 bundle 都靠这个目录挑出**一次**运行;
+  所有 run 混写进同一个文件就再也分不开了。事件里**另外**带一个 `runId` 字段兜底。
+- ⚠ **要有一个可选的结构化载荷位 `data`**(`-Data`,为空时不写进 JSON)。
+  `spec/STEP-CONTRACT.md` §3.1 规定 runner **必须**把 step 返回的 `warnings`
+  (`@{code; message; data{}}` 数组)写进 trace;只有一个 `[string]$Message` 的话,
+  它们只能被拼成字符串 —— 那 trace 就不再是「机器可读」的,正好是 P0-R5 要修的那个洞。
+- ⚠ **字段名和 ledger 对齐**:时间戳叫 `ts`(不是 `timestamp`),运行 id 叫 `runId`,
+  状态叫 `status` —— `run/<runId>/` 下就这两个 jsonl,同一件事两套拼法,
+  `ebi trace` / bundle 迟早要在读的时候做映射。
+- **完成**:`Write-TraceEvent` / `Read-TraceEvents` 可用;单测覆盖「追加 3 条后读回 3 条且无 BOM」、
+  「两个不同 `runId` 写进两个不同文件且互不影响」、「嵌套 `warnings` 数组进 `data` 后能原样读回」
 
 ### [ ] P0-04 搬纯函数库进 modules/verify/
 - **估** 45min | **依赖** P0-02 | **读** `Plan.md` §12
