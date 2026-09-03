@@ -256,7 +256,7 @@ if (-not $helpersPath) {
 . (Join-Path $PSScriptRoot 'ProjectLabels.ps1')
 . (Join-Path $PSScriptRoot 'EvidenceImageExport.ps1')
 . (Join-Path $PSScriptRoot 'OcrWindows.ps1')
-. (Join-Path $PSScriptRoot 'SnapVerify.ps1')
+. (Join-Path $PSScriptRoot 'modules/verify/SnapVerify.ps1')
 . (Join-Path $PSScriptRoot 'SendMetadata.ps1')
 . (Join-Path $PSScriptRoot 'TimeDigitVerify.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeParse.ps1')

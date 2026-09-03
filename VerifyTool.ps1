@@ -87,7 +87,7 @@ try {
 . (Join-Path $PSScriptRoot 'ConfigOverlay.ps1')
 # Pure screen-region / crop math (Resolve-ScreenRegion, Resolve-DirectionalCrop).
 # No param().
-. (Join-Path $PSScriptRoot 'ScreenRegion.ps1')
+. (Join-Path $PSScriptRoot 'modules/verify/ScreenRegion.ps1')
 
 # Resolve the four concrete (non-negative) per-side crop amounts for one snap
 # folder: Resolve-DirectionalCrop (ScreenRegion.ps1) applied to $State's

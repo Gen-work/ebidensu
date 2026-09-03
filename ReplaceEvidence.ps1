@@ -104,7 +104,7 @@ if (-not $helpersPath) { Write-Host '[ERROR] ExcelHelpers.ps1 not found.' -Foreg
 . (Join-Path $PSScriptRoot 'ProgressLog.ps1')
 . (Join-Path $PSScriptRoot 'EvidencePlan.ps1')
 . (Join-Path $PSScriptRoot 'ProjectLabels.ps1')
-. (Join-Path $PSScriptRoot 'GfixLog.ps1')
+. (Join-Path $PSScriptRoot 'modules/verify/GfixLog.ps1')
 . (Join-Path $PSScriptRoot 'EvidenceExecutor.ps1')
 if (-not (Get-Command -Name 'New-ExcelApp' -ErrorAction SilentlyContinue)) {
     Write-Host '[ERROR] ExcelHelpers dot-source failed.' -ForegroundColor Red; exit 1

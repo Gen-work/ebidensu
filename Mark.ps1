@@ -140,7 +140,7 @@ if (-not (Test-Path -LiteralPath $locateByImagePath)) { $locateByImagePath = '' 
 # CLAUDE.md. All three are optional here -- a missing file only disables that
 # one fallback tier (Get-Command guards in Get-MarkMqRowInfo* below), it
 # never blocks Mark.
-$snapVerifyPath = Join-Path $PSScriptRoot 'SnapVerify.ps1'
+$snapVerifyPath = Join-Path $PSScriptRoot 'modules/verify/SnapVerify.ps1'
 if (Test-Path -LiteralPath $snapVerifyPath) { . $snapVerifyPath }
 $ocrWindowsPath = Join-Path $PSScriptRoot 'OcrWindows.ps1'
 if (Test-Path -LiteralPath $ocrWindowsPath) { . $ocrWindowsPath }

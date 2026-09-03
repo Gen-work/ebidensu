@@ -168,7 +168,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $ErrorActionPreference = $savedEAP
 . (Join-Path $scriptDir "MappingStore.ps1")
 . (Join-Path $scriptDir "ProgressLog.ps1")
-. (Join-Path $scriptDir "SnapVerify.ps1")
+. (Join-Path $scriptDir "modules/verify/SnapVerify.ps1")
 $snapLocalizeScript = Join-Path $scriptDir "SnapLocalize.ps1"
 if (Test-Path -LiteralPath $snapLocalizeScript) { . $snapLocalizeScript }
 $pageTextScript = Join-Path $scriptDir "Read-PageText.ps1"
