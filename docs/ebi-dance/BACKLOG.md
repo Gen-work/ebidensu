@@ -400,6 +400,11 @@
 - **做**:`SnapVerify.ps1` `GfixLog.ps1` `GfixJobList.ps1` `ScreenRegion.ps1` `OwnerFilter.ps1`
   原样搬进 `modules/verify/`(**这一步不改任何逻辑**,只挪位置 + 改 dot-source 路径)。
   对应的 `Tests/Test-*.ps1` 跟着改路径。
+- ⚠ **`VerifyConfig.psd1` 的 `Scripts` 表也要改**:里面有 `SnapVerify = 'SnapVerify.ps1'`,
+  由 `VerifyTool.ps1` 的 `Join-Path $PSScriptRoot $name` 解析,漏了它 SnapVerify 相关的
+  phase 要到运行时才炸。搬完 grep 一遍确认没有路径还指着仓库根。
+- ⚠ **`SnapLocalize.ps1` 不搬**(它碰 GDI+,不是纯函数),但它 dot-source `SnapVerify.ps1`,
+  路径要跟着改。
 - **完成**:`Tests/Run-Tests.ps1` 全绿,和搬之前的测试数一致
 
 ### [ ] P0-05 归档 legacy/
