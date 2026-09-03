@@ -61,6 +61,15 @@ try {
     Assert-Equal 'unrecognized_line' $r3[0].data.warnings[0].code 'a nested warnings array survives'
     Assert-Equal 9 $r3[0].data.warnings[0].data.lines[1] 'nested warning data survives'
 
+    # --- a half-written final line must not eat a Tail slot ---
+    # A reader can see an incomplete final line while a writer is appending.
+    [System.IO.File]::AppendAllText((Get-TraceFile $temp 'r1'), '{"ts":', (New-Object System.Text.UTF8Encoding($false)))
+    $tailPartial = @(Read-TraceEvents -WorkDir $temp -RunId 'r1' -Tail 1)
+    Assert-Equal 1 $tailPartial.Count 'Tail ignores an incomplete final line'
+    Assert-Equal 'finish' $tailPartial[0].action 'Tail returns the last complete event'
+    $stillThree = @(Read-TraceEvents -WorkDir $temp -RunId 'r1')
+    Assert-Equal 3 $stillThree.Count 'the fragment is skipped, not counted'
+
     $bytes = [System.IO.File]::ReadAllBytes((Get-TraceFile $temp 'r1'))
     $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
     Assert-True (-not $hasBom) 'trace JSONL has no UTF-8 BOM'
