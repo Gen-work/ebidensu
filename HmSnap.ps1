@@ -105,9 +105,10 @@ $saveTextOn      = [bool]$SaveText
 $scriptDir   = $PSScriptRoot
 $phaseName   = if ($Stage -eq 'GIFT') { 'GiftHmSnap' } else { 'GfixHmSnap' }
 
-# -- Unblock all PS1 files in this folder (avoid UNC-path security warning) --
+# -- Unblock all PS1 files in this folder + subfolders (modules\, legacy;
+#    avoid UNC-path security warning) --
 try {
-    Get-ChildItem -LiteralPath $scriptDir -Filter "*.ps1" -File -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath $scriptDir -Filter "*.ps1" -File -Recurse -ErrorAction SilentlyContinue |
         ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
 } catch {}
 

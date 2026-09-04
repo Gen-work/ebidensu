@@ -51,7 +51,7 @@ try {
 } catch {}
 
 try {
-    Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File -Recurse -ErrorAction SilentlyContinue |
         ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
 } catch {}
 
