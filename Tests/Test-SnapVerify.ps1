@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 $here = Split-Path $MyInvocation.MyCommand.Path
 . (Join-Path $here '_TestCommon.ps1')
-. (Join-Path (Split-Path $here -Parent) 'SnapVerify.ps1')
+. (Join-Path (Split-Path $here -Parent) 'modules/verify/SnapVerify.ps1')
 
 Reset-Tests 'SnapVerify'
 

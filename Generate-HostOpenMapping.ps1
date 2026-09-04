@@ -62,7 +62,7 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path $MyInvocation.MyCommand.Path
 $forceFlag = [bool]$Force.IsPresent    # capture before dot-source
 . (Join-Path $scriptDir 'MappingStore.ps1')
-. (Join-Path $scriptDir 'OwnerFilter.ps1')   # pure Test-OwnerMatch / Select-JobsByOwner
+. (Join-Path $scriptDir 'modules/verify/OwnerFilter.ps1')   # pure Test-OwnerMatch / Select-JobsByOwner
 . (Join-Path $scriptDir 'MappingInput.ps1')
 
 # -- Force console to UTF-8 --

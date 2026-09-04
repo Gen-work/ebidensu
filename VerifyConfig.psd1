@@ -253,7 +253,7 @@
         BackupJ4        = 'BackupJ4.ps1'
         FillCheckSheet  = 'FillCheckSheet.ps1'
         SendVsGift      = 'SendVsGift.ps1'
-        SnapVerify      = 'SnapVerify.ps1'
+        SnapVerify      = 'modules/verify/SnapVerify.ps1'
         SnapLocalize    = 'SnapLocalize.ps1'
     }
 

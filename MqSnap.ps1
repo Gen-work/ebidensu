@@ -95,9 +95,10 @@ $saveTextOn      = [bool]$SaveText
 
 $scriptDir = $PSScriptRoot
 
-# -- Unblock all PS1 files in this folder (avoid UNC-path security warning) --
+# -- Unblock all PS1 files in this folder + subfolders (modules\, legacy;
+#    avoid UNC-path security warning) --
 try {
-    Get-ChildItem -LiteralPath $scriptDir -Filter "*.ps1" -File -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath $scriptDir -Filter "*.ps1" -File -Recurse -ErrorAction SilentlyContinue |
         ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
 } catch {}
 
@@ -156,7 +157,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $ErrorActionPreference = $savedEAP
 . (Join-Path $scriptDir "MappingStore.ps1")
 . (Join-Path $scriptDir "ProgressLog.ps1")
-. (Join-Path $scriptDir "SnapVerify.ps1")
+. (Join-Path $scriptDir "modules/verify/SnapVerify.ps1")
 $snapLocalizeScript = Join-Path $scriptDir "SnapLocalize.ps1"
 if (Test-Path -LiteralPath $snapLocalizeScript) { . $snapLocalizeScript }
 $pageTextScript = Join-Path $scriptDir "Read-PageText.ps1"

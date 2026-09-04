@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 $here = Split-Path $MyInvocation.MyCommand.Path
 . (Join-Path $here '_TestCommon.ps1')
-. (Join-Path (Split-Path $here -Parent) 'ScreenRegion.ps1')
+. (Join-Path (Split-Path $here -Parent) 'modules/verify/ScreenRegion.ps1')
 
 Reset-Tests 'ScreenRegion'
 

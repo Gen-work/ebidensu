@@ -75,7 +75,7 @@ $scriptDir = Split-Path $MyInvocation.MyCommand.Path
 . (Join-Path $scriptDir 'Common.ps1')          # WinAPI, Take-WindowScreenshot, Ensure-Dir
 . (Join-Path $scriptDir 'MappingStore.ps1')
 . (Join-Path $scriptDir 'ProgressLog.ps1')
-. (Join-Path $scriptDir 'ScreenRegion.ps1')
+. (Join-Path $scriptDir 'modules/verify/ScreenRegion.ps1')
 
 $forceFlag = [bool]$Force.IsPresent
 $dryFlag   = [bool]$DryRun.IsPresent

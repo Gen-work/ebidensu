@@ -395,7 +395,7 @@
 - **完成**:`Write-TraceEvent` / `Read-TraceEvents` 可用;单测覆盖「追加 3 条后读回 3 条且无 BOM」、
   「两个不同 `runId` 写进两个不同文件且互不影响」、「嵌套 `warnings` 数组进 `data` 后能原样读回」
 
-### [ ] P0-04 搬纯函数库进 modules/verify/
+### [x] P0-04 搬纯函数库进 modules/verify/
 - **估** 45min | **依赖** P0-02 | **读** `Plan.md` §12
 - **做**:`SnapVerify.ps1` `GfixLog.ps1` `GfixJobList.ps1` `ScreenRegion.ps1` `OwnerFilter.ps1`
   原样搬进 `modules/verify/`(**这一步不改任何逻辑**,只挪位置 + 改 dot-source 路径)。
@@ -407,7 +407,7 @@
   路径要跟着改。
 - **完成**:`Tests/Run-Tests.ps1` 全绿,和搬之前的测试数一致
 
-### [ ] P0-05 归档 legacy/
+### [x] P0-05 归档 legacy/
 - **估** 30min | **依赖** P0-02 | **读** `Plan.md` §6.3
 - **做**:`TimeDigitVerify.ps1` `PixelDigitMatch.ps1` `OldSnapPixelVerify.ps1` `OldSnapVerify.ps1`
   移入 `legacy/`,加 `legacy/README.md` 说明:**这些只用来清历史老快照,清完即弃,

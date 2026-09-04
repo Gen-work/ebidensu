@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 $here = Split-Path $MyInvocation.MyCommand.Path
 . (Join-Path $here '_TestCommon.ps1')
-. (Join-Path (Split-Path $here -Parent) 'GfixJobList.ps1')
+. (Join-Path (Split-Path $here -Parent) 'modules/verify/GfixJobList.ps1')
 
 Reset-Tests 'GfixJobList'
 

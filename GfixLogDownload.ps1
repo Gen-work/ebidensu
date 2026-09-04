@@ -80,8 +80,8 @@ if ([string]::IsNullOrWhiteSpace($CommonScript)) { $CommonScript = Join-Path $sc
 . $CommonScript
 . (Join-Path $scriptDir 'MappingStore.ps1')
 . (Join-Path $scriptDir 'ProgressLog.ps1')
-. (Join-Path $scriptDir 'GfixLog.ps1')
-. (Join-Path $scriptDir 'GfixJobList.ps1')
+. (Join-Path $scriptDir 'modules/verify/GfixLog.ps1')
+. (Join-Path $scriptDir 'modules/verify/GfixJobList.ps1')
 
 $pageTextScript = Join-Path $scriptDir 'Read-PageText.ps1'
 
