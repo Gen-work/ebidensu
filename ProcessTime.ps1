@@ -258,12 +258,12 @@ if (-not $helpersPath) {
 . (Join-Path $PSScriptRoot 'OcrWindows.ps1')
 . (Join-Path $PSScriptRoot 'modules/verify/SnapVerify.ps1')
 . (Join-Path $PSScriptRoot 'SendMetadata.ps1')
-. (Join-Path $PSScriptRoot 'TimeDigitVerify.ps1')
+. (Join-Path $PSScriptRoot 'legacy/TimeDigitVerify.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeParse.ps1')
 . (Join-Path $PSScriptRoot 'ProcessTimeCheck.ps1')
-. (Join-Path $PSScriptRoot 'OldSnapVerify.ps1')
-. (Join-Path $PSScriptRoot 'PixelDigitMatch.ps1')
-. (Join-Path $PSScriptRoot 'OldSnapPixelVerify.ps1')
+. (Join-Path $PSScriptRoot 'legacy/OldSnapVerify.ps1')
+. (Join-Path $PSScriptRoot 'legacy/PixelDigitMatch.ps1')
+. (Join-Path $PSScriptRoot 'legacy/OldSnapPixelVerify.ps1')
 
 # System.Drawing backs the OCR image preprocessing (upscale + grayscale +
 # contrast). Warn-only: a load failure just disables preprocessing (the

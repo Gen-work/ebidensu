@@ -8,7 +8,7 @@ $here = Split-Path $MyInvocation.MyCommand.Path
 # Repair-ImpossibleTimeDigit to rescue a token whose digit cannot be what OCR
 # read (it degrades to "drop the row" when the module is absent, so the parse
 # module still dot-sources standalone -- the tests exercise the wired path).
-. (Join-Path (Split-Path $here -Parent) 'TimeDigitVerify.ps1')
+. (Join-Path (Split-Path $here -Parent) 'legacy/TimeDigitVerify.ps1')
 . (Join-Path (Split-Path $here -Parent) 'ProcessTimeParse.ps1')
 
 Reset-Tests 'ProcessTimeParse'

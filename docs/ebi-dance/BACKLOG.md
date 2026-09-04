@@ -407,7 +407,7 @@
   路径要跟着改。
 - **完成**:`Tests/Run-Tests.ps1` 全绿,和搬之前的测试数一致
 
-### [ ] P0-05 归档 legacy/
+### [x] P0-05 归档 legacy/
 - **估** 30min | **依赖** P0-02 | **读** `Plan.md` §6.3
 - **做**:`TimeDigitVerify.ps1` `PixelDigitMatch.ps1` `OldSnapPixelVerify.ps1` `OldSnapVerify.ps1`
   移入 `legacy/`,加 `legacy/README.md` 说明:**这些只用来清历史老快照,清完即弃,
