@@ -32,31 +32,32 @@ verify_config.json      OPTIONAL per-work-folder JSON overlay (lives in WorkDir)
 
 ExcelHelpers.ps1        dot-source lib: Excel COM, bitmask, shape metadata helpers (no param())
 
+  -- ebi-dance refactor tree (docs/ebi-dance/) : the target layout the repo is
+     being moved into, one card at a time. Empty dirs carry a README.md that
+     says what belongs there --
+modules/                capability-oriented ebi-dance steps, one .ps1 per step
+                        with an inline $Manifest, grouped by capability
+                        (browser/screen/file/excel/table/verify/human/progress/
+                        flow). Files here that are NOT steps are pre-conversion
+                        libraries, listed and exempted on every test run.
+legacy/                 retired implementations, kept only while they still have
+                        a backlog to clear. Not in the catalog.
+kernel/                 runner internals. Currently Trace.ps1 (append-only run
+                        trace, unit-tested via Tests\Test-Trace.ps1).
+workflows/              JSON workflows (the artifact a human or Agent writes)
+profiles/               per-project data: page bindings, decision rules, schemas
+
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
 MappingStore.ps1        single source of truth for mapping_<Owner>.csv: read/filter/
                         atomic-write. Import-Mapping, Export-MappingAtomic,
                         Ensure-MappingColumns, ConvertTo-TargetIdList, Test-TargetRow,
                         Get-PendingRows, Set-MappingBit. ALL scripts use this.
-GfixLog.ps1             pure GFIX receive-log matcher (SS_CODE=Substring(4,1); newest
-                        wins; whole-file lines). No Excel. Unit-tested.
-GfixJobList.ps1         pure parser for the GoAnywhere completed-jobs LIST page text
-                        (Ctrl+A/Ctrl+C capture): ConvertFrom-GfixJobListText (tab-
-                        delimited rows keyed by JobNo, data rows identified by a
-                        numeric JobNo regex -- no Japanese literals needed) +
-                        Get-GfixJobListRowsForIf (filter by normalized IF_NO,
-                        receive-side only by default). No COM. Unit-tested. Lets
-                        GfixLogDownload fetch every job matching a needed IF_NO
-                        (job numbers are unique; IF_NO/project-name text is not).
 EvidencePlan.ps1        pure correl-major Replace plan builders (Build-Gift/Gfix/Df
                         EvidencePlan) encoding the review order. No Excel. Unit-tested.
 EvidenceExecutor.ps1    walks an EvidencePlan and performs the Excel inserts.
 ProjectLabels.ps1       Japanese sheet/label names from [char] (keeps consumers ASCII /
                         codepage-agnostic). Get-AlignSendSheets / Get-AlignRecvSheets.
 ProgressLog.ps1         append-only status\progress.jsonl events (UTF-8 no BOM).
-ScreenRegion.ps1        pure screen-region clamp math + Resolve-DirectionalCrop
-                        (four-side snap crop resolution: CropPx + per-side +
-                        per-folder overrides). Unit-tested. Dot-sourced by
-                        VerifyTool.ps1.
 AlignCompare.ps1        pure sheet-compare + migration-type logic. Unit-tested.
 ConfigOverlay.ps1       pure per-work-folder JSON overlay: deep-merge + JSON<->hashtable
                         + InitConfig snapshot/generator helpers. Unit-tested.
@@ -72,23 +73,6 @@ EvidenceImageExport.ps1 Excel COM: export embedded sheet pictures to PNG via tem
                         ChartObject (skips verifyMark_* shapes; flattens Ctrl+G groups
                         to child pictures; optional Top range filter for one correl
                         section; clipboard clobbered).
-SnapVerify.ps1          pure snap-phase NG detection + localisation library
-                        (no COM, no SendKeys). ASCII source (Japanese via [char]).
-                        ConvertFrom-HmPageText / Test-HmAbend (F1),
-                        ConvertFrom-MqPageText / Test-MqRecord (F2),
-                        ConvertFrom-JenkinsListText / Test-JenkinsFile (F3/F4),
-                        Get-JenkinsSearchTerm (the EXACT listed file name
-                        Ctrl+F should look for -- resolves the intended entry
-                        via Select-JenkinsFileCandidate so a correl with
-                        several listed reruns highlights the newest row
-                        instead of whichever the page listed first; '' when
-                        nothing matches, so the caller keeps its base-id
-                        fallback),
-                        Get-SnapPageKind (A3 sentinel), Resolve-SnapRunTime (2.2),
-                        and M5/F5 pixel localisation: Get-MatchedRowIndex /
-                        Get-RowPixelRect / Get-JenkinsHighlightRect /
-                        New-SnapLocRect / Save-SnapLocSidecar.
-                        Unit-tested via Tests\Test-SnapVerify.ps1.
 SnapLocalize.ps1        M5/F5 wiring glue (NOT pure: System.Drawing + the
                         Find-ActiveHighlightRow scan). Write-SnapLocalize turns a
                         verdict into a snap\<folder>\<correl>.loc.json sidecar via
@@ -99,11 +83,6 @@ WorkbookResolver.ps1    dot-source helper: evidence/J4 workbook filename resolut
                         (prefix + Excel_NAME stem) plus reusable full-width
                         ASCII filename fallback (`FullWidthFilenameResolver`).
                         Unit-tested.
-OwnerFilter.ps1         pure WBS owner-cell matching (Test-OwnerMatch: exact /
-                        owner<-other / other->owner; reverse dir = not owned)
-                        + Select-JobsByOwner (filter explicit -Add JOB_NAMEs by
-                        WBS owner; jobs absent from WBS kept as temp). No Excel.
-                        Unit-tested (Tests\Test-OwnerFilter.ps1).
 ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         ProcessTime phase: Get-ProcessDurationText (HH:mm:ss,
                         not clamped to 24h), ConvertTo-ProcessTimeNormalizedLine
@@ -141,6 +120,79 @@ ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         RecordCount falls back to the count immediately before
                         the result diamond when no datestamp anchors it (JDL).
                         No Excel/OCR. Unit-tested (Tests\Test-ProcessTimeParse.ps1).
+ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
+                        module (dot-source, no param(), no COM): Get-ProcessTime
+                        CheckColumnSpec returns the data-driven spec for the
+                        columns appended after A..H -- I 処理時間(検算) (=E-D),
+                        J チェック (T/F compare of written vs re-derived
+                        duration), K 件数チェック (record-count check; first
+                        version flags a blank/zero/non-numeric count) -- and
+                        New-ProcessTimeCheckFormula fills a formula template's
+                        {0} with a row number. v2.18.0: pass -CountReference
+                        (Resolve-ProcessTimeCountReference expands {Tag}/
+                        {Month} in the reference workbook/sheet names;
+                        New-ProcessTimeExternalRange builds the
+                        'dir\[Book.xlsx]Sheet'!$O$1:$O$20000 qualifier;
+                        New-ProcessTimeCountLookupFormula emits the operator's
+                        INDEX/MATCH) and the spec grows to four columns --
+                        K 件数(参照) pulls the EXPECTED count out of the
+                        project's monthly workbook and L 件数チェック compares
+                        it against the OCR-read count. v2.19.0: the layout is
+                        ALWAYS I/J/K/L -- with no reference configured K holds
+                        an inert TEXT placeholder carrying <DIR>/<BOOK>/
+                        <SHEET> tokens (New-ProcessTimeCountPlaceholderFormula,
+                        CountReference.PlaceholderWhenUnset) -- and L compares
+                        the count against K when K has a value, else against
+                        the SAME correl's other side (GIFT vs GFIX) via
+                        Get-ProcessTimeCountPairMap + the template's {1}.
+                        Equal counts read OK, INCLUDING 0 vs 0. ProcessTime.ps1's COM-side
+                        Set-ProcessTimeCheckColumns walks the spec to write the
+                        headers/formulas/number-formats uniformly after the
+                        data rows. Japanese headers via [char]. Unit-tested
+                        (Tests\Test-ProcessTimeCheck.ps1). v2.16.0.
+
+  -- modules/verify/ : the same pure libs, moved out of the repo root by
+     P0-04. Still plain dot-source libraries, NOT ebi-dance steps yet --
+GfixLog.ps1             pure GFIX receive-log matcher (SS_CODE=Substring(4,1); newest
+                        wins; whole-file lines). No Excel. Unit-tested.
+GfixJobList.ps1         pure parser for the GoAnywhere completed-jobs LIST page text
+                        (Ctrl+A/Ctrl+C capture): ConvertFrom-GfixJobListText (tab-
+                        delimited rows keyed by JobNo, data rows identified by a
+                        numeric JobNo regex -- no Japanese literals needed) +
+                        Get-GfixJobListRowsForIf (filter by normalized IF_NO,
+                        receive-side only by default). No COM. Unit-tested. Lets
+                        GfixLogDownload fetch every job matching a needed IF_NO
+                        (job numbers are unique; IF_NO/project-name text is not).
+ScreenRegion.ps1        pure screen-region clamp math + Resolve-DirectionalCrop
+                        (four-side snap crop resolution: CropPx + per-side +
+                        per-folder overrides). Unit-tested. Dot-sourced by
+                        VerifyTool.ps1.
+SnapVerify.ps1          pure snap-phase NG detection + localisation library
+                        (no COM, no SendKeys). ASCII source (Japanese via [char]).
+                        ConvertFrom-HmPageText / Test-HmAbend (F1),
+                        ConvertFrom-MqPageText / Test-MqRecord (F2),
+                        ConvertFrom-JenkinsListText / Test-JenkinsFile (F3/F4),
+                        Get-JenkinsSearchTerm (the EXACT listed file name
+                        Ctrl+F should look for -- resolves the intended entry
+                        via Select-JenkinsFileCandidate so a correl with
+                        several listed reruns highlights the newest row
+                        instead of whichever the page listed first; '' when
+                        nothing matches, so the caller keeps its base-id
+                        fallback),
+                        Get-SnapPageKind (A3 sentinel), Resolve-SnapRunTime (2.2),
+                        and M5/F5 pixel localisation: Get-MatchedRowIndex /
+                        Get-RowPixelRect / Get-JenkinsHighlightRect /
+                        New-SnapLocRect / Save-SnapLocSidecar.
+                        Unit-tested via Tests\Test-SnapVerify.ps1.
+OwnerFilter.ps1         pure WBS owner-cell matching (Test-OwnerMatch: exact /
+                        owner<-other / other->owner; reverse dir = not owned)
+                        + Select-JobsByOwner (filter explicit -Add JOB_NAMEs by
+                        WBS owner; jobs absent from WBS kept as temp). No Excel.
+                        Unit-tested (Tests\Test-OwnerFilter.ps1).
+
+  -- legacy/ : retired by P0-05. These exist only to clear the backlog of
+     OCR-only old HM snapshots; outside the step catalog, no new workflow
+     may depend on them. Retirement conditions: legacy/README.md --
 OldSnapVerify.ps1       pure old-snap 9->3 hand-verification helpers (dot-source,
                         no param(), no COM): Resolve-OldSnapImagePath (build the
                         snap\<GIFT|GFIX>_HM\<correl>.png path via
@@ -218,36 +270,7 @@ TimeDigitVerify.ps1     pure 3<->9 digit-risk analysis for OCR'd HM times
                         / ConvertTo-TimeDigitDurationSeconds /
                         Format-TimeDigitDuration. Unit-tested
                         (Tests\Test-TimeDigitVerify.ps1). v2.21.0.
-ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
-                        module (dot-source, no param(), no COM): Get-ProcessTime
-                        CheckColumnSpec returns the data-driven spec for the
-                        columns appended after A..H -- I 処理時間(検算) (=E-D),
-                        J チェック (T/F compare of written vs re-derived
-                        duration), K 件数チェック (record-count check; first
-                        version flags a blank/zero/non-numeric count) -- and
-                        New-ProcessTimeCheckFormula fills a formula template's
-                        {0} with a row number. v2.18.0: pass -CountReference
-                        (Resolve-ProcessTimeCountReference expands {Tag}/
-                        {Month} in the reference workbook/sheet names;
-                        New-ProcessTimeExternalRange builds the
-                        'dir\[Book.xlsx]Sheet'!$O$1:$O$20000 qualifier;
-                        New-ProcessTimeCountLookupFormula emits the operator's
-                        INDEX/MATCH) and the spec grows to four columns --
-                        K 件数(参照) pulls the EXPECTED count out of the
-                        project's monthly workbook and L 件数チェック compares
-                        it against the OCR-read count. v2.19.0: the layout is
-                        ALWAYS I/J/K/L -- with no reference configured K holds
-                        an inert TEXT placeholder carrying <DIR>/<BOOK>/
-                        <SHEET> tokens (New-ProcessTimeCountPlaceholderFormula,
-                        CountReference.PlaceholderWhenUnset) -- and L compares
-                        the count against K when K has a value, else against
-                        the SAME correl's other side (GIFT vs GFIX) via
-                        Get-ProcessTimeCountPairMap + the template's {1}.
-                        Equal counts read OK, INCLUDING 0 vs 0. ProcessTime.ps1's COM-side
-                        Set-ProcessTimeCheckColumns walks the spec to write the
-                        headers/formulas/number-formats uniformly after the
-                        data rows. Japanese headers via [char]. Unit-tested
-                        (Tests\Test-ProcessTimeCheck.ps1). v2.16.0.
+
 
 Clone.ps1               Phase Clone
 Align.ps1               Phase Align/Precheck: compare work evidence vs J4 baseline
@@ -336,11 +359,24 @@ BackupJ4.ps1            Phase BackupJ4 ("bk"): read-only against J4 --
 Validate.ps1            Phase Validate (read-only diagnostic)
 Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
 Check-Encoding.ps1      read-only encoding policy checker + label self-test
-Tests/                  Run-Tests.ps1 (parse-check all + units) + Test-*.ps1.
+Tests/                  Run-Tests.ps1 (parse-checks every .ps1 in the tree, then
+                        runs Tests\**\Test-*.ps1) + Test-*.ps1.
                         Test-Docs.ps1 + DocsCheck.ps1 + docs-checks.json make the
                         ebi-dance docs self-checking: retired spellings, card-count
                         agreement across BACKLOG/Plan/README, cross-file section
                         refs, and workflow-example integrity.
+                        StepContract.ps1 + Test-StepContract.ps1 are the step
+                        contract checker (P0-06): every step file under modules/
+                        is checked against spec/STEP-CONTRACT.md section 7 --
+                        dot-sourceable, no param(), id == file name, no
+                        required+default, non-empty failures each with a boolean
+                        transient, example params declared, JSON-serializable
+                        outputs, sessionKind on session inputs, at most one
+                        provides, releases backed by a session input, resource
+                        kinds declared in the spec's mustRelease table, resource
+                        steps idempotent, prefixed helper names, ASCII source.
+                        The mustRelease kind table is PARSED OUT of the spec, so
+                        adding a kind stays a one-file edit.
 docs/Parked-Ideas.md    designed-then-deliberately-shelved work, with what
                         it would take to resume. NOT on the TODO list.
                         Currently holds the whole D2 image-check line
@@ -429,15 +465,22 @@ CHANGELOG.md            iteration log
 
 ### Dot-source safety rule
 
-Only files with **no** `param()` block are ever dot-sourced: `ExcelHelpers.ps1`,
-`MappingStore.ps1`, `GfixLog.ps1`, `GfixJobList.ps1`, `EvidencePlan.ps1`,
-`EvidenceExecutor.ps1`, `ProjectLabels.ps1`, `ProgressLog.ps1`, `ScreenRegion.ps1`,
-`AlignCompare.ps1`, `ConfigOverlay.ps1`, `Common.ps1`, `WorkbookResolver.ps1`,
-`SendMetadata.ps1`, `OcrWindows.ps1`, `EvidenceImageExport.ps1`, `SnapVerify.ps1`,
-`SnapLocalize.ps1`, `OwnerFilter.ps1`, `Find-ActiveHighlightRow.ps1`,
-`ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`, `OldSnapVerify.ps1`,
-`PixelDigitMatch.ps1`, `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. All phase scripts have
-`param()` and are called via `& $path @args`.
+Only files with **no** `param()` block are ever dot-sourced. In the repo root:
+`ExcelHelpers.ps1`, `MappingStore.ps1`, `EvidencePlan.ps1`, `EvidenceExecutor.ps1`,
+`ProjectLabels.ps1`, `ProgressLog.ps1`, `AlignCompare.ps1`, `ConfigOverlay.ps1`,
+`Common.ps1`, `WorkbookResolver.ps1`, `SendMetadata.ps1`, `OcrWindows.ps1`,
+`EvidenceImageExport.ps1`, `SnapLocalize.ps1`, `Find-ActiveHighlightRow.ps1`,
+`ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. In `modules/verify/`:
+`GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
+`OwnerFilter.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
+`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`.
+In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
+All phase scripts have `param()` and are called via `& $path @args`.
+
+The dot-source **path** moved with the file -- `. (Join-Path $PSScriptRoot
+'modules/verify/SnapVerify.ps1')` -- and so did `VerifyConfig.psd1`'s
+`Scripts.SnapVerify` entry, which `VerifyTool.ps1` resolves with the same
+`Join-Path $PSScriptRoot`.
 
 The critical pattern before any dot-source:
 ```powershell

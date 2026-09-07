@@ -607,6 +607,12 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
   声明它泄漏了要不要紧)(§3.4 第 6 点,P0-R10 第四轮)
 - `provides` 或 `releases` 非空的 step,`idempotent` 必须是 `$true`
   (resume 时它们总是真执行,见 §6.2,P0-R10 第五轮)
+- step 文件里除 `Invoke-Step` 以外的每个函数,名字都以该 step id 的
+  PascalCase 形式加连字符开头(`browser.find` → `BrowserFind-*`,
+  `screen.capture_window` → `ScreenCaptureWindow-*`)。所有 step 会被同一
+  runspace 依次 dot-source:`Invoke-Step` 撞名是设计好的,由 runner 逐个
+  捕获(P1-02);裸名辅助函数(`Get-Row` 一类)则会互相覆盖,而且没有任何
+  地方会报错 —— 后加载的那个静默赢
 - 源码纯 ASCII
 
 > 上面这份清单和 `WORKFLOW-SCHEMA.md` §9 的 `ebi lint` 清单是**同一类
