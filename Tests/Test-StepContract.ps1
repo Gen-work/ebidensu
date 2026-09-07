@@ -208,6 +208,42 @@ $f = @(Get-StepContractFindings -StepId 'screen.crop' -Manifest (New-CleanManife
         -FunctionNames @('ScreenCrop-Row') -HasParamBlock $false -LoadError '' -MustRelease $mustRelease)
 Assert-True (Test-HasRule -Findings $f -Rule 'invoke_step_missing') 'a file with no Invoke-Step is reported'
 
+# A manifest with NO functions at all used to pass clean: the check was guarded
+# on the list being non-empty, so "defines nothing" read as "nothing to judge".
+$f = @(Get-StepContractFindings -StepId 'screen.crop' -Manifest (New-CleanManifest) -Text '' `
+        -FunctionNames @() -HasParamBlock $false -LoadError '' -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'invoke_step_missing') 'a file defining no functions at all is reported'
+
+# ...but an unparseable file genuinely has no AST to read names off, so claiming
+# Invoke-Step is missing there would be a finding we cannot support. $null means
+# not known, @() means really none.
+$f = @(Get-StepContractFindings -StepId 'screen.crop' -Manifest $null -Text '' `
+        -FunctionNames $null -HasParamBlock $false -LoadError 'parse error' -MustRelease $mustRelease)
+Assert-True (-not (Test-HasRule -Findings $f -Rule 'invoke_step_missing')) 'unknown function names do not fabricate an invoke_step_missing'
+Assert-True (Test-HasRule -Findings $f -Rule 'load') 'the unparseable file is still reported as a load failure'
+
+# $Manifest = 'bad' parses and dot-sources fine. Every rule below reaches for
+# .ContainsKey, so without a shape check this threw MethodNotFound and, under
+# the runner's $ErrorActionPreference = 'Stop', took the whole run down.
+$f = @(Get-StepContractFindings -StepId 'screen.crop' -Manifest 'bad' -Text '' `
+        -FunctionNames @('Invoke-Step') -HasParamBlock $false -LoadError '' -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'manifest_shape') 'a non-hashtable $Manifest is reported, not thrown'
+
+$f = @(Get-StepContractFindings -StepId 'screen.crop' -Manifest @(1, 2) -Text '' `
+        -FunctionNames @('Invoke-Step') -HasParamBlock $false -LoadError '' -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'manifest_shape') 'an array $Manifest is reported too'
+
+# Same class as the two above: a malformed inputs/outputs entry used to be
+# skipped in silence, while a malformed failures entry was reported. Now all
+# three say so.
+$m = New-CleanManifest; $m['inputs']['broken'] = 'not a hashtable'
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'a non-hashtable input spec is reported, not skipped'
+
+$m = New-CleanManifest; $m['outputs']['broken'] = 'not a hashtable'
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'a non-hashtable output spec is reported, not skipped'
+
 # ---- the same rules, through a real file on disk ---------------------------
 
 $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('stepcontract_' + [System.Guid]::NewGuid().ToString('N'))
@@ -276,6 +312,46 @@ try {
     [System.IO.File]::WriteAllText($brokenPath, '$Manifest = @{ id = ')
     $f = @(Test-StepFileContract -Path $brokenPath -MustRelease $mustRelease)
     Assert-True (Test-HasRule -Findings $f -Rule 'load') 'fixture: an unparseable file is reported, not thrown'
+    Assert-True (-not (Test-HasRule -Findings $f -Rule 'invoke_step_missing')) 'fixture: an unparseable file is not also accused of missing Invoke-Step'
+
+    # A conventionally named file with a perfectly good manifest and no code at
+    # all. It parses, it dot-sources, and it is useless -- the runner has nothing
+    # to call.
+    $emptyPath = Join-Path $tmpRoot 'screen.empty.ps1'
+    $empty = @(
+        '$Manifest = @{'
+        "    id = 'screen.empty'"
+        "    group = 'screen'"
+        "    summary = 'Does nothing at all'"
+        "    tier = 'core'"
+        "    effects = 'pure'"
+        '    idempotent = $true'
+        '    inputs = @{}'
+        '    outputs = @{}'
+        "    failures = @( @{ id='never'; transient=`$false } )"
+        "    example = @{ use='screen.empty'; with=@{} }"
+        '}'
+    ) -join [Environment]::NewLine
+    [System.IO.File]::WriteAllText($emptyPath, $empty)
+    $f = @(Test-StepFileContract -Path $emptyPath -MustRelease $mustRelease)
+    Assert-True (Test-HasRule -Findings $f -Rule 'invoke_step_missing') 'fixture: a manifest-only file has no entry point and is reported'
+
+    # A file whose $Manifest is not a hashtable. This one is the reason the
+    # shape check exists: it must come back as a finding, and the run must
+    # survive to check the files after it.
+    $shapePath = Join-Path $tmpRoot 'screen.shape.ps1'
+    $shape = @(
+        "`$Manifest = 'this is not a manifest'"
+        'function Invoke-Step { param($In, $Ctx) return @{ ok = $true } }'
+    ) -join [Environment]::NewLine
+    [System.IO.File]::WriteAllText($shapePath, $shape)
+    $f = @(Test-StepFileContract -Path $shapePath -MustRelease $mustRelease)
+    Assert-True (Test-HasRule -Findings $f -Rule 'manifest_shape') 'fixture: a malformed $Manifest is reported, not thrown'
+
+    # And prove it really did not abort anything: a good file read straight
+    # after the malformed one still comes back clean.
+    $f = @(Test-StepFileContract -Path $goodPath -MustRelease $mustRelease)
+    Assert-Equal 0 $f.Count 'fixture: a malformed step does not poison the files checked after it'
 
     # Isolation: loading one step must not leak its Invoke-Step into the next.
     # Without the child scope in Read-StepFile the second read would see the

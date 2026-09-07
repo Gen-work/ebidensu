@@ -195,20 +195,37 @@ function Get-StepContractFindings {
         Add-Finding 'non_ascii' ('non-ASCII source on line(s) ' + ($nonAscii -join ', ') + '; build Japanese from [char]')
     }
 
-    $names = @(ConvertTo-StepContractArray -Value $FunctionNames)
-    if ($names.Count -gt 0 -and -not ($names -contains 'Invoke-Step')) {
-        Add-Finding 'invoke_step_missing' 'no Invoke-Step function; a step file exports exactly $Manifest and Invoke-Step'
-    }
-    $prefix = Get-StepHelperPrefix -StepId $StepId
-    foreach ($fn in $names) {
-        if ($fn -eq 'Invoke-Step') { continue }
-        if (-not $fn.StartsWith($prefix)) {
-            Add-Finding 'helper_prefix' ("helper '" + $fn + "' must start with '" + $prefix + "'; every step is dot-sourced into one runspace and bare names overwrite each other")
+    # $null FunctionNames means "not known" -- the file could not be parsed, so
+    # there is no AST to read them off. An EMPTY array means "parsed fine, and
+    # it really defines nothing", which is a missing Invoke-Step. Collapsing the
+    # two is how a step with a manifest and no functions at all used to pass.
+    if ($null -ne $FunctionNames) {
+        $names = @(ConvertTo-StepContractArray -Value $FunctionNames)
+        if (-not ($names -contains 'Invoke-Step')) {
+            Add-Finding 'invoke_step_missing' 'no Invoke-Step function; a step file exports exactly $Manifest and Invoke-Step'
+        }
+        $prefix = Get-StepHelperPrefix -StepId $StepId
+        foreach ($fn in $names) {
+            $fnName = [string]$fn
+            if ($fnName -eq 'Invoke-Step') { continue }
+            if (-not $fnName.StartsWith($prefix)) {
+                Add-Finding 'helper_prefix' ("helper '" + $fnName + "' must start with '" + $prefix + "'; every step is dot-sourced into one runspace and bare names overwrite each other")
+            }
         }
     }
 
     if ($null -eq $Manifest) {
         Add-Finding 'manifest_missing' 'no $Manifest hashtable'
+        return $findings.ToArray()
+    }
+
+    # A step file can assign $Manifest anything at all and still parse and
+    # dot-source cleanly. Every rule below reaches for .ContainsKey, so this has
+    # to be a finding rather than a method-not-found exception: the checker's
+    # job is to report a malformed step next to the others, not to take the
+    # whole test run down with it.
+    if (-not ($Manifest -is [System.Collections.IDictionary])) {
+        Add-Finding 'manifest_shape' ('$Manifest is ' + $Manifest.GetType().Name + ', not a hashtable')
         return $findings.ToArray()
     }
 
@@ -228,7 +245,10 @@ function Get-StepContractFindings {
         foreach ($key in $inputs.Keys) {
             [void]$inputNames.Add([string]$key)
             $spec = $inputs[$key]
-            if (-not ($spec -is [System.Collections.IDictionary])) { continue }
+            if (-not ($spec -is [System.Collections.IDictionary])) {
+                Add-Finding 'field_spec_shape' ("input '" + $key + "' is not a hashtable, so none of its rules can be checked")
+                continue
+            }
 
             $hasRequired = $spec.ContainsKey('required') -and [bool]$spec['required']
             $hasDefault  = $spec.ContainsKey('default')
@@ -255,7 +275,10 @@ function Get-StepContractFindings {
     if ($outputs -is [System.Collections.IDictionary]) {
         foreach ($key in $outputs.Keys) {
             $spec = $outputs[$key]
-            if (-not ($spec -is [System.Collections.IDictionary])) { continue }
+            if (-not ($spec -is [System.Collections.IDictionary])) {
+                Add-Finding 'field_spec_shape' ("output '" + $key + "' is not a hashtable, so none of its rules can be checked")
+                continue
+            }
             $type = if ($spec.ContainsKey('type')) { [string]$spec['type'] } else { '' }
             if (-not ($serializable -contains $type)) {
                 Add-Finding 'output_not_serializable' ("output '" + $key + "' has type '" + $type + "', which is not JSON-serializable; handles and COM objects go through " + '$Ctx.Session')
@@ -351,7 +374,7 @@ function Read-StepFile {
         StepId        = Get-StepIdFromFileName -FileName (Split-Path -Leaf $Path)
         Manifest      = $null
         Text          = ''
-        FunctionNames = @()
+        FunctionNames = $null   # $null = not known (parse failed); @() = really none
         HasParamBlock = $false
         LoadError     = ''
     }

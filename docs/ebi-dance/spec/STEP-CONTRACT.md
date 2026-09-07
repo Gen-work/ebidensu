@@ -607,6 +607,14 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
   声明它泄漏了要不要紧)(§3.4 第 6 点,P0-R10 第四轮)
 - `provides` 或 `releases` 非空的 step,`idempotent` 必须是 `$true`
   (resume 时它们总是真执行,见 §6.2,P0-R10 第五轮)
+- `$Manifest` 必须是 hashtable,`inputs`/`outputs`/`failures` 的每一项也是。
+  一个 step 文件可以给 `$Manifest` 赋任何值(`$Manifest = 'bad'`)而照样
+  解析成功、dot-source 成功 —— 形状不对要报成一条 finding,**不能**让检查器
+  自己抛异常:检查器的职责是把这个坏 step 和别的 step 一起报出来,而不是
+  拖着整轮测试一起死
+- 每个 step 文件都定义了 `Invoke-Step`。注意「文件里一个函数都没有」和
+  「文件解析失败所以读不到函数名」是两回事:前者是缺入口,要报;后者只能
+  报解析失败本身,不能顺带断言入口缺失 —— 那是一条无法支撑的结论
 - step 文件里除 `Invoke-Step` 以外的每个函数,名字都以该 step id 的
   PascalCase 形式加连字符开头(`browser.find` → `BrowserFind-*`,
   `screen.capture_window` → `ScreenCaptureWindow-*`)。所有 step 会被同一
