@@ -414,7 +414,7 @@
   不进 catalog,不许被新工作流依赖**。测试跟着移。
 - **完成**:测试全绿;`legacy/README.md` 写清楚退役条件
 
-### [ ] P0-06 Tests 适配 + 契约检查器
+### [x] P0-06 Tests 适配 + 契约检查器
 - **估** 90min | **依赖** P0-04, P0-05, P0-R2, P0-R5 | **读** `spec/STEP-CONTRACT.md` §7
 - **做**:`Tests/Run-Tests.ps1` 支持新目录树;新增 `Tests/Test-StepContract.ps1`,对
   `modules/**` 的每个 step 检查:能 dot-source、无 `param()`、`$Manifest.id` == 文件名、

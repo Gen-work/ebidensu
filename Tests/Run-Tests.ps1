@@ -36,10 +36,27 @@ if ($parseErrors -eq 0) {
     Write-Host ('  OK: {0} files parsed clean' -f $psFiles.Count) -ForegroundColor Green
 }
 
+# Where those files live. The refactor moves scripts out of the repo root into
+# modules/ (steps), legacy/ (retired) and Tests/, so print the split: a file
+# that lands in the wrong area is otherwise invisible in a single total.
+$areas = [ordered]@{}
+foreach ($f in $psFiles) {
+    $rel  = $f.FullName.Substring($repoRoot.Length).TrimStart('\', '/')
+    $sep  = $rel.IndexOfAny(@([char]'\', [char]'/'))
+    $area = if ($sep -gt 0) { $rel.Substring(0, $sep) } else { '(root)' }
+    if (-not $areas.Contains($area)) { $areas[$area] = 0 }
+    $areas[$area] = $areas[$area] + 1
+}
+foreach ($area in $areas.Keys) {
+    Write-Host ('    {0,-12} {1,4}' -f $area, $areas[$area]) -ForegroundColor DarkGray
+}
+
 Write-Host ''
 Write-Host '===== Unit tests =====' -ForegroundColor Green
 $totalFail = 0
-$testFiles = @(Get-ChildItem -LiteralPath $here -Filter 'Test-*.ps1' -File | Sort-Object Name)
+# Recursive: Tests/ gains subdirectories as the module tree grows, and a test
+# that silently stops being discovered is worse than one that fails.
+$testFiles = @(Get-ChildItem -LiteralPath $here -Filter 'Test-*.ps1' -File -Recurse | Sort-Object FullName)
 foreach ($t in $testFiles) {
     & $t.FullName
     $rc = $LASTEXITCODE
