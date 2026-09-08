@@ -147,6 +147,29 @@ function ConvertTo-StepContractArray {
     return $out.ToArray()
 }
 
+function Test-StepDictHasKey {
+    <#
+      Does this dictionary have that key?
+
+      Goes through IDictionary.Contains rather than .ContainsKey, and that is
+      the whole point: [ordered]@{} is an OrderedDictionary, which satisfies
+      -is [IDictionary] and has Contains but NOT ContainsKey. Calling
+      .ContainsKey on one throws MethodNotFound, and under the runner's
+      $ErrorActionPreference = 'Stop' that ends the entire run. Reading every
+      key through here makes "a malformed step cannot terminate the checker" a
+      property of the code rather than something each call site has to
+      remember.
+
+      Note this is separate from the contract rule below, which still requires
+      a plain [hashtable]: this function is about not crashing, that rule is
+      about there being exactly one shape downstream tooling has to handle.
+    #>
+    param($Dict, [string]$Key)
+    if ($null -eq $Dict) { return $false }
+    if (-not ($Dict -is [System.Collections.IDictionary])) { return $false }
+    return ([System.Collections.IDictionary]$Dict).Contains($Key)
+}
+
 function Get-StepContractFindings {
     <#
       Judge one step against the section 7 rule list. PURE -- no file access,
@@ -220,45 +243,57 @@ function Get-StepContractFindings {
     }
 
     # A step file can assign $Manifest anything at all and still parse and
-    # dot-source cleanly. Every rule below reaches for .ContainsKey, so this has
-    # to be a finding rather than a method-not-found exception: the checker's
-    # job is to report a malformed step next to the others, not to take the
-    # whole test run down with it.
-    if (-not ($Manifest -is [System.Collections.IDictionary])) {
-        Add-Finding 'manifest_shape' ('$Manifest is ' + $Manifest.GetType().Name + ', not a hashtable')
+    # dot-source cleanly, so a wrong shape has to be a finding rather than an
+    # exception: the checker's job is to report a malformed step next to the
+    # others, not to take the whole test run down with it.
+    #
+    # The bar is a plain [hashtable], not merely IDictionary. [ordered]@{} would
+    # satisfy IDictionary and work fine here, but the point of one documented
+    # shape is that every consumer downstream -- runner, catalog generation
+    # (P1-06), lint -- gets to assume it without each having to survive every
+    # dictionary implementation .NET offers. Section 2 writes @{}; this rule is
+    # what makes that a guarantee rather than an example.
+    if (-not ($Manifest -is [hashtable])) {
+        Add-Finding 'manifest_shape' ('$Manifest is ' + $Manifest.GetType().Name + ', not a hashtable; write it as @{} (an [ordered]@{} is not a hashtable)')
         return $findings.ToArray()
     }
 
     # -- identity ------------------------------------------------------------
 
-    $declaredId = if ($Manifest.ContainsKey('id')) { [string]$Manifest['id'] } else { '' }
+    $declaredId = if ((Test-StepDictHasKey -Dict $Manifest -Key 'id')) { [string]$Manifest['id'] } else { '' }
     if ($declaredId -ne $StepId) {
         Add-Finding 'id_mismatch' ("manifest id '" + $declaredId + "' does not match the file name '" + $StepId + "'")
     }
 
     # -- inputs --------------------------------------------------------------
 
-    $inputs = if ($Manifest.ContainsKey('inputs')) { $Manifest['inputs'] } else { $null }
+    $inputs = if ((Test-StepDictHasKey -Dict $Manifest -Key 'inputs')) { $Manifest['inputs'] } else { $null }
     $inputNames    = New-Object System.Collections.ArrayList
     $sessionKinds  = New-Object System.Collections.ArrayList
-    if ($inputs -is [System.Collections.IDictionary]) {
+    if ($null -ne $inputs -and -not ($inputs -is [hashtable])) {
+        # Present but not a map at all: inputs = 'bad', inputs = @(...). Every
+        # per-input rule below is unreachable, so saying nothing would let the
+        # step through clean -- the same silence the entry-level check fixed.
+        Add-Finding 'field_container_shape' ('inputs is ' + $inputs.GetType().Name + ', not a hashtable; no input can be checked')
+    }
+    if ($inputs -is [hashtable]) {
         foreach ($key in $inputs.Keys) {
             [void]$inputNames.Add([string]$key)
             $spec = $inputs[$key]
-            if (-not ($spec -is [System.Collections.IDictionary])) {
+            if (-not ($spec -is [hashtable])) {
                 Add-Finding 'field_spec_shape' ("input '" + $key + "' is not a hashtable, so none of its rules can be checked")
                 continue
             }
 
-            $hasRequired = $spec.ContainsKey('required') -and [bool]$spec['required']
-            $hasDefault  = $spec.ContainsKey('default')
+            $hasRequired = (Test-StepDictHasKey -Dict $spec -Key 'required') -and [bool]$spec['required']
+            $hasDefault  = (Test-StepDictHasKey -Dict $spec -Key 'default')
             if ($hasRequired -and $hasDefault) {
                 Add-Finding 'required_and_default' ("input '" + $key + "' declares both required and default")
             }
 
-            $type = if ($spec.ContainsKey('type')) { [string]$spec['type'] } else { '' }
+            $type = if ((Test-StepDictHasKey -Dict $spec -Key 'type')) { [string]$spec['type'] } else { '' }
             if ($type -eq 'session') {
-                $kind = if ($spec.ContainsKey('sessionKind')) { [string]$spec['sessionKind'] } else { '' }
+                $kind = if ((Test-StepDictHasKey -Dict $spec -Key 'sessionKind')) { [string]$spec['sessionKind'] } else { '' }
                 if ([string]::IsNullOrWhiteSpace($kind)) {
                     Add-Finding 'session_input_no_kind' ("input '" + $key + "' is type='session' but declares no sessionKind")
                 } else {
@@ -271,15 +306,21 @@ function Get-StepContractFindings {
     # -- outputs -------------------------------------------------------------
 
     $serializable = Get-StepContractSerializableTypes
-    $outputs = if ($Manifest.ContainsKey('outputs')) { $Manifest['outputs'] } else { $null }
-    if ($outputs -is [System.Collections.IDictionary]) {
+    $outputs = if ((Test-StepDictHasKey -Dict $Manifest -Key 'outputs')) { $Manifest['outputs'] } else { $null }
+    if ($null -ne $outputs -and -not ($outputs -is [hashtable])) {
+        # A bad outputs container is the more dangerous of the two: with no
+        # entries to walk, the JSON-serializable rule never fires and the step
+        # otherwise reads as clean.
+        Add-Finding 'field_container_shape' ('outputs is ' + $outputs.GetType().Name + ', not a hashtable; no output can be checked')
+    }
+    if ($outputs -is [hashtable]) {
         foreach ($key in $outputs.Keys) {
             $spec = $outputs[$key]
-            if (-not ($spec -is [System.Collections.IDictionary])) {
+            if (-not ($spec -is [hashtable])) {
                 Add-Finding 'field_spec_shape' ("output '" + $key + "' is not a hashtable, so none of its rules can be checked")
                 continue
             }
-            $type = if ($spec.ContainsKey('type')) { [string]$spec['type'] } else { '' }
+            $type = if ((Test-StepDictHasKey -Dict $spec -Key 'type')) { [string]$spec['type'] } else { '' }
             if (-not ($serializable -contains $type)) {
                 Add-Finding 'output_not_serializable' ("output '" + $key + "' has type '" + $type + "', which is not JSON-serializable; handles and COM objects go through " + '$Ctx.Session')
             }
@@ -288,20 +329,20 @@ function Get-StepContractFindings {
 
     # -- failures ------------------------------------------------------------
 
-    $failures = @(ConvertTo-StepContractArray -Value $(if ($Manifest.ContainsKey('failures')) { $Manifest['failures'] } else { $null }))
+    $failures = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'failures')) { $Manifest['failures'] } else { $null }))
     if ($failures.Count -eq 0) {
         Add-Finding 'failures_empty' 'failures must enumerate every failure id this step can return'
     }
     foreach ($f in $failures) {
-        if (-not ($f -is [System.Collections.IDictionary])) {
+        if (-not ($f -is [hashtable])) {
             Add-Finding 'failure_shape' 'each failures entry must be a hashtable with id and transient'
             continue
         }
-        $fid = if ($f.ContainsKey('id')) { [string]$f['id'] } else { '' }
+        $fid = if ((Test-StepDictHasKey -Dict $f -Key 'id')) { [string]$f['id'] } else { '' }
         if ([string]::IsNullOrWhiteSpace($fid)) {
             Add-Finding 'failure_shape' 'a failures entry has no id'
         }
-        if (-not $f.ContainsKey('transient')) {
+        if (-not (Test-StepDictHasKey -Dict $f -Key 'transient')) {
             Add-Finding 'failure_shape' ("failure '" + $fid + "' has no transient flag; retry policy needs it")
         } elseif (-not ($f['transient'] -is [bool])) {
             Add-Finding 'failure_shape' ("failure '" + $fid + "' has a non-boolean transient")
@@ -310,10 +351,10 @@ function Get-StepContractFindings {
 
     # -- example -------------------------------------------------------------
 
-    $example = if ($Manifest.ContainsKey('example')) { $Manifest['example'] } else { $null }
-    if ($example -is [System.Collections.IDictionary] -and $example.ContainsKey('with')) {
+    $example = if ((Test-StepDictHasKey -Dict $Manifest -Key 'example')) { $Manifest['example'] } else { $null }
+    if ($example -is [hashtable] -and (Test-StepDictHasKey -Dict $example -Key 'with')) {
         $with = $example['with']
-        if ($with -is [System.Collections.IDictionary]) {
+        if ($with -is [hashtable]) {
             foreach ($key in $with.Keys) {
                 # 'as' is a runner-reserved field lifted out of 'with' before
                 # the step ever sees it, so it is never declared in inputs.
@@ -327,8 +368,8 @@ function Get-StepContractFindings {
 
     # -- session resources ---------------------------------------------------
 
-    $provides = @(ConvertTo-StepContractArray -Value $(if ($Manifest.ContainsKey('provides')) { $Manifest['provides'] } else { $null }))
-    $releases = @(ConvertTo-StepContractArray -Value $(if ($Manifest.ContainsKey('releases')) { $Manifest['releases'] } else { $null }))
+    $provides = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'provides')) { $Manifest['provides'] } else { $null }))
+    $releases = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'releases')) { $Manifest['releases'] } else { $null }))
 
     if ($provides.Count -gt 1) {
         Add-Finding 'provides_multiple' ('provides has ' + $provides.Count + ' kinds; one call registers at most one resource, so split the step')
@@ -345,14 +386,13 @@ function Get-StepContractFindings {
     foreach ($kind in $provides) { [void]$declaredKinds.Add([string]$kind) }
     foreach ($kind in $releases) { [void]$declaredKinds.Add([string]$kind) }
     foreach ($k in $declaredKinds) {
-        $known = ($MustRelease -is [System.Collections.IDictionary]) -and $MustRelease.ContainsKey($k)
-        if (-not $known) {
+        if (-not (Test-StepDictHasKey -Dict $MustRelease -Key $k)) {
             Add-Finding 'kind_undeclared' ("resource kind '" + $k + "' is not in the mustRelease table in STEP-CONTRACT.md section 3.4; declare whether leaking it matters")
         }
     }
 
     if ($declaredKinds.Count -gt 0) {
-        $idempotent = $Manifest.ContainsKey('idempotent') -and ($Manifest['idempotent'] -is [bool]) -and $Manifest['idempotent']
+        $idempotent = (Test-StepDictHasKey -Dict $Manifest -Key 'idempotent') -and ($Manifest['idempotent'] -is [bool]) -and $Manifest['idempotent']
         if (-not $idempotent) {
             Add-Finding 'resource_not_idempotent' 'a step that provides or releases a Session resource must be idempotent; resume always really runs it'
         }
