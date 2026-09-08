@@ -997,10 +997,51 @@ of the old TODO placeholder. All mapping I/O goes through MappingStore (atomic
 writes). Every phase appends events to `status\progress.jsonl`; watch them live
 with `Watch-MappingProgress.ps1` (read-only, never locks the CSV).
 
-To run the tests on Windows: `powershell -File Tests\Run-Tests.ps1` (parse-checks
-every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encoding.ps1`.
+### Running the tests
+
+**Windows (the real check).** Windows PowerShell 5.1 is the target runtime --
+only a run here proves the binder behaviour this repo has been bitten by twice:
+
+```powershell
+powershell -File Tests\Run-Tests.ps1      # parse-checks every .ps1 + runs the unit tests
+powershell -File Check-Encoding.ps1       # encoding policy + label self-test
+```
+
+**Linux / cloud session (parse + pure logic only).** No PowerShell is installed
+in the cloud dev environment, so a session that wants to run the suite has to
+fetch one first. Two commands, ~70 MB, no root package manager needed:
+
+```bash
+curl -sSL -o /tmp/pwsh.tar.gz \
+  https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/powershell-7.4.6-linux-x64.tar.gz
+mkdir -p /tmp/pwsh && tar -xzf /tmp/pwsh.tar.gz -C /tmp/pwsh && chmod +x /tmp/pwsh/pwsh
+/tmp/pwsh/pwsh -NoProfile -File Tests/Run-Tests.ps1
+```
+
+`/tmp` is reclaimed with the container, so this is per session, not once.
+
+**What a Linux run does and does not prove.** It proves the tree parses and the
+pure functions are correct. It does NOT prove PS 5.1 semantics -- the binder,
+COM, GDI+, SendKeys and Excel are all absent. Two suite failures are Linux-only
+artifacts and are EXPECTED to be red here and green on Windows: both
+`Test-EvidencePlan` path cases hardcode a backslash while `Join-Path` yields a
+forward slash on Linux. Anything else red is real.
 
 ## Known issues / open points
+
+- **`Test-JenkinsDownload`: one real, undecided failure.** `a stamped mapping
+  id also resolves to the newest listed entry` fails, and has since before the
+  ebi-dance refactor touched anything. It is a genuine disagreement between the
+  test and `Select-JenkinsDownloadFiles`, not a platform artifact. The matcher
+  uses a bidirectional `StartsWith`, which bridges plain <-> stamped but NOT
+  stamped <-> a DIFFERENTLY stamped name (neither is a prefix of the other), so
+  `JIDSU86S.260726...` never considers `JIDSU86S.260729...` a candidate.
+  Undecided: does a batch-stamped `Correl_ID_S` name the TRANSFER (all reruns of
+  that base id are candidates, newest wins -- the test's reading) or ONE RUN
+  (match it exactly -- the `Find-DataFile` v2.21.0 direction)? Either way the
+  code needs a change: today's pass/fail is decided by mtime sorting, so a
+  stamped id whose plainly-named sibling happens to be newer returns the sibling,
+  which satisfies neither reading.
 
 - **Not yet run on Windows/Excel**: this refactor was authored in a Linux cloud
   env without PowerShell or Excel. Run `Tests\Run-Tests.ps1`, then smoke-test
