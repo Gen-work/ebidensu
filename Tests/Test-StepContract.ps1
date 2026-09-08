@@ -244,6 +244,73 @@ $m = New-CleanManifest; $m['outputs']['broken'] = 'not a hashtable'
 $f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
 Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'a non-hashtable output spec is reported, not skipped'
 
+# ---- no dictionary flavour may terminate the checker -----------------------
+
+# [ordered]@{} satisfies -is [IDictionary] but has Contains, NOT ContainsKey.
+# An IDictionary guard therefore ACCEPTS it and the first key read then throws
+# MethodNotFound, which under the runner's 'Stop' preference ends the whole run.
+# Every key is now read through Test-StepDictHasKey, and the contract rule asks
+# for a plain [hashtable], so this is a finding instead.
+Assert-True (Test-StepDictHasKey -Dict @{ a = 1 } -Key 'a')            'the key helper reads a hashtable'
+Assert-True (Test-StepDictHasKey -Dict ([ordered]@{ a = 1 }) -Key 'a') 'the key helper reads an ordered dictionary, which has no ContainsKey'
+Assert-True (-not (Test-StepDictHasKey -Dict @{ a = 1 } -Key 'b'))     'a missing key is false, not an error'
+Assert-True (-not (Test-StepDictHasKey -Dict 'not a dict' -Key 'a'))   'a non-dictionary is false, not an error'
+Assert-True (-not (Test-StepDictHasKey -Dict $null -Key 'a'))          '$null is false, not an error'
+
+$ordered = [ordered]@{
+    id         = 'screen.crop'
+    idempotent = $true
+    inputs     = @{}
+    outputs    = @{}
+    failures   = @(@{ id = 'x'; transient = $false })
+}
+$f = @(Get-CleanFindings -Manifest $ordered -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'manifest_shape') 'an [ordered] manifest is reported, not thrown'
+
+$m = New-CleanManifest; $m['inputs']['ord'] = [ordered]@{ type = 'string' }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'an [ordered] input spec is reported, not thrown'
+
+$m = New-CleanManifest; $m['outputs']['ord'] = [ordered]@{ type = 'string' }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'an [ordered] output spec is reported, not thrown'
+
+$m = New-CleanManifest; $m['failures'] = @([ordered]@{ id = 'x'; transient = $false })
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'failure_shape') 'an [ordered] failures entry is reported, not thrown'
+
+$m = New-CleanManifest; $m['example'] = [ordered]@{ use = 'screen.crop'; with = @{ path = 'a.png' } }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True ($f.Count -ge 0) 'an [ordered] example does not throw'
+
+# ---- a present-but-non-map inputs/outputs container -------------------------
+
+# Reported now: with no entries to walk, every per-field rule is unreachable and
+# the step would otherwise read as clean. The outputs case is the worse of the
+# two, since the JSON-serializable rule is the one that goes missing.
+$m = New-CleanManifest; $m['inputs'] = 'bad'
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'field_container_shape') 'a string inputs container is reported'
+
+$m = New-CleanManifest; $m['inputs'] = @('a', 'b')
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'field_container_shape') 'an array inputs container is reported'
+
+$m = New-CleanManifest; $m['outputs'] = 'bad'
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'field_container_shape') 'a string outputs container is reported'
+
+$m = New-CleanManifest; $m['inputs'] = [ordered]@{ path = @{ type = 'path' } }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'field_container_shape') 'an [ordered] inputs container is reported, not thrown'
+
+# A manifest missing inputs/outputs entirely is not a container problem -- there
+# is nothing present to be the wrong shape.
+$m = New-CleanManifest; $m.Remove('inputs'); $m.Remove('outputs')
+$m['example'] = @{ use = 'screen.crop'; with = @{} }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (-not (Test-HasRule -Findings $f -Rule 'field_container_shape')) 'an absent inputs/outputs is not reported as a bad container'
+
 # ---- the same rules, through a real file on disk ---------------------------
 
 $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('stepcontract_' + [System.Guid]::NewGuid().ToString('N'))
@@ -348,8 +415,54 @@ try {
     $f = @(Test-StepFileContract -Path $shapePath -MustRelease $mustRelease)
     Assert-True (Test-HasRule -Findings $f -Rule 'manifest_shape') 'fixture: a malformed $Manifest is reported, not thrown'
 
-    # And prove it really did not abort anything: a good file read straight
-    # after the malformed one still comes back clean.
+    # A file whose manifest and nested specs are all [ordered]@{}. It parses, it
+    # dot-sources, and before the key reads went through Test-StepDictHasKey it
+    # took the run down at the first identity check.
+    $ordPath = Join-Path $tmpRoot 'screen.ordered.ps1'
+    $ord = @(
+        '$Manifest = [ordered]@{'
+        "    id = 'screen.ordered'"
+        "    group = 'screen'"
+        "    summary = 'Ordered manifest'"
+        "    tier = 'core'"
+        "    effects = 'pure'"
+        '    idempotent = $true'
+        "    inputs = [ordered]@{ p = [ordered]@{ type='path'; required=`$true } }"
+        "    outputs = [ordered]@{ q = [ordered]@{ type='path' } }"
+        "    failures = @( [ordered]@{ id='x'; transient=`$false } )"
+        "    example = [ordered]@{ use='screen.ordered'; with=@{ p='a.png' } }"
+        '}'
+        'function Invoke-Step { param($In, $Ctx) return @{ ok = $true } }'
+    ) -join [Environment]::NewLine
+    [System.IO.File]::WriteAllText($ordPath, $ord)
+    $f = @(Test-StepFileContract -Path $ordPath -MustRelease $mustRelease)
+    Assert-True (Test-HasRule -Findings $f -Rule 'manifest_shape') 'fixture: an [ordered] manifest is reported, not thrown'
+
+    # A file whose inputs/outputs are present but are not maps at all.
+    $contPath = Join-Path $tmpRoot 'screen.container.ps1'
+    $cont = @(
+        '$Manifest = @{'
+        "    id = 'screen.container'"
+        "    group = 'screen'"
+        "    summary = 'Bad containers'"
+        "    tier = 'core'"
+        "    effects = 'pure'"
+        '    idempotent = $true'
+        "    inputs = 'bad'"
+        "    outputs = @('also bad')"
+        "    failures = @( @{ id='x'; transient=`$false } )"
+        "    example = @{ use='screen.container'; with=@{} }"
+        '}'
+        'function Invoke-Step { param($In, $Ctx) return @{ ok = $true } }'
+    ) -join [Environment]::NewLine
+    [System.IO.File]::WriteAllText($contPath, $cont)
+    $f = @(Test-StepFileContract -Path $contPath -MustRelease $mustRelease)
+    $containerHits = 0
+    foreach ($finding in $f) { if ($finding.rule -eq 'field_container_shape') { $containerHits++ } }
+    Assert-Equal 2 $containerHits 'fixture: both a bad inputs and a bad outputs container are reported'
+
+    # And prove none of them aborted anything: a good file read straight after
+    # the malformed ones still comes back clean.
     $f = @(Test-StepFileContract -Path $goodPath -MustRelease $mustRelease)
     Assert-Equal 0 $f.Count 'fixture: a malformed step does not poison the files checked after it'
 
