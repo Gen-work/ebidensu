@@ -1,3 +1,75 @@
+## 2026-09-18 - GiftMqProcessTime: standalone 処理時間 filler from the GIFT MQ page (v2.22.0)
+
+The operator's daily hand routine for the 処理時間(BIX).xlsx sheet -- read
+each job's start off the GIFT MQ LIST page, click every row's Detail for the
+end, read the count off Teams, type it all in -- becomes one run of a new
+standalone tool. Deliberately NOT a VerifyTool phase: it reads the
+operator's own `mapping.xlsx` and writes the operator's own
+`処理時間(<Tag>).xlsx`, nothing else in the work folder.
+
+### Added
+- **`GiftMqProcessTime.ps1`** (repo root, standalone, has `param()`):
+  reads `mapping.xlsx` (sheet `mapping`: `ジョブ` / `担当` / `GIFT実行日` /
+  `GIFT TIME`, columns found by header), captures the GIFT MQ "Transfer
+  status inquiry results" LIST page once (Ctrl+A/Ctrl+C via
+  `Read-PageText.ps1`, archived under `<output dir>\giftmq_text\`, reusable
+  with `-PageTextFile`), matches each scheduled job to a page record inside
+  a +-`-ToleranceMinutes` (10) window with the day's order as tie-break,
+  opens each matched row's Detail page by keyboard and reads
+  `INSERTDATETIME` as the end time, takes counts from a pasted Teams text
+  (`-TeamsTextFile`), and writes the output sheet: an existing GIFT row for
+  the job is updated (blank cells only; `-Force` rewrites), otherwise a
+  GIFT+GFIX pair is appended into the sheet's spare placeholder rows or
+  after the last row with formats copied. Start/end are real Excel
+  date/time cells (`yyyy/mm/dd hh:mm:ss`), `=E-D` is kept, the count is
+  `<n>件` text. `-NoDetail`, `-DryRun`, `-NonInteractive`, `-Owner`,
+  `-Jobs`, `-FromDate`/`-ToDate` (default: the page's own days),
+  `-CorrelId`. The end-of-run summary lists every end time / count still
+  blank and every scheduled job with no page record, so the operator
+  types only those.
+- **Detail navigation, verified per click**: `-DetailNav Find` (default)
+  Ctrl+F's the record's own Send date text, Esc, Tab (the row's Detail
+  button is the next focusable), Enter; `-DetailNav Tab` Ctrl+F's the page
+  title then Tabs record-No times (+ `-TabsBeforeFirstDetail`, `-1` = try
+  0/1/2 on the first record and keep the one that verifies). Every detail
+  page reached is checked against its record (`CORRELID(CHAR)` +
+  `SENDDATETIME` to the second) before the value is trusted; a mismatch
+  tries the other method and finally asks the operator. Return via the
+  page's Back button (`-BackMethod Button`) or `Alt+Left`.
+- **`modules/verify/GiftMqProcessTime.ps1`** (pure, dot-source, ASCII):
+  `ConvertFrom-GiftMqListText` (two-line records: No / nodes / Correlid /
+  Send date / Tmode / Recv date / codes + Msgid / Reccnt / File size;
+  TAB or whitespace separated; single-digit hours), `ConvertFrom-GiftMq
+  DetailText`, `ConvertTo-GiftMqDetailDateTime`, `Get-GiftMqDetailEndTime`
+  (truncated to the second), `Test-GiftMqDetailMatchesRecord`,
+  `ConvertTo-GiftMqScheduledTime` (text / Excel serial date + time; the
+  float artefacts a time serial shows as text -- `10:14:59.9999999999984025`
+  -- round to 10:15:00), `Get-GiftMqMappingColumns`, `ConvertTo-GiftMq
+  Schedules` (owner / job / date-window filters), `Resolve-GiftMqJobMatches`
+  (ok / ambiguous / notime / none + the unmatched page records),
+  `Get-GiftMqJobFromExcelName` / `Get-GiftMqExcelNameFromJob` (5th char
+  W <-> J), `ConvertFrom-GiftMqTeamsText` / `Get-GiftMqTeamsCountMap`
+  (`ジョブ:<W-name> ... (送信予定:N件)`, ASCII or full-width colon, last
+  mention wins), `Format-GiftMqStamp` / `Format-GiftMqCount`,
+  `Get-GiftMqOutputPlan`, `Get-GiftMqDetailTabCount`. Unit-tested:
+  `Tests\Test-GiftMqProcessTime.ps1` (105 cases, real page-text fixtures).
+- `docs/GiftMqProcessTime.md`: the hand procedure, the run, what is
+  written where, the two navigation methods, and the office-PC
+  confirmation order.
+
+### Notes
+- Two conventions surface when the sheet mixes hand-typed and tool rows:
+  hand rows typed from the HM page carry a start ~1 s later than the MQ
+  Send date (a filled start is never rewritten), and the MQ Detail's
+  INSERTDATETIME end is typically 3-8 s after the send where the HM end
+  was ~3 s. The tool records what the MQ page says; what 処理時間 should
+  mean is the operator's call.
+- Teams is not reachable from the tool (no Graph access from the office
+  PC); the pasted-text route is the automation offered.
+- Authored without Windows/Excel/Edge: pure logic unit-tested, the COM +
+  SendKeys driver static-checked only. Confirm on an office PC in the
+  order `docs/GiftMqProcessTime.md` gives (`-DryRun -NoDetail` first).
+
 ## 2026-08-04 - Deterministic 3<->9 handling + timestamped-id tolerance cleanup + docs (v2.21.0)
 
 Four operator-reported problems and a documentation pass.
