@@ -189,6 +189,24 @@ OwnerFilter.ps1         pure WBS owner-cell matching (Test-OwnerMatch: exact /
                         + Select-JobsByOwner (filter explicit -Add JOB_NAMEs by
                         WBS owner; jobs absent from WBS kept as temp). No Excel.
                         Unit-tested (Tests\Test-OwnerFilter.ps1).
+GiftMqProcessTime.ps1   pure library behind the standalone GiftMqProcessTime
+                        .ps1 driver (v2.22.0): GIFT MQ LIST-page Ctrl+A text
+                        -> records (ConvertFrom-GiftMqListText; two-line
+                        records, Send date = job START), Detail-page text ->
+                        fields (ConvertFrom-GiftMqDetailText;
+                        Get-GiftMqDetailEndTime = INSERTDATETIME = END,
+                        Test-GiftMqDetailMatchesRecord = the per-click
+                        safety net), the operator's mapping.xlsx schedule
+                        (Get-GiftMqMappingColumns / ConvertTo-GiftMq
+                        Schedules / ConvertTo-GiftMqScheduledTime -- Excel
+                        float-artefact times rounded), schedule-window +
+                        day-order matching (Resolve-GiftMqJobMatches:
+                        ok / ambiguous / notime / none), Teams chat text ->
+                        counts (ConvertFrom-GiftMqTeamsText, W-name -> J-job
+                        via Get-GiftMqJobFromExcelName), output-sheet row
+                        plan (Get-GiftMqOutputPlan: update blank cells /
+                        append pair; n-th match <-> n-th row). No COM.
+                        Unit-tested (Tests\Test-GiftMqProcessTime.ps1).
 
   -- legacy/ : retired by P0-05. These exist only to clear the backlog of
      OCR-only old HM snapshots; outside the step catalog, no new workflow
@@ -431,6 +449,21 @@ Pack-LlmContext.ps1     packs project context to clipboard for LLM ingestion
 Apply-LlmPatch.ps1      applies XML / git-unified-diff patches from clipboard
 Export-DailyPatch.ps1   extracts today's git diff to clipboard
 Parse-GiftMq.ps1        parses GIFT/MQ transfer status page text
+GiftMqProcessTime.ps1   STANDALONE (not a phase, has param(): call via -File /
+                        &) daily 処理時間(<Tag>).xlsx filler from the GIFT MQ
+                        page (v2.22.0, docs/GiftMqProcessTime.md): reads the
+                        operator's own mapping.xlsx (JOB / owner / GIFT run
+                        date / GIFT TIME), captures the MQ LIST page once
+                        (Send date = start), keyboard-navigates each row's
+                        Detail (Ctrl+F row text -> Esc -> Tab -> Enter, or
+                        Ctrl+F title -> Tab N; every page reached is verified
+                        against its record before INSERTDATETIME = end is
+                        trusted; Back button / Alt+Left to return), takes
+                        counts from a pasted Teams text file, and updates /
+                        appends GIFT rows in the output sheet (real Excel
+                        date/time cells, =E-D kept, '<n>件' text). Prints the
+                        end/count cells still blank so the operator types
+                        only those. COM + SendKeys glue, static-checked only.
 Parse-JenkinsList.ps1   parses Jenkins file list page text (standalone; with
                         -CorrelId resolves the NEWEST matching entry, not the
                         first listed)
@@ -472,7 +505,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `EvidenceImageExport.ps1`, `SnapLocalize.ps1`, `Find-ActiveHighlightRow.ps1`,
 `ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. In `modules/verify/`:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
-`OwnerFilter.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
+`OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`.
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.
@@ -634,7 +667,31 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-08-04 v2.21.0)
+## Current state (last bump: 2026-09-18 v2.22.0)
+
+v2.22.0 (GiftMqProcessTime: standalone 処理時間 filler from the GIFT MQ
+page): the operator's daily hand routine -- match the leader's schedule
+(own `mapping.xlsx`: JOB / 担当 / GIFT実行日 / GIFT TIME) to the GIFT MQ
+LIST page (Send date = start), click every row's Detail for
+INSERTDATETIME (= end), read counts off the Teams chat, type it all into
+`処理時間(BIX).xlsx` -- becomes one run of the new standalone
+`GiftMqProcessTime.ps1` (NOT a VerifyTool phase; touches only the two
+operator workbooks). Pure logic in `modules/verify/GiftMqProcessTime.ps1`
+(unit-tested, 105 cases): two-line LIST record parser, Detail key/value
+parser, schedule-window (+-10 min) + day-order matching with
+ok/ambiguous/notime/none statuses, Excel float-artefact time rounding
+(`10:14:59.99999` -> 10:15:00), Teams `送信予定:N件` extraction (W-name ->
+J-job), and the output-sheet plan (update blank cells of an existing GIFT
+row, else append a GIFT+GFIX pair; n-th match pairs with n-th row). The
+driver's Detail navigation is keyboard-only (Ctrl+F the row's Send date ->
+Esc -> Tab -> Enter, fallback Ctrl+F title -> Tab N with the leading-control
+offset auto-tried) and EVERY detail page reached is verified against its
+record (CORRELID(CHAR) + SENDDATETIME) before its end time is trusted.
+Teams itself is not reachable from the tool: paste the chat into a text
+file (`-TeamsTextFile`) or type the counts the end-of-run summary lists.
+Default scope is the page's own days when no `-FromDate`/`-ToDate` is
+given. Docs: `docs/GiftMqProcessTime.md` (with the office-PC confirmation
+order). COM + SendKeys paths static-checked only.
 
 v2.21.0 (deterministic 3<->9 handling + timestamped-id tolerance cleanup +
 docs): **policy reversal on the ja-OCR `9`/`3` confusion -- the tool no
