@@ -134,6 +134,33 @@ mention of a job wins, so a corrected re-post overrides.
   `Format-GiftMqStamp` / `Format-GiftMqCount`, `Get-GiftMqDetailTabCount`.
   Unit-tested: `Tests\Test-GiftMqProcessTime.ps1`.
 
+## If pressing Enter seems to do nothing
+
+The run drives a real mouse. Before v2.22.2, `Switch-ToEdge`'s synthetic
+Alt+Tab could fail to land (Windows ignores it under some policies), and the
+next click then went into the **PowerShell console** instead of Edge. Windows
+consoles ship with QuickEdit mode on, where a click starts a text selection,
+and a console with an active selection **blocks the process's output**. The
+run looked frozen with no error, forever.
+
+Two guards now make that impossible:
+
+- the click is made only when an Edge window is in the foreground, and
+  `Confirm-GiftMqEdgeForeground` checks that after every switch, asking the
+  operator to click Edge when it fails rather than proceeding blind;
+- QuickEdit is turned off for the duration of the run and restored on exit.
+
+The page-text poll also prints one line per attempt (`read LIST page (try 1):
+4821 chars, not the page yet`), so a silent console now means a real hang, not
+a slow poll. **If an older copy of the script does freeze: press `Esc` or
+right-click inside the console window — output resumes immediately if a
+selection was the cause.**
+
+The fallback that needs no automation at all: copy the page yourself in Edge
+(Ctrl+A, Ctrl+C), paste into a UTF-8 text file, and pass it with
+`-PageTextFile`. With `-NoDetail` that fills every start time and touches
+neither Edge nor the mouse.
+
 ## Console encoding
 
 The script does **not** touch `[Console]::OutputEncoding`. On the office PC the
