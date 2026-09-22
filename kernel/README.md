@@ -25,3 +25,13 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   The result is a hashtable (`ok`, `runId`, `steps`, `session`); the run's
   trace is at `<WorkDir>\run\<runId>\trace.jsonl`.
 
+
+- `Context.ps1` -- P1-01, pure `{{...}}` template evaluation per
+  `docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` section 4: `New-EbiTemplateScope`,
+  `Resolve-EbiPath`, `Expand-EbiTemplate`, plus `Test-EbiTemplateString` /
+  `Get-EbiTemplateReferences` for `ebi lint`. Failures are records naming the
+  unresolved segment, never exceptions. Not wired into `Runner.ps1` yet (P1-03).
+- `Key.ps1` -- key normalization shared by everything that renders an item's
+  key (`Context.ps1` today; `table.load` and `table.key` later): full-width
+  folding, the `" / "` display form, the `_`-joined file-safe form. The seed
+  of P1-27; the one place a key comparison rule may live.

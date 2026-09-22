@@ -58,7 +58,16 @@ kernel/                 runner internals. Trace.ps1 (append-only run trace,
                         replacement -- enforces the 3.1 return contract and
                         traces every step; refuses source/each/templates/
                         when/onError up front with 'unsupported_in_spike'.
-                        Unit-tested via Tests\Test-Runner.ps1).
+                        Unit-tested via Tests\Test-Runner.ps1). Context.ps1
+                        (P1-01: pure {{}} template evaluation -- scopes
+                        vars/profile/page/run/item/steps, whole-value type
+                        preservation, \{\{ escape, one-pass evaluation of
+                        profile/page subtrees, failures as records naming
+                        the unresolved segment; not yet wired into Runner,
+                        P1-03 does that; Tests\Test-Context.ps1) and Key.ps1
+                        (P1-27 seed: full-width folding, item.key display
+                        form, item.keySafe file-safe form -- the ONE place
+                        key normalization lives).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
@@ -528,7 +537,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`,
-`Runner.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.
