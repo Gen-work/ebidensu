@@ -19,7 +19,7 @@
 
 **先读这三份**:
 - `docs/ebi-dance/spec/VOCABULARY.md` — 中性词汇表(page role、action、字段名)
-- `docs/CATALOG.md` — 可用的 step 清单
+- `docs/ebi-dance/CATALOG.md` — 可用的 step 清单(`ebi docs build` 自动生成)
 - `docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` — 你要产出的 JSON 长什么样
 
 ---

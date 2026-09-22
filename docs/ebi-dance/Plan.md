@@ -258,7 +258,7 @@ capture 目录形如 `capture/before_transferStatus/<key>.png`,取代
 
 ## 5. 模块目录(8 组 ≈ 86 个 step)
 
-`[MVP]` 进第一版(25 个),其余按阶段。「来源」指明可直接复用的现有实现 ——
+`[MVP]` 进第一版(33 个),其余按阶段。「来源」指明可直接复用的现有实现 ——
 **多数 step 是包装,不是新写**。
 
 > 本节下面 8 张表的「阶段」列是 `BACKLOG.md` 定稿前的旧分档
@@ -517,7 +517,7 @@ JP123456                     →  <EMPID_1>
 
 配套 `docs/ebi-dance/INTERVIEW-CHECKLIST.md`:一页纸的问题清单,人也可以自己对着填。
 
-### 8.2 `docs/AGENTS.md` —— Agent 操作手册
+### 8.2 `docs/ebi-dance/AGENTS.md` —— Agent 操作手册
 
 - 怎么读 `catalog.json` 组装合法工作流
 - workflow JSON 的 schema 规则和模板语法
@@ -526,7 +526,7 @@ JP123456                     →  <EMPID_1>
 - **权限边界:Agent 只能改 workflow JSON 和 profile JSON,不能改 step 代码。**
   需要新 step 就写成 issue,不许硬塞
 
-### 8.3 `docs/CATALOG.md` + `catalog.json` —— 全自动生成
+### 8.3 `docs/ebi-dance/CATALOG.md` + `catalog.json` —— 全自动生成
 
 `ebi docs build` 扫描 `modules/**` 的 `$Manifest` 产出。人读 md,Agent 读 json。
 
@@ -611,7 +611,7 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 | 部件 | 新代码量 |
 |------|----------|
 | kernel(runner / context / 模板 / ledger / trace / gate / schema / mask) | ~1,800 行 |
-| MVP 25 个 step | ~2,200 行(多数是包装现有函数) |
+| MVP 33 个 step | ~2,900 行(多数是包装现有函数) |
 | 文档生成器 + CLI | ~700 行 |
 | Tests | ~1,500 行 |
 | 手写文档(INTERVIEW / AGENTS / PROFILE / 词汇表) | ~1,800 行 md |
@@ -653,27 +653,30 @@ ebi apply    patch.json        # 应用 Agent 补丁(备份 + lint + explain 三
 
 | 阶段 | 卡数 | 其中 `[整块]` |
 |------|------|--------------|
-| P0 骨架(含 10 张规格修订卡 P0-R1…R10) | 18 | 3(会话资源通道 / 会话资源生命周期·释放侧 / 最小 runner spike) |
-| P1 kernel + 25 个 step + 文档生成 | 34 | 3(Context / Runner 主体 / Runner 容错+ledger)+ 1(table.key) |
-| P2 对拍验证(含 human.input/run.timeWindow、mask-lite 前移两张) | 8 | 1(办公 PC 首跑) |
+| P0 骨架(含 16 张规格修订卡 P0-R1…R16) | 24 | 5(会话资源通道 / 会话资源生命周期·释放侧 / worklist 资源与判定编码 / 关卡结论与跳过语义 / 最小 runner spike) |
+| P1 kernel + 30 个 step + 文档生成(含 Json 入口、DryRun 合同测试) | 36 | 3(Context / Runner 主体 / Runner 容错+ledger)+ 1(table.key) |
+| P2 对拍验证(含 human.input/run.timeWindow、mask-lite、profile check、crosscheck 四张) | 10 | 1(办公 PC 首跑) |
 | P3 新工作实战 | 8 | 0(主要是访谈 + 填 profile) |
-| **合计到 P3 可接新工作** | **68 张** | **8 张** |
+| **合计到 P3 可接新工作** | **78 张** | **10 张** |
 | P4 excel/file 组 | 22 | 1(办公 PC 冒烟) |
 | P5 掩码 + Agent 循环 + 校准 | 14 | 1(掩码一致性替换) |
-| **全部** | **104 张** | **10 张** |
+| **全部** | **114 张** | **12 张** |
 
 > 2026-08-24 契约审查追加了 P0-R1…R6(规格修订)和 P2-07/08;
 > 2026-08-25 又追加了 P0-R7…R9(冻结标签改名、Plan/README 同步、
 > P0-00 状态修正);2026-08-26 第三轮审查又追加了 P0-R10(会话资源的
-> 生命周期·释放侧——P0-R2 当时只定义了注册侧)。完整卡片列表和当前
+> 生命周期·释放侧——P0-R2 当时只定义了注册侧);2026-09-22 第六轮审查
+> 从接线层追加了 P0-R11…R16(worklist 资源与判定编码 / 发键窗口断言 /
+> 关卡结论与 `when` 跳过语义 / 侧车交接 / 失败 id 表与 schema 字段 / run
+> 元数据与 CLI)和 P1-35/36、P2-09/10 四张实现卡。完整卡片列表和当前
 > 状态**始终以 `docs/ebi-dance/BACKLOG.md` 为准**——这张表只做数量级
 > 参考。
 
-按每次坐下做 1 张算,**到 P3 大约 68 次空档**。这个数字比"8 周"有用得多 ——
+按每次坐下做 1 张算,**到 P3 大约 78 次空档**。这个数字比"8 周"有用得多 ——
 它不依赖你每周能挤出多少小时。
 
-`[整块]` 的 10 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
-其余 94 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
+`[整块]` 的 12 张是**设计而非包装**,需要连续思考,也不建议交给较小的模型。
+其余 102 张是「抄现有函数 + 去掉硬编码 + 加 manifest」,估时准、风险低。
 
 ### 10.4 关于模型
 
@@ -719,7 +722,7 @@ Opus 5 的两倍($10/$50 vs $5/$25),而且单次回合可能跑好几分钟 —�
 2. `kernel/Registry.ps1` — 扫描 modules、加载 manifest、参数 schema 校验(纯函数,单测)
 3. `kernel/Runner.ps1` — setup/each/teardown、`flow.foreach`/`flow.if`、onError 策略、ledger 断点续跑
 4. `kernel/Trace.ps1` + `kernel/Gate.ps1`(ASCII 面板 widget)
-5. 25 个 MVP step
+5. 30 个 MVP step(P0-08 已做 3 个,MVP 合计 33)
 6. `kernel/Docs.ps1` — manifest → `catalog.json` / `CATALOG.md`
 7. `ebi.ps1` — help / lint / explain / dryrun / run / doctor / trace
 
