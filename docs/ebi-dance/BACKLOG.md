@@ -432,13 +432,28 @@
   决定 7——resume 时它们总是真执行)。
 - **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增七类)
 
-### [ ] P0-07 [整块] 最小 runner spike
+### [x] P0-07 [整块] 最小 runner spike
 - **估** 90min | **依赖** P0-06, P0-R2 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2
 - **做**:**只做能跑通的最小版**:读 workflow JSON → 按顺序 dot-source 并调用 step →
   打印结果。不做模板求值、不做 foreach、不做 onError。**但 `$Ctx.Session` 从
   第一天就要在**(哪怕只是个空 hashtable)—— spike 的目的就是验证 ensure→capture
   的句柄传递走 Session 而不是全局变量。
 - **完成**:能跑一条只有 `setup` 三步的 JSON
+- ⚠ **落地时发现的规格洞**:§3.4 前六点只说「句柄只进 Session、永不进
+  `outputs`」,没说 step 到底**怎么把句柄交给 runner**——spike 第一次真走这条
+  通道就撞上。追加为 `STEP-CONTRACT.md` §3.4 第 7 点:注册侧用返回值保留键
+  `resource`(runner 在它进 trace/ledger/模板作用域之前摘走);消费侧 runner
+  把 `type='session'` 参数的**名字换成实例**再进 `Invoke-Step`,step 永远不
+  知道自己拿到的窗口叫什么;同时定下 runner 层保留失败 id 表
+  (`contract_violation` / `step_not_found` / `session_missing` /
+  `session_kind_mismatch` / `session_name_taken`)。
+- **实际落地**:`kernel/Runner.ps1`(`Invoke-EbiWorkflow`,是 P1-03 的种子不是
+  一次性代码):同一 runspace 依次 dot-source、每次立刻捕获 `Invoke-Step`
+  (P1-02 的加载机制在这里定下);`setup` → `teardown`(`finally`,§1.1 的
+  保证);§3.1 返回值契约 + 第 7 点的资源通道运行期校验;每步一条 trace 事件
+  (`warnings` 进 `data`)。`source`/`each`/`{{}}`/`when`/`onError`/`once`
+  一律**在第一步跑之前**以 `unsupported_in_spike` 拒绝,不静默跳过。
+  `Tests/Test-Runner.ps1`(临时目录里的 fixture step,也过一遍契约检查器)。
 
 ### [ ] P0-08 三个 step + 端到端验收
 - **估** 90min | **依赖** P0-07 | **读** `spec/STEP-CONTRACT.md` §8(完整示例)+ Session 节(P0-R2)
