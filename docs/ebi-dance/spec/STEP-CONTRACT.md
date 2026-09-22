@@ -162,7 +162,11 @@ function Invoke-Step {
 ```
 
 规则:
+- `ok` / `failure` / `message` / `warnings` / `resource` 是返回值的**保留键**,
+  不能和 `outputs` 里声明的字段重名(`resource` 是 `provides` 非空的 step
+  交出资源实例的通道,见 §3.4 第 7 点)
 - `failure` 的值**必须**等于 `$Manifest.failures` 某一项的 `id`,否则 runner 判为契约违反
+  (记 `contract_violation`,§3.4 第 7 点的表)
 - `message` 是给人看的一句话,英文,可选
 - 失败时**也可以**带 outputs 字段(比如部分结果),runner 不会用,但会进 trace
 - **不许抛异常表达业务失败**。异常只用于「代码写错了」这类真正的意外;
@@ -371,6 +375,66 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
    出现的 `provides`/`releases` 一起,把它加进这张表**——这是 §7 底下
    元规则要求的"新增契约事实,定义处和汇总处一起改"的又一个例子;§7
    的 Run-Tests.ps1 清单有一条静态检查兜底这条纪律(见下方)。
+
+7. **交接通道:`provides` 非空的 step 用返回值的保留键 `resource` 把资源
+   实例交给 runner(P0-07)。** 前面六点只说了"句柄只进 Session、永不进
+   `outputs`",没说 step 到底怎么把句柄交出去——P0-07 的 spike 第一次真的
+   要走这条通道时发现这个洞。§3.1 的保留键 `ok` / `failure` / `message` /
+   `warnings` 之外,`resource` 是第五个:
+
+   ```powershell
+   # browser.ensure: provides = @('window')
+   return @{ ok = $true; resource = $hWnd; title = 'Microsoft Edge' }
+   #                      ^ 不是 output           ^ 这才是 outputs 里声明的字段
+   ```
+
+   注册侧规则:
+   - runner 在返回值进入任何下游(trace、ledger、`{{steps.X.out.*}}`
+     作用域)**之前**就把 `resource` 摘走。它不在 `$Manifest.outputs` 里
+     声明、契约检查器不看它,"`outputs` 必须 JSON-可序列化"这条规则因此
+     不受影响。
+   - 调用点写了 `with.as: "<名>"` → runner 先做第 3 点的同名存活检查,再
+     登记 `$Ctx.Session['<名>'] = @{ kind = <provides 唯一那一项>; value =
+     <resource>; registeredBy = <这次调用的 id> }`。
+   - 调用点没写 `as` → runner **丢弃** `resource`。第 3 点已经规定未注册的
+     资源必须由 step 在返回前自己释放完,runner 拿到的只是一个没有意义的
+     值,不保存、不进 trace。
+   - `ok = $false` 时 `resource` 被忽略,不登记。
+   - 调用点写了 `as` 而返回值里**没有** `resource` 键 → `contract_violation`。
+     `DryRun` 下拿不到真实句柄的 step 返回 `resource = $null`(键在,值空):
+     名字照常登记,后面的消费方拿到 `$null`,由它们自己的 `DryRun` 分支
+     处理——干跑时工作流的连线仍然被完整走一遍,这正是 dryrun 的意义。
+   - `provides` 为空的 step 返回了 `resource` → 契约违反,runner 记
+     `contract_violation`(见下表),不静默丢弃:一个自以为注册了资源的
+     step,后面的 step 会在"名字未注册"上失败,不如在源头报。
+
+   **消费侧:runner 把名字换成实例。** 消费方 `type='session'` 的参数在
+   workflow JSON 里填的是名字字符串(§2.2),但 `Invoke-Step` 收到的
+   `$In.<参数>` 已经是 `$Ctx.Session['<名>'].value`——runner 在调用前查表,
+   名字不存在或 `kind` 与参数声明的 `sessionKind` 不符都是 runner 层失败,
+   不进 `Invoke-Step`。这样 step 永远不需要知道自己拿到的窗口叫什么名字:
+   名字是工作流的事,step 只认实例,和 §0 的正交性一致;§3 对 `$In` 的承诺
+   "已经过 schema 校验和模板求值"在这里延伸为"已经过资源解析"。
+
+   **释放侧对称**:`releases` 非空的 step 同样通过 `type='session'` 参数
+   收到实例;它返回 `ok = $true` 后,runner 把该名字从 `$Ctx.Session` 移除,
+   此后同名可以再注册(第 3 点的"仍然活着"就是"还在表里")。
+
+   **runner 层保留失败 id**(和 `internal_error` 一样,不需要、也不允许出现
+   在任何 step 的 `$Manifest.failures` 里;它们描述的是 runner 拒绝调用
+   step 的原因,不是 step 自己的失败):
+
+   | id | 什么时候 |
+   |----|---------|
+   | `internal_error` | step 抛出异常(§3.1) |
+   | `contract_violation` | 返回值不是含 `ok` 的 hashtable;`failure` 不在 manifest 的 `failures` 里;`provides` 为空却返回了 `resource`;`outputs` 无法 JSON 序列化 |
+   | `step_not_found` | `use` 指向的 step 文件不存在或加载失败 |
+   | `session_missing` | `type='session'` 参数填的名字没有注册(或已释放) |
+   | `session_kind_mismatch` | 注册的种类和参数的 `sessionKind` 不一致 |
+   | `session_name_taken` | `with.as` 的名字已注册且尚未释放(第 3 点) |
+
+   这张表是 `WORKFLOW-SCHEMA.md` §6 `byFailure` 能引用的 id 的一部分;
+   它们全部 `transient = $false`(重试不会改变结果)。
 
 `$Ctx.Session` 本身**不持久化**、**不写进 ledger**、**不出现在 trace 里**
 (trace 只记 `outputs`)。它在每次进程启动时都是空的 —— 断点续跑时怎么

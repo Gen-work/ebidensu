@@ -40,11 +40,28 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         (browser/screen/file/excel/table/verify/human/progress/
                         flow). Files here that are NOT steps are pre-conversion
                         libraries, listed and exempted on every test run.
+                        First three real steps (P0-08, ported from Common.ps1):
+                        human/human.prepare.ps1, browser/browser.ensure.ps1
+                        (provides 'window'), screen/screen.capture_window.ps1
+                        (consumes it via a type='session' input).
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
-kernel/                 runner internals. Currently Trace.ps1 (append-only run
-                        trace, unit-tested via Tests\Test-Trace.ps1).
-workflows/              JSON workflows (the artifact a human or Agent writes)
+kernel/                 runner internals. Trace.ps1 (append-only run trace,
+                        unit-tested via Tests\Test-Trace.ps1) and Runner.ps1
+                        (P0-07 spike of the workflow runner: Invoke-EbiWorkflow
+                        reads a workflow JSON, loads each step by dot-sourcing
+                        it in the runner's own scope and capturing Invoke-Step
+                        at once, runs setup then teardown in a finally, keeps
+                        $Ctx.Session and the STEP-CONTRACT 3.4 point 7 resource
+                        channel -- reserved return key 'resource', 'with.as'
+                        registration, session-input name -> instance
+                        replacement -- enforces the 3.1 return contract and
+                        traces every step; refuses source/each/templates/
+                        when/onError up front with 'unsupported_in_spike'.
+                        Unit-tested via Tests\Test-Runner.ps1).
+workflows/              JSON workflows (the artifact a human or Agent writes).
+                        spike.capture_window.json is the P0-08 end-to-end
+                        spike (prepare -> ensure -> capture one window).
 profiles/               per-project data: page bindings, decision rules, schemas
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
@@ -506,7 +523,8 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. In `modules/verify/`:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
-`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`.
+`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`,
+`Runner.ps1`.
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.
 

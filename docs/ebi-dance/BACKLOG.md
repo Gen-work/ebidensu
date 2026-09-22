@@ -364,6 +364,16 @@
   歧义引用,`git show spec/gift-gfix` 也会警告 —— 换成 `freeze/pre-ebi-dance`
   彻底避开冲突,不要图省事换回 `spec/gift-gfix`。
 - **完成**:远程能看到该 tag;`git show freeze/pre-ebi-dance --stat` 正常
+- ⚠ **打在 `d9e58c2`(PR #142 合并点)而不是"当前 main tip"**:这张卡被跳过,
+  P0-02…P0-07 先合进了 main,等补打时 tip 上已经长着骨架。回滚点的意义是"骨架之前
+  的树",所以指向 P0-02 骨架提交(`9f4eed8`)的父提交。带注释 tag(`git tag -a`)。
+- ⚠ **云端会话推不了 tag**(推送凭据只覆盖它自己的分支,`git push origin
+  <tag>` 在 send-pack 阶段被远端断开),所以这张卡要在有完整 git 权限的机器上
+  收尾,一行:
+  ```
+  git tag -a freeze/pre-ebi-dance d9e58c2 -m "Freeze point before the ebi-dance skeleton (P0-01)" && git push origin freeze/pre-ebi-dance
+  ```
+  然后 `git ls-remote --tags origin | grep freeze` 看得到,再改 `[x]`。
 
 ### [x] P0-02 建目录骨架
 - **估** 30min | **依赖** P0-01 | **读** `Plan.md` §3
@@ -432,13 +442,28 @@
   决定 7——resume 时它们总是真执行)。
 - **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增七类)
 
-### [ ] P0-07 [整块] 最小 runner spike
+### [x] P0-07 [整块] 最小 runner spike
 - **估** 90min | **依赖** P0-06, P0-R2 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2
 - **做**:**只做能跑通的最小版**:读 workflow JSON → 按顺序 dot-source 并调用 step →
   打印结果。不做模板求值、不做 foreach、不做 onError。**但 `$Ctx.Session` 从
   第一天就要在**(哪怕只是个空 hashtable)—— spike 的目的就是验证 ensure→capture
   的句柄传递走 Session 而不是全局变量。
 - **完成**:能跑一条只有 `setup` 三步的 JSON
+- ⚠ **落地时发现的规格洞**:§3.4 前六点只说「句柄只进 Session、永不进
+  `outputs`」,没说 step 到底**怎么把句柄交给 runner**——spike 第一次真走这条
+  通道就撞上。追加为 `STEP-CONTRACT.md` §3.4 第 7 点:注册侧用返回值保留键
+  `resource`(runner 在它进 trace/ledger/模板作用域之前摘走);消费侧 runner
+  把 `type='session'` 参数的**名字换成实例**再进 `Invoke-Step`,step 永远不
+  知道自己拿到的窗口叫什么;同时定下 runner 层保留失败 id 表
+  (`contract_violation` / `step_not_found` / `session_missing` /
+  `session_kind_mismatch` / `session_name_taken`)。
+- **实际落地**:`kernel/Runner.ps1`(`Invoke-EbiWorkflow`,是 P1-03 的种子不是
+  一次性代码):同一 runspace 依次 dot-source、每次立刻捕获 `Invoke-Step`
+  (P1-02 的加载机制在这里定下);`setup` → `teardown`(`finally`,§1.1 的
+  保证);§3.1 返回值契约 + 第 7 点的资源通道运行期校验;每步一条 trace 事件
+  (`warnings` 进 `data`)。`source`/`each`/`{{}}`/`when`/`onError`/`once`
+  一律**在第一步跑之前**以 `unsupported_in_spike` 拒绝,不静默跳过。
+  `Tests/Test-Runner.ps1`(临时目录里的 fixture step,也过一遍契约检查器)。
 
 ### [ ] P0-08 三个 step + 端到端验收
 - **估** 90min | **依赖** P0-07 | **读** `spec/STEP-CONTRACT.md` §8(完整示例)+ Session 节(P0-R2)
@@ -449,6 +474,25 @@
   窗口句柄经 `$Ctx.Session` 流转,`grep -rn 'Global:' modules/` 为 0,
   三个 step 的 outputs 全部可 `ConvertTo-Json`
 - ⚠ 这是 P0 的唯一验收标准。做不到就别进 P1。
+- **代码已落地,等办公 PC 验收**(所以还是 `[ ]`):`modules/human/human.prepare.ps1`
+  (q 不再 `exit`,返回 `operator_quit`)、`modules/browser/browser.ensure.ps1`
+  (进程句柄优先 / 标题回退;`provides=@('window')`,句柄走 `resource` 保留键,
+  浏览器进程名是带默认值的输入 `process`,代码里没有 Edge 的业务知识)、
+  `modules/screen/screen.capture_window.ps1`(`window` 是 `type='session'` 输入,
+  runner 把名字换成句柄;相对 `saveAs` 落在 WorkDir 下;GDI+ 代码隔离在
+  `ScreenCaptureWindow-Grab` 里,DryRun 路径不碰它,所以 Linux CI 能干跑)。
+  三个 step 全过 `Tests/Test-StepContract.ps1`;`workflows/spike.capture_window.json`
+  就是那条 5 行 JSON,`Tests/Test-Runner.ps1` 在真实 `modules/` 树上把它 DryRun
+  跑通。Win32 声明每个 step 各带一份(3 行),P1-11/P1-18 决定要不要抽公共绑定。
+- **办公 PC 验收步骤**(PS 5.1,Edge 开着任意页面):
+  ```powershell
+  . .\kernel\Runner.ps1
+  $r = Invoke-EbiWorkflow -Path .\workflows\spike.capture_window.json -WorkDir C:\work
+  $r.ok; $r.steps | % { $_.id + ' ' + $_.status }
+  ```
+  看:`C:\work\capture\spike\window.png` 存在且是 Edge 窗口;
+  `grep -rn 'Global:' modules/` 为 0;`C:\work\run\<runId>\trace.jsonl` 里
+  ensure 的事件没有句柄;`Tests\Run-Tests.ps1` 全绿。通过后把本卡改 `[x]`。
 
 ---
 
