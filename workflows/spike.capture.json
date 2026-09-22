@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "spike.capture",
+  "title": "P0-08 spike: prepare -> ensure -> capture one PNG",
+  "version": "0.1.0",
+
+  "setup": [
+    { "id": "prepare", "use": "human.prepare",
+      "with": { "message": "Bring the target page to the front in Edge, then come back here and press Enter." } },
+    { "id": "ensure",  "use": "browser.ensure",
+      "with": { "as": "mainWindow" } },
+    { "id": "shot",    "use": "screen.capture_window",
+      "with": { "window": "mainWindow", "saveAs": "capture/spike/window.png" } }
+  ]
+}

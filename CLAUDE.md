@@ -40,11 +40,24 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         (browser/screen/file/excel/table/verify/human/progress/
                         flow). Files here that are NOT steps are pre-conversion
                         libraries, listed and exempted on every test run.
+                        Real steps so far (P0-08): human/human.prepare,
+                        browser/browser.ensure (provides 'window', any process
+                        name), screen/screen.capture_window (session input).
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
-kernel/                 runner internals. Currently Trace.ps1 (append-only run
-                        trace, unit-tested via Tests\Test-Trace.ps1).
-workflows/              JSON workflows (the artifact a human or Agent writes)
+kernel/                 runner internals. Trace.ps1 (append-only run trace,
+                        Tests\Test-Trace.ps1); Runner.ps1 (P0-07 spike:
+                        setup/teardown executor, $Ctx.Session registry with
+                        as/resource/release handling, one trace event per
+                        step, teardown via try/finally; Tests\Test-Runner.ps1);
+                        Win32.ps1 (lazily compiled user32 P/Invoke shared by
+                        window-facing steps -- steps never dot-source
+                        Common.ps1 for [WinAPI]).
+workflows/              JSON workflows (the artifact a human or Agent writes).
+                        spike.capture.json is the P0-08 acceptance workflow.
+ebi.ps1                 ebi-dance CLI entry: run / dryrun / help so far
+                        (P1-07..10 add the rest). Has param(): call via
+                        -File or &, never dot-source.
 profiles/               per-project data: page bindings, decision rules, schemas
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
@@ -506,7 +519,9 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. In `modules/verify/`:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
-`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`.
+`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`,
+`Runner.ps1`, `Win32.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is
+dot-sourced by the runner (STEP-CONTRACT: no `param()`, helpers prefixed).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.
 

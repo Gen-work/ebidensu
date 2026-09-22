@@ -83,7 +83,10 @@
 > step 不知道自己会不会被注册;返回值里没有给句柄留的键)——追加并同日执行
 > P0-R11…R17 中的 **P0-R17**(`$In.as` 回传 + `resource` 返回键 + 释放后
 > runner 摘名字)。R14 落地后 MVP step 数 33 → 35(P1 30 → 32)。
-> **十七张 R 卡全部 `[x]`**。
+> **十七张 R 卡全部 `[x]`**。同日:P0-07 `[x]`(runner spike + 59 例单测);
+> P0-08 代码落地、只剩办公 PC 上真截一张 PNG;P0-01 标签推送被会话的
+> 推送策略挡住(卡里有那一行命令)。**P1 的前置只剩这两件办公 PC / 有
+> 推送权限的机器上的事。**
 
 ---
 
@@ -667,6 +670,10 @@
 ### [ ] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
 - **做**:`git tag freeze/pre-ebi-dance d9e58c2` 并推送。作为整个重构期的回滚点。
+- **状态(2026-09-22)**:开发环境里标签打好了但**推不上去**——这个会话的
+  推送口只放行 `claude/*` 分支,`git push origin refs/tags/freeze/pre-ebi-dance`
+  被 403 拒绝(重试五次同样)。在任何有推送权限的机器上跑一行即可完成:
+  `git tag -a freeze/pre-ebi-dance d9e58c2 -m "pre-ebi-dance rollback point" && git push origin freeze/pre-ebi-dance`
 - ⚠ (第六轮)**不是当前 tip**:P0-02…P0-06 已经先于这张卡落地,`d9e58c2`
   是 P0-02 建骨架之前的最后一个 main 提交(PR #142 的合并提交)。打在现在的
   tip 上,「回滚点」里就已经带着搬过位置的 SnapVerify 和改过路径的
@@ -745,13 +752,28 @@
   决定 7——resume 时它们总是真执行)。
 - **完成**:对一个故意写错的 fixture step 能报出每一类错误(含新增七类)
 
-### [ ] P0-07 [整块] 最小 runner spike
+### [x] P0-07 [整块] 最小 runner spike
 - **估** 90min | **依赖** P0-06, P0-R2 | **读** `spec/WORKFLOW-SCHEMA.md` §1-2
 - **做**:**只做能跑通的最小版**:读 workflow JSON → 按顺序 dot-source 并调用 step →
   打印结果。不做模板求值、不做 foreach、不做 onError。**但 `$Ctx.Session` 从
   第一天就要在**(哪怕只是个空 hashtable)—— spike 的目的就是验证 ensure→capture
   的句柄传递走 Session 而不是全局变量。
 - **完成**:能跑一条只有 `setup` 三步的 JSON
+- **已执行(2026-09-22)**:`kernel/Runner.ps1`(`Invoke-EbiWorkflow`)+
+  `kernel/Win32.ps1`(懒编译的 user32 P/Invoke,给窗口类 step 共用)+
+  `ebi.ps1`(`run` / `dryrun` / `help`)+ `Tests/Test-Runner.ps1`(59 例,
+  pwsh 7 全绿)。比卡面多做的、都是 R11…R17 刚定下来的接线:`with.as`
+  摘出 → 同名检查(`session_conflict`)→ `$In.as` 回传 → `resource` 收进
+  `$Ctx.Session` 并从 trace 里剥掉;`type='session'` 输入的名字不存在 →
+  `session_missing`;`releases` 成功后 runner 摘名字;`action='quit'` →
+  `cancelled`;`teardown` 走 try/finally;每步一条 trace 事件;输入默认值 /
+  必填 / 未声明 / `path` 归 WorkDir 的最小 schema 处理;返回值里的
+  failure id 不在 manifest 也不在保留表 → `internal_error`。**没做**(按卡):
+  模板求值、`each`/`source`、`onError`/ledger/resume、`needs`、`when`——
+  用到就报错,不半跑。两个 PS 坑记在源码注释里:step 文件必须在
+  `Invoke-EbiWorkflow` 自己的作用域里 dot-source(捕获的 `Invoke-Step` 从
+  子作用域调用时才找得到带前缀的 helper);manifest 数组字段的取值函数
+  **不**加逗号包裹,由调用方 `@()`(加了会多套一层,`-contains` 静默失效)。
 
 ### [ ] P0-08 三个 step + 端到端验收
 - **估** 90min | **依赖** P0-07 | **读** `spec/STEP-CONTRACT.md` §8(完整示例)+ Session 节(P0-R2)
@@ -762,6 +784,23 @@
   窗口句柄经 `$Ctx.Session` 流转,`grep -rn 'Global:' modules/` 为 0,
   三个 step 的 outputs 全部可 `ConvertTo-Json`
 - ⚠ 这是 P0 的唯一验收标准。做不到就别进 P1。
+- ⚠ (第六轮,P0-R12 / P0-R17)`browser.ensure` 带 `process` 输入(默认
+  `msedge`),通过 `resource` 返回键把句柄交给 runner;`screen.capture_window`
+  从 `$Ctx.Session[$In.window]` 取句柄,`IsWindow` 为假返回 `session_invalid`;
+  `human.prepare` `effects='ui'`,`q` 输出 `action='quit'`,不再自己 `exit`。
+- **状态(2026-09-22)**:**代码已落地,办公 PC 验收未做。** 三个 step 在
+  `modules/human/human.prepare.ps1`、`modules/browser/browser.ensure.ps1`、
+  `modules/screen/screen.capture_window.ps1`,过 P0-06 契约检查;
+  `workflows/spike.capture.json` 就是那条 5 行 JSON。已在 CI 里验证的:
+  `.\ebi.ps1 dryrun workflows\spike.capture.json` 三步全 ok、句柄经
+  `$Ctx.Session` 流转(DryRun 下是 `[IntPtr]::Zero`)、`grep -rn 'Global:'
+  modules/` 为 0、三个 step 的 outputs 全部可 `ConvertTo-Json`
+  (`Tests/Test-Runner.ps1` 第 8 块)。**还没做的只有第一句**:在办公 PC 上
+  `.\ebi.ps1 run workflows\spike.capture.json -WorkDir <目录>` 真的存下
+  `capture\spike\window.png`。跑完把这张卡打勾;跑不通先看 trace
+  (`<WorkDir>\run\<runId>\trace.jsonl`)。GDI+ 一条注意:`System.Drawing`
+  的类型字面量只能出现在真路径才会调用的 helper 里(函数体编译时就会绑定
+  类型,CI 的 Linux 上会因此炸 DryRun)。
 
 ---
 
