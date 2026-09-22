@@ -57,6 +57,17 @@ function Sort-JenkinsFilesNewestFirst {
 #
 # The JOB-NAME fallback is deliberately NOT narrowed: those matches are
 # normally different correls of the same job, not reruns of one transfer.
+# The plain correl id under a transfer-batch stamp ('<id>.<YYMMDD>.<8 digits>'),
+# or the id itself. Mirrors Get-SnapCorrelIdBase (modules/verify/SnapVerify.ps1);
+# duplicated rather than dot-sourced because this file is standalone glue.
+function Get-JenkinsCorrelBase {
+    param([string]$CorrelId)
+    if ([string]::IsNullOrWhiteSpace($CorrelId)) { return '' }
+    $v = $CorrelId.Trim()
+    if ($v -match '^(?<base>.+)\.\d{6}\.\d{8}$') { return [string]$Matches['base'] }
+    return $v
+}
+
 function Select-JenkinsDownloadFiles {
     param(
         [Parameter(Mandatory)][array]$Files,
@@ -74,11 +85,19 @@ function Select-JenkinsDownloadFiles {
     # may not include. StartsWith($correl) alone only covers the direction
     # where the LISTED name is the longer (stamped) one; check both
     # directions so a stamped mapping id still finds a plainly-named file.
+    # Two stamped spellings of one transfer ('X.260726.08300100' listed,
+    # 'X.260729.10515511' in the mapping) share neither prefix direction, yet
+    # they are reruns of the same file and newest-wins must see them all --
+    # the same equivalence Get-JenkinsSearchTerm (SnapVerify.ps1) applies
+    # when it picks the row to highlight, so the download fetches the file
+    # the screenshot shows.
+    $correlBase = Get-JenkinsCorrelBase $correl
     $selected = @($Files | Where-Object {
         $name = [string]$_.Name
         $name -eq $correl -or
         $name.StartsWith($correl, [System.StringComparison]::OrdinalIgnoreCase) -or
-        $correl.StartsWith($name, [System.StringComparison]::OrdinalIgnoreCase)
+        $correl.StartsWith($name, [System.StringComparison]::OrdinalIgnoreCase) -or
+        ((Get-JenkinsCorrelBase $name) -eq $correlBase)
     })
 
     if ($selected.Count -gt 0) {

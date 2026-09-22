@@ -472,7 +472,7 @@
   一律**在第一步跑之前**以 `unsupported_in_spike` 拒绝,不静默跳过。
   `Tests/Test-Runner.ps1`(临时目录里的 fixture step,也过一遍契约检查器)。
 
-### [ ] P0-08 三个 step + 端到端验收
+### [x] P0-08 三个 step + 端到端验收
 - **估** 90min | **依赖** P0-07 | **读** `spec/STEP-CONTRACT.md` §8(完整示例)+ Session 节(P0-R2)
 - **做**:`human.prepare`(从 `Common.ps1 Wait-PagePrepared`)、`browser.ensure`
   (从 `Common.ps1 Activate-EdgeWindow`,进程句柄优先/标题回退)、
@@ -481,7 +481,12 @@
   窗口句柄经 `$Ctx.Session` 流转,`grep -rn 'Global:' modules/` 为 0,
   三个 step 的 outputs 全部可 `ConvertTo-Json`
 - ⚠ 这是 P0 的唯一验收标准。做不到就别进 P1。
-- **代码已落地,等办公 PC 验收**(所以还是 `[ ]`):`modules/human/human.prepare.ps1`
+- ✅ **2026-09-22 办公 PC 验收通过**(PS 5.1,Edge):`spike.capture_window` 三步全 ok,
+  `C:\work\capture\spike\window.png` 1450x719,trace 里 ensure 事件只有
+  processId/title、没有句柄,`Tests\Run-Tests.ps1` 的 Runner 128 例全过。首跑撞上的
+  相对路径 bug(.NET 与 PowerShell 当前目录不同步)已在 PR #154 修掉。截下来的
+  窗口带边框/阴影,要裁——那是 `screen.crop`(P1-20)的活,不在本卡。
+- **代码落地记录**(验收前写的):`modules/human/human.prepare.ps1`
   (q 不再 `exit`,返回 `operator_quit`)、`modules/browser/browser.ensure.ps1`
   (进程句柄优先 / 标题回退;`provides=@('window')`,句柄走 `resource` 保留键,
   浏览器进程名是带默认值的输入 `process`,代码里没有 Edge 的业务知识)、
