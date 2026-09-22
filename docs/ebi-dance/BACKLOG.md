@@ -355,7 +355,7 @@
   `WORKFLOW-SCHEMA.md` §9 的释放判据条目改成读这张表,不再读"catalog
   里有没有恰好带 `releases` 的 step"。
 
-### [ ] P0-01 打冻结标签
+### [x] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
 - **做**:`git tag freeze/pre-ebi-dance <当前 main tip>` 并推送。作为整个重构期的回滚点。
 - ⚠ **不用 `spec/gift-gfix`**:远端已经存在一个同名**分支**
@@ -364,6 +364,9 @@
   歧义引用,`git show spec/gift-gfix` 也会警告 —— 换成 `freeze/pre-ebi-dance`
   彻底避开冲突,不要图省事换回 `spec/gift-gfix`。
 - **完成**:远程能看到该 tag;`git show freeze/pre-ebi-dance --stat` 正常
+- ⚠ **实际打在 `d9e58c2`(PR #142 合并点)而不是"当前 main tip"**:这张卡被跳过,
+  P0-02…P0-07 先合进了 main,等补打时 tip 上已经长着骨架。回滚点的意义是"骨架之前
+  的树",所以指向 P0-02 骨架提交(`9f4eed8`)的父提交。带注释 tag(`git tag -a`)。
 
 ### [x] P0-02 建目录骨架
 - **估** 30min | **依赖** P0-01 | **读** `Plan.md` §3
