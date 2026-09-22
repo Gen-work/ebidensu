@@ -412,6 +412,24 @@ try {
     Assert-Equal -1 (Get-Rec $res 'shot')['outputs']['handle'] 'dry: a null resource is registered and handed on as null'
     Assert-True ($res['session'].Contains('mainWindow')) 'dry: the name is still registered'
 
+    # ------------------------------------------------ 16b. relative paths (the first office-PC failure)
+    # PowerShell's location and the process working directory are different
+    # things; .NET file APIs use the latter. The runner must resolve every
+    # path it is given against PowerShell's location before .NET sees it.
+    Push-Location -LiteralPath $tmpRoot
+    try {
+        $res = Invoke-EbiWorkflow -Path 'happy.json' -WorkDir 'work-rel' -ModulesRoot 'modules' -RunId 'r-rel'
+        Assert-True ($res['ok']) 'relative: a workflow path relative to the PowerShell location is read'
+        Assert-Equal 3 @($res['steps']).Count 'relative: all three steps ran'
+        $relWork = Join-Path $tmpRoot 'work-rel'
+        Assert-True (Test-Path -LiteralPath (Get-TraceFile $relWork 'r-rel')) 'relative: a relative WorkDir lands under the PowerShell location, not the process cwd'
+        Assert-True (((Get-Rec $res 'shot')['outputs']['path']) -eq 'capture/x.png') 'relative: with-values are untouched'
+    } finally {
+        Pop-Location
+    }
+    Assert-Equal '' (ConvertTo-EbiAbsolutePath '') 'absolute: empty stays empty'
+    Assert-True ([System.IO.Path]::IsPathRooted((ConvertTo-EbiAbsolutePath 'does-not-exist-yet'))) 'absolute: a missing relative path is still made absolute'
+
     # ------------------------------------------------ 17. a run id is minted when none is given
     $res = Invoke-EbiWorkflow -Path (Join-Path $tmpRoot 'happy.json') -WorkDir $work -ModulesRoot $modules
     Assert-True ($res['runId'] -match '^\d{8}-\d{6}-[0-9a-f]{4}$') 'a minted run id is yyyyMMdd-HHmmss-xxxx'

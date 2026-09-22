@@ -355,7 +355,7 @@
   `WORKFLOW-SCHEMA.md` §9 的释放判据条目改成读这张表,不再读"catalog
   里有没有恰好带 `releases` 的 step"。
 
-### [ ] P0-01 打冻结标签
+### [x] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
 - **做**:`git tag freeze/pre-ebi-dance <当前 main tip>` 并推送。作为整个重构期的回滚点。
 - ⚠ **不用 `spec/gift-gfix`**:远端已经存在一个同名**分支**
@@ -374,6 +374,13 @@
   git tag -a freeze/pre-ebi-dance d9e58c2 -m "Freeze point before the ebi-dance skeleton (P0-01)" && git push origin freeze/pre-ebi-dance
   ```
   然后 `git ls-remote --tags origin | grep freeze` 看得到,再改 `[x]`。
+- ✅ **2026-09-22 在办公 PC 上打了**,指向 `d9e58c2`,注释 tag。但办公 PC 的 `origin`
+  是 **GitLab 镜像**(`gitlab.com:Tokumei_M/ebidensu`),tag 只在 GitLab 上;GitHub
+  (`Gen-work/ebidensu`)没有。两点跟着改:(1) `.github/workflows/mirror-to-gitlab.yml`
+  原来对 tags 也 `--prune`,下一次 GitHub push 就会把这个只在 GitLab 的 tag 删掉——
+  改成分支 prune、tag 不 prune;(2) 回滚点对日常工作(办公 PC 从 GitLab 拉)已经
+  成立,所以本卡 `[x]`。要让 GitHub 也有一份,在任何能 push GitHub 的机器上跑同一条
+  `git tag -a ... && git push <github-remote> freeze/pre-ebi-dance` 即可,云端会话做不到。
 
 ### [x] P0-02 建目录骨架
 - **估** 30min | **依赖** P0-01 | **读** `Plan.md` §3

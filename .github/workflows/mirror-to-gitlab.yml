@@ -21,4 +21,10 @@ jobs:
           # asked GitLab to delete every other branch (incl. the protected
           # default) and the whole push was rejected.
           git remote set-head origin --delete || true
-          git push --force --prune gitlab +refs/remotes/origin/*:refs/heads/* +refs/tags/*:refs/tags/*
+          # Branches are mirrored with --prune (a branch deleted on GitHub
+          # disappears on GitLab). Tags are NOT pruned: the office PC pushes
+          # to GitLab only, and a tag that exists solely there (the P0-01
+          # freeze tag was created that way, since the cloud session cannot
+          # push tags to GitHub) must survive the next mirror run.
+          git push --force --prune gitlab +refs/remotes/origin/*:refs/heads/*
+          git push --force gitlab +refs/tags/*:refs/tags/*
