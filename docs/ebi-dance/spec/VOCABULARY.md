@@ -60,6 +60,11 @@
 `unknown` 是这套设计里最重要的一个值。旧工具的教训是:判定不确定时偷偷挑一个
 "看起来对的",结果把正确的数据改错了。宁可停下来问人。
 
+这三个是**逻辑值**;它们在 worklist 列里**实际存成什么**由 profile 的
+`verdict.values` 映射决定(`PROFILE-SCHEMA.md` §6.5,P0-R11)——混跑期
+的 `host-open` profile 存旧编码 `1` / `2` / `''`,工作流 JSON 里永远只
+写逻辑值。
+
 ---
 
 ## 2. 页面角色(page role)
@@ -211,13 +216,27 @@ role 只用来决定"用哪套定位/解析机制",不代表页面身份。
 ### 3.3 目录命名(P0-R1:capture 按 page 名分目录)
 
 ```
-worklist.csv                          工作清单
-capture/<side>_<page>/<key>.png       截图
-capture/<side>_<page>/<key>.txt       页面文本(与截图同时归档)
-run/<runId>/trace.jsonl               本次运行的完整记录
-run/<runId>/ledger.jsonl              断点续跑用的完成台账
-.ebi/                                 本机状态(不进 git)
+<WorkDir>/
+  worklist.csv                            工作清单(实际文件名由 profile 的 worklist.file 决定)
+  ebi.local.json                          本作业的临时覆盖 + 运行时学到的 confirmedRules(P0-R4)
+  capture/<side>_<page>/<keySafe>.png     截图
+  capture/<side>_<page>/<keySafe>.txt     页面文本(与截图同时归档)
+  capture/<side>_<page>/<keySafe>.meta.json  侧车:这个 item 在这个 page 上的结构化交接数据
+                                          (行号 / 高亮矩形 / 备注……顶层键由工作流起名),
+                                          跨工作流交接的唯一结构化通道(P0-R14)
+  run/<runId>/run.json                    本次 run 的元数据:run.* 作用域 + workflow id/version
+                                          + profile 名 + CLI 参数;--resume 从它恢复(P0-R16)
+  run/<runId>/trace.jsonl                 本次运行的完整记录
+  run/<runId>/ledger.jsonl                断点续跑用的完成台账(只服务同一 runId)
+
+<仓库根>/                                 = 工具安装目录,机器级
+  .ebi/                                   本机状态(不进 git):calibration/、redaction.json、
+                                          transport 配置(P0-R16)
 ```
+
+`.ebi/` 在**仓库根**、`run/` `capture/` `ebi.local.json` 在 **`<WorkDir>`**
+——两个层次两个位置,`.gitignore` 里的 `/run/`、`/capture/` 只在 WorkDir
+恰好是仓库根时才生效(P0-R16)。
 
 旧的 `snap/GIFT_MQ/<id>.png` → 新的 `capture/before_transferStatus/<key>.png`。
 

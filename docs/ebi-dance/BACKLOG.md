@@ -31,13 +31,13 @@
 
 ## 状态
 
-- 阶段 P0–P3 共 **78 张** = 「能接下一份工作」的最小集
+- 阶段 P0–P3 共 **79 张** = 「能接下一份工作」的最小集
 - 阶段 P4–P5 共 **36 张** = 补齐 Excel/文件组 + Agent 循环
 - `[整块]` 标记 = 需要连续思考,不适合碎片时间,也**不建议交给较小的模型**
-- **计数口径**:「P0–P3 共 78 张」**不算 `P0-00`**(它已经是历史状态说明,
+- **计数口径**:「P0–P3 共 79 张」**不算 `P0-00`**(它已经是历史状态说明,
   不是一张待执行的卡);「P4–P5 共 36 张」不涉及 `P0-00`,和直接
   `grep -c '^### \['` 数出来的一致。只在数 P0–P3 时,直接 grep 会多数出
-  1 张(79)——那 1 张就是 `P0-00`,不是漏卡也不是多算。
+  1 张(80)——那 1 张就是 `P0-00`,不是漏卡也不是多算。
 
 > **2026-08-24 评审修订**:开工前审了一遍契约,发现 6 个「现在改是文本、
 > 写完 7000 行再改是重构」的洞,追加为 P0-R1…R6(规格修订卡,全部先于写码);
@@ -76,10 +76,18 @@
 > 写码卡执行**;P0-01 / P0-07 / P0-08 不受影响,可先做。顺带修正:MVP step
 > 数从「25」改为实际卡片里的 33(P1 做 30,P0-08 已含 3);冻结标签落点改为
 > P0-02 之前的提交。
+>
+> **2026-09-22 同日执行**:R11…R16 全部落进四份 spec(每张卡末尾的
+> 「已执行」段列出改了哪几节)。执行中 P0-07 的 spike 一动手就撞出第七个洞
+> ——句柄从 step 交到 `$Ctx.Session` 的**机制**从来没定(`as` 被 runner 摘走,
+> step 不知道自己会不会被注册;返回值里没有给句柄留的键)——追加并同日执行
+> P0-R11…R17 中的 **P0-R17**(`$In.as` 回传 + `resource` 返回键 + 释放后
+> runner 摘名字)。R14 落地后 MVP step 数 33 → 35(P1 30 → 32)。
+> **十七张 R 卡全部 `[x]`**。
 
 ---
 
-# P0 — 骨架(24 张,5 张整块)
+# P0 — 骨架(25 张,5 张整块)
 
 目标:**一条 5 行的 workflow JSON 能真的存下一张 PNG。**
 
@@ -115,7 +123,7 @@
   `screen.capture_window` 根本引用不到(跨段);Excel COM 对象(P4 的 16 个
   step 全靠它)更不可能塞进 JSON 模板或 trace。规格里 §8 示例的
   `screen.capture_window` 没有任何窗口输入 —— 它隐式依赖「当前前台窗口」,
-  这正是要消灭的 `$Global:Shell` 换了个马甲。不定这条,33 个 step 的实现者
+  这正是要消灭的 `$Global:Shell` 换了个马甲。不定这条,35 个 step 的实现者
   只能各自偷偷用全局变量,P4 时已积重难返。
 - **做**:定义 `$Ctx.Session`:运行期命名资源注册表(browser 窗口句柄、Excel app、
   打开的工作簿)。规则:(1) 句柄/COM 对象**只进 Session,永不进 outputs**;
@@ -371,7 +379,7 @@
   `WORKFLOW-SCHEMA.md` §9 的释放判据条目改成读这张表,不再读"catalog
   里有没有恰好带 `releases` 的 step"。
 
-### [ ] P0-R11 [整块][规格修订] worklist 是 Session 资源;判定值的存储编码由 profile 声明(混跑期兼容)
+### [x] P0-R11 [整块][规格修订] worklist 是 Session 资源;判定值的存储编码由 profile 声明(混跑期兼容)
 - **估** 90min | **依赖** P0-R2, P0-R4 | **改** `spec/STEP-CONTRACT.md` §3.2,§3.4,§4;
   `spec/WORKFLOW-SCHEMA.md` §3,§7.3,§8;`spec/PROFILE-SCHEMA.md` §6,§6.5;
   `BACKLOG.md` P1-24/P1-26/P1-28/P2-01/P2-06
@@ -429,8 +437,9 @@
   §8 示例的 `setup` 里出现 `table.load` + `with.as`,`source.table` 引用它,
   `flow.checkpoint`/`progress.status` 带 worklist 输入;`spec/PROFILE-SCHEMA.md`
   §6 示例里 verdict 列带 `values`;P1-24/26/28、P2-01、P2-06 五张卡的文本同步
+- **已执行(2026-09-22)**:`STEP-CONTRACT.md` §3.2 加「没有 $Ctx.Worklist」一段、§3.4 种类表加 `worklist`、§4 删 `worklist` 行;`WORKFLOW-SCHEMA.md` §3 `source.table` 改为 Session 实例名 + `values` 翻译、§7.3 / §8 加 `worklist` 输入和 `table.load`;`PROFILE-SCHEMA.md` §6 示例 + §6.5 加 `values` 与 `file` 模板;`VOCABULARY.md` §1.2 加逻辑值 / 存储值一句。
 
-### [ ] P0-R12 [规格修订] 前台窗口是显式输入:发键的 step 都要 `window` 参数,发键前断言前台
+### [x] P0-R12 [规格修订] 前台窗口是显式输入:发键的 step 都要 `window` 参数,发键前断言前台
 - **估** 60min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §3.4,§4;
   `spec/WORKFLOW-SCHEMA.md` §8;`INTERVIEW.md` §4(2.2 的追问);`BACKLOG.md` P1-11/P1-12/P1-13/P1-16/P1-17/P4-19
 - **问题**:P0-R2 把 `screen.capture_window` 的"隐式依赖当前前台窗口"改成了
@@ -473,8 +482,9 @@
   `spec/STEP-CONTRACT.md` §4 的 `foreground` 定义改写;`foreground_lost`/
   `no_effect` 进 P0-R15 的通用失败 id 词表;P1-11/12/13/16/17 和 P4-19 卡文本
   同步;`grep -c '"window"' docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` ≥ 10
+- **已执行(2026-09-22)**:`STEP-CONTRACT.md` §4 重定义 `foreground`、加「为什么发键要核对前台」「verify_action 不是 step」两段;`WORKFLOW-SCHEMA.md` §8 示例每个发键 step 带 `window`,`fill` 带 `verifyChange`;`INTERVIEW.md` §4 / §11 的 `verify_action` 改为 `verifyChange`。
 
-### [ ] P0-R13 [整块][规格修订] 关卡的结论怎么进 checkpoint;被 `when` 跳过的 step 输出算什么
+### [x] P0-R13 [整块][规格修订] 关卡的结论怎么进 checkpoint;被 `when` 跳过的 step 输出算什么
 - **估** 75min | **依赖** P0-R5 | **改** `spec/WORKFLOW-SCHEMA.md` §1.1,§4.1,§5,§8;
   `spec/STEP-CONTRACT.md` §3.1;`BACKLOG.md` P1-01/P1-05/P1-33/P1-34/P2-04/P2-05
 - **问题**:旧工具的判定流是三态收口到两态:`ok`→写 `1`,`ng`→写 `2`,
@@ -515,8 +525,9 @@
   `steps.gate.out.code`;§5 增加"被跳过的 step"一段;§1.1 表多一行
   `human.gate` 的 `q`;P1-01 的单测清单加"引用被跳过 step 的输出得到 null 且
   不报错";P1-34、P2-04、P2-05 卡文本同步
+- **已执行(2026-09-22)**:`WORKFLOW-SCHEMA.md` §1.1 表加 `q` 一行、§5 改例子并新增 5.1(跳过 step 的输出)/ 5.2(关卡结论进 checkpoint)、§7.3 / §8 改 `gate` + `checkpoint`;`STEP-CONTRACT.md` §6.1 加 `status='skipped'` 记录。
 
-### [ ] P0-R14 [规格修订] 跨工作流的 item 级交接:侧车 JSON 是唯一通道
+### [x] P0-R14 [规格修订] 跨工作流的 item 级交接:侧车 JSON 是唯一通道
 - **估** 60min | **依赖** P0-R3, P0-R4 | **改** `spec/VOCABULARY.md` §3.3;
   `spec/WORKFLOW-SCHEMA.md` §8;`spec/STEP-CONTRACT.md` §6.1;`BACKLOG.md` P1-21/P2-05/P4-21
 - **问题**:capture 和 annotate 是两条工作流、两次 run,但 annotate 需要 capture
@@ -548,8 +559,9 @@
 - **完成**:`spec/VOCABULARY.md` §3.3 有 `<keySafe>.meta.json`;`spec/WORKFLOW-SCHEMA.md`
   §8 示例含 `file.write_json`;P1-21 卡列出这两个 step,P1 头部和 `Plan.md` §10 的
   MVP step 数 +2;P4-21 卡文本同步
+- **已执行(2026-09-22)**:`VOCABULARY.md` §3.3 目录表加 `<keySafe>.meta.json`;`STEP-CONTRACT.md` §6.1 加「ledger 只服务同一 runId」一段;`WORKFLOW-SCHEMA.md` §8 加 `meta` 步;`Plan.md` §5 G3 表加 `file.write_json` / `file.read_json`(MVP 33 → 35,P1 30 → 32)。
 
-### [ ] P0-R15 [规格修订] 失败 id 的两张表(runner 保留 + 通用词表)+ workflow 的 `schema` 字段
+### [x] P0-R15 [规格修订] 失败 id 的两张表(runner 保留 + 通用词表)+ workflow 的 `schema` 字段
 - **估** 45min | **依赖** P0-R5 | **改** `spec/STEP-CONTRACT.md` §2.1,§3.1,§4;
   `spec/WORKFLOW-SCHEMA.md` §1,§8,§9,§10
 - **问题**:(a) `internal_error` 是唯一的保留失败 id(`spec/STEP-CONTRACT.md`
@@ -585,8 +597,9 @@
 - **完成**:两张表落在 `spec/STEP-CONTRACT.md` §3.1;`spec/WORKFLOW-SCHEMA.md`
   §1 示例和 §8 示例都带 `"schema": 1`;§9 清单多一条;P1-04 卡的 onError
   部分提到保留 id 也走 `byFailure`
+- **已执行(2026-09-22)**:`STEP-CONTRACT.md` §3.1 加保留 id 表(6 项)+ 通用词表(8 项);`WORKFLOW-SCHEMA.md` 顶部 `schema: 1`、§1 字段表 + 两处示例加 `"schema": 1`、§6 保留 id 可进 `byFailure`、§9 加 schema 检查、§10 改写。
 
-### [ ] P0-R16 [规格修订] 一次 run 的元数据落盘 + CLI 的 resume / only / operator + `.ebi/` 的位置
+### [x] P0-R16 [规格修订] 一次 run 的元数据落盘 + CLI 的 resume / only / operator + `.ebi/` 的位置
 - **估** 45min | **依赖** P0-R3, P0-R11 | **改** `spec/VOCABULARY.md` §3.3;
   `spec/WORKFLOW-SCHEMA.md` §4.1;`Plan.md` §9;`BACKLOG.md` P1-04/P1-10/P2-06/P2-07
 - **问题**:(a) `run.*` 作用域(`runId`/`startedAt`/`operator`/`workDir`/
@@ -623,6 +636,33 @@
 - **完成**:`spec/VOCABULARY.md` §3.3 有 `run.json`;`Plan.md` §9 有三个新参数;
   `spec/WORKFLOW-SCHEMA.md` §4.1 的 `run.X` 行注明"持久化在 run.json";
   P1-04/P1-10/P2-06/P2-07 卡文本同步
+- **已执行(2026-09-22)**:`VOCABULARY.md` §3.3 目录表重排为 `<WorkDir>` / `<仓库根>` 两层,加 `run.json`、`.ebi/` 位置;`WORKFLOW-SCHEMA.md` §3 加 `--only`、§4.1 `run.X` 注明持久化;`Plan.md` §9 加三个参数。`human.input` 的 `persistTo` 留给 P2-07 实现。
+
+### [x] P0-R17 [规格修订] 资源怎么从 step 交到 Session:`$In.as` 回传 + `resource` 返回键
+- **估** 30min | **依赖** P0-R2, P0-R10 | **改** `spec/STEP-CONTRACT.md` §3.1,§3.4
+- **问题**:P0-R2 / P0-R10 定了"谁注册、谁释放、要不要释放",P0-R7 spike 一
+  动手就发现**没定"句柄从 step 手里怎么交到 runner 手里"**。`as` 被 runner 从
+  `with` 摘走(§3.4 第 3 点),step 看不到它,可 step 又必须知道自己产出的资源
+  会不会被注册——"未注册的资源必须在返回前自己释放"(同一点)要求它据此
+  决定交出去还是关掉。返回值里也没有任何一个键是给句柄留的:`outputs` 不许放
+  句柄(第 1 点),`$Ctx` 又是只读。三个 P0-08 的 step 各自发明一套(step
+  直接写 `$Ctx.Session`、runner 从某个约定字段抠、或者干脆用全局变量)正是
+  P0-R2 要消灭的局面重新开始。释放那一侧同样没说:`excel.close` 关完之后,
+  `$Ctx.Session` 里那个名字谁来摘——不摘,第 3 点的"同名重复注册"检查在下一
+  组 `open` 时照样触发。
+- **做**:四条,全部落在 `spec/STEP-CONTRACT.md` §3.4 第 7 点 + §3.1:
+  (1) runner 摘出 `as`、做完同名检查后,以 `$In.as` 原样回传给 step(没写时
+  `$null`),只有 `provides` 非空的 step 收到这个键;(2) `$In.as` 非空时 step
+  返回 `resource = <句柄/COM 对象>`,runner 存进 `$Ctx.Session[$In.as]` 并从
+  trace / ledger 的 outputs 里剥掉,step **不**直接写 Session;有 `as` 无
+  `resource` / 有 `resource` 无 `as` 都记 `internal_error`;(3) 消费方拿到的
+  是名字,自己 `$Ctx.Session[<名字>]` 取对象并校验有效性(`session_invalid`);
+  runner 只查名字存在(`session_missing`);(4) `releases` 非空的 step 返回
+  `ok` 后,runner 把匹配 `sessionKind` 的输入所指的名字从 Session 移除,失败
+  则保留交给 `onError`。
+- **完成**:§3.1 有 `resource` 一段;§3.4 有第 7 点;P0-07 的 spike runner 和
+  P0-08 的 `browser.ensure` / `screen.capture_window` 照此实现
+- **已执行(2026-09-22)**:同日落进 spec。
 
 ### [ ] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
@@ -725,7 +765,7 @@
 
 ---
 
-# P1 — 内核 + 30 个 MVP step + 文档生成(36 张,4 张整块)
+# P1 — 内核 + 32 个 MVP step + 文档生成(36 张,4 张整块)
 
 ## kernel(6 张)
 

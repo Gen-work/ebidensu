@@ -185,6 +185,45 @@ run 结束时的汇总;3) `--guided` 模式下立即显示在面板上。**不�
 (`SnapVerify`/`GfixJobList` 解析时,页面上明明有的行被正则漏掉、返回值
 没有任何字段能表达"我漏了几行")的根因:数据返回了,但没人看得见。
 
+**可选的 `resource`(P0-R17,只有 `provides` 非空的 step 用)。** 句柄 /
+COM 对象从 step 交到 `$Ctx.Session` 的唯一通道:step 收到非空的
+`$In.as`(runner 从 `with` 里摘出来又回传的注册名,见 §3.4 第 7 点)时,
+在返回 hashtable 里带 `resource = <句柄或 COM 对象>`;runner 把它存进
+`$Ctx.Session[$In.as]`,并在把 outputs 记进 trace / ledger 之前**剥掉**
+这个键——它不是 outputs 字段,manifest 的 `outputs` 里不声明它。
+`$In.as` 为空时 step 不返回 `resource`,自己在返回前释放(§3.4 第 3 点)。
+"有 `as` 没 `resource`"和"有 `resource` 没 `as`"都是契约违反,runner
+记为 `internal_error`。
+
+**保留失败 id(P0-R15)。** 全部由 runner 产生,manifest **不必**列出,
+`onError.byFailure` 可以直接引用它们:
+
+| id | `transient` | 谁产生 | 含义 |
+|----|-------------|--------|------|
+| `internal_error` | `$false` | runner | step 抛出了未预期异常(§3.1 上文) |
+| `needs_unmet` | `$false` | runner | §4 的前置条件不满足,没进 `Invoke-Step` |
+| `session_missing` | `$false` | runner | 某个 `type='session'` 输入填的名字没在 `$Ctx.Session` 里注册过 |
+| `session_invalid` | `$true` | **消费 step** | 名字在,底层资源已失效(窗口句柄 `IsWindow` 为假、COM 对象摸一个只读属性就抛)。这是唯一由 step 自己返回的保留 id——只有拿到对象的那一方能检查;`transient` 为真是因为重跑 `setup` 就能重建 |
+| `session_conflict` | `$false` | runner | `with.as` 的名字已被一个还活着的资源占用(§3.4 第 3 点) |
+| `cancelled` | `$false` | runner | 关卡上人选了 `q`,走 `WORKFLOW-SCHEMA.md` §1.1 的中止路径 |
+
+**通用失败 id 词表(P0-R15)。** 这些**不是**保留 id——manifest 仍然要列、
+`transient` 仍然自己标——但名字统一,`byFailure` 才写得出通用配置:
+
+| id | 语义 | `transient` 建议 |
+|----|------|------------------|
+| `timeout` | 等待超时 | `$true` |
+| `not_found` | 目标不存在(页面已加载完、内容确实没有) | `$false` |
+| `ambiguous` | 匹配到多个候选,附 P0-R4 的标准候选形状 | `$false` |
+| `foreground_lost` | 发键前核对前台窗口失败(§4,P0-R12) | `$true` |
+| `no_effect` | `verifyChange` 开着而动作前后页面文本没变(P0-R12) | `$true` |
+| `file_not_found` | 文件不存在 | `$false` |
+| `parse_error` | 输入文本 / 文件解析不出来 | `$false` |
+| `unsupported` | 参数组合本 step 不支持 | `$false` |
+
+规则:一个失败落在词表里某项的语义,就用词表的名字;P0-06 不强制,
+`ebi help` 渲染时对词表外的 id 标一个 `(custom)`,让评审看得见。
+
 ### 3.2 `$Ctx` 提供什么(只读)
 
 | 字段 | 说明 |
@@ -197,6 +236,17 @@ run 结束时的汇总;3) `--guided` 模式下立即显示在面板上。**不�
 
 **`$Ctx` 里没有别的 step 的输出。** step 之间只通过 workflow JSON 的模板引用
 传值 —— 这是正交性的保证。
+
+**`$Ctx` 里也没有 worklist(P0-R11)。** 工作清单是一种 Session 资源
+(种类 `worklist`,§3.4 第 6 点的种类表),由 `table.load` 在 `setup`
+里用 `with.as` 注册;`table.select` / `table.set` / `table.ensure_columns` /
+`flow.checkpoint` / `progress.status` 都通过一个 `type='session';
+sessionKind='worklist'` 的输入拿到它的名字,再从 `$Ctx.Session` 取表。
+runner 遍历 `source` 用的也是同一个实例(`WORKFLOW-SCHEMA.md` §3)。
+整张表**不进** `table.load` 的 outputs、不进 ledger——和句柄同一条理由
+(§3.4 第 1 点);它的 outputs 只有 `path` / `rowCount` / `columns`。
+每个写 worklist 的 step 在返回前都做一次原子落盘(沿用
+`Export-MappingAtomic`),step 之间不存在"改了内存没写盘"的窗口。
 
 ### 3.3 `DryRun` 的处理
 
@@ -334,6 +384,7 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
    | `window` | `$false` | 窗口句柄,泄漏无害,人工关掉即可(见 §1.1) |
    | `workbook` | `$true` | Excel `Workbook` COM 对象,泄漏会累积,需要人工杀 `EXCEL.EXE` |
    | `excelApp` | `$true` | Excel `Application` COM 对象,同上 |
+   | `worklist` | `$false` | 内存里的工作清单表(P0-R11)。每次写都已原子落盘,进程结束没有要释放的东西 |
 
    **表里的每个种类都必须有 step 产出它,不许有死条目**(P0-R10 第五轮)。
    这条不是形式主义:`excelApp` 和 `workbook` 分成两个种类,就意味着
@@ -372,6 +423,28 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
    元规则要求的"新增契约事实,定义处和汇总处一起改"的又一个例子;§7
    的 Run-Tests.ps1 清单有一条静态检查兜底这条纪律(见下方)。
 
+7. **资源怎么进出 Session(P0-R17)。** 前面六点定了"谁注册、谁释放、
+   要不要释放",没定"句柄从 step 手里怎么交到 runner 手里"。四条:
+   - **`$In.as` 回传**:runner 把 `as` 从 `with` 摘出、做完第 3 点的同名
+     检查之后,以 `$In.as` 原样传给 step(没写 `as` 时是 `$null`)。只有
+     `provides` 非空的 step 会收到这个键——它需要知道自己产出的资源会不会
+     被注册,才能决定是交出去还是自己释放(第 3 点)。
+   - **`resource` 返回键**:`$In.as` 非空时,step 在返回 hashtable 里带
+     `resource = <句柄 / COM 对象>`(§3.1);runner 把它存进
+     `$Ctx.Session[$In.as]`,并从记进 trace / ledger 的 outputs 里剥掉。
+     step **不**直接写 `$Ctx.Session`——同名检查、剥离、种类记账都在
+     runner 一处做。
+   - **消费方拿到的是名字**:`type='session'` 输入的值是字符串(§2.2),
+     step 自己 `$Ctx.Session[$In.window]` 取对象,并校验它还活着
+     (`IsWindow` / 摸一个只读属性),失效返回 `session_invalid`(§3.1)。
+     runner 只在调用前查名字存在(`session_missing`),不替 step 校验
+     对象——它不知道每种资源怎么校验。
+   - **释放后由 runner 摘名字**:`releases` 非空的 step 返回 `ok` 后,
+     runner 把该 step 里 `sessionKind` 与 `releases` 匹配的那个输入所指的
+     名字从 `$Ctx.Session` 移除(不管 step 内部做了什么);返回失败则条目
+     保留,交给 `onError`。于是第 3 点的"同名重复注册"检查看到的永远是
+     "还没被成功释放"的实例。
+
 `$Ctx.Session` 本身**不持久化**、**不写进 ledger**、**不出现在 trace 里**
 (trace 只记 `outputs`)。它在每次进程启动时都是空的 —— 断点续跑时怎么
 重建它,见 §6.2(P0-R3)。
@@ -384,14 +457,35 @@ runner 在调用前检查,不满足直接失败,不进 step。
 
 | need | 含义 |
 |------|------|
-| `foreground` | 需要一个前台窗口 |
+| `foreground` | **本 step 会发键 / 发鼠标**,发之前把它 `sessionKind='window'` 的输入所指的窗口 `SetForegroundWindow`,再核对 `GetForegroundWindow()` 等于它,不等则返回 `foreground_lost`(P0-R12)。声明它的 step 必须有一个 `type='session'; sessionKind='window'; required=$true` 的输入——"需要一个前台窗口"但不说哪个,等于没说 |
 | `browser` | 需要浏览器进程在运行 |
 | `excel` | 需要 Excel COM 可用 |
-| `worklist` | 需要工作清单已加载 |
 | `calibrated:ocr` | 需要本机 OCR 校准通过(见 §5) |
 
 `needs` 的意义是**把失败提前到运行前**,并且让 `ebi lint` 能在不运行的情况下
 警告「这条工作流需要 Excel,你确定这台机器有吗」。
+
+**`needs` 里没有 `worklist` 这一项(P0-R11)**——理由和下面删
+`session:<种类>` 一样:工作清单是 Session 资源,消费方那个
+`sessionKind='worklist'` 的输入已经把"需要它"说清楚了。
+
+**为什么发键要核对前台(P0-R12)。** `SendKeys` 打到哪个窗口,只看那一刻
+谁在前台。而 `human.*` step 一定会把前台抢到控制台(`Read-Host` 要焦点),
+runner 又可以在任何一步之后插进一个关卡(`onError.policy=ask`、
+`destructive` 的自动确认)——发键 step 根本不知道上一步是不是刚问过人。
+旧工具为此在每个 `Read-Host` 之后编排一套 `Bring-ShellToFront` →
+`Switch-ToEdge`(Alt+Tab)→ `Click-PageBody`,并留下注释说 Alt+Tab
+"只有这一处安全",加错地方就把 correl id 敲进控制台。新设计不做这种
+编排:**每个发键 step 自己负责把自己的目标窗口拉到前台并核对**,
+`human.*` step 的 `effects` 定为 `ui`(它们占用前台和键盘),manifest
+`notes` 写明"返回后前台在控制台"。runner **不**替任何 step 恢复前台。
+`window` 这个种类不绑定浏览器:`browser.ensure` 按 `process` 输入(默认
+`msedge`)找主窗口,df.exe / Excel 窗口迁移时复用同一个 step 和种类。
+
+**`browser.verify_action` 不是 step(P0-R12)。** step 不能调 step,所以
+"动作前后对比页面文本"做成 `browser.fill` / `browser.submit` /
+`browser.navigate` 的可选输入 `verifyChange`(默认 `$false`):为真时
+step 在动作前后各取一次页面文本,无变化返回 `no_effect`(`transient`)。
 
 **`needs` 里没有 `session:<种类>` 这一项(P0-R10)。** 早先的草案里这个
 形式和 §3.4/§2.2 的 `type='session'` + `sessionKind` 是同一件事的两处
@@ -485,6 +579,19 @@ ledger 拿 `use` 当键,第二次调用会和第一次共用一条记录,resume 
 这就是 §3.4 反复强调"`outputs` 必须 JSON-可序列化"的真正原因:句柄 / COM
 对象进 `$Ctx.Session`、永不进 `outputs`,所以 `outputs` 天然能整体塞进
 ledger 的一行 JSON 并原样读回。
+
+**被 `when` 跳过的 step 也记一条**(P0-R13):`status='skipped'`,
+`outputs` 是 manifest 声明的每个字段都在、值全为 `null` 的对象,外加
+`skipped=true`。resume 时照常重放——后续 step 引用它得到 `null`,不是
+未定义引用(`WORKFLOW-SCHEMA.md` §5)。
+
+**ledger 只服务同一个 `runId` 的断点续跑(P0-R14)。** 任何工作流不得读
+另一条工作流的 ledger——它按 run 隔离,里面的 `outputs` 只对本次 run 的
+模板作用域有意义。跨工作流的 item 级交接只有两条路:标量写进 worklist
+列(`table.set`),结构化数据写进 capture 侧车
+`capture/<side>_<page>/<keySafe>.meta.json`(`file.write_json` /
+`file.read_json`,`VOCABULARY.md` §3.3)。capture 阶段算出来、annotate
+阶段要用的东西(行号、高亮矩形、备注)一律走侧车。
 
 ### 6.2 `setup` / `teardown` 每次 resume 都重跑
 

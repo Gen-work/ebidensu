@@ -358,7 +358,7 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 
 ```jsonc
 {
-  "file": "worklist.csv",
+  "file": "worklist.csv",          // 可含 {{run.operator}}:"mapping_{{run.operator}}.csv"(P0-R11)
   "encoding": "utf8-bom",
 
   "key": {
@@ -378,7 +378,8 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
     { "name": "JOB_NAME",     "role": "key" },
     { "name": "Excel_NAME",   "role": "deliverable" },
     { "name": "before_transferStatus", "role": "verdict", "default": "" },
-    { "name": "before_hmResult",       "role": "verdict", "default": "" },
+    { "name": "before_hmResult",       "role": "verdict", "default": "",
+      "values": { "ok": "1", "ng": "2", "unknown": "", "pending": "0" } },   // 存储编码,见 §6.5
     { "name": "composed",     "role": "bitmask",
       "bits": { "before": 1, "after": 2, "compare": 4 } },
     { "name": "note",         "role": "text" }
@@ -477,12 +478,29 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 | `group` | 分组列 |
 | `owner` | 归属人 |
 | `deliverable` | 交付物工作簿名 |
-| `verdict` | 三值判定列(`ok` / `ng` / `unknown` / 空) |
+| `verdict` | 三值判定列(`ok` / `ng` / `unknown` / 空)。可选 `values`:逻辑值 → 存储编码的映射(P0-R11,见下) |
 | `bitmask` | 位掩码列,`bits` 声明位名 → 位值 |
 | `text` | 自由文本 |
 | `time` | 时间列 |
 
 启动时按此 schema 自动补齐缺失的列(沿用 `Ensure-MappingColumns` 的行为)。
+
+**`verdict.values`:存储编码由 profile 声明(P0-R11)。** 工作流 JSON 和
+`verify.assert` / `human.gate` 的输出永远只有逻辑值 `ok` / `ng` / `unknown`
+/ `''`;列里**实际存什么**由这张映射决定,`flow.checkpoint` 写入前正向
+翻译、`pendingWhen`(`WORKFLOW-SCHEMA.md` §3.1)和 `progress.status` 读出
+后反向翻译。不写 `values` 就是原样存逻辑值。它存在的理由是新旧工具
+**混跑**:P6 的迁移方式是每迁完一条流程删一条旧脚本,相当长一段时间里
+同一份清单上 capture 由新引擎写、compose / annotate 由旧脚本读——旧
+`Test-MqSnapDone` 只认 `'1'` 为完成,新引擎的 `!= ok` 又把旧写的 `1`
+当待处理。`host-open` profile 用 `{ "ok": "1", "ng": "2", "unknown": "",
+"pending": "0" }` 沿用旧编码,换工作后的新 profile 不写这项,工作流一个
+字不改。`ebi profile check` 检查映射的键只能是这四个逻辑值。
+
+**`file` 可以含 `{{run.operator}}`(P0-R11)**:当前工作的清单文件名带
+操作员后缀(`mapping_<Owner>.csv`),写成 `"mapping_{{run.operator}}.csv"`,
+runner 加载 profile 时按 `WORKFLOW-SCHEMA.md` §4.3 求值一次;
+`run.operator` 来自 CLI `--operator`,默认 `$env:USERNAME`(P0-R16)。
 
 ### 6.6 `{{item.key}}` / `{{item.keySafe}}`、规则落盘、标准候选形状(P0-R4)
 

@@ -1,6 +1,6 @@
 # WORKFLOW-SCHEMA — 工作流 JSON 规格
 
-> 状态:**草案**,P0 阶段定稿。
+> 状态:**草案**,P0 阶段定稿。**schema: 1**(P0-R15,见 §1 的 `schema` 字段和 §10)。
 > 读者:写工作流的人和 Agent。step 的实现契约见 `STEP-CONTRACT.md`。
 
 ## 0. 一条设计铁律
@@ -26,6 +26,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
 ```jsonc
 {
+  "schema":  1,
   "id":      "before.transferStatus.capture",
   "title":   "転送状態ページの証跡取得",
   "version": "1.0.0",
@@ -45,6 +46,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
+| `schema` | ✓ | 整数,本文件顶部声明的 schema 版本(现在是 `1`)。缺失或大于 runner 支持的版本 → `ebi lint` / runner 拒绝加载(P0-R15,§10) |
 | `id` | ✓ | 全局唯一。命名见 `VOCABULARY.md` §3.2(`<side>.<page>.<verb>`) |
 | `title` | ✓ | 给人看的标题,可用日文/中文 |
 | `version` | ✓ | 语义化版本,改动时手工 bump |
@@ -65,6 +67,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | 正常跑完(所有 item 处理完) | 保证 |
 | `onError.policy=fail` 触发中止 | 保证 |
 | step 抛出未预期异常(`internal_error`,`STEP-CONTRACT.md` §3.1) | 保证 |
+| 关卡上人选了 `q`(`human.gate` 输出 `action='quit'`,或 `onError.policy=ask` 面板的 q;runner 记为保留失败 `cancelled`,走和 `policy=fail` 同一条路,P0-R13) | 保证 |
 | Ctrl+C / 进程被杀 / 终端被关 / 系统重启 | **不保证** |
 
 前三种都发生在同一个 PowerShell 进程的正常控制流里(跑到头,或者被
@@ -120,7 +123,7 @@ runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一
 
 ```jsonc
 "source": {
-  "table":  "worklist",
+  "table":  "wl",           // setup 里某个 table.load 用 with.as 注册的 worklist 实例名(P0-R11)
   "select": {
     "field":       "before_transferStatus",
     "pendingWhen": "!= ok"
@@ -130,6 +133,19 @@ runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一
   "limit":   0              // 0 = 不限;CLI --limit 会覆盖
 }
 ```
+
+**`table` 的值是 Session 实例名,不是文件名(P0-R11)。** 工作清单是
+种类 `worklist` 的 Session 资源(`STEP-CONTRACT.md` §3.2、§3.4 第 6 点):
+`setup` 里 `{ "id": "load", "use": "table.load", "with": { "path": ..., "as": "wl" } }`
+把它注册进 `$Ctx.Session`,`source.table` 填同一个名字,runner 遍历的和
+`flow.checkpoint` / `progress.status` 写读的就是**同一个内存表**——不存在
+两份副本。`ebi lint` 用 §9 的种类配平检查它(必须有一个 `provides` 含
+`worklist` 的 `setup` 调用注册过这个名字)。`table.load` `provides` 非空,
+所以每次 resume 都真执行(`STEP-CONTRACT.md` §6.2),拿到的永远是磁盘上
+最新的表。
+
+CLI `--only <key>[,<key>...]`(P0-R16)按 `{{item.key}}` 的显示形在
+`select` 之上再筛一层;`--force` 才忽略 `pendingWhen`。
 
 ### 3.1 `pendingWhen` 的允许写法(**穷举,不许扩展**)
 
@@ -143,6 +159,13 @@ runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一
 
 **这不是表达式语言,是五个固定枚举。** 需要更复杂的筛选 → 用
 `table.select` step 加参数,或者在 profile 里定义一个命名筛选器。
+
+**比较前先经 profile 的 `values` 映射翻译(P0-R11)。** `verdict` 列可以在
+`worklist.json` 里声明存储编码(`PROFILE-SCHEMA.md` §6.5,如
+`{ "ok": "1", "ng": "2", "unknown": "", "pending": "0" }`),`pendingWhen`
+的 `ok` / `ng` 指的是**逻辑值**:runner 把列里读到的存储值先翻译回逻辑值
+再比较,`flow.checkpoint` 写入时反向翻译。这是新旧工具在同一份清单上
+混跑的前提——工作流 JSON 里永远只写 `ok` / `ng`。
 
 ### 3.2 `ng` 仍算 pending
 
@@ -162,7 +185,7 @@ runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一
 | `{{vars.X}}` | 工作流常量 | 全部 |
 | `{{profile.X.Y}}` | profile 数据 | 全部 |
 | `{{page.X}}` | 顶层 `page` 绑定的那个 page 的数据(`profile.pages[<page>].X` 的简写),`{{page.id}}` 是 page 名本身 | 全部,且顶层声明了 `page` 字段时才可用(P0-R6) |
-| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir` / `timeWindow`) | 全部 |
+| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir` / `timeWindow`)。**持久化在 `run/<runId>/run.json`**(P0-R16):runner 启动时写入,`human.input` / `--time-window` 改 `timeWindow` 时同步更新,`--resume` 时从它恢复,不再问人 | 全部 |
 | `{{item.X}}` | 当前行的某列 | 仅 `each` |
 | `{{item.key}}` | 当前行的主键显示形(复合键按声明顺序用 `" / "` 拼接) | 仅 `each` |
 | `{{item.keySafe}}` | 当前行的主键**文件名安全形**,文件/目录名一律用它,见 `PROFILE-SCHEMA.md` §6.6 | 仅 `each` |
@@ -229,7 +252,7 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 和 `pendingWhen` 一样,是**固定枚举**,不是表达式:
 
 ```jsonc
-{ "id": "gate", "use": "human.gate", "when": "steps.verdict.out.code == unknown" }
+{ "id": "checkpoint", "use": "flow.checkpoint", "when": "steps.gate.out.action != skip" }
 ```
 
 允许的形式**只有**:
@@ -245,6 +268,36 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
 
 需要「且 / 或」→ 拆成多个 step,或者做成一个 `verify.*` step 返回一个布尔字段。
 **不要在 JSON 里发明布尔代数。**
+
+### 5.1 被 `when` 跳过的 step,它的输出是什么(P0-R13)
+
+`when` 是运行期才知道真假的,所以"引用了没执行的 step"这件事 lint 判不了。
+定死:runner 为被跳过的 step 在作用域里放 `@{ ok=$true; skipped=$true }`,
+manifest `outputs` 声明的**每个字段都存在、值为 `null`**;引用它不是
+错误。`when` 的四种形式对 `null` 的判法:`exists` 为假、`empty` 为真、
+`==` / `!=` 按字面比较(`null` 不等于任何字面量)。于是"上一步跳过了
+就也跳过"写成 `when: "steps.x.out.skipped != true"`。ledger 里记一条
+`status='skipped'`,resume 时照常重放(`STEP-CONTRACT.md` §6.1)。
+
+### 5.2 关卡的结论怎么进 checkpoint(P0-R13)
+
+旧工具的判定流是三态收口到两态:`ok` → 写完成,`ng` → 写 NG,`ask` →
+问人,人答 o / n / s / q → 完成 / NG / 留 pending / 中止。要让"人在关卡
+上答了什么"覆盖 `verify.assert` 的结论,而 JSON 里又不许写"如果 gate 跑了
+取 gate 的、否则取 verdict 的"这种表达式,做法是**让关卡 step 自己做
+条件,不靠 `when`**:
+
+- `human.gate` **总是执行**,输入 `code`(`verify.assert` 的结论)和
+  `askWhen`(默认 `["unknown"]`)。`code` 不在 `askWhen` 里 → 静默直通,
+  输出 `code` 原值、`action='pass'`;在里面 → 渲染面板问人:`Enter` →
+  `code='ok'`、`n` → `code='ng'`、`s` → `code=''` + `action='skip'`、
+  `q` → `action='quit'`(runner 记 `cancelled`,走 §1.1 的中止路径)。
+- `flow.checkpoint` 统一写 `{{steps.gate.out.code}}`,并带
+  `when: "steps.gate.out.action != skip"`——`s` 是"留 pending",不写盘。
+- `onError.policy=ask` 的面板复用 `human.gate` 的渲染和 r / s / q 语义,
+  不另写一套。
+
+§8 的完整示例就是这个形状。
 
 ---
 
@@ -282,6 +335,10 @@ P0-R1),`{{page.grammar}}` 只是省去重复写一遍 page 名。
   `transient = $false` 的 id 在 `byFailure` 里写 `retry` 是配置错误,
   `ebi lint` 报错(§9,呼应 P1-08)
 - `internal_error`(保留 id)默认不重试,除非显式在 `byFailure` 里覆盖
+- `STEP-CONTRACT.md` §3.1 的全部保留 id(`needs_unmet` / `session_missing` /
+  `session_invalid` / `session_conflict` / `cancelled`)都可以在 `byFailure`
+  里引用;`ebi lint` 对它们不查"manifest 里有没有列"(P0-R15)。
+  `session_invalid` 是其中唯一 `transient` 的——重跑 `setup` 就能重建
 
 **`warnings`(`STEP-CONTRACT.md` §3.1)不受 `onError` 影响。** 带
 `warnings` 的返回值仍然是 `ok = $true`,`onError` 只处理 `ok = $false`
@@ -401,10 +458,17 @@ COM 对象当场变成孤儿:没有名字能传给 `excel.close`,谁也关不掉
 
 ```jsonc
 { "id": "checkpoint", "use": "flow.checkpoint",
-  "with": { "field": "before_transferStatus", "value": "{{steps.verdict.out.code}}" } }
+  "when": "steps.gate.out.action != skip",
+  "with": { "worklist": "wl",
+            "field": "before_transferStatus", "value": "{{steps.gate.out.code}}" } }
 ```
 
-写工作清单 + 写 ledger。**这是断点续跑的唯一依据。**
+写工作清单 + 写 ledger。**这是断点续跑的唯一依据。** `worklist` 是
+`type='session'; sessionKind='worklist'` 的输入(P0-R11),填 `setup` 里
+`table.load` 注册的名字;`value` 是逻辑值(`ok` / `ng` / `unknown` /
+`''`),写入前经 profile 的 `values` 映射翻译成存储编码(§3.1),写完
+原子落盘。`value` 取 `steps.gate.out.code` 而不是 `steps.verdict.out.code`,
+配 `when` 跳过 `action == skip`——理由见 §5.2。
 
 位掩码形式:
 
@@ -423,7 +487,7 @@ COM 对象当场变成孤儿:没有名字能传给 `excel.close`,谁也关不掉
 ```
 
 子工作流只有 `each` 段的内容会被内联。用于抽出重复片段。**这张卡不在
-BACKLOG 里,P1 的 30 个 MVP step 也没排它** —— 实现前先读下面的命名空间
+BACKLOG 里,P1 的 32 个 MVP step 也没排它** —— 实现前先读下面的命名空间
 规则,不要假设内联的 id 会自动避让。
 
 **内联 id 必须加前缀,否则会撞上 P0-R3 刚堵上的 ledger 键冲突。**
@@ -559,6 +623,7 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 
 ```jsonc
 {
+  "schema": 1,
   "id": "before.transferStatus.capture",
   "title": "転送状態ページの証跡取得",
   "version": "1.0.0",
@@ -568,13 +633,15 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
   "vars": { "side": "before" },
 
   "source": {
-    "table": "worklist",
+    "table": "wl",
     "select": { "field": "before_transferStatus", "pendingWhen": "!= ok" }
   },
 
   "onError": { "policy": "ask" },
 
   "setup": [
+    { "id": "load", "use": "table.load",
+      "with": { "path": "{{profile.worklist.file}}", "as": "wl" } },
     { "id": "prepare", "use": "human.prepare",
       "with": { "message": "{{page.openHint}}",
                 "url":     "{{page.url}}" } },
@@ -588,14 +655,18 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
   "each": [
     { "id": "focus", "use": "browser.focus_body", "with": { "window": "mainWindow" } },
 
-    { "id": "tabToForm", "use": "browser.tab_to", "with": { "count": "{{page.tabsToForm}}" } },
-    { "id": "submitForm", "use": "browser.submit" },
-    { "id": "tabToInput", "use": "browser.tab_to", "with": { "count": "{{page.tabsToInput}}" } },
-    { "id": "fill", "use": "browser.fill", "with": { "text": "{{item.Correl_ID_S}}" } },
-    { "id": "submitQuery", "use": "browser.submit" },
+    { "id": "tabToForm", "use": "browser.tab_to",
+      "with": { "window": "mainWindow", "count": "{{page.tabsToForm}}" } },
+    { "id": "submitForm", "use": "browser.submit", "with": { "window": "mainWindow" } },
+    { "id": "tabToInput", "use": "browser.tab_to",
+      "with": { "window": "mainWindow", "count": "{{page.tabsToInput}}" } },
+    { "id": "fill", "use": "browser.fill",
+      "with": { "window": "mainWindow", "text": "{{item.Correl_ID_S}}", "verifyChange": true } },
+    { "id": "submitQuery", "use": "browser.submit", "with": { "window": "mainWindow" } },
 
     { "id": "wait", "use": "browser.wait_for",
-      "with": { "contains":   "{{item.Correl_ID_S}}",
+      "with": { "window":     "mainWindow",
+                "contains":   "{{item.Correl_ID_S}}",
                 "timeoutSec": "{{page.timeoutSec}}",
                 "archiveTo":  "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.txt" } },
 
@@ -623,21 +694,30 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
                 "key":     "{{item.key}}",
                 "tieBreak":"newest" } },
 
+    { "id": "meta", "use": "file.write_json",
+      "with": { "path": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.meta.json",
+                "data": { "row": { "index": "{{steps.row.out.index}}",
+                                   "count": "{{steps.row.out.count}}" } } } },
+
     { "id": "verdict", "use": "verify.assert",
       "with": { "record": "{{steps.row.out.record}}",
                 "rules":  "{{page.rules}}" } },
 
     { "id": "gate", "use": "human.gate",
-      "when": "steps.verdict.out.code == unknown",
-      "with": { "reason":   "{{steps.verdict.out.message}}",
+      "with": { "code":     "{{steps.verdict.out.code}}",
+                "askWhen":  ["unknown"],
+                "reason":   "{{steps.verdict.out.message}}",
                 "evidence": "{{steps.shot.out.path}}" } },
 
     { "id": "checkpoint", "use": "flow.checkpoint",
-      "with": { "field": "before_transferStatus", "value": "{{steps.verdict.out.code}}" } }
+      "when": "steps.gate.out.action != skip",
+      "with": { "worklist": "wl",
+                "field": "before_transferStatus", "value": "{{steps.gate.out.code}}" } }
   ],
 
   "teardown": [
-    { "id": "status", "use": "progress.status", "with": { "field": "before_transferStatus" } }
+    { "id": "status", "use": "progress.status",
+      "with": { "worklist": "wl", "field": "before_transferStatus" } }
   ]
 }
 ```
@@ -668,6 +748,20 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 - `verify.match_record` 没有 `aliases` 输入 —— 复合键的变体规则
   (`confirmedRules`)由它 dot-source 的 `kernel/Key.ps1` 直接从已加载的
   worklist 数据里读,不是工作流显式传进去的参数(P0-R4)。
+- `"schema": 1` 是必填的版本标记(P0-R15,§1、§10)。
+- `table.load` 在 `setup` 里用 `as: "wl"` 注册工作清单,`source.table`、
+  `flow.checkpoint` 的 `worklist`、`progress.status` 的 `worklist` 都填这个
+  名字——runner 遍历的和 step 写的是同一个内存表(P0-R11,§3)。
+- **每个发键的 step 都带 `window: "mainWindow"`**(`tab_to` / `submit` /
+  `fill` / `wait_for`,P0-R12):发键前把这个窗口拉到前台并核对,而不是
+  对着"当下前台"发——`gate` 一问完人,前台就在控制台了。`fill` 开了
+  `verifyChange`,填完对比页面文本,没变化就 `no_effect`。
+- `gate` **没有 `when`**,而是拿 `code` + `askWhen` 自己决定问不问
+  (P0-R13,§5.2);`checkpoint` 写的是 `steps.gate.out.code`,并用 `when`
+  跳过 `action == skip`(留 pending)。
+- `meta` 把 `match_record` 算出的行号 / 条数写进
+  `capture/<side>_<page>/<keySafe>.meta.json` 侧车(P0-R14)——annotate
+  工作流靠它平移红框,ledger 按 run 隔离,它读不到这里的 outputs。
 
 ---
 
@@ -675,6 +769,11 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 
 静态,不运行:
 
+- [ ] `schema` 存在、是整数、不大于 runner 支持的版本(P0-R15,§1)
+- [ ] `source.table` 填的名字,在 `setup` 里有一个 `provides` 含 `worklist`
+      的调用用同名 `with.as` 注册过(P0-R11,§3;是下面种类配平检查的
+      一个特例,单列出来因为它不是某个 step 的 `type='session'` 输入,
+      而是 runner 自己的消费)
 - [ ] `use` 的 step 都存在于 catalog
 - [ ] `with` 的参数都在 step 的 `inputs` 里声明过,类型对得上
 - [ ] `required` 的参数都给了
@@ -718,7 +817,10 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 ## 10. 版本与兼容
 
 - workflow 的 `version` 手工维护,改了语义就 bump
-- schema 本身的版本记在本文件顶部;schema 有破坏性改动时,runner 会拒绝加载
-  过旧的 workflow 并提示怎么迁移
+- schema 本身的版本记在本文件顶部(现在是 `1`),每条 workflow 用顶层
+  `schema` 字段声明它按哪一版写的(§1,P0-R15);schema 有破坏性改动时
+  这里的数字 bump,runner 对 `schema` 缺失或大于自己支持的版本拒绝加载并
+  提示怎么迁移。加字段的那天所有已有工作流都得补一行——所以从第一条
+  工作流起就带着它
 - profile 和 workflow 分开演进:改 profile 不需要动 workflow,反之亦然。
   **这是整个设计的目的**
