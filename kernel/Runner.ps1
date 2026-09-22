@@ -96,6 +96,22 @@ function New-EbiRunId {
     return ('{0}-{1}' -f $stamp, $rand)
 }
 
+function ConvertTo-EbiAbsolutePath {
+    # PowerShell-relative -> absolute, using PowerShell's current location
+    # (not the process working directory, see Invoke-EbiWorkflow). An
+    # existing path is resolved through the provider so '.\x' and 'x/../y'
+    # collapse; a not-yet-existing one (a fresh WorkDir) is joined by hand.
+    # Empty stays empty.
+    param([string]$PathValue)
+    if ([string]::IsNullOrWhiteSpace($PathValue)) { return $PathValue }
+    if (Test-Path -LiteralPath $PathValue) {
+        return (Resolve-Path -LiteralPath $PathValue).ProviderPath
+    }
+    if ([System.IO.Path]::IsPathRooted($PathValue)) { return $PathValue }
+    $base = (Get-Location).ProviderPath
+    return [System.IO.Path]::GetFullPath((Join-Path $base $PathValue))
+}
+
 function Get-EbiDefaultModulesRoot {
     # kernel/ and modules/ are siblings under the repo root.
     return (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules')
@@ -410,7 +426,16 @@ function Invoke-EbiWorkflow {
     $dryRunFlag = [bool]$DryRun.IsPresent
     if ([string]::IsNullOrWhiteSpace($ModulesRoot)) { $ModulesRoot = Get-EbiDefaultModulesRoot }
     if ([string]::IsNullOrWhiteSpace($RunId))       { $RunId = New-EbiRunId }
-    if ([string]::IsNullOrWhiteSpace($WorkDir))     { $WorkDir = (Get-Location).Path }
+    if ([string]::IsNullOrWhiteSpace($WorkDir))     { $WorkDir = (Get-Location).ProviderPath }
+    # Everything below hands paths to .NET ([IO.File], [IO.Path]::Combine in
+    # steps, Trace.ps1's AppendAllText). .NET resolves a relative path
+    # against the PROCESS working directory, which PowerShell never syncs
+    # with Set-Location -- on PS 5.1 that is wherever the console started.
+    # So '.\workflows\x.json' passed Test-Path and then failed ReadAllText
+    # on the first office-PC run. Absolute from here on.
+    $Path        = ConvertTo-EbiAbsolutePath $Path
+    $WorkDir     = ConvertTo-EbiAbsolutePath $WorkDir
+    $ModulesRoot = ConvertTo-EbiAbsolutePath $ModulesRoot
 
     $result = @{
         ok = $false; runId = $RunId; workflowId = ''; failure = ''; message = ''
@@ -427,10 +452,12 @@ function Invoke-EbiWorkflow {
     } catch {
         $result['failure'] = 'unsupported_in_spike'
         $result['message'] = ('cannot read workflow: {0}' -f $_.Exception.Message)
+        Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
         return $result
     }
     if (-not ($workflow -is [hashtable])) {
         $result['failure'] = 'unsupported_in_spike'; $result['message'] = 'workflow JSON must be an object'
+        Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
         return $result
     }
     $result['workflowId'] = [string]$workflow['id']
