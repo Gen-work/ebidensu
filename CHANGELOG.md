@@ -1,3 +1,41 @@
+## 2026-09-22 - GiftMqProcessTime: the run could freeze with no output (v2.22.2)
+
+The operator pressed Enter at the capture prompt and the run went silent --
+no capture, no error, no exit. Reported twice.
+
+### Fixed
+- **A stray click could freeze the console.** `Click-GiftMqPageCenter` clicked
+  the centre of whatever window was in the FOREGROUND, on the assumption that
+  `Switch-ToEdge` had put Edge there. Its Alt+Tab is synthetic and Windows
+  ignores it under some policies, so the click landed inside the PowerShell
+  console instead -- and a Windows console with QuickEdit mode on (the
+  default) treats a click as the start of a text selection, which BLOCKS every
+  subsequent write by the process. The run stopped dead with nothing to show
+  for it. Two guards, because either alone still leaves a silent failure:
+  the click is now made only when an Edge window really is in the foreground
+  (new `Test-GiftMqForegroundIsEdge`, off a `GetWindowThreadProcessId` process
+  lookup rather than a window title), and QuickEdit is disabled for the
+  duration of the run and restored on every exit path.
+- **A failed switch to Edge is now reported, not assumed.** New
+  `Confirm-GiftMqEdgeForeground` retries the switch, and when Edge still is
+  not in front it asks the operator to click the Edge window rather than
+  sending keystrokes into whatever else is there. Wired into the capture, the
+  detail loop's entry, and its per-record retry.
+- **The page-text poll no longer runs silent.** It printed nothing for its
+  whole 15-second window, which is indistinguishable from a hang -- exactly
+  how this bug presented. Each attempt now prints one line naming the page,
+  the attempt number and how many characters came back.
+- **A failed capture says what it got.** The `Could not read a LIST page`
+  error now reports whether nothing was copied at all or names the first 160
+  characters of what was, so a capture that grabbed the left navigation frame
+  is obvious from the message.
+
+### Notes
+- The no-automation fallback is unchanged and documented: copy the page by
+  hand and pass `-PageTextFile`, with `-NoDetail` to fill start times only.
+- COM and SendKeys paths remain static-checked only; the pure library and its
+  105 unit tests are untouched.
+
 ## 2026-09-22 - GiftMqProcessTime: first-run fixes (v2.22.1)
 
 Three problems from the first real office-PC run. None changed what the tool

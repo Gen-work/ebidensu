@@ -144,6 +144,81 @@ $L = Get-GiftMqLabels
 # ============================================================
 # Console / Edge helpers (mirror MqSnap.ps1's local ones)
 # ============================================================
+
+# Extra P/Invokes this script needs on top of Common.ps1's WinAPI/MouseAPI:
+# which process owns the foreground window (so a click can never land on the
+# wrong app) and the console's QuickEdit flag (see Disable-GiftMqQuickEdit).
+# Guarded: re-running in the same session would throw "type already exists".
+if (-not ('GiftMqWin' -as [type])) {
+    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public class GiftMqWin {
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll")]
+    public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+
+    [DllImport("kernel32.dll")]
+    public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+}
+"@
+}
+
+# QuickEdit mode (on by default on Windows 10/11) turns any left-click inside
+# the console into a text selection, and a console with an active selection
+# BLOCKS the process's writes until the selection is cleared. This script
+# drives a real mouse, so one click landing on the console instead of Edge
+# used to freeze the run dead: the operator pressed Enter and nothing ever
+# happened again, with no error to show for it. Turning QuickEdit off for the
+# duration removes the freeze; Click-GiftMqPageCenter's foreground check below
+# removes the stray click itself. Both, because either alone still leaves a
+# silent failure mode.
+$script:PrevConsoleMode = $null
+function Disable-GiftMqQuickEdit {
+    try {
+        $h = [GiftMqWin]::GetStdHandle(-10)   # STD_INPUT_HANDLE
+        if ($h -eq [IntPtr]::Zero) { return }
+        $mode = 0
+        if (-not [GiftMqWin]::GetConsoleMode($h, [ref]$mode)) { return }
+        $script:PrevConsoleMode = $mode
+        # clear ENABLE_QUICK_EDIT_MODE (0x0040), set ENABLE_EXTENDED_FLAGS (0x0080)
+        $new = ($mode -band (-bnot 0x0040)) -bor 0x0080
+        [void][GiftMqWin]::SetConsoleMode($h, $new)
+    } catch {}
+}
+
+function Restore-GiftMqQuickEdit {
+    try {
+        if ($null -eq $script:PrevConsoleMode) { return }
+        $h = [GiftMqWin]::GetStdHandle(-10)
+        if ($h -eq [IntPtr]::Zero) { return }
+        [void][GiftMqWin]::SetConsoleMode($h, [uint32]$script:PrevConsoleMode)
+        $script:PrevConsoleMode = $null
+    } catch {}
+}
+
+# Is the window the operator is looking at an Edge window? Everything this
+# script does with the mouse and the keyboard is aimed at the MQ page, so
+# anything else in the foreground means the action would hit the wrong app.
+function Test-GiftMqForegroundIsEdge {
+    try {
+        $hWnd = [WinAPI]::GetForegroundWindow()
+        if ($hWnd -eq [IntPtr]::Zero) { return $false }
+        $pid32 = 0
+        [void][GiftMqWin]::GetWindowThreadProcessId($hWnd, [ref]$pid32)
+        if ($pid32 -eq 0) { return $false }
+        $p = Get-Process -Id ([int]$pid32) -ErrorAction SilentlyContinue
+        if ($null -eq $p) { return $false }
+        return ($p.ProcessName -eq 'msedge')
+    } catch { return $false }
+}
+
 function Bring-ShellToFront {
     try {
         $hwnd = (Get-Process -Id $PID).MainWindowHandle
@@ -155,12 +230,19 @@ function Bring-ShellToFront {
     } catch {}
 }
 
-# Click the centre of the foreground window: on the frameset MQ page that
-# lands in frame_main, so Ctrl+A / Ctrl+F act on the result frame and not
-# on the left navigation frame.
+# Click the centre of the Edge window: on the frameset MQ page that lands in
+# frame_main, so Ctrl+A / Ctrl+F act on the result frame and not on the left
+# navigation frame.
+#
+# It clicks ONLY when Edge is the foreground window. It used to click whatever
+# was foreground, which meant that whenever the Alt+Tab in Switch-ToEdge did
+# not land (synthetic Alt+Tab is unreliable and is ignored outright under some
+# policies), the click went into this console instead -- selecting text there
+# and freezing every later write. Returns $true when the click was made.
 function Click-GiftMqPageCenter {
+    if (-not (Test-GiftMqForegroundIsEdge)) { return $false }
     $hWnd = [WinAPI]::GetForegroundWindow()
-    if ($hWnd -eq [IntPtr]::Zero) { return }
+    if ($hWnd -eq [IntPtr]::Zero) { return $false }
     $rect = New-Object WinAPI+RECT
     [WinAPI]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
     $x = [int](($rect.Left + $rect.Right) / 2)
@@ -171,10 +253,29 @@ function Click-GiftMqPageCenter {
     Start-Sleep -Milliseconds 50
     [MouseAPI]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)  # LEFTUP
     Start-Sleep -Milliseconds 300
+    return $true
+}
+
+# Put Edge in front and say so. Switch-ToEdge's Alt+Tab is best-effort, so the
+# result is CHECKED rather than assumed; when it fails the operator is asked to
+# click the Edge window, because a run that proceeds without the page in front
+# just sends keystrokes into whatever else is there.
+function Confirm-GiftMqEdgeForeground {
+    param([string]$What = 'the GIFT MQ page')
+    for ($i = 0; $i -lt 3; $i++) {
+        Switch-ToEdge
+        if (Test-GiftMqForegroundIsEdge) { return $true }
+        if (-not $interactive) { break }
+        Bring-ShellToFront
+        Write-Host ("  [WARN] Edge is not in the foreground, so nothing can be read from {0}." -f $What) -ForegroundColor Yellow
+        Write-Host '    Click the Edge window yourself, then come back here: Enter=retry / q=quit : ' -ForegroundColor Magenta -NoNewline
+        if ((Read-Host).Trim() -eq 'q') { return $false }
+    }
+    return (Test-GiftMqForegroundIsEdge)
 }
 
 function Read-GiftMqPageText {
-    Click-GiftMqPageCenter
+    if (-not (Click-GiftMqPageCenter)) { return '' }
     $txt = & $pageTextScript -SelectWaitMs $ActionWaitMs -CopyWaitMs $ActionWaitMs
     if ($null -eq $txt) { return '' }
     return [string]$txt
@@ -182,13 +283,26 @@ function Read-GiftMqPageText {
 
 # Poll the page text until $Test returns $true or the timeout elapses.
 # Returns @{ Text; Ok }.
+# Poll the page text until $Test passes or the timeout elapses. Every attempt
+# prints one line: a poll that says nothing for 15 seconds is indistinguishable
+# from a hang, which is exactly how the first freeze presented itself.
 function Wait-GiftMqPageText {
-    param([scriptblock]$Test, [int]$TimeoutSec)
+    param([scriptblock]$Test, [int]$TimeoutSec, [string]$What = 'page')
     $deadline = (Get-Date).AddSeconds([Math]::Max(1, $TimeoutSec))
     $text = ''
+    $n = 0
     do {
-        $text = Read-GiftMqPageText
-        if (& $Test $text) { return @{ Text = $text; Ok = $true } }
+        $n++
+        if (-not (Test-GiftMqForegroundIsEdge)) {
+            Write-Host ("    read {0} (try {1}): Edge is not in the foreground" -f $What, $n) -ForegroundColor DarkYellow
+        } else {
+            $text = Read-GiftMqPageText
+            if (& $Test $text) {
+                Write-Host ("    read {0} (try {1}): {2} chars, recognised" -f $What, $n, $text.Length) -ForegroundColor DarkGray
+                return @{ Text = $text; Ok = $true }
+            }
+            Write-Host ("    read {0} (try {1}): {2} chars, not the page yet" -f $What, $n, $text.Length) -ForegroundColor DarkGray
+        }
         Start-Sleep -Milliseconds 700
     } while ((Get-Date) -lt $deadline)
     return @{ Text = $text; Ok = $false }
@@ -235,7 +349,7 @@ function Open-GiftMqDetail {
     }
     Send-Enter
     Start-Sleep -Seconds $ResultWaitSec
-    $r = Wait-GiftMqPageText -Test { param($t) Test-GiftMqIsDetailText $t } -TimeoutSec $PollTimeoutSec
+    $r = Wait-GiftMqPageText -Test { param($t) Test-GiftMqIsDetailText $t } -TimeoutSec $PollTimeoutSec -What 'detail page'
     $detail = $null
     $ok = $false
     if ($r.Ok) {
@@ -256,7 +370,7 @@ function Return-GiftMqList {
         Send-Enter
     }
     Start-Sleep -Seconds $ResultWaitSec
-    $r = Wait-GiftMqPageText -Test { param($t) Test-GiftMqIsListText $t } -TimeoutSec $PollTimeoutSec
+    $r = Wait-GiftMqPageText -Test { param($t) Test-GiftMqIsListText $t } -TimeoutSec $PollTimeoutSec -What 'LIST page'
     return [bool]$r.Ok
 }
 
@@ -374,6 +488,18 @@ Write-Host ("  output  : {0}" -f $OutputXlsx)
 Write-Host ("  detail  : {0}{1}   back: {2}   tolerance: +-{3} min" -f $DetailNav, $(if ($noDetailFlag) { ' (skipped: -NoDetail)' } else { '' }), $BackMethod, $ToleranceMinutes)
 Write-Host ("  force   : {0}   dry-run : {1}   interactive : {2}" -f $forceFlag, $dryRunFlag, $interactive)
 
+# From here on a stray click can no longer freeze the console. Every exit
+# below restores the flag; the engine-exit handler is the backstop for the
+# paths that leave through Common.ps1's own `exit` (Wait-PagePrepared's 'q').
+Disable-GiftMqQuickEdit
+try { [void](Register-EngineEvent -SourceIdentifier ([System.Management.Automation.PsEngineEvent]::Exiting) -Action { Restore-GiftMqQuickEdit }) } catch {}
+
+function Exit-GiftMq {
+    param([int]$Code)
+    Restore-GiftMqQuickEdit
+    exit $Code
+}
+
 if (-not (Test-Path -LiteralPath $MappingXlsx)) { Write-Host "[ERROR] mapping workbook not found: $MappingXlsx" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path -LiteralPath $OutputXlsx))  { Write-Host "[ERROR] output workbook not found: $OutputXlsx" -ForegroundColor Red; exit 1 }
 if (-not [string]::IsNullOrWhiteSpace($TeamsTextFile) -and -not (Test-Path -LiteralPath $TeamsTextFile)) {
@@ -398,7 +524,7 @@ $schedules = @(ConvertTo-GiftMqSchedules -Rows $mapRows -Owner $Owner -Jobs $Job
 Write-Host ("  mapping rows: {0}   scheduled (dated) jobs in scope: {1}" -f $mapRows.Count, $schedules.Count)
 if ($schedules.Count -eq 0) {
     Write-Host '[INFO] No scheduled jobs in scope (check -FromDate/-ToDate/-Owner/-Jobs and the GIFT run-date column).' -ForegroundColor Yellow
-    exit 0
+    Exit-GiftMq 0
 }
 $schedMin = ($schedules | Sort-Object Scheduled | Select-Object -First 1).Scheduled.Date
 $schedMax = ($schedules | Sort-Object Scheduled | Select-Object -Last 1).Scheduled.Date
@@ -428,12 +554,22 @@ if (-not [string]::IsNullOrWhiteSpace($PageTextFile)) {
     Write-Host '  Then click this console window again and press Enter (the answer is typed HERE,' -ForegroundColor Yellow
     Write-Host '  not in Edge). Do not touch the mouse or keyboard after that until it reports.' -ForegroundColor Yellow
     Wait-PagePrepared 'Press Enter when the LIST page is showing.'
-    Switch-ToEdge
+    if (-not (Confirm-GiftMqEdgeForeground -What 'the LIST page')) {
+        Write-Host '[ABORT] Edge never came to the foreground; nothing captured.' -ForegroundColor Yellow
+        Exit-GiftMq 1
+    }
     $edgeLive = $true
-    $r = Wait-GiftMqPageText -Test { param($t) Test-GiftMqIsListText $t } -TimeoutSec $PollTimeoutSec
+    $r = Wait-GiftMqPageText -Test { param($t) Test-GiftMqIsListText $t } -TimeoutSec $PollTimeoutSec -What 'LIST page'
     if (-not $r.Ok) {
-        Write-Host '[ERROR] Could not read a LIST page (no "Number of records" in the Ctrl+A text). Is frame_main focused?' -ForegroundColor Red
-        exit 1
+        Write-Host '[ERROR] Could not read a LIST page (no "Number of records" in the Ctrl+A text).' -ForegroundColor Red
+        if ([string]::IsNullOrWhiteSpace($r.Text)) {
+            Write-Host '        Nothing was copied at all -- the Ctrl+A/Ctrl+C did not reach the page.' -ForegroundColor Red
+        } else {
+            $preview = if ($r.Text.Length -gt 160) { $r.Text.Substring(0, 160) } else { $r.Text }
+            Write-Host ('        What was copied starts: ' + ($preview -replace '\s+', ' ')) -ForegroundColor Red
+            Write-Host '        If that is the left navigation frame, click the result table once and rerun.' -ForegroundColor Red
+        }
+        Exit-GiftMq 1
     }
     $listText = [string]$r.Text
     $saved = Save-GiftMqArchive -Name ('list_{0}.txt' -f (Get-Date).ToString('yyyyMMdd_HHmmss')) -Text $listText
@@ -542,7 +678,10 @@ try {
             Write-Host ''
             Write-Host ("  {0} end time(s) to read. Show the same LIST page in Edge." -f $detailWanted.Count) -ForegroundColor Yellow
             Wait-PagePrepared 'Press Enter when the LIST page is showing (q=quit without end times).'
-            Switch-ToEdge
+            if (-not (Confirm-GiftMqEdgeForeground -What 'the LIST page')) {
+                Write-Host '  [WARN] Edge never came to the foreground; end times stay blank.' -ForegroundColor Yellow
+                $detailWanted = @()
+            }
             $edgeLive = $true
         }
         $tabsBefore = $TabsBeforeFirstDetail
@@ -596,7 +735,7 @@ try {
                 $ans = (Read-Host).Trim()
                 if ($ans -eq 'q') { $userQuit = $true; break }
                 if ($ans -eq 's') { break }
-                Switch-ToEdge
+                [void](Confirm-GiftMqEdgeForeground -What 'the LIST page')
             } while ($attempt -lt 3)
 
             if ($userQuit) { Write-Host '[ABORT] User quit; rows read so far are still written.' -ForegroundColor Yellow; break }
@@ -744,5 +883,6 @@ try {
 } finally {
     if ($null -ne $wb) { Close-Workbook $wb $false }
     if ($null -ne $excel) { Close-ExcelApp $excel }
+    Restore-GiftMqQuickEdit
 }
 exit $exitCode
