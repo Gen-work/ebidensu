@@ -162,7 +162,11 @@ function Invoke-Step {
 ```
 
 规则:
+- `ok` / `failure` / `message` / `warnings` / `resource` 是返回值的**保留键**,
+  不能和 `outputs` 里声明的字段重名(`resource` 是 `provides` 非空的 step
+  交出资源实例的通道,见 §3.4 第 7 点)
 - `failure` 的值**必须**等于 `$Manifest.failures` 某一项的 `id`,否则 runner 判为契约违反
+  (记 `contract_violation`,§3.4 第 7 点的表)
 - `message` 是给人看的一句话,英文,可选
 - 失败时**也可以**带 outputs 字段(比如部分结果),runner 不会用,但会进 trace
 - **不许抛异常表达业务失败**。异常只用于「代码写错了」这类真正的意外;
@@ -185,27 +189,29 @@ run 结束时的汇总;3) `--guided` 模式下立即显示在面板上。**不�
 (`SnapVerify`/`GfixJobList` 解析时,页面上明明有的行被正则漏掉、返回值
 没有任何字段能表达"我漏了几行")的根因:数据返回了,但没人看得见。
 
-**可选的 `resource`(P0-R17,只有 `provides` 非空的 step 用)。** 句柄 /
-COM 对象从 step 交到 `$Ctx.Session` 的唯一通道:step 收到非空的
-`$In.as`(runner 从 `with` 里摘出来又回传的注册名,见 §3.4 第 7 点)时,
-在返回 hashtable 里带 `resource = <句柄或 COM 对象>`;runner 把它存进
-`$Ctx.Session[$In.as]`,并在把 outputs 记进 trace / ledger 之前**剥掉**
-这个键——它不是 outputs 字段,manifest 的 `outputs` 里不声明它。
-`$In.as` 为空时 step 不返回 `resource`,自己在返回前释放(§3.4 第 3 点)。
-"有 `as` 没 `resource`"和"有 `resource` 没 `as`"都是契约违反,runner
-记为 `internal_error`。
+**`resource`(只有 `provides` 非空的 step 用)。** 句柄 / COM 对象从 step
+交到 `$Ctx.Session` 的唯一通道:step **总是**在返回 hashtable 里带
+`resource = <句柄或 COM 对象>`(DryRun 下 `$null`),runner 在把 outputs 记进
+trace / ledger 之前剥掉它并按调用点的 `as` 登记——它不是 outputs 字段,
+manifest 的 `outputs` 里不声明它。规则全文在 §3.4 第 7 点(P0-07 / P0-R17)。
 
 **保留失败 id(P0-R15)。** 全部由 runner 产生,manifest **不必**列出,
 `onError.byFailure` 可以直接引用它们:
 
-| id | `transient` | 谁产生 | 含义 |
-|----|-------------|--------|------|
-| `internal_error` | `$false` | runner | step 抛出了未预期异常(§3.1 上文) |
-| `needs_unmet` | `$false` | runner | §4 的前置条件不满足,没进 `Invoke-Step` |
-| `session_missing` | `$false` | runner | 某个 `type='session'` 输入填的名字没在 `$Ctx.Session` 里注册过 |
-| `session_invalid` | `$true` | **消费 step** | 名字在,底层资源已失效(窗口句柄 `IsWindow` 为假、COM 对象摸一个只读属性就抛)。这是唯一由 step 自己返回的保留 id——只有拿到对象的那一方能检查;`transient` 为真是因为重跑 `setup` 就能重建 |
-| `session_conflict` | `$false` | runner | `with.as` 的名字已被一个还活着的资源占用(§3.4 第 3 点) |
-| `cancelled` | `$false` | runner | 关卡上人选了 `q`,走 `WORKFLOW-SCHEMA.md` §1.1 的中止路径 |
+| id | `transient` | 含义 |
+|----|-------------|------|
+| `internal_error` | `$false` | step 抛出了未预期异常(§3.1 上文) |
+| `contract_violation` | `$false` | 返回值不是含 `ok` 的 hashtable;`failure` 不在 manifest 的 `failures` 里;`provides` 为空却返回了 `resource`;写了 `as` 却没有 `resource`;`outputs` 无法 JSON 序列化(§3.4 第 7 点) |
+| `step_not_found` | `$false` | `use` 指向的 step 文件不存在或加载失败 |
+| `needs_unmet` | `$false` | §4 的前置条件不满足,没进 `Invoke-Step` |
+| `session_missing` | `$false` | 某个 `type='session'` 输入填的名字没在 `$Ctx.Session` 里注册过(或已释放) |
+| `session_kind_mismatch` | `$false` | 注册的种类和参数声明的 `sessionKind` 不一致 |
+| `session_name_taken` | `$false` | `with.as` 的名字已被一个还活着的资源占用(§3.4 第 3 点) |
+| `cancelled` | `$false` | 操作员在关卡上选了 `q`:step 返回通用词表的 `operator_quit`,runner 不走 `onError`,直接以 `cancelled` 结束 run,`teardown` 照 `WORKFLOW-SCHEMA.md` §1.1 保证跑 |
+| `unsupported_in_spike` | `$false` | **过渡**:P0-07 的 runner 在第一步跑之前拒绝它还不支持的 `source` / `each` / `{{}}` / `when` / `onError` / `once`;P1-03 / P1-04 落地后删除 |
+
+全部由 runner 产生,step 不返回它们;资源"还活着吗"由消费 step 用**自己
+声明的** id 报(§3.4 第 7 点),不是保留 id。
 
 **通用失败 id 词表(P0-R15)。** 这些**不是**保留 id——manifest 仍然要列、
 `transient` 仍然自己标——但名字统一,`byFailure` 才写得出通用配置:
@@ -214,6 +220,7 @@ COM 对象从 step 交到 `$Ctx.Session` 的唯一通道:step 收到非空的
 |----|------|------------------|
 | `timeout` | 等待超时 | `$true` |
 | `not_found` | 目标不存在(页面已加载完、内容确实没有) | `$false` |
+| `operator_quit` | 操作员在 `human.*` step 上选了 `q`;runner 把它转成保留 id `cancelled`,绕过 `onError`(`WORKFLOW-SCHEMA.md` §5.2) | `$false` |
 | `ambiguous` | 匹配到多个候选,附 P0-R4 的标准候选形状 | `$false` |
 | `foreground_lost` | 发键前核对前台窗口失败(§4,P0-R12) | `$true` |
 | `no_effect` | `verifyChange` 开着而动作前后页面文本没变(P0-R12) | `$true` |
@@ -241,7 +248,8 @@ COM 对象从 step 交到 `$Ctx.Session` 的唯一通道:step 收到非空的
 (种类 `worklist`,§3.4 第 6 点的种类表),由 `table.load` 在 `setup`
 里用 `with.as` 注册;`table.select` / `table.set` / `table.ensure_columns` /
 `flow.checkpoint` / `progress.status` 都通过一个 `type='session';
-sessionKind='worklist'` 的输入拿到它的名字,再从 `$Ctx.Session` 取表。
+sessionKind='worklist'` 的输入拿到它——runner 已把名字换成表本身
+(§3.4 第 7 点)。
 runner 遍历 `source` 用的也是同一个实例(`WORKFLOW-SCHEMA.md` §3)。
 整张表**不进** `table.load` 的 outputs、不进 ledger——和句柄同一条理由
 (§3.4 第 1 点);它的 outputs 只有 `path` / `rowCount` / `columns`。
@@ -313,7 +321,9 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
      "泄漏了也无害"的资源可以不注册;但 COM 对象(Excel `Application`/
      `Workbook` 一类)"泄漏了会累积、需要人工杀进程",不注册就等于把
      自己锁死在无法释放的状态——这正是这条约束存在的原因。释放侧完整
-     规则见下面第 5 点。
+     规则见下面第 5 点。**修订(P0-R17 合并决定)**:上面这一条只剩
+     runner 层的宽容;`ebi lint` 要求 `provides` 非空的调用**一律**写 `as`,
+     不再有"未注册的资源",于是也不再有"step 自己释放"的分支——见第 7 点。
    - 消费方在自己的 `inputs` 里声明一个 `type = 'session'` 的参数,并带
      `sessionKind`(比如 `screen.capture_window` 的 `window` 参数是
      `@{ type='session'; sessionKind='window'; required=$true }`)。工作流
@@ -423,27 +433,61 @@ step 经常就是需要**用同一个**窗口/工作簿,不是重新找一个。
    元规则要求的"新增契约事实,定义处和汇总处一起改"的又一个例子;§7
    的 Run-Tests.ps1 清单有一条静态检查兜底这条纪律(见下方)。
 
-7. **资源怎么进出 Session(P0-R17)。** 前面六点定了"谁注册、谁释放、
-   要不要释放",没定"句柄从 step 手里怎么交到 runner 手里"。四条:
-   - **`$In.as` 回传**:runner 把 `as` 从 `with` 摘出、做完第 3 点的同名
-     检查之后,以 `$In.as` 原样传给 step(没写 `as` 时是 `$null`)。只有
-     `provides` 非空的 step 会收到这个键——它需要知道自己产出的资源会不会
-     被注册,才能决定是交出去还是自己释放(第 3 点)。
-   - **`resource` 返回键**:`$In.as` 非空时,step 在返回 hashtable 里带
-     `resource = <句柄 / COM 对象>`(§3.1);runner 把它存进
-     `$Ctx.Session[$In.as]`,并从记进 trace / ledger 的 outputs 里剥掉。
-     step **不**直接写 `$Ctx.Session`——同名检查、剥离、种类记账都在
-     runner 一处做。
-   - **消费方拿到的是名字**:`type='session'` 输入的值是字符串(§2.2),
-     step 自己 `$Ctx.Session[$In.window]` 取对象,并校验它还活着
-     (`IsWindow` / 摸一个只读属性),失效返回 `session_invalid`(§3.1)。
-     runner 只在调用前查名字存在(`session_missing`),不替 step 校验
-     对象——它不知道每种资源怎么校验。
-   - **释放后由 runner 摘名字**:`releases` 非空的 step 返回 `ok` 后,
-     runner 把该 step 里 `sessionKind` 与 `releases` 匹配的那个输入所指的
-     名字从 `$Ctx.Session` 移除(不管 step 内部做了什么);返回失败则条目
-     保留,交给 `onError`。于是第 3 点的"同名重复注册"检查看到的永远是
-     "还没被成功释放"的实例。
+7. **交接通道:`provides` 非空的 step 用返回值的保留键 `resource` 把资源
+   实例交给 runner(P0-07)。** 前面六点只说了"句柄只进 Session、永不进
+   `outputs`",没说 step 到底怎么把句柄交出去——P0-07 的 spike 第一次真的
+   要走这条通道时发现这个洞。§3.1 的保留键 `ok` / `failure` / `message` /
+   `warnings` 之外,`resource` 是第五个:
+
+   ```powershell
+   # browser.ensure: provides = @('window')
+   return @{ ok = $true; resource = $hWnd; title = 'Microsoft Edge' }
+   #                      ^ 不是 output           ^ 这才是 outputs 里声明的字段
+   ```
+
+   注册侧规则:
+   - runner 在返回值进入任何下游(trace、ledger、`{{steps.X.out.*}}`
+     作用域)**之前**就把 `resource` 摘走。它不在 `$Manifest.outputs` 里
+     声明、契约检查器不看它,"`outputs` 必须 JSON-可序列化"这条规则因此
+     不受影响。
+   - 调用点写了 `with.as: "<名>"` → runner 先做第 3 点的同名存活检查,再
+     登记 `$Ctx.Session['<名>'] = @{ kind = <provides 唯一那一项>; value =
+     <resource>; registeredBy = <这次调用的 id> }`。
+   - 调用点没写 `as` → runner **丢弃** `resource`(spike 期的宽容)。但
+     **`provides` 非空的调用必须写 `as`**——`ebi lint`(P1-08)报错(P0-R17
+     合并决定)。理由:step 不知道自己产出的资源会不会被注册,COM 类资源
+     (P4 的 workbook / excelApp)没登记就没有任何 step 能释放它;与其让
+     step 猜,不如规定一律登记。第 3 点里"不写 `as` 合法、step 自己释放"
+     的写法因此作废(见该点末尾的修订注)。
+   - `ok = $false` 时 `resource` 被忽略,不登记。
+   - 调用点写了 `as` 而返回值里**没有** `resource` 键 → `contract_violation`。
+     `DryRun` 下拿不到真实句柄的 step 返回 `resource = $null`(键在,值空):
+     名字照常登记,后面的消费方拿到 `$null`,由它们自己的 `DryRun` 分支
+     处理——干跑时工作流的连线仍然被完整走一遍,这正是 dryrun 的意义。
+   - `provides` 为空的 step 返回了 `resource` → 契约违反,runner 记
+     `contract_violation`(见下表),不静默丢弃:一个自以为注册了资源的
+     step,后面的 step 会在"名字未注册"上失败,不如在源头报。
+
+   **消费侧:runner 把名字换成实例。** 消费方 `type='session'` 的参数在
+   workflow JSON 里填的是名字字符串(§2.2),但 `Invoke-Step` 收到的
+   `$In.<参数>` 已经是 `$Ctx.Session['<名>'].value`——runner 在调用前查表,
+   名字不存在或 `kind` 与参数声明的 `sessionKind` 不符都是 runner 层失败,
+   不进 `Invoke-Step`。这样 step 永远不需要知道自己拿到的窗口叫什么名字:
+   名字是工作流的事,step 只认实例,和 §0 的正交性一致;§3 对 `$In` 的承诺
+   "已经过 schema 校验和模板求值"在这里延伸为"已经过资源解析"。**实例
+   是否还活着由消费 step 自己校验**(拿到句柄先 `IsWindow`、拿到 COM 对象
+   先摸一个只读属性)并用**自己声明的** id 报(`screen.capture_window` 的
+   `window_gone`);runner 不知道每种资源怎么校验,也不为此设保留 id
+   (P0-R15 / P0-R17)。
+
+   **释放侧对称**:`releases` 非空的 step 同样通过 `type='session'` 参数
+   收到实例;它返回 `ok = $true` 后,runner 把该名字从 `$Ctx.Session` 移除,
+   此后同名可以再注册(第 3 点的"仍然活着"就是"还在表里")。返回失败则
+   条目保留,交给 `onError`。
+
+   **runner 层保留失败 id**(`contract_violation` / `step_not_found` /
+   `session_missing` / `session_kind_mismatch` / `session_name_taken` ……)
+   全部列在 §3.1 的保留 id 表里——那是唯一一张表,这里不再抄一份。
 
 `$Ctx.Session` 本身**不持久化**、**不写进 ledger**、**不出现在 trace 里**
 (trace 只记 `outputs`)。它在每次进程启动时都是空的 —— 断点续跑时怎么

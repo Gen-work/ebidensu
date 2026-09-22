@@ -83,10 +83,11 @@
 > step 不知道自己会不会被注册;返回值里没有给句柄留的键)——追加并同日执行
 > P0-R11…R17 中的 **P0-R17**(`$In.as` 回传 + `resource` 返回键 + 释放后
 > runner 摘名字)。R14 落地后 MVP step 数 33 → 35(P1 30 → 32)。
-> **十七张 R 卡全部 `[x]`**。同日:P0-07 `[x]`(runner spike + 59 例单测);
-> P0-08 代码落地、只剩办公 PC 上真截一张 PNG;P0-01 标签推送被会话的
-> 推送策略挡住(卡里有那一行命令)。**P1 的前置只剩这两件办公 PC / 有
-> 推送权限的机器上的事。**
+> **十七张 R 卡全部 `[x]`**。同日另一条会话在 main 上独立做完了 P0-01 /
+> P0-07 / P0-08(PR #153 / #154):冻结标签打在了办公 PC 的 GitLab 镜像上,
+> runner spike 和三个 step 以 main 的实现为准(本分支的同名实现在合并时
+> 让位,只留下 `ebi.ps1` 这个最小 CLI 和 R11…R17 的规格改动)。**P1 的前置
+> 只剩 P0-08 在办公 PC 上真截一张 PNG。**
 
 ---
 
@@ -508,7 +509,9 @@
      (`verify.assert` 的结论)和 `askWhen`(默认 `@('unknown')`,enum 数组),
      **总是执行**——`code` 不在 `askWhen` 里时静默直通,输出 `code` 原值、
      `action='pass'`;在里面时渲染面板问人,`Enter`→`code='ok'`、`n`→
-     `code='ng'`、`s`→`code=''` + `action='skip'`、`q`→`action='quit'`。
+     `code='ng'`、`s`→`code=''` + `action='skip'`、`q`→`ok=$false;
+     failure='operator_quit'`(通用词表 id;合并 main 的 P0-08 时把原案的
+     `action='quit'` 改成了这个——`human.prepare` 已经这么返回)。
      `flow.checkpoint` 于是统一写 `{{steps.gate.out.code}}`,并带
      `when: "steps.gate.out.action != skip"`(`s` = 留 pending,不写盘)。
      这样 §8 示例里没有任何一处需要"二选一"的表达式。
@@ -518,9 +521,11 @@
      `$null` 为假、`<path> empty` 为真——于是"上一步跳过了就也跳过"可以写成
      `when: "steps.x.out.skipped != true"`。ledger 里记一条 `status='skipped'`,
      resume 时照常重放(`spec/STEP-CONTRACT.md` §6.1)。
-  3. **`action='quit'` = 请求中止**:runner 把它当 `onError.policy=fail` 的
-     同一条路走(§1.1 表里加一行,`teardown` 保证跑);`onError.policy=ask`
-     的面板复用 `human.gate` 的渲染和 r/s/q 语义,不另写一套。
+  3. **`operator_quit` = 请求中止**:runner 不让它进 `onError`(否则
+     `policy=ask` 会对着"我要退出"再问一次、`policy=skip` 会跳过这条继续跑),
+     直接记保留 id `cancelled`,走 `onError.policy=fail` 的同一条路(§1.1 表
+     里加一行,`teardown` 保证跑);`onError.policy=ask` 的面板复用 `human.gate`
+     的渲染和 r/s/q 语义,不另写一套。
   4. `verify.assert` 的输出 `code` 的取值就是 `spec/VOCABULARY.md` §1.2 的三值;
      `human.gate` 的输出 `code` 在此之上多一个 `''`(留 pending),manifest 用
      `enum` 写清楚。
@@ -581,13 +586,16 @@
   每条工作流都没有版本标记,将来加这个字段就是给所有已有工作流补一行的迁移。
 - **做**:
   1. `spec/STEP-CONTRACT.md` §3.1 的保留 id 扩成一张表,全部由 runner 产生、
-     manifest 不必列:`internal_error`(未预期异常)、`needs_unmet`(§4 前置
-     条件)、`session_missing`(名字未注册)、`session_invalid`(注册过但底层
-     资源已失效——**校验由消费 step 做**:拿到句柄先 `IsWindow`、拿到 COM
-     对象先摸一个只读属性,失败就返回这个 id,不是 runner 替它检查)、
-     `session_conflict`(同名重复注册)、`cancelled`(P0-R13 的 `quit`)。每项
-     标 `transient`(`session_invalid` 为 `$true`——重跑 `setup` 就能重建;
-     其余 `$false`)。
+     manifest 不必列(**与 main 上 P0-07 同日落地的那张表合并后的并集**):
+     `internal_error`(未预期异常)、`contract_violation`(返回值形状 /
+     failure id / resource 违约)、`step_not_found`(`use` 的文件找不到或
+     加载失败)、`needs_unmet`(§4 前置条件)、`session_missing`(名字未
+     注册)、`session_kind_mismatch`(种类和 `sessionKind` 不符)、
+     `session_name_taken`(同名重复注册)、`cancelled`(操作员 `q`,由通用
+     词表的 `operator_quit` 转成的 run 级结果)。全部 `transient=$false`。
+     资源失效(窗口关了、COM 对象死了)**不是**保留 id:消费 step 拿到实例后
+     自己校验,用自己声明的 id 报(如 `window_gone`)——只有拿到对象的一方
+     能检查。
   2. 同一节加一张**通用失败 id 词表**(不是保留,manifest 仍须列出,但名字
      统一):`timeout` / `not_found` / `ambiguous`(多候选,配 P0-R4 的候选
      形状)/ `foreground_lost` / `no_effect`(P0-R12)/ `file_not_found` /
@@ -653,37 +661,53 @@
   P0-R2 要消灭的局面重新开始。释放那一侧同样没说:`excel.close` 关完之后,
   `$Ctx.Session` 里那个名字谁来摘——不摘,第 3 点的"同名重复注册"检查在下一
   组 `open` 时照样触发。
-- **做**:四条,全部落在 `spec/STEP-CONTRACT.md` §3.4 第 7 点 + §3.1:
-  (1) runner 摘出 `as`、做完同名检查后,以 `$In.as` 原样回传给 step(没写时
-  `$null`),只有 `provides` 非空的 step 收到这个键;(2) `$In.as` 非空时 step
-  返回 `resource = <句柄/COM 对象>`,runner 存进 `$Ctx.Session[$In.as]` 并从
-  trace / ledger 的 outputs 里剥掉,step **不**直接写 Session;有 `as` 无
-  `resource` / 有 `resource` 无 `as` 都记 `internal_error`;(3) 消费方拿到的
-  是名字,自己 `$Ctx.Session[<名字>]` 取对象并校验有效性(`session_invalid`);
-  runner 只查名字存在(`session_missing`);(4) `releases` 非空的 step 返回
-  `ok` 后,runner 把匹配 `sessionKind` 的输入所指的名字从 Session 移除,失败
-  则保留交给 `onError`。
-- **完成**:§3.1 有 `resource` 一段;§3.4 有第 7 点;P0-07 的 spike runner 和
-  P0-08 的 `browser.ensure` / `screen.capture_window` 照此实现
-- **已执行(2026-09-22)**:同日落进 spec。
+- **做**(合并后的最终决定——这张卡和 main 上 P0-07 同日各自撞到同一个洞,
+  两边写了两版第 7 点;合并时以 main 已落地的 runner 为准,本卡原案里不同的
+  两处让位):(1) `provides` 非空的 step **总是**返回保留键 `resource`
+  (DryRun 下 `$null`),runner 在它进 trace / ledger / 模板作用域之前摘走,
+  写了 `as` 就登记为 `@{ kind; value; registeredBy }`;有 `as` 无 `resource`、
+  `provides` 为空却有 `resource` 都是 `contract_violation`。(2) **`as` 不回传
+  给 step**;取而代之,`provides` 非空的调用**必须写 `as`**(`ebi lint`
+  报错;runner 层保留 spike 期的"没写就丢弃"宽容)——第 3 点"不写 `as` 合法、
+  step 自己释放"的写法作废,因为 step 不知道自己有没有被注册,COM 资源就无人
+  能释放。(3) **消费方拿到的是实例,不是名字**:runner 在调用前把
+  `type='session'` 参数的名字换成 `$Ctx.Session[<名>].value`,名字不存在 →
+  `session_missing`,种类不符 → `session_kind_mismatch`;step 永远不知道
+  自己拿到的窗口叫什么。实例是否还活着由消费 step 自己校验,用自己声明的
+  id 报(`window_gone`)。(4) `releases` 非空的 step 返回 `ok` 后 runner 摘
+  名字;失败则保留,交给 `onError`。
+- **完成**:§3.1 有 `resource` 一段和保留 id 表;§3.4 有第 7 点;P0-07 的
+  runner 和 P0-08 的 `browser.ensure` / `screen.capture_window` 照此实现
+- **已执行(2026-09-22)**:与 main 的 PR #153 / #154 合并时定稿;原案的
+  「`$In.as` 回传」「消费方拿名字自己查表」「`session_invalid` 保留 id」三条
+  被 main 的实现取代,理由见上。
 
-### [ ] P0-01 打冻结标签
+### [x] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
 - **做**:`git tag freeze/pre-ebi-dance d9e58c2` 并推送。作为整个重构期的回滚点。
-- **状态(2026-09-22)**:开发环境里标签打好了但**推不上去**——这个会话的
-  推送口只放行 `claude/*` 分支,`git push origin refs/tags/freeze/pre-ebi-dance`
-  被 403 拒绝(重试五次同样)。在任何有推送权限的机器上跑一行即可完成:
-  `git tag -a freeze/pre-ebi-dance d9e58c2 -m "pre-ebi-dance rollback point" && git push origin freeze/pre-ebi-dance`
-- ⚠ (第六轮)**不是当前 tip**:P0-02…P0-06 已经先于这张卡落地,`d9e58c2`
-  是 P0-02 建骨架之前的最后一个 main 提交(PR #142 的合并提交)。打在现在的
-  tip 上,「回滚点」里就已经带着搬过位置的 SnapVerify 和改过路径的
-  VerifyConfig,不再是旧工具的原样。
 - ⚠ **不用 `spec/gift-gfix`**:远端已经存在一个同名**分支**
   `refs/heads/spec/gift-gfix`(指向旧提交 `0f5343e`,PR #103)。git 允许
   同名 branch + tag 共存,但那样 `git checkout spec/gift-gfix` 会变成
   歧义引用,`git show spec/gift-gfix` 也会警告 —— 换成 `freeze/pre-ebi-dance`
   彻底避开冲突,不要图省事换回 `spec/gift-gfix`。
 - **完成**:远程能看到该 tag;`git show freeze/pre-ebi-dance --stat` 正常
+- ⚠ **打在 `d9e58c2`(PR #142 合并点)而不是"当前 main tip"**:这张卡被跳过,
+  P0-02…P0-07 先合进了 main,等补打时 tip 上已经长着骨架。回滚点的意义是"骨架之前
+  的树",所以指向 P0-02 骨架提交(`9f4eed8`)的父提交。带注释 tag(`git tag -a`)。
+- ⚠ **云端会话推不了 tag**(推送凭据只覆盖它自己的分支,`git push origin
+  <tag>` 在 send-pack 阶段被远端断开),所以这张卡要在有完整 git 权限的机器上
+  收尾,一行:
+  ```
+  git tag -a freeze/pre-ebi-dance d9e58c2 -m "Freeze point before the ebi-dance skeleton (P0-01)" && git push origin freeze/pre-ebi-dance
+  ```
+  然后 `git ls-remote --tags origin | grep freeze` 看得到,再改 `[x]`。
+- ✅ **2026-09-22 在办公 PC 上打了**,指向 `d9e58c2`,注释 tag。但办公 PC 的 `origin`
+  是 **GitLab 镜像**(`gitlab.com:Tokumei_M/ebidensu`),tag 只在 GitLab 上;GitHub
+  (`Gen-work/ebidensu`)没有。两点跟着改:(1) `.github/workflows/mirror-to-gitlab.yml`
+  原来对 tags 也 `--prune`,下一次 GitHub push 就会把这个只在 GitLab 的 tag 删掉——
+  改成分支 prune、tag 不 prune;(2) 回滚点对日常工作(办公 PC 从 GitLab 拉)已经
+  成立,所以本卡 `[x]`。要让 GitHub 也有一份,在任何能 push GitHub 的机器上跑同一条
+  `git tag -a ... && git push <github-remote> freeze/pre-ebi-dance` 即可,云端会话做不到。
 
 ### [x] P0-02 建目录骨架
 - **估** 30min | **依赖** P0-01 | **读** `Plan.md` §3
@@ -759,21 +783,21 @@
   第一天就要在**(哪怕只是个空 hashtable)—— spike 的目的就是验证 ensure→capture
   的句柄传递走 Session 而不是全局变量。
 - **完成**:能跑一条只有 `setup` 三步的 JSON
-- **已执行(2026-09-22)**:`kernel/Runner.ps1`(`Invoke-EbiWorkflow`)+
-  `kernel/Win32.ps1`(懒编译的 user32 P/Invoke,给窗口类 step 共用)+
-  `ebi.ps1`(`run` / `dryrun` / `help`)+ `Tests/Test-Runner.ps1`(59 例,
-  pwsh 7 全绿)。比卡面多做的、都是 R11…R17 刚定下来的接线:`with.as`
-  摘出 → 同名检查(`session_conflict`)→ `$In.as` 回传 → `resource` 收进
-  `$Ctx.Session` 并从 trace 里剥掉;`type='session'` 输入的名字不存在 →
-  `session_missing`;`releases` 成功后 runner 摘名字;`action='quit'` →
-  `cancelled`;`teardown` 走 try/finally;每步一条 trace 事件;输入默认值 /
-  必填 / 未声明 / `path` 归 WorkDir 的最小 schema 处理;返回值里的
-  failure id 不在 manifest 也不在保留表 → `internal_error`。**没做**(按卡):
-  模板求值、`each`/`source`、`onError`/ledger/resume、`needs`、`when`——
-  用到就报错,不半跑。两个 PS 坑记在源码注释里:step 文件必须在
-  `Invoke-EbiWorkflow` 自己的作用域里 dot-source(捕获的 `Invoke-Step` 从
-  子作用域调用时才找得到带前缀的 helper);manifest 数组字段的取值函数
-  **不**加逗号包裹,由调用方 `@()`(加了会多套一层,`-contains` 静默失效)。
+- ⚠ **落地时发现的规格洞**:§3.4 前六点只说「句柄只进 Session、永不进
+  `outputs`」,没说 step 到底**怎么把句柄交给 runner**——spike 第一次真走这条
+  通道就撞上。追加为 `STEP-CONTRACT.md` §3.4 第 7 点:注册侧用返回值保留键
+  `resource`(runner 在它进 trace/ledger/模板作用域之前摘走);消费侧 runner
+  把 `type='session'` 参数的**名字换成实例**再进 `Invoke-Step`,step 永远不
+  知道自己拿到的窗口叫什么;同时定下 runner 层保留失败 id 表
+  (`contract_violation` / `step_not_found` / `session_missing` /
+  `session_kind_mismatch` / `session_name_taken`)。
+- **实际落地**:`kernel/Runner.ps1`(`Invoke-EbiWorkflow`,是 P1-03 的种子不是
+  一次性代码):同一 runspace 依次 dot-source、每次立刻捕获 `Invoke-Step`
+  (P1-02 的加载机制在这里定下);`setup` → `teardown`(`finally`,§1.1 的
+  保证);§3.1 返回值契约 + 第 7 点的资源通道运行期校验;每步一条 trace 事件
+  (`warnings` 进 `data`)。`source`/`each`/`{{}}`/`when`/`onError`/`once`
+  一律**在第一步跑之前**以 `unsupported_in_spike` 拒绝,不静默跳过。
+  `Tests/Test-Runner.ps1`(临时目录里的 fixture step,也过一遍契约检查器)。
 
 ### [ ] P0-08 三个 step + 端到端验收
 - **估** 90min | **依赖** P0-07 | **读** `spec/STEP-CONTRACT.md` §8(完整示例)+ Session 节(P0-R2)
@@ -784,23 +808,29 @@
   窗口句柄经 `$Ctx.Session` 流转,`grep -rn 'Global:' modules/` 为 0,
   三个 step 的 outputs 全部可 `ConvertTo-Json`
 - ⚠ 这是 P0 的唯一验收标准。做不到就别进 P1。
-- ⚠ (第六轮,P0-R12 / P0-R17)`browser.ensure` 带 `process` 输入(默认
-  `msedge`),通过 `resource` 返回键把句柄交给 runner;`screen.capture_window`
-  从 `$Ctx.Session[$In.window]` 取句柄,`IsWindow` 为假返回 `session_invalid`;
-  `human.prepare` `effects='ui'`,`q` 输出 `action='quit'`,不再自己 `exit`。
-- **状态(2026-09-22)**:**代码已落地,办公 PC 验收未做。** 三个 step 在
-  `modules/human/human.prepare.ps1`、`modules/browser/browser.ensure.ps1`、
-  `modules/screen/screen.capture_window.ps1`,过 P0-06 契约检查;
-  `workflows/spike.capture.json` 就是那条 5 行 JSON。已在 CI 里验证的:
-  `.\ebi.ps1 dryrun workflows\spike.capture.json` 三步全 ok、句柄经
-  `$Ctx.Session` 流转(DryRun 下是 `[IntPtr]::Zero`)、`grep -rn 'Global:'
-  modules/` 为 0、三个 step 的 outputs 全部可 `ConvertTo-Json`
-  (`Tests/Test-Runner.ps1` 第 8 块)。**还没做的只有第一句**:在办公 PC 上
-  `.\ebi.ps1 run workflows\spike.capture.json -WorkDir <目录>` 真的存下
-  `capture\spike\window.png`。跑完把这张卡打勾;跑不通先看 trace
-  (`<WorkDir>\run\<runId>\trace.jsonl`)。GDI+ 一条注意:`System.Drawing`
-  的类型字面量只能出现在真路径才会调用的 helper 里(函数体编译时就会绑定
-  类型,CI 的 Linux 上会因此炸 DryRun)。
+- **代码已落地,等办公 PC 验收**(所以还是 `[ ]`):`modules/human/human.prepare.ps1`
+  (q 不再 `exit`,返回 `operator_quit`)、`modules/browser/browser.ensure.ps1`
+  (进程句柄优先 / 标题回退;`provides=@('window')`,句柄走 `resource` 保留键,
+  浏览器进程名是带默认值的输入 `process`,代码里没有 Edge 的业务知识)、
+  `modules/screen/screen.capture_window.ps1`(`window` 是 `type='session'` 输入,
+  runner 把名字换成句柄;相对 `saveAs` 落在 WorkDir 下;GDI+ 代码隔离在
+  `ScreenCaptureWindow-Grab` 里,DryRun 路径不碰它,所以 Linux CI 能干跑)。
+  三个 step 全过 `Tests/Test-StepContract.ps1`;`workflows/spike.capture_window.json`
+  就是那条 5 行 JSON,`Tests/Test-Runner.ps1` 在真实 `modules/` 树上把它 DryRun
+  跑通。Win32 声明每个 step 各带一份(3 行),P1-11/P1-18 决定要不要抽公共绑定。
+- **办公 PC 验收步骤**(PS 5.1,Edge 开着任意页面):
+  ```powershell
+  . .\kernel\Runner.ps1
+  $r = Invoke-EbiWorkflow -Path .\workflows\spike.capture_window.json -WorkDir C:\work
+  $r.ok; $r.steps | % { $_.id + ' ' + $_.status }
+  ```
+  看:`C:\work\capture\spike\window.png` 存在且是 Edge 窗口;
+  `grep -rn 'Global:' modules/` 为 0;`C:\work\run\<runId>\trace.jsonl` 里
+  ensure 的事件没有句柄;`Tests\Run-Tests.ps1` 全绿。通过后把本卡改 `[x]`。
+- ⚠ 也可以用 `ebi.ps1`(本分支带进来的最小 CLI,P1-10 的种子):
+  `.\ebi.ps1 run workflows\spike.capture_window.json -WorkDir C:\work`;退出码
+  0 = ok、1 = 有 step 失败、3 = 操作员 `q`。`dryrun` 子命令在 CI 里就是这么
+  跑的。
 
 ---
 
@@ -1079,8 +1109,9 @@
   `when` 到它 —— 旧规格没定义 gate 的返回值
 - ⚠ (第六轮,P0-R13)`human.gate` **总是执行**,带 `code` + `askWhen` 输入,
   不在 `askWhen` 里时直通;输出 `code`(`ok` / `ng` / `unknown` / `''`)+
-  `action`(`pass` / `ok` / `ng` / `skip` / `quit`);`quit` 走 `policy=fail`
-  的中止路径。三个 `human.*` step `effects='ui'`,返回后前台在控制台(P0-R12)
+  `action`(`pass` / `ok` / `ng` / `skip`);`q` 返回 `failure='operator_quit'`,
+  runner 转成 `cancelled` 绕过 `onError`(`human.prepare` 已是这个写法)。
+  三个 `human.*` step `effects='ui'`,返回后前台在控制台(P0-R12)
 
 ## kernel 补充(2 张,第六轮评审追加)
 

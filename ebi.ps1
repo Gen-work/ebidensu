@@ -6,8 +6,8 @@
 #  doctor and the real run options (--resume, --only, --operator, see
 #  docs/ebi-dance/Plan.md section 9).
 #
-#    .\ebi.ps1 run    workflows\spike.capture.json -WorkDir C:\work\x
-#    .\ebi.ps1 dryrun workflows\spike.capture.json -WorkDir C:\work\x
+#    .\ebi.ps1 run    workflows\spike.capture_window.json -WorkDir C:\work\x
+#    .\ebi.ps1 dryrun workflows\spike.capture_window.json -WorkDir C:\work\x
 #
 #  Exit codes: 0 ok, 1 a step failed, 3 the operator quit, 2 usage.
 # ============================================================
@@ -16,14 +16,12 @@ param(
     [Parameter(Position = 1)] [string]$Workflow = '',
     [string]$WorkDir = '',
     [string]$RunId   = '',
-    [switch]$DryRun,
-    [switch]$VerboseLog
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
 # Capture switches BEFORE dot-sourcing anything (CLAUDE.md switch pattern).
 $dryRunFlag  = [bool]$DryRun.IsPresent
-$verboseFlag = [bool]$VerboseLog.IsPresent
 
 . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Runner.ps1')
 
@@ -62,7 +60,7 @@ if (-not [System.IO.Path]::IsPathRooted($wfPath)) {
     $wfPath = $candidate
 }
 
-$summary = Invoke-EbiWorkflow -Path $wfPath -WorkDir $wd -RunId $RunId -DryRun $dryRunFlag -Verbose $verboseFlag
-if ($summary.cancelled) { exit 3 }
-if ($summary.ok) { exit 0 }
+$summary = Invoke-EbiWorkflow -Path $wfPath -WorkDir $wd -RunId $RunId -DryRun:$dryRunFlag
+if ([string]$summary['failure'] -eq 'operator_quit') { exit 3 }
+if ([bool]$summary['ok']) { exit 0 }
 exit 1

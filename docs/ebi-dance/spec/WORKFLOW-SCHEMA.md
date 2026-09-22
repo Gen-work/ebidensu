@@ -67,7 +67,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | 正常跑完(所有 item 处理完) | 保证 |
 | `onError.policy=fail` 触发中止 | 保证 |
 | step 抛出未预期异常(`internal_error`,`STEP-CONTRACT.md` §3.1) | 保证 |
-| 关卡上人选了 `q`(`human.gate` 输出 `action='quit'`,或 `onError.policy=ask` 面板的 q;runner 记为保留失败 `cancelled`,走和 `policy=fail` 同一条路,P0-R13) | 保证 |
+| 关卡上人选了 `q`(`human.*` step 返回 `failure='operator_quit'`,或 `onError.policy=ask` 面板的 q;runner 不走 `onError`,记为保留 id `cancelled`,走和 `policy=fail` 同一条路,P0-R13) | 保证 |
 | Ctrl+C / 进程被杀 / 终端被关 / 系统重启 | **不保证** |
 
 前三种都发生在同一个 PowerShell 进程的正常控制流里(跑到头,或者被
@@ -291,7 +291,9 @@ manifest `outputs` 声明的**每个字段都存在、值为 `null`**;引用它�
   `askWhen`(默认 `["unknown"]`)。`code` 不在 `askWhen` 里 → 静默直通,
   输出 `code` 原值、`action='pass'`;在里面 → 渲染面板问人:`Enter` →
   `code='ok'`、`n` → `code='ng'`、`s` → `code=''` + `action='skip'`、
-  `q` → `action='quit'`(runner 记 `cancelled`,走 §1.1 的中止路径)。
+  `q` → `ok=$false; failure='operator_quit'`(通用词表 id,
+  `STEP-CONTRACT.md` §3.1;runner 不走 `onError`,记 `cancelled`,走 §1.1 的
+  中止路径——`human.prepare` 已经这么做)。
 - `flow.checkpoint` 统一写 `{{steps.gate.out.code}}`,并带
   `when: "steps.gate.out.action != skip"`——`s` 是"留 pending",不写盘。
 - `onError.policy=ask` 的面板复用 `human.gate` 的渲染和 r / s / q 语义,
@@ -335,10 +337,12 @@ manifest `outputs` 声明的**每个字段都存在、值为 `null`**;引用它�
   `transient = $false` 的 id 在 `byFailure` 里写 `retry` 是配置错误,
   `ebi lint` 报错(§9,呼应 P1-08)
 - `internal_error`(保留 id)默认不重试,除非显式在 `byFailure` 里覆盖
-- `STEP-CONTRACT.md` §3.1 的全部保留 id(`needs_unmet` / `session_missing` /
-  `session_invalid` / `session_conflict` / `cancelled`)都可以在 `byFailure`
-  里引用;`ebi lint` 对它们不查"manifest 里有没有列"(P0-R15)。
-  `session_invalid` 是其中唯一 `transient` 的——重跑 `setup` 就能重建
+- `STEP-CONTRACT.md` §3.1 的全部保留 id(`contract_violation` /
+  `step_not_found` / `needs_unmet` / `session_missing` /
+  `session_kind_mismatch` / `session_name_taken` / `cancelled`)都可以在
+  `byFailure` 里引用;`ebi lint` 对它们不查"manifest 里有没有列"(P0-R15)。
+  它们全部 `transient=$false`;`operator_quit` 不受 `byFailure` 影响——它
+  绕过 `onError`(§5.2)
 
 **`warnings`(`STEP-CONTRACT.md` §3.1)不受 `onError` 影响。** 带
 `warnings` 的返回值仍然是 `ok = $true`,`onError` 只处理 `ok = $false`

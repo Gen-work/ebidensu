@@ -1,0 +1,11 @@
+{
+  "id": "spike.capture_window",
+  "title": "P0-08 end-to-end spike: prepare -> ensure -> capture one window to PNG",
+  "version": "1.0.0",
+  "profile": "none",
+  "setup": [
+    { "id": "prepare", "use": "human.prepare",         "with": { "message": "Open the page to capture in the browser, then press Enter" } },
+    { "id": "ensure",  "use": "browser.ensure",        "with": { "as": "mainWindow" } },
+    { "id": "shot",    "use": "screen.capture_window", "with": { "window": "mainWindow", "saveAs": "capture/spike/window.png" } }
+  ]
+}

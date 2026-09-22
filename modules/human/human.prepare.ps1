@@ -1,12 +1,16 @@
 # modules/human/human.prepare.ps1
-# Show a message and block until the operator presses Enter.
-# Source: Common.ps1 Wait-PagePrepared, minus the exit-on-q (a step reports
-# quit as an output; the runner turns it into the reserved 'cancelled').
+# Block until the operator says the screen is ready (Enter), or quits (q).
+# Ported from Common.ps1 Wait-PagePrepared (P0-08). The old function called
+# `exit` on q; a step never does that -- it returns operator_quit and the
+# runner's onError policy decides (STEP-CONTRACT.md 3.1).
+#
+# P1-34 wires this to kernel/Gate.ps1's panel; the inputs/outputs here are
+# the ones that panel will render, so workflows written now keep working.
 
 $Manifest = @{
   id         = 'human.prepare'
   group      = 'human'
-  summary    = 'Show a message and block until the operator presses Enter'
+  summary    = 'Show a message and wait for Enter (ready) or q (quit)'
   tier       = 'core'
   effects    = 'ui'
   needs      = @()
@@ -14,48 +18,48 @@ $Manifest = @{
   releases   = @()
   idempotent = $true
   inputs     = @{
-    message   = @{ type='string'; required=$true; desc='what to ask the operator to prepare before continuing' }
-    url       = @{ type='string'; default='';     desc='shown under the message when non-empty (which page to open)' }
-    allowQuit = @{ type='bool';   default=$true;  desc='accept q as a request to abort the run' }
+    message = @{ type='string'; required=$true;  desc='what the operator must have ready before continuing' }
+    url     = @{ type='string'; default='';      desc='optional URL or location hint printed under the message' }
   }
   outputs    = @{
-    action = @{ type='string'; desc='enter | quit' }
+    action  = @{ type='string'; desc='enter | quit' }
   }
   failures   = @(
-    @{ id = 'no_console'; transient = $false }
+    @{ id = 'operator_quit'; transient = $false }
   )
-  example    = @{ use='human.prepare'; with=@{ message='Open the target page in the browser, then press Enter.' } }
-  notes      = 'Takes the console foreground (effects=ui, P0-R12): the next key-sending step must re-activate its own window. action=quit is turned into the reserved cancelled failure by the runner (WORKFLOW-SCHEMA 5.2).'
+  example    = @{
+    use  = 'human.prepare'
+    with = @{ message = 'Open the page to capture, then press Enter'; url = 'https://example.invalid/list' }
+  }
+  notes      = 'DryRun prints the prompt and answers Enter on the operator''s behalf, so a dry run never blocks.'
+}
+
+function HumanPrepare-Show {
+    param([string]$Message, [string]$Url)
+    Write-Host ''
+    Write-Host ('  ' + $Message) -ForegroundColor Yellow
+    if (-not [string]::IsNullOrWhiteSpace($Url)) {
+        Write-Host ('  ' + $Url) -ForegroundColor DarkYellow
+    }
 }
 
 function Invoke-Step {
     param($In, $Ctx)
 
-    if ($Ctx.DryRun) {
-        $Ctx.Log.Info(('would prompt: ' + [string]$In.message))
+    $message = [string]$In['message']
+    $url     = if ($In.Contains('url')) { [string]$In['url'] } else { '' }
+
+    HumanPrepare-Show -Message $message -Url $url
+
+    if ($Ctx['DryRun']) {
+        $Ctx.Log.Info('would wait for Enter here (dry run answers Enter)')
         return @{ ok = $true; action = 'enter' }
     }
 
-    Write-Host ''
-    Write-Host ([string]$In.message) -ForegroundColor Yellow
-    if (-not [string]::IsNullOrWhiteSpace([string]$In.url)) {
-        Write-Host ('  ' + [string]$In.url) -ForegroundColor DarkGray
-    }
-    if ([bool]$In.allowQuit) {
-        Write-Host 'Enter=OK / q=quit : ' -ForegroundColor Magenta -NoNewline
-    } else {
-        Write-Host 'Enter=OK : ' -ForegroundColor Magenta -NoNewline
-    }
-
-    $resp = $null
-    try {
-        $resp = Read-Host
-    } catch {
-        return @{ ok = $false; failure = 'no_console'; message = ('cannot read from the console: ' + $_.Exception.Message) }
-    }
-
-    if ([bool]$In.allowQuit -and ([string]$resp).Trim() -eq 'q') {
-        return @{ ok = $true; action = 'quit' }
+    Write-Host '  Enter=OK / q=quit : ' -ForegroundColor Magenta -NoNewline
+    $resp = Read-Host
+    if ([string]$resp -eq 'q') {
+        return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q'; action = 'quit' }
     }
     return @{ ok = $true; action = 'enter' }
 }
