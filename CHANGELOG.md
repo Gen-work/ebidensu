@@ -1,3 +1,33 @@
+## 2026-09-22 - GiftMqProcessTime: first-run fixes (v2.22.1)
+
+Three problems from the first real office-PC run. None changed what the tool
+writes; all three made a correct run look like a broken one.
+
+### Fixed
+- **Mojibake output path** -- the script set `[Console]::OutputEncoding` to
+  UTF-8 at startup (copied from the repo's ASCII-output scripts). The office
+  PC's console runs the JP codepage 932, so every non-ASCII byte printed came
+  out garbled: the run reported its own output workbook as
+  `C:\Users\...\<garbage>BIX.xlsx` while having opened the right file. The
+  console's own encoding already renders a `[char]`-built Japanese string
+  correctly on both CP932 and UTF-8 consoles, so the block is removed.
+- **Misleading pre-capture message** -- with no `-FromDate`/`-ToDate` the scope
+  is narrowed to the days the captured page actually shows, but the prompt
+  printed the mapping's whole dated span (`covering 2026/08/20 .. 2026/09/17`),
+  which reads as "put a month of records on one page". It now says the page
+  decides the scope, reports the dated-job count as context, and points at
+  `-FromDate`/`-ToDate`. It also spells out that the Enter is typed in the
+  PowerShell window, not in Edge.
+- **`-TeamsTextFile` validated up front** -- a wrong path only warned in the
+  counts step, which runs AFTER the whole detail-click loop, so the operator
+  learned about the typo having already spent the run's slowest minutes. A
+  missing file now warns next to the mapping/output checks, before anything
+  is captured.
+
+### Notes
+- Still office-PC-only for the COM + SendKeys paths; the pure library and its
+  105 unit tests are unchanged.
+
 ## 2026-09-18 - GiftMqProcessTime: standalone 処理時間 filler from the GIFT MQ page (v2.22.0)
 
 The operator's daily hand routine for the 処理時間(BIX).xlsx sheet -- read
