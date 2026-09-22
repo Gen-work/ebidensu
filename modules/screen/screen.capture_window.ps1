@@ -62,7 +62,10 @@ function ScreenCaptureWindow-ResolvePath {
     if ([string]::IsNullOrWhiteSpace($SaveAs)) { return '' }
     if ([System.IO.Path]::IsPathRooted($SaveAs)) { return $SaveAs }
     if ([string]::IsNullOrWhiteSpace($WorkDir)) { return $SaveAs }
-    return [System.IO.Path]::Combine($WorkDir, $SaveAs)
+    # GetFullPath also normalizes separators: a workflow's 'capture/spike/x.png'
+    # under 'C:\work' becomes 'C:\work\capture\spike\x.png', not the mixed
+    # form the first office-PC run reported.
+    return [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($WorkDir, $SaveAs))
 }
 
 function ScreenCaptureWindow-ToHandle {

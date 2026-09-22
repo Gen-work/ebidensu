@@ -455,7 +455,8 @@ try {
 
     # the step's own pure helper
     . (Join-Path (Join-Path (Join-Path $repoRoot 'modules') 'screen') 'screen.capture_window.ps1')
-    Assert-Equal ([System.IO.Path]::Combine('C:\w', 'capture\a.png')) (ScreenCaptureWindow-ResolvePath -SaveAs 'capture\a.png' -WorkDir 'C:\w') 'capture_window: relative saveAs joins the work dir'
+    $wd = [System.IO.Path]::GetTempPath().TrimEnd([System.IO.Path]::DirectorySeparatorChar)   # rooted on whichever OS runs the test
+    Assert-Equal ([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($wd, 'capture/a.png'))) (ScreenCaptureWindow-ResolvePath -SaveAs 'capture/a.png' -WorkDir $wd) 'capture_window: relative saveAs joins the work dir (separators normalized)'
     $rooted = Join-Path ([System.IO.Path]::GetTempPath()) 'a.png'   # rooted on whichever OS runs the test
     Assert-Equal $rooted (ScreenCaptureWindow-ResolvePath -SaveAs $rooted -WorkDir 'C:\w') 'capture_window: a rooted saveAs is kept'
     Assert-Equal '' (ScreenCaptureWindow-ResolvePath -SaveAs '' -WorkDir 'C:\w') 'capture_window: an empty saveAs stays empty'
