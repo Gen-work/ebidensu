@@ -23,10 +23,10 @@
 全部是纯文档的规格修订,不写代码)—— 它们**先于任何写码卡**,已经**全部
 完成**(`R1`…`R10` 契约层;`R11`…`R17` 2026-09-22 接线层:worklist 资源、
 发键窗口断言、关卡结论、侧车交接、失败 id 表、run 元数据与 CLI、资源交接
-机制)。P0 的写码卡也基本落地:P0-01 `[x]`(冻结标签在办公 PC 的 GitLab
-镜像上),P0-07 runner spike `[x]`,P0-08 的三个 step +
-`workflows/spike.capture_window.json` 已合进 main、只差在**办公 PC** 上真跑
-一次存下 PNG。**这一件做完就可以开 P1**(从 P1-01 / P1-02 / P1-35 起)。
+机制)。**P0 已全部关闭**(2026-09-22):冻结标签在办公 PC 的 GitLab 镜像上
+(P0-01),runner spike(P0-07)和三个 step + `workflows/spike.capture_window.json`
+(P0-08)在办公 PC 上真截到了 PNG。**P1 已开**:P1-01(`kernel/Context.ps1`,
+模板求值)`[x]`;下一张从 P1-02(Registry)或 P1-35(Json 入口)挑。
 
 ---
 

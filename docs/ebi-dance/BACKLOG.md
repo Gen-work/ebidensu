@@ -843,7 +843,7 @@
 
 ## kernel(6 张)
 
-### [ ] P1-01 [整块] kernel/Context.ps1
+### [x] P1-01 [整块] kernel/Context.ps1
 - **估** 90min | **依赖** P0-08, P0-R6 | **读** `spec/WORKFLOW-SCHEMA.md` §4
 - **做**:`{{}}` 模板求值。作用域 `vars` / `profile` / `run` / `item` / `steps.<id>.out.<f>`
   / **`page`(P0-R6 的绑定间接)** / **`group`(分组遍历时,§7.2 用到但初版作用域表漏了)**。
@@ -853,6 +853,19 @@
   profile/page 子树**递归求值一次**(P0-R6);复合键的 `{{item.key}}` / `{{item.keySafe}}`
   按 P0-R4 的定义展开。
 - **完成**:单测覆盖 7 种作用域 + 类型保留 + 转义 + 递归求值 + keySafe + 3 种解析失败的报错信息
+- **已执行(2026-09-22)**:`kernel/Context.ps1`(`New-EbiTemplateScope` /
+  `Resolve-EbiPath` / `Expand-EbiTemplate` + lint 用的 `Test-EbiTemplateString` /
+  `Get-EbiTemplateReferences`)和 `kernel/Key.ps1`(`ConvertTo-EbiHalfWidth` /
+  `ConvertTo-EbiKeySafe` / `Get-EbiKeyDisplay`,P1-27 的种子——规范化只此一处)。
+  `Tests/Test-Context.ps1` 72 例。决定了几条卡面没写死的细节:失败是返回值
+  `@{ ok=$false; error; segment; path; message }`,error 七种(`unknown_scope` /
+  `missing_segment` / `step_not_found` / `bad_steps_path` / `no_page` /
+  `nested_template` / `not_scalar`);`steps.<id>` 的 id 按 `.out.` 字面边界切
+  (§7.4);被 `when` 跳过的 step 字段是 `null` 值不是错误(§5.1);§4.3 的
+  「取出后求值一次」对 profile / page 取出的**字符串**同样成立(P0-R11 的
+  `mapping_{{run.operator}}.csv` 就靠这条),第二层不再展开;整值模板允许
+  两侧空白;对象 / 数组只能整值引用,拼进字符串是 `not_scalar`。**没接进
+  runner**(P1-03 的事),spike 仍在第一步前拒绝 `{{`。
 
 ### [ ] P1-02 kernel/Registry.ps1
 - **估** 75min | **依赖** P0-06 | **读** `spec/STEP-CONTRACT.md` §2
@@ -863,6 +876,14 @@
   捕获进按 id 索引的表,运行期从表里调,不再二次 dot-source。
 - **完成**:对缺 required、类型不符、未声明的多余参数,都能报出**参数名**;
   加载两个 step 后各自的 Invoke-Step 仍能正确调用(单测)
+- ⚠ (P0-07 落地后)`kernel/Runner.ps1` 里已经有一半:加载 + 立刻捕获
+  `Invoke-Step` 的循环(在 `Invoke-EbiWorkflow` 内)、`Resolve-EbiStepInputs`
+  (摘 `as`、session 名字换实例、`session_missing` / `session_kind_mismatch` /
+  `session_name_taken`)、`Test-EbiStepReturn`(§3.1 返回值契约)、
+  `Get-EbiManifestArray` / `Get-EbiSessionInputs`。这张卡是**把它们抽成
+  `kernel/Registry.ps1` 并补上缺的一半**——type / required / enum / default
+  校验(Runner 现在注明 "required-ness is P1-02's check")——不是重写。
+  `Tests/Test-Runner.ps1` 的 128 例要照样绿。
 
 ### [ ] P1-03 [整块] kernel/Runner.ps1 主体
 - **估** 120min | **依赖** P1-01, P1-02 | **读** `spec/WORKFLOW-SCHEMA.md` §1,3,7
@@ -1164,6 +1185,12 @@
   `'read'` 的 step 也跑(它们不看 DryRun,但同样受"键要齐"的约束)。
 - **完成**:对一个故意在 DryRun 分支漏返回 `path` 的 fixture step 能报出缺哪个
   键;全部现有 step 通过
+- ⚠ (第六轮复审追加)顺手把 P0-R12 / P0-R17 落下的两条 **manifest 侧**规则
+  补进 `Tests/StepContract.ps1` 和 `spec/STEP-CONTRACT.md` §7 的清单:
+  ① `needs` 含 `foreground` 的 step 必须有一个 `type='session';
+  sessionKind='window'` 的输入(§4);② `provides` 非空的 step,`example.with`
+  必须带 `as`(§3.4 第 7 点:`provides` 非空的调用必须写 `as`,示例不能示范
+  违规写法)。§7 的元规则说新增 manifest 侧规则要进清单,这两条漏了。
 
 ---
 
