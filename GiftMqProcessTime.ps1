@@ -101,10 +101,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-try {
-    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-    $OutputEncoding = [System.Text.UTF8Encoding]::new()
-} catch {}
+# NOTE: do NOT force [Console]::OutputEncoding to UTF-8 here. The office PC's
+# console runs the JP codepage (932); forcing UTF-8 output there makes every
+# non-ASCII byte we print render as mojibake -- the first real run showed
+# the output workbook's own path as 'C:\...\<garbage>BIX.xlsx', which reads
+# like the tool opened the wrong file when it had in fact opened the right
+# one. The console's own encoding already renders a [char]-built Japanese
+# string correctly on both a CP932 and a UTF-8 console, so leave it alone.
 
 # Capture switches BEFORE any dot-source (CLAUDE.md switch-flag pattern).
 $noDetailFlag = [bool]$NoDetail.IsPresent
@@ -373,6 +376,13 @@ Write-Host ("  force   : {0}   dry-run : {1}   interactive : {2}" -f $forceFlag,
 
 if (-not (Test-Path -LiteralPath $MappingXlsx)) { Write-Host "[ERROR] mapping workbook not found: $MappingXlsx" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path -LiteralPath $OutputXlsx))  { Write-Host "[ERROR] output workbook not found: $OutputXlsx" -ForegroundColor Red; exit 1 }
+if (-not [string]::IsNullOrWhiteSpace($TeamsTextFile) -and -not (Test-Path -LiteralPath $TeamsTextFile)) {
+    # Checked HERE, not where the counts are read: that happens AFTER the whole
+    # detail-click loop, so a typo in the path used to surface a warning only
+    # once the operator had already spent the run's slowest minutes.
+    Write-Host ("[WARN] Teams text file not found: {0}" -f $TeamsTextFile) -ForegroundColor Yellow
+    Write-Host '       Counts will stay blank; the end-of-run summary lists the jobs needing one.' -ForegroundColor Yellow
+}
 $script:archiveDir = $ArchiveDir
 if ([string]::IsNullOrWhiteSpace($script:archiveDir)) {
     $script:archiveDir = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $OutputXlsx).Path) 'giftmq_text'
@@ -406,7 +416,17 @@ if (-not [string]::IsNullOrWhiteSpace($PageTextFile)) {
     Bring-ShellToFront
     Write-Host ''
     Write-Host '  In Edge, open GIFT MQ > Transfer status > Inquiry and show the result LIST' -ForegroundColor Yellow
-    Write-Host ("  covering {0} .. {1} (set rows-per-page so every record is on ONE page)." -f $schedMin.ToString('yyyy/MM/dd'), $schedMax.ToString('yyyy/MM/dd')) -ForegroundColor Yellow
+    Write-Host '  for the DAY(S) YOU WANT -- all their records on ONE page (raise rows-per-page).' -ForegroundColor Yellow
+    if ($null -eq $fromDt -and $null -eq $toDt) {
+        # Without an explicit window the page decides the scope, so printing the
+        # mapping's whole dated span here read as "show me a month of records".
+        Write-Host '  Only jobs scheduled on the days that page shows are matched. The mapping' -ForegroundColor Gray
+        Write-Host ("  holds {0} dated job(s) between {1} and {2}; narrow with -FromDate/-ToDate." -f $schedules.Count, $schedMin.ToString('yyyy/MM/dd'), $schedMax.ToString('yyyy/MM/dd')) -ForegroundColor Gray
+    } else {
+        Write-Host ("  Scope: {0} job(s), {1} .. {2}." -f $schedules.Count, $schedMin.ToString('yyyy/MM/dd'), $schedMax.ToString('yyyy/MM/dd')) -ForegroundColor Gray
+    }
+    Write-Host '  Then click this console window again and press Enter (the answer is typed HERE,' -ForegroundColor Yellow
+    Write-Host '  not in Edge). Do not touch the mouse or keyboard after that until it reports.' -ForegroundColor Yellow
     Wait-PagePrepared 'Press Enter when the LIST page is showing.'
     Switch-ToEdge
     $edgeLive = $true

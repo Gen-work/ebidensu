@@ -41,7 +41,9 @@ powershell -File GiftMqProcessTime.ps1 `
 1. It reads `mapping.xlsx` (COM, read-only) and keeps the rows with a
    `GIFT実行日`. With no `-FromDate`/`-ToDate` the page decides the window:
    only jobs scheduled on the days the page shows are in scope.
-2. Press Enter with the LIST page showing. It captures the page once
+2. It stops at `Enter=OK / q=quit :` and waits. That prompt is a `Read-Host`
+   **in the PowerShell window**, not in Edge: show the LIST page in Edge, then
+   click the PowerShell window and press Enter there. It captures the page once
    (Ctrl+A/Ctrl+C, `Read-PageText.ps1`) and archives the text under
    `<output dir>\giftmq_text\list_<stamp>.txt` (reuse with
    `-PageTextFile`, e.g. to rerun without Edge).
@@ -131,6 +133,15 @@ mention of a job wins, so a corrected re-post overrides.
   `ConvertFrom-GiftMqTeamsText`, `Get-GiftMqOutputPlan`,
   `Format-GiftMqStamp` / `Format-GiftMqCount`, `Get-GiftMqDetailTabCount`.
   Unit-tested: `Tests\Test-GiftMqProcessTime.ps1`.
+
+## Console encoding
+
+The script does **not** touch `[Console]::OutputEncoding`. On the office PC the
+console runs the JP codepage (932); forcing UTF-8 output there turns every
+non-ASCII byte printed into mojibake. The first real run showed the output
+workbook's own path as `C:\Users\...\<garbage>BIX.xlsx` while having opened the
+right file, which reads like a failure and is not one. If a path still looks
+garbled, check the file name itself before assuming the tool is wrong.
 
 ## Not verified yet (office PC)
 
