@@ -31,13 +31,13 @@
 
 ## 状态
 
-- 阶段 P0–P3 共 **68 张** = 「能接下一份工作」的最小集
+- 阶段 P0–P3 共 **79 张** = 「能接下一份工作」的最小集
 - 阶段 P4–P5 共 **36 张** = 补齐 Excel/文件组 + Agent 循环
 - `[整块]` 标记 = 需要连续思考,不适合碎片时间,也**不建议交给较小的模型**
-- **计数口径**:「P0–P3 共 68 张」**不算 `P0-00`**(它已经是历史状态说明,
+- **计数口径**:「P0–P3 共 79 张」**不算 `P0-00`**(它已经是历史状态说明,
   不是一张待执行的卡);「P4–P5 共 36 张」不涉及 `P0-00`,和直接
   `grep -c '^### \['` 数出来的一致。只在数 P0–P3 时,直接 grep 会多数出
-  1 张(69)——那 1 张就是 `P0-00`,不是漏卡也不是多算。
+  1 张(80)——那 1 张就是 `P0-00`,不是漏卡也不是多算。
 
 > **2026-08-24 评审修订**:开工前审了一遍契约,发现 6 个「现在改是文本、
 > 写完 7000 行再改是重构」的洞,追加为 P0-R1…R6(规格修订卡,全部先于写码);
@@ -60,10 +60,38 @@
 > 不再出现 `session:<kind>`)、`flow.call` 命名空间规则的两处遗漏(子
 > 工作流内部引用改写、id 含 `.` 后 `.out.` 边界解析)、P1-12「抄」列表
 > 漏掉的 `Send-ShiftTab`。
+>
+> **2026-09-22 第六轮评审追加(接线层)**:前五轮审的是契约本身,这一轮
+> 拿旧脚本的真实流程(`MqSnap.ps1` / `HmSnap.ps1` / `Mark.ps1`)对着四份
+> spec 走了一遍「P2 对拍能不能照规格写出来」,发现六个契约层之下、runner
+> 接线层的洞,全部是「现在改是文本,写完 P1 的 30 个 step 再改是重写
+> manifest」:worklist 在运行期无处安放 + 混跑期判定值编码对不上(P0-R11)、
+> 发键 step 不知道自己在对哪个窗口发键(P0-R12)、关卡的答案进不了清单 +
+> `when` 跳过的输出没定义(P0-R13)、capture→annotate 的行号交接没有通道
+> (P0-R14)、runner 自产的失败没有 id + 工作流没有 schema 版本(P0-R15)、
+> run 元数据不落盘 + CLI 缺 resume/only/operator(P0-R16)。另补四张实现卡:
+> `kernel/Json.ps1`(P1-35)、DryRun 合同测试(P1-36)、`ebi profile check`
+> (P2-09,P3-06 的完成判据靶着一个不存在的命令)、`verify.crosscheck`
+> (P2-10,铁律二要求的 step 没卡)。**六张 R 卡全部 `[ ]`,先于 P1 任何
+> 写码卡执行**;P0-01 / P0-07 / P0-08 不受影响,可先做。顺带修正:MVP step
+> 数从「25」改为实际卡片里的 33(P1 做 30,P0-08 已含 3);冻结标签落点改为
+> P0-02 之前的提交。
+>
+> **2026-09-22 同日执行**:R11…R16 全部落进四份 spec(每张卡末尾的
+> 「已执行」段列出改了哪几节)。执行中 P0-07 的 spike 一动手就撞出第七个洞
+> ——句柄从 step 交到 `$Ctx.Session` 的**机制**从来没定(`as` 被 runner 摘走,
+> step 不知道自己会不会被注册;返回值里没有给句柄留的键)——追加并同日执行
+> P0-R11…R17 中的 **P0-R17**(`$In.as` 回传 + `resource` 返回键 + 释放后
+> runner 摘名字)。R14 落地后 MVP step 数 33 → 35(P1 30 → 32)。
+> **十七张 R 卡全部 `[x]`**。同日另一条会话在 main 上独立做完了 P0-01 /
+> P0-07 / P0-08(PR #153 / #154):冻结标签打在了办公 PC 的 GitLab 镜像上,
+> runner spike 和三个 step 以 main 的实现为准(本分支的同名实现在合并时
+> 让位,只留下 `ebi.ps1` 这个最小 CLI 和 R11…R17 的规格改动)。**P1 的前置
+> 只剩 P0-08 在办公 PC 上真截一张 PNG。**
 
 ---
 
-# P0 — 骨架(18 张,3 张整块)
+# P0 — 骨架(25 张,5 张整块)
 
 目标:**一条 5 行的 workflow JSON 能真的存下一张 PNG。**
 
@@ -99,7 +127,7 @@
   `screen.capture_window` 根本引用不到(跨段);Excel COM 对象(P4 的 16 个
   step 全靠它)更不可能塞进 JSON 模板或 trace。规格里 §8 示例的
   `screen.capture_window` 没有任何窗口输入 —— 它隐式依赖「当前前台窗口」,
-  这正是要消灭的 `$Global:Shell` 换了个马甲。不定这条,25 个 step 的实现者
+  这正是要消灭的 `$Global:Shell` 换了个马甲。不定这条,35 个 step 的实现者
   只能各自偷偷用全局变量,P4 时已积重难返。
 - **做**:定义 `$Ctx.Session`:运行期命名资源注册表(browser 窗口句柄、Excel app、
   打开的工作簿)。规则:(1) 句柄/COM 对象**只进 Session,永不进 outputs**;
@@ -355,9 +383,308 @@
   `WORKFLOW-SCHEMA.md` §9 的释放判据条目改成读这张表,不再读"catalog
   里有没有恰好带 `releases` 的 step"。
 
+### [x] P0-R11 [整块][规格修订] worklist 是 Session 资源;判定值的存储编码由 profile 声明(混跑期兼容)
+- **估** 90min | **依赖** P0-R2, P0-R4 | **改** `spec/STEP-CONTRACT.md` §3.2,§3.4,§4;
+  `spec/WORKFLOW-SCHEMA.md` §3,§7.3,§8;`spec/PROFILE-SCHEMA.md` §6,§6.5;
+  `BACKLOG.md` P1-24/P1-26/P1-28/P2-01/P2-06
+- **问题**:两个洞,都在 P2 对拍一开工就会撞上。
+  (a) **worklist 在运行期到底在哪,规格没说。** `$Ctx` 的字段表
+  (`spec/STEP-CONTRACT.md` §3.2)只有 WorkDir/RunId/Profile/Log/DryRun/Session,
+  没有 worklist;`source.table: "worklist"`(`spec/WORKFLOW-SCHEMA.md` §3)由
+  runner 读,但 `flow.checkpoint`(同文件 §7.3)、`table.set`、`progress.status`
+  是 step,只拿得到 `$In` 和 `$Ctx`——它们往哪写?`needs: worklist`
+  (`spec/STEP-CONTRACT.md` §4)说"需要工作清单已加载",可是谁加载、加载到哪、
+  `table.load` 这个 step(P1-24)的输出又是什么(257 行的整张表塞进 outputs
+  进 ledger?),三处各说各的。不定,P1-24/26/28 三张卡的实现者只能各自发明
+  ——最可能的发明就是一个全局变量,正是 P0-R2 要消灭的东西。
+  (b) **新旧工具混跑在同一份清单上,判定值的写法对不上。** 新 verdict 列写
+  `ok`/`ng`/`unknown`(`spec/VOCABULARY.md` §1.2),旧工具写 `1`/`2`/`0`,而
+  旧的 `Test-MqSnapDone`/`Test-HmSnapDone` 只认 `'1'` 为完成(`MqSnap.ps1:384`)。
+  P6 的迁移方式是"每迁完一条流程删一条旧脚本"——也就是相当长一段时间里,
+  同一份 `mapping_<Owner>.csv` 上 capture 由新引擎写、compose/annotate 由旧
+  `ReplaceEvidence.ps1`/`Mark.ps1` 读。新引擎写进去的 `ok`,旧工具当成
+  "未完成";旧工具写的 `1`,新引擎的 `pendingWhen: "!= ok"` 当成"待处理"
+  重做一遍。P2-06 的验收"CSV 标记逐项一致"按现规格**字面上不可能通过**。
+  此外 `worklist.json` 的 `file` 写死 `worklist.csv`,而当前工作的清单文件名
+  带操作员后缀(`mapping_<Owner>.csv`),P2-01 建 profile 时就要面对。
+- **做**:
+  1. **worklist 是一种 Session 资源**,种类 `worklist`,`mustRelease = $false`
+     (内存表,每次写都原子落盘,没有要释放的东西),加进 `spec/STEP-CONTRACT.md`
+     §3.4 第 6 点的种类表。`table.load`(`provides=@('worklist')`)在 `setup`
+     里用 `with.as` 注册;`table.select`/`table.set`/`table.ensure_columns`/
+     `flow.checkpoint`/`progress.status` 都通过 `type='session';
+     sessionKind='worklist'` 的输入拿它。`table.load` 的 outputs 只有
+     `path`/`rowCount`/`columns`——**整张表不进 outputs、不进 ledger**(和句柄
+     同一条理由:§3.4 第 1 点)。`source.table` 的值改定义为 **Session 实例名**
+     (`"table": "wl"` 对应 `setup` 里某个 `with.as: "wl"`),runner 由此拿到
+     同一个内存表,`ebi lint` 用 P0-R2 那套种类配平检查它。`needs` 表里的
+     `worklist` 一项删掉——理由和 P0-R10 删 `session:<kind>` 完全一样,消费方
+     的 `sessionKind` 已经说了。`provides` 非空 ⇒ `table.load` 必须
+     `idempotent = $true`(读文件,天然满足)且 resume 时总是真执行(§6.2)
+     ——这正好保证 resume 拿到的是磁盘上最新的表。
+  2. **写盘归属**:每个写 worklist 的 step(`table.set`/`flow.checkpoint`/
+     `table.save`)调用返回前都做一次原子落盘(沿用 `Export-MappingAtomic`),
+     step 之间不存在"改了内存没写盘"的窗口。
+  3. **verdict 列的存储编码由 profile 声明**:`spec/PROFILE-SCHEMA.md` §6.5 的
+     `verdict` role 增加可选 `values` 映射,如
+     `"values": { "ok": "1", "ng": "2", "unknown": "", "pending": "0" }`;
+     `flow.checkpoint` 写入前、`pendingWhen`(`spec/WORKFLOW-SCHEMA.md` §3.1)
+     比较前、`progress.status` 统计前都经这张表翻译。不写 `values` 就是原样
+     `ok`/`ng`/`unknown`。混跑期的 `host-open` profile 用旧编码,换工作后的新
+     profile 不写这项——**工作流 JSON 一个字不改**。
+  4. `worklist.json` 的 `file` 允许 `{{run.operator}}` 模板
+     (`"file": "mapping_{{run.operator}}.csv"`),按 `spec/WORKFLOW-SCHEMA.md`
+     §4.3 的规则在 runner 加载 profile 时求值一次;`run.operator` 的来源在
+     P0-R16 定。
+  5. P2-06 的验收改写为"CSV 标记经 `values` 映射后逐项一致",不再是字面一致。
+- **完成**:`spec/STEP-CONTRACT.md` 种类表里有 `worklist`;`spec/WORKFLOW-SCHEMA.md`
+  §8 示例的 `setup` 里出现 `table.load` + `with.as`,`source.table` 引用它,
+  `flow.checkpoint`/`progress.status` 带 worklist 输入;`spec/PROFILE-SCHEMA.md`
+  §6 示例里 verdict 列带 `values`;P1-24/26/28、P2-01、P2-06 五张卡的文本同步
+- **已执行(2026-09-22)**:`STEP-CONTRACT.md` §3.2 加「没有 $Ctx.Worklist」一段、§3.4 种类表加 `worklist`、§4 删 `worklist` 行;`WORKFLOW-SCHEMA.md` §3 `source.table` 改为 Session 实例名 + `values` 翻译、§7.3 / §8 加 `worklist` 输入和 `table.load`;`PROFILE-SCHEMA.md` §6 示例 + §6.5 加 `values` 与 `file` 模板;`VOCABULARY.md` §1.2 加逻辑值 / 存储值一句。
+
+### [x] P0-R12 [规格修订] 前台窗口是显式输入:发键的 step 都要 `window` 参数,发键前断言前台
+- **估** 60min | **依赖** P0-R2 | **改** `spec/STEP-CONTRACT.md` §3.4,§4;
+  `spec/WORKFLOW-SCHEMA.md` §8;`INTERVIEW.md` §4(2.2 的追问);`BACKLOG.md` P1-11/P1-12/P1-13/P1-16/P1-17/P4-19
+- **问题**:P0-R2 把 `screen.capture_window` 的"隐式依赖当前前台窗口"改成了
+  `window` Session 输入,但**同一个洞在发键的 step 上原样留着**:
+  `spec/WORKFLOW-SCHEMA.md` §8 示例里 `browser.tab_to`/`browser.fill`/
+  `browser.submit` 没有任何窗口输入,`SendKeys` 打到哪个窗口全看那一刻谁在前台。
+  而 `human.gate`/`human.choose`/`human.input` 一定会把前台抢到控制台
+  (`Read-Host` 要焦点)——旧工具为此在每个 `Read-Host` 之后都要来一套
+  `Bring-ShellToFront` → `Read-Host` → `Switch-ToEdge`(Alt+Tab)→
+  `Click-PageBody`,并且注释里明说 Alt+Tab "只有这一个位置是安全的"、加错地方
+  会把 correl id 敲进控制台/ISE(`MqSnap.ps1:482-499`,v3 回归)。新设计里关卡
+  是 runner 随时可能插进来的(`onError.policy=ask`、`destructive` 自动确认),
+  发键 step 根本不知道上一步是不是刚问过人——**把 key 敲进控制台或别的应用**
+  是这套工具最坏的一类失败(看起来成功、实际上乱按了别人的窗口),比 P0-R2
+  管的截错窗口更危险。`needs: foreground`("需要一个前台窗口",
+  `spec/STEP-CONTRACT.md` §4)也没说"哪个",等于没说。
+- **做**:
+  1. **每个会发键/发鼠标的 step**(`browser.send_keys`/`tab_to`/`fill`/
+     `submit`/`find`/`navigate`/`read_text`/`focus_body`/`click_at`)都有一个
+     `type='session'; sessionKind='window'; required=$true` 的 `window` 输入,
+     发键前先 `SetForegroundWindow` 这个句柄,再核对 `GetForegroundWindow()`
+     是否等于它,不等则返回失败 `foreground_lost`(`transient=$true`,可
+     retry);**绝不对着一个未核对的前台窗口发键**。`needs` 表里的 `foreground`
+     一项改定义为"本 step 会把它的 `window` 输入拉到前台并核对",不再是对环境
+     的模糊要求。
+  2. `human.*` step 的 `effects` 定为 `ui`(它们占用前台和键盘),manifest 里
+     `notes` 写明"返回后前台在控制台";runner **不**替后续 step 恢复前台——第 1
+     点已经让每个发键 step 自己负责,这正是旧代码里那套 Alt+Tab 编排可以整体
+     删掉的理由。
+  3. **`window` 种类不绑定浏览器**:`browser.ensure` 增加 `process` 输入(默认
+     `msedge`),按进程名找主窗口句柄,标题匹配只做回退(P1-11 已有这条);
+     `DfSnap.ps1` 的 df.exe 窗口、`ExcelSnap.ps1` 的 Excel 窗口迁移时复用
+     同一个 step、同一个种类,不另造 `window.ensure`。
+  4. 顺带把 P4-19 悬着的设计题在这里定掉:`browser.verify_action` **不做成
+     独立 step**(契约不允许 step 调 step),而是 `browser.fill`/`browser.submit`/
+     `browser.navigate` 的可选输入 `verifyChange`(默认 `$false`)——为 `$true`
+     时 step 在动作前后各取一次页面文本,无变化即返回失败 `no_effect`
+     (`transient=$true`)。P4-19 的卡缩成只剩 `browser.download_link`。
+- **完成**:`spec/WORKFLOW-SCHEMA.md` §8 示例里每个发键 step 都带 `window: "mainWindow"`;
+  `spec/STEP-CONTRACT.md` §4 的 `foreground` 定义改写;`foreground_lost`/
+  `no_effect` 进 P0-R15 的通用失败 id 词表;P1-11/12/13/16/17 和 P4-19 卡文本
+  同步;`grep -c '"window"' docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` ≥ 10
+- **已执行(2026-09-22)**:`STEP-CONTRACT.md` §4 重定义 `foreground`、加「为什么发键要核对前台」「verify_action 不是 step」两段;`WORKFLOW-SCHEMA.md` §8 示例每个发键 step 带 `window`,`fill` 带 `verifyChange`;`INTERVIEW.md` §4 / §11 的 `verify_action` 改为 `verifyChange`。
+
+### [x] P0-R13 [整块][规格修订] 关卡的结论怎么进 checkpoint;被 `when` 跳过的 step 输出算什么
+- **估** 75min | **依赖** P0-R5 | **改** `spec/WORKFLOW-SCHEMA.md` §1.1,§4.1,§5,§8;
+  `spec/STEP-CONTRACT.md` §3.1;`BACKLOG.md` P1-01/P1-05/P1-33/P1-34/P2-04/P2-05
+- **问题**:旧工具的判定流是三态收口到两态:`ok`→写 `1`,`ng`→写 `2`,
+  `ask`→问人,人答 `o`→`1`、`n`→`2`、`s`→留 pending、`q`→中止
+  (`HmSnap.ps1:645-672`)。`spec/WORKFLOW-SCHEMA.md` §8 示例复刻不出这条流:
+  `gate` 只在 `verdict == unknown` 时跑,而 `checkpoint` 写的永远是
+  `{{steps.verdict.out.code}}`——人在关卡上答了什么**根本进不了清单**,
+  `unknown` 被原样写进 verdict 列,下次 `!= ok` 再选中、再问一遍,永远收不了口。
+  要让关卡的答案覆盖判定结果,JSON 里得写"如果 gate 跑了取 gate 的、否则取
+  verdict 的"——这是表达式,§0 禁止。更底下还有一个没定义的东西:**被 `when`
+  跳过的 step,它的 `{{steps.<id>.out.*}}` 是什么?** §4.2 说"引用了尚未执行的
+  step → lint 报错",但 `when` 是运行期才知道跑不跑的,lint 判不了;runner
+  求值时遇到它是报错、是空串、还是 null,三种实现都"合理",而 P1-01 的模板
+  求值单测一写就得选一个。`human.gate` 的 `q`(中止)对应哪条退出路径、
+  `teardown` 保不保证,§1.1 的表里也没有这一行。
+- **做**:
+  1. **关卡 step 自己做条件,不靠 `when`**:`human.gate` 增加输入 `code`
+     (`verify.assert` 的结论)和 `askWhen`(默认 `@('unknown')`,enum 数组),
+     **总是执行**——`code` 不在 `askWhen` 里时静默直通,输出 `code` 原值、
+     `action='pass'`;在里面时渲染面板问人,`Enter`→`code='ok'`、`n`→
+     `code='ng'`、`s`→`code=''` + `action='skip'`、`q`→`ok=$false;
+     failure='operator_quit'`(通用词表 id;合并 main 的 P0-08 时把原案的
+     `action='quit'` 改成了这个——`human.prepare` 已经这么返回)。
+     `flow.checkpoint` 于是统一写 `{{steps.gate.out.code}}`,并带
+     `when: "steps.gate.out.action != skip"`(`s` = 留 pending,不写盘)。
+     这样 §8 示例里没有任何一处需要"二选一"的表达式。
+  2. **被 `when` 跳过的 step 的输出定死**:runner 为它在作用域里放一个
+     `@{ ok=$true; skipped=$true }`,manifest `outputs` 声明的每个字段都存在、
+     值为 `$null`;引用它不是错误。`when` 的四种形式里 `<path> exists` 对
+     `$null` 为假、`<path> empty` 为真——于是"上一步跳过了就也跳过"可以写成
+     `when: "steps.x.out.skipped != true"`。ledger 里记一条 `status='skipped'`,
+     resume 时照常重放(`spec/STEP-CONTRACT.md` §6.1)。
+  3. **`operator_quit` = 请求中止**:runner 不让它进 `onError`(否则
+     `policy=ask` 会对着"我要退出"再问一次、`policy=skip` 会跳过这条继续跑),
+     直接记保留 id `cancelled`,走 `onError.policy=fail` 的同一条路(§1.1 表
+     里加一行,`teardown` 保证跑);`onError.policy=ask` 的面板复用 `human.gate`
+     的渲染和 r/s/q 语义,不另写一套。
+  4. `verify.assert` 的输出 `code` 的取值就是 `spec/VOCABULARY.md` §1.2 的三值;
+     `human.gate` 的输出 `code` 在此之上多一个 `''`(留 pending),manifest 用
+     `enum` 写清楚。
+- **完成**:`spec/WORKFLOW-SCHEMA.md` §8 示例改写后 `gate` 无 `when`、`checkpoint` 引用
+  `steps.gate.out.code`;§5 增加"被跳过的 step"一段;§1.1 表多一行
+  `human.gate` 的 `q`;P1-01 的单测清单加"引用被跳过 step 的输出得到 null 且
+  不报错";P1-34、P2-04、P2-05 卡文本同步
+- **已执行(2026-09-22)**:`WORKFLOW-SCHEMA.md` §1.1 表加 `q` 一行、§5 改例子并新增 5.1(跳过 step 的输出)/ 5.2(关卡结论进 checkpoint)、§7.3 / §8 改 `gate` + `checkpoint`;`STEP-CONTRACT.md` §6.1 加 `status='skipped'` 记录。
+
+### [x] P0-R14 [规格修订] 跨工作流的 item 级交接:侧车 JSON 是唯一通道
+- **估** 60min | **依赖** P0-R3, P0-R4 | **改** `spec/VOCABULARY.md` §3.3;
+  `spec/WORKFLOW-SCHEMA.md` §8;`spec/STEP-CONTRACT.md` §6.1;`BACKLOG.md` P1-21/P2-05/P4-21
+- **问题**:capture 和 annotate 是两条工作流、两次 run,但 annotate 需要 capture
+  时算出来的东西:`Mark.ps1` 画 GIFT_MQ 红框时按记录条数上下平移,行号来自
+  snap 时 `MqSnap.ps1` 写的 `<correl>.mqrow.json`;M5 的 `<correl>.loc.json`、
+  M6 的 `<correl>.note.json` 同理(`Mark.ps1:55,351-361`)。新规格里 step 之间
+  只有三条通道:模板(同段)、ledger 重放(同一 runId)、worklist 列。**ledger
+  是按 run 隔离的,另一条工作流读不到**;worklist 列只放标量,塞一个矩形进
+  CSV 列不像样。于是 P4-21 一开工就会发现 capture 阶段没给它留下行号,回头改
+  P1-18/P1-21 的 outputs 和 P2-05 的工作流——而那时 P2 对拍产出的 capture
+  已经跑过一批,全部缺这份数据。
+- **做**:
+  1. 定义**侧车(sidecar)**:`capture/<side>_<page>/<keySafe>.meta.json`
+     (`spec/VOCABULARY.md` §3.3 的目录表加这一行),一个 item 在一个 page 上的
+     全部结构化交接数据都合并进这一个文件(顶层键由工作流起名,如
+     `row`/`loc`/`note`),不再一个用途一个后缀。
+  2. 两个薄 step 并进 P1-21(和 `screen.save` 同组做):`file.write_json`
+     (`effects='write'`,输入 `path` + `data`(map,值可含模板)+ `merge`
+     (默认 `$true`,按顶层键深合并进已有文件))和 `file.read_json`
+     (`effects='read'`,输出 `data`;文件不存在时 `ok=$true; data=$null` 加
+     一条 `warnings`,不算失败——annotate 必须能处理"这条 capture 是旧工具
+     截的、没有侧车")。写 JSON 走 P1-35 的 `kernel/Json.ps1`。
+  3. 规则写进 `spec/STEP-CONTRACT.md` §6.1:**ledger 只服务同一 runId 的断点
+     续跑,任何工作流不得读另一条工作流的 ledger**;跨工作流交接只有两条路
+     ——标量走 worklist 列(`table.set`),结构化走侧车。
+  4. `spec/WORKFLOW-SCHEMA.md` §8 示例在 `verify.match_record` 后加一步
+     `file.write_json`,把 `rowIndex`/`recordCount` 写进侧车;P4-21 的 annotate
+     工作流开头加 `file.read_json`。
+- **完成**:`spec/VOCABULARY.md` §3.3 有 `<keySafe>.meta.json`;`spec/WORKFLOW-SCHEMA.md`
+  §8 示例含 `file.write_json`;P1-21 卡列出这两个 step,P1 头部和 `Plan.md` §10 的
+  MVP step 数 +2;P4-21 卡文本同步
+- **已执行(2026-09-22)**:`VOCABULARY.md` §3.3 目录表加 `<keySafe>.meta.json`;`STEP-CONTRACT.md` §6.1 加「ledger 只服务同一 runId」一段;`WORKFLOW-SCHEMA.md` §8 加 `meta` 步;`Plan.md` §5 G3 表加 `file.write_json` / `file.read_json`(MVP 33 → 35,P1 30 → 32)。
+
+### [x] P0-R15 [规格修订] 失败 id 的两张表(runner 保留 + 通用词表)+ workflow 的 `schema` 字段
+- **估** 45min | **依赖** P0-R5 | **改** `spec/STEP-CONTRACT.md` §2.1,§3.1,§4;
+  `spec/WORKFLOW-SCHEMA.md` §1,§8,§9,§10
+- **问题**:(a) `internal_error` 是唯一的保留失败 id(`spec/STEP-CONTRACT.md`
+  §3.1),但 runner 自己还会在**不进 `Invoke-Step`** 的情况下判失败:`needs`
+  不满足(§4 "不满足直接失败,不进 step")、`type='session'` 输入的名字在
+  `$Ctx.Session` 里找不到、名字找到了但句柄/COM 对象已失效(操作员在关卡上
+  关掉又重开了 Edge)、`with.as` 同名重复注册(§3.4 第 3 点)。这些失败
+  **没有 id**,`onError.byFailure` 就没法针对它们写策略,trace 里也只能是
+  自由文本。(b) 三十几个 step 会各自命名同一类失败(`no_window`/
+  `hwnd_invalid`/`window_gone`……),`byFailure` 于是写不出通用配置——P0-R5
+  把 `transient` 标到每个 id 上的价值被稀释。(c) `spec/WORKFLOW-SCHEMA.md`
+  §10 说 schema 有破坏性改动时 runner "拒绝加载过旧的 workflow",但 §1 的字段
+  表里**没有 schema 版本字段**,文件顶部也只有"草案"两个字——P2/P3 写出来的
+  每条工作流都没有版本标记,将来加这个字段就是给所有已有工作流补一行的迁移。
+- **做**:
+  1. `spec/STEP-CONTRACT.md` §3.1 的保留 id 扩成一张表,全部由 runner 产生、
+     manifest 不必列(**与 main 上 P0-07 同日落地的那张表合并后的并集**):
+     `internal_error`(未预期异常)、`contract_violation`(返回值形状 /
+     failure id / resource 违约)、`step_not_found`(`use` 的文件找不到或
+     加载失败)、`needs_unmet`(§4 前置条件)、`session_missing`(名字未
+     注册)、`session_kind_mismatch`(种类和 `sessionKind` 不符)、
+     `session_name_taken`(同名重复注册)、`cancelled`(操作员 `q`,由通用
+     词表的 `operator_quit` 转成的 run 级结果)。全部 `transient=$false`。
+     资源失效(窗口关了、COM 对象死了)**不是**保留 id:消费 step 拿到实例后
+     自己校验,用自己声明的 id 报(如 `window_gone`)——只有拿到对象的一方
+     能检查。
+  2. 同一节加一张**通用失败 id 词表**(不是保留,manifest 仍须列出,但名字
+     统一):`timeout` / `not_found` / `ambiguous`(多候选,配 P0-R4 的候选
+     形状)/ `foreground_lost` / `no_effect`(P0-R12)/ `file_not_found` /
+     `parse_error` / `unsupported`。规则:一个 step 的失败落在词表里的语义,
+     就用词表的名字;P0-06 不强制,`ebi help` 渲染时对词表外的 id 加一个
+     `(custom)` 标记,让评审看得见。
+  3. `spec/WORKFLOW-SCHEMA.md` §1 字段表加 `"schema": 1`(整数,必填),文件
+     顶部写 `schema: 1`;`ebi lint`(§9)加一条"`schema` 缺失或大于 runner
+     支持的版本 → 报错";§10 的"拒绝加载"改成引用这个字段。
+- **完成**:两张表落在 `spec/STEP-CONTRACT.md` §3.1;`spec/WORKFLOW-SCHEMA.md`
+  §1 示例和 §8 示例都带 `"schema": 1`;§9 清单多一条;P1-04 卡的 onError
+  部分提到保留 id 也走 `byFailure`
+- **已执行(2026-09-22)**:`STEP-CONTRACT.md` §3.1 加保留 id 表(6 项)+ 通用词表(8 项);`WORKFLOW-SCHEMA.md` 顶部 `schema: 1`、§1 字段表 + 两处示例加 `"schema": 1`、§6 保留 id 可进 `byFailure`、§9 加 schema 检查、§10 改写。
+
+### [x] P0-R16 [规格修订] 一次 run 的元数据落盘 + CLI 的 resume / only / operator + `.ebi/` 的位置
+- **估** 45min | **依赖** P0-R3, P0-R11 | **改** `spec/VOCABULARY.md` §3.3;
+  `spec/WORKFLOW-SCHEMA.md` §4.1;`Plan.md` §9;`BACKLOG.md` P1-04/P1-10/P2-06/P2-07
+- **问题**:(a) `run.*` 作用域(`runId`/`startedAt`/`operator`/`workDir`/
+  `timeWindow`)的值只活在内存里。断点续跑推演(`spec/WORKFLOW-SCHEMA.md` §7.5)
+  默认"同一个 runId 重跑",但 CLI 表面(`Plan.md` §9)没有任何 `--resume`;
+  `timeWindow` 由 `human.input` 问出来(P2-07),resume 时再问一遍等于让人重复
+  劳动、还可能答得和上次不一样;`ebi trace <runId>` 想显示"这次跑的是哪条
+  工作流哪个版本、用的哪个 profile",也无处可读。(b) 旧工具最常用的单项参数
+  `-TargetIds`(只重做这几个 correl)在新 CLI 里没有对应物;`operator`(旧
+  `-Owner`)从哪来也没说——而 P0-R11 的 `mapping_{{run.operator}}.csv` 已经
+  在等它。(c) 旧的 Expected_Time 是**逐行持久化到清单列**的
+  (`Set-EmptyRunTimeCells`),同一份清单里不同日期跑的行时间窗不同;P2-07
+  只有一个 run 级 `timeWindow`,粒度粗了一级。(d) `.ebi/` 到底在哪没定:
+  `ebi.local.json` 明说在 `<WorkDir>`,`.ebi/calibration/`、`.ebi/redaction.json`
+  是"本机"状态,`.gitignore` 却把 `/.ebi/` 锚在仓库根——三个说法两个地方。
+- **做**:
+  1. `run/<runId>/run.json`(`spec/VOCABULARY.md` §3.3 目录表加一行):runner
+     启动时写入完整 `run.*` 作用域 + `workflow.id/version` + `profile` 名 +
+     CLI 参数;`human.input`/`--time-window` 写 `run.timeWindow` 时**同时更新
+     这个文件**;resume 时从它恢复 `run.*`,不再问人。
+  2. CLI:`ebi run <wf> --resume [<runId>]`(省略 runId = 该工作流最近一次
+     未完成的 run;有未完成 run 而没写 `--resume` 时**提示而不是静默新建**);
+     `--only <key>[,<key>...]`(按 `{{item.key}}` 显示形筛 `source`,叠加在
+     `pendingWhen` 之上,`--force` 才忽略 `pendingWhen`);`--operator <名>`
+     (写 `run.operator`,默认 `$env:USERNAME`)。三项都进 `Plan.md` §9 和 P1-10。
+  3. 时间窗两级:`human.input` 支持把答案同时写进一个 worklist 列(输入
+     `persistTo`,复用 `Set-EmptyRunTimeCells` 的"只填空格子"语义),rules 里
+     `within` 的 `value` 可以引用 `{{item.<列>}}`;`{{run.timeWindow}}` 保留为
+     没有逐行列时的批量默认值。P2-07 卡同步。
+  4. `.ebi/` = **仓库根**(工具安装目录,机器级,已 gitignore):校准、掩码
+     决策、transport 配置都在这;`run/`、`capture/`、`ebi.local.json` =
+     `<WorkDir>`(作业级)。`.gitignore` 里 `/run/`、`/capture/` 两行保留但注明
+     "仅当 WorkDir 恰好是仓库根时才生效"。
+- **完成**:`spec/VOCABULARY.md` §3.3 有 `run.json`;`Plan.md` §9 有三个新参数;
+  `spec/WORKFLOW-SCHEMA.md` §4.1 的 `run.X` 行注明"持久化在 run.json";
+  P1-04/P1-10/P2-06/P2-07 卡文本同步
+- **已执行(2026-09-22)**:`VOCABULARY.md` §3.3 目录表重排为 `<WorkDir>` / `<仓库根>` 两层,加 `run.json`、`.ebi/` 位置;`WORKFLOW-SCHEMA.md` §3 加 `--only`、§4.1 `run.X` 注明持久化;`Plan.md` §9 加三个参数。`human.input` 的 `persistTo` 留给 P2-07 实现。
+
+### [x] P0-R17 [规格修订] 资源怎么从 step 交到 Session:`$In.as` 回传 + `resource` 返回键
+- **估** 30min | **依赖** P0-R2, P0-R10 | **改** `spec/STEP-CONTRACT.md` §3.1,§3.4
+- **问题**:P0-R2 / P0-R10 定了"谁注册、谁释放、要不要释放",P0-R7 spike 一
+  动手就发现**没定"句柄从 step 手里怎么交到 runner 手里"**。`as` 被 runner 从
+  `with` 摘走(§3.4 第 3 点),step 看不到它,可 step 又必须知道自己产出的资源
+  会不会被注册——"未注册的资源必须在返回前自己释放"(同一点)要求它据此
+  决定交出去还是关掉。返回值里也没有任何一个键是给句柄留的:`outputs` 不许放
+  句柄(第 1 点),`$Ctx` 又是只读。三个 P0-08 的 step 各自发明一套(step
+  直接写 `$Ctx.Session`、runner 从某个约定字段抠、或者干脆用全局变量)正是
+  P0-R2 要消灭的局面重新开始。释放那一侧同样没说:`excel.close` 关完之后,
+  `$Ctx.Session` 里那个名字谁来摘——不摘,第 3 点的"同名重复注册"检查在下一
+  组 `open` 时照样触发。
+- **做**(合并后的最终决定——这张卡和 main 上 P0-07 同日各自撞到同一个洞,
+  两边写了两版第 7 点;合并时以 main 已落地的 runner 为准,本卡原案里不同的
+  两处让位):(1) `provides` 非空的 step **总是**返回保留键 `resource`
+  (DryRun 下 `$null`),runner 在它进 trace / ledger / 模板作用域之前摘走,
+  写了 `as` 就登记为 `@{ kind; value; registeredBy }`;有 `as` 无 `resource`、
+  `provides` 为空却有 `resource` 都是 `contract_violation`。(2) **`as` 不回传
+  给 step**;取而代之,`provides` 非空的调用**必须写 `as`**(`ebi lint`
+  报错;runner 层保留 spike 期的"没写就丢弃"宽容)——第 3 点"不写 `as` 合法、
+  step 自己释放"的写法作废,因为 step 不知道自己有没有被注册,COM 资源就无人
+  能释放。(3) **消费方拿到的是实例,不是名字**:runner 在调用前把
+  `type='session'` 参数的名字换成 `$Ctx.Session[<名>].value`,名字不存在 →
+  `session_missing`,种类不符 → `session_kind_mismatch`;step 永远不知道
+  自己拿到的窗口叫什么。实例是否还活着由消费 step 自己校验,用自己声明的
+  id 报(`window_gone`)。(4) `releases` 非空的 step 返回 `ok` 后 runner 摘
+  名字;失败则保留,交给 `onError`。
+- **完成**:§3.1 有 `resource` 一段和保留 id 表;§3.4 有第 7 点;P0-07 的
+  runner 和 P0-08 的 `browser.ensure` / `screen.capture_window` 照此实现
+- **已执行(2026-09-22)**:与 main 的 PR #153 / #154 合并时定稿;原案的
+  「`$In.as` 回传」「消费方拿名字自己查表」「`session_invalid` 保留 id」三条
+  被 main 的实现取代,理由见上。
+
 ### [x] P0-01 打冻结标签
 - **估** 10min | **依赖** — | **读** `Plan.md` §11 P0
-- **做**:`git tag freeze/pre-ebi-dance <当前 main tip>` 并推送。作为整个重构期的回滚点。
+- **做**:`git tag freeze/pre-ebi-dance d9e58c2` 并推送。作为整个重构期的回滚点。
 - ⚠ **不用 `spec/gift-gfix`**:远端已经存在一个同名**分支**
   `refs/heads/spec/gift-gfix`(指向旧提交 `0f5343e`,PR #103)。git 允许
   同名 branch + tag 共存,但那样 `git checkout spec/gift-gfix` 会变成
@@ -505,10 +832,14 @@
   看:`C:\work\capture\spike\window.png` 存在且是 Edge 窗口;
   `grep -rn 'Global:' modules/` 为 0;`C:\work\run\<runId>\trace.jsonl` 里
   ensure 的事件没有句柄;`Tests\Run-Tests.ps1` 全绿。通过后把本卡改 `[x]`。
+- ⚠ 也可以用 `ebi.ps1`(本分支带进来的最小 CLI,P1-10 的种子):
+  `.\ebi.ps1 run workflows\spike.capture_window.json -WorkDir C:\work`;退出码
+  0 = ok、1 = 有 step 失败、3 = 操作员 `q`。`dryrun` 子命令在 CI 里就是这么
+  跑的。
 
 ---
 
-# P1 — 内核 + 25 个 MVP step + 文档生成(34 张,4 张整块)
+# P1 — 内核 + 32 个 MVP step + 文档生成(36 张,4 张整块)
 
 ## kernel(6 张)
 
@@ -610,6 +941,9 @@
 
 ### [ ] P1-10 ebi dryrun / run / doctor
 - **估** 75min | **依赖** P1-04 | **做**:三个子命令接线;`doctor` 检查 PS 版本、Excel COM、Edge、编码策略
+- ⚠ (第六轮,P0-R16)`run` 还要接 `--resume [<runId>]` / `--only <key,...>` /
+  `--operator`,并在启动时写 `run/<runId>/run.json`;有未完成 run 而没写
+  `--resume` 时提示,不静默新建
 - **完成**:`dryrun` 不碰真实系统就能走完全流程
 
 ## browser 组(7 张,11 个 step)
@@ -617,6 +951,9 @@
 ### [ ] P1-11 browser.ensure + browser.focus_body
 - **估** 60min | **抄** `Common.ps1` `Activate-EdgeWindow` / `Click-PageBody`
 - **注意**:进程句柄优先、标题匹配只做回退、两条路都失败要 `[WARN]`(旧版静默"激活"了随便哪个前台窗口)
+- ⚠ (第六轮,P0-R12)`browser.ensure` 带 `process` 输入(默认 `msedge`),
+  df.exe / Excel 窗口迁移时复用;`browser.focus_body` 带 `window` Session 输入
+  并在点击前核对前台
 - **完成**:manifest 过 lint;dryrun 打印正确
 
 ### [ ] P1-12 browser.send_keys + tab_to + fill + submit
@@ -625,6 +962,9 @@
   写明 HM 的按键序列是 `Tab n → 粘贴 → Shift+Tab m → 回车`,没有它这条序列
   实现不出来
 - **注意**:时序参数(`waitMs`)走 step 输入,**不要用 `$Global:Timing`**
+- ⚠ (第六轮,P0-R12)四个 step 都带 `type='session'; sessionKind='window'` 的
+  `window` 输入,发键前 `SetForegroundWindow` + 核对,不等则 `foreground_lost`;
+  `fill` / `submit` 带可选 `verifyChange`(替代原 P4-19 的 `verify_action`)
 - **完成**:4 个 manifest 过 lint;全局变量依赖为 0
 
 ### [ ] P1-13 browser.read_text
@@ -670,6 +1010,9 @@
 - **估** 45min | **做**:按命名模板定位保存;支持 `<keySafe>__<tag>.png` 的多张形式
   (文件名一律用 P0-R4 的 `keySafe`,不用裸 key)
 - **读** `spec/VOCABULARY.md` §2.5
+- ⚠ (第六轮,P0-R14)同一张卡顺带做 `file.write_json` / `file.read_json` 两个
+  薄 step(侧车 `<keySafe>.meta.json` 的写和读,走 P1-35 的 `kernel/Json.ps1`);
+  `read_json` 对不存在的文件返回 `ok` + `data=$null` + warning,不算失败
 
 ## file 组(2 张)
 
@@ -691,6 +1034,9 @@
   直接判失败并列出来——`keySafe` 的规范化规则本身会制造新的重名
   (`A_B`+`C` 和 `A`+`B_C` 都拼成 `A_B_C`),不在加载时挡住就会在 capture
   阶段静默互相覆盖截图
+- ⚠ (第六轮,P0-R11)`table.load` `provides=@('worklist')`,在 `setup` 里
+  `with.as` 注册;outputs 只有 `path` / `rowCount` / `columns`,整张表不进
+  outputs。`table.save` 通过 `sessionKind='worklist'` 输入拿表
 
 ### [ ] P1-25 table.ensure_columns
 - **估** 45min | **抄** `MappingStore.ps1 Ensure-MappingColumns`;列 schema 来自 profile
@@ -700,6 +1046,8 @@
 - **注意**:`ng` **仍算 pending**(`spec/WORKFLOW-SCHEMA.md` §3.2)—— 旧的
   `Get-PendingRows` 把任何非 `0` 都当已完成,会把 NG 行藏起来。
   同一份筛选实现同时供 runner 的 `source.select` 用(P1-03),不写两份
+- ⚠ (第六轮,P0-R11)`source.table` 是 Session 实例名;pending 判断经 profile
+  的 `verdict.values` 映射后再比较,混跑期的旧编码 `1` / `2` / `0` 才对得上
 
 ### [ ] P1-27 [整块] kernel/Key.ps1 + table.key
 - **估** 120min | **依赖** P1-26, P0-R4 | **读** `spec/PROFILE-SCHEMA.md` §6 全节
@@ -721,6 +1069,9 @@
 - **注意**:`pendingWhen` 的位掩码写法从 `"bit !3"`(数字)改成 **`"bit !<位名>"`**
   (如 `bit !before`)—— checkpoint 用名字、pendingWhen 用数字是两套口径,
   必然抄错;顺手改 `spec/WORKFLOW-SCHEMA.md` §3.1
+- ⚠ (第六轮,P0-R11 / P0-R13)写入前经 `verdict.values` 翻译成存储编码;
+  `checkpoint` 的 `value` 来自 `steps.gate.out.code`,并用 `when` 跳过
+  `action == skip` 的行(留 pending);每次写都原子落盘
 
 ### [ ] P1-29 progress.event + progress.status
 - **估** 60min | **抄** P0-03 的 Trace + `VerifyTool.ps1 Show-Status`
@@ -761,10 +1112,62 @@
   verify.match_record 返回的是同一个形状,渲染器只写一份);`human.gate` 的
   outputs 要在 manifest 里声明(`action`: enter/n/s/q、`note`),后续 step 才能
   `when` 到它 —— 旧规格没定义 gate 的返回值
+- ⚠ (第六轮,P0-R13)`human.gate` **总是执行**,带 `code` + `askWhen` 输入,
+  不在 `askWhen` 里时直通;输出 `code`(`ok` / `ng` / `unknown` / `''`)+
+  `action`(`pass` / `ok` / `ng` / `skip`);`q` 返回 `failure='operator_quit'`,
+  runner 转成 `cancelled` 绕过 `onError`(`human.prepare` 已是这个写法)。
+  三个 `human.*` step `effects='ui'`,返回后前台在控制台(P0-R12)
+
+## kernel 补充(2 张,第六轮评审追加)
+
+### [ ] P1-35 kernel/Json.ps1 —— 唯一的 JSON 读写入口
+- **估** 60min | **依赖** P0-06 | **读** `ConfigOverlay.ps1` 的 `ConvertFrom-ConfigJson` /
+  `ConvertTo-ConfigHashtable` / `ConvertFrom-JsonUnicodeEscape`
+- **问题**:PS 5.1 的 JSON 有四个坑,每个都在本仓库出过事或有专门的绕法:
+  `ConvertFrom-Json` 返回 `PSCustomObject` 不是 hashtable(`Set-StrictMode` 下
+  访问缺失属性直接抛,`.ContainsKey` 不存在——`ConfigOverlay.ps1` 为此写了
+  `ConvertTo-ConfigHashtable`);`ConvertTo-Json` 默认 `-Depth 2`,更深的嵌套
+  **静默截成字符串**(仓库里 18 处调用有 4 处没写 `-Depth`;ledger 的
+  `outputs`、P0-R4 的候选形状、`data` 里的 `warnings` 都比 2 层深);
+  `ConvertTo-Json` 把非 ASCII 全转成 `\uXXXX`(profile/trace 里的日文人读不了
+  ——`ConvertFrom-JsonUnicodeEscape` 就是为这个写的);读文件不指定编码在 JP
+  locale 主机上按 ANSI 解 UTF-8(profile JSON 里的日文全部乱码)。kernel +
+  30 多个 step 每个各写一遍 `ConvertFrom-Json`,四个坑各踩一遍。
+- **做**:`kernel/Json.ps1`(无 `param()`,dot-source):`Read-EbiJson -Path`
+  (`[IO.File]::ReadAllText` + 显式 UTF-8 → hashtable,搬 `ConvertTo-ConfigHashtable`)、
+  `ConvertFrom-EbiJson -Text`、`ConvertTo-EbiJson -Value`(固定 `-Depth 20`,
+  反转义 `\uXXXX`,输出无 BOM)、`Write-EbiJson -Path -Value`(原子写:临时文件
+  + 改名)。`kernel/Trace.ps1` 改用它。**全局铁律表新增 R8**:`modules/**`、
+  `kernel/**` 里不许直接出现 `ConvertFrom-Json` / `ConvertTo-Json` /
+  `Get-Content <x>.json`,P0-06 的检查器加一条源码 grep(和 R4 的
+  `@($h[$k])` 禁令同一类)。
+- **完成**:单测覆盖:含日文的 profile JSON 读回不乱码、5 层嵌套写读 round-trip
+  不截断、写出的文件无 BOM 且日文不是 `\uXXXX`;
+  `grep -rn 'ConvertFrom-Json\|ConvertTo-Json' modules/ kernel/` 只命中
+  `kernel/Json.ps1`
+
+### [ ] P1-36 DryRun 合同测试(每个 step 在 CI 里至少真的跑一次)
+- **估** 75min | **依赖** P1-01, P1-02 | **读** `spec/STEP-CONTRACT.md` §3.3,§7
+- **问题**:`spec/STEP-CONTRACT.md` §7 把 `ui`/`write`/`destructive` 的 step 定为
+  "只做静态检查",于是 catalog 里过半的 step 在 CI 里**一行都不会被执行**——
+  manifest 声明了 `outputs.path` 而 `Invoke-Step` 忘了返回、`DryRun` 分支漏了
+  某个输出字段、`$In.xxx` 打错字,全都要等办公 PC 冒烟才暴露;而 ledger 重放
+  (§6.1)和 `ebi lint` 的模板解析都依赖"返回值的键 == manifest 的 outputs"
+  这条假设。可 `DryRun` 分支本身是纯的(§3.3 规定它只打印不执行),没有理由
+  不测。
+- **做**:`Tests/Test-StepDryRun.ps1`:对每个 step,取 `manifest.example.with`,
+  把其中的 `{{...}}` 模板替换成占位值(`type='string'`/`path` → 占位字符串,
+  `int` → 0,`bool` → `$false`,`session` → 在一个假 `$Ctx.Session` 里注册一个
+  同名假资源),经 P1-02 的 schema 校验后以 `$Ctx.DryRun=$true` 调
+  `Invoke-Step`;断言:返回 hashtable、`ok=$true`、**manifest `outputs` 的每个
+  键都出现在返回值里**、返回值能 `ConvertTo-Json` 无损。`effects='pure'`/
+  `'read'` 的 step 也跑(它们不看 DryRun,但同样受"键要齐"的约束)。
+- **完成**:对一个故意在 DryRun 分支漏返回 `path` 的 fixture step 能报出缺哪个
+  键;全部现有 step 通过
 
 ---
 
-# P2 — 对拍验证(8 张,1 张整块)
+# P2 — 对拍验证(10 张,1 张整块)
 
 目标:**用新引擎重跑一条现有流程,产出和旧脚本逐项一致。**
 这一步会暴露契约的全部错误 —— **P1 的设计不必完美,P2 之后重构一次是计划内的。**
@@ -794,6 +1197,10 @@
 ### [ ] P2-05 workflows/before.transferStatus.capture.json
 - **估** 60min | **读** `spec/WORKFLOW-SCHEMA.md` §8(完整示例)
 - **完成**:`ebi lint` 全绿;`ebi explain` 的输出人工逐行确认过
+- ⚠ (第六轮)照 P0-R11 / R12 / R13 / R14 改过后的 §8 示例写:`setup` 里
+  `table.load` 注册 worklist、发键 step 带 `window`、`gate` 无 `when`、
+  `match_record` 后 `file.write_json` 写行号侧车——这份工作流是 P4-21
+  annotate 的上游
 
 ### [ ] P2-06 [整块] 办公 PC 首跑 + 对拍
 - **估** 120min | **依赖** P2-05
@@ -802,6 +1209,8 @@
   - [ ] CSV 标记逐项一致
   - [ ] 故意造一个 NG 页面,两边都判 NG
   - [ ] 中途 Ctrl+C,重跑从断点续上,不重复截图
+  - [ ] (第六轮,P0-R11)CSV 标记经 `verdict.values` 映射后逐项一致;旧
+        `Mark.ps1` 读新引擎写的清单能正常选到 pending 行
 - ⚠ 如果旧流程已无真实环境可跑,改用任意一条还能跑的。**对拍验证的是引擎,不是业务。**
 
 ### [ ] P2-07 human.input + run.timeWindow 接线
@@ -814,6 +1223,9 @@
 - **为什么在 P2**:模块表里它排 P2 但原 backlog 漏了卡 —— 而 MqSnap 对拍的判定
   规则里有 `within {{run.timeWindow}}`(时间窗),没有这张卡 P2-04/P2-06 跑不了
 - **完成**:rules.json 里 `within` + `{{run.timeWindow}}` 的规则在 fixture 单测里可判
+- ⚠ (第六轮,P0-R16)`human.input` 带 `persistTo` 把答案写进 worklist 列
+  (只填空格子),`within` 的 `value` 可引用 `{{item.<列>}}`;`run.timeWindow`
+  同时落 `run/<runId>/run.json`,resume 不再问
 
 ### [ ] P2-08 mask-lite:脱敏门禁前移
 - **估** 60min | **依赖** —(可与 P2-01 并行)
@@ -824,6 +1236,42 @@
   P2-02 起就在自动积累真实页面文本 —— 等到 P5,git 历史里已经躺满了没洗过的
   内网数据,再洗要改历史
 - **完成**:对一份埋了 4 类敏感项的 fixture 全部报出;`Run-Tests.ps1` 因此变红
+
+### [ ] P2-09 ebi profile new / check / diff
+- **估** 90min | **依赖** P2-01, P1-08 | **读** `spec/PROFILE-SCHEMA.md` §9,§10
+- **问题**:`spec/PROFILE-SCHEMA.md` §10 把这三个子命令写成了换工作的标准流程,
+  P0-R4 让 `ebi profile check` 负责"检测未回填的本地规则",P3-06 的完成判据是
+  "`ebi profile check` 全绿"——但 BACKLOG 里**没有一张卡实现它们**。P3-06 会
+  卡在一个不存在的命令上。
+- **做**:`check`:五份 JSON 的 schema 校验(必填键、`roles` 恰好 5 个、`else`
+  不为 `ok`、`role: key` 列 ⇄ `key.columns` 双向一致、`verdict.values` 映射
+  (P0-R11)取值合法)+ 跑 `fixtures/<page>/expected.json`(每份 fixture 经该
+  page 的 grammar → rules,结论和期望比对)+ `keySafe` 全表撞车检查
+  (`spec/PROFILE-SCHEMA.md` §6.6)+ `<WorkDir>/ebi.local.json` 里未回填的
+  `confirmedRules`;`new`:从一个带说明注释的模板目录复制骨架;`diff`:两个
+  profile 逐键差异,列出"新 profile 还没改的字段"。fixture 跑法和
+  `Tests/Test-SnapVerify.ps1` 的既有护栏是同一件事,把它做成通用的、按 profile
+  数据驱动的。
+- **完成**:对 `profiles/host-open` `check` 全绿;对一份故意写错的 profile
+  (`else: ok`、key 列漂移、fixture 期望不符、`values` 里出现未知 verdict)四类
+  错都报出
+
+### [ ] P2-10 verify.crosscheck —— 多来源同一事实的一致性检查
+- **估** 75min | **依赖** P1-33 | **读** `Plan.md` §6.3;`INTERVIEW.md` §1(铁律二)
+- **问题**:`Plan.md` §6.3 把它定为 legacy 3/9 层里**唯一要保留并提升为通用
+  step** 的思想,`INTERVIEW.md` 铁律二要求"能从多处读到的事实就都读,不一致
+  就停下问人,只要答案是有,就加一个 `verify.crosscheck`"——但它在 BACKLOG 里
+  没有卡,`Plan.md` §5 的模块表标的还是旧分档 `P2`。P3 给新工作做访谈时,
+  铁律二一旦触发就会发现没有这个 step 可用,只能临时写。
+- **做**:纯函数 step(`effects='pure'`):输入 `readings`(list,每项
+  `@{ source=; value= }`)、`compare`(enum:`equal` / `numericEqual` /
+  `timeWithinSec` + `toleranceSec`)、`normalize`(可选:trim / 全角半角 /
+  去千分位);输出 `code`(`ok` 全部一致 / `unknown` 有不一致)、
+  `disagreements`(哪两个来源、各自的值)。**不含任何 3/9 猜测、不做多数表决、
+  不挑"看起来对的"**——不一致就是 `unknown`,交给 P0-R13 的 `human.gate`。
+- **完成**:单测覆盖三种 compare、normalize 的三种、两个来源一致 / 三个来源里
+  一个不一致 / 只有一个来源(直接 `ok`,并带 `warnings: single_source`);
+  manifest 过 P0-06
 
 ---
 
@@ -906,16 +1354,19 @@
   ⚠ **保留 entry 原名**放进 per-key 子目录(用 key 命名会把时间戳后缀当扩展名,文件打不开)
 ### [ ] P4-17 file.backup — 45min — 抄 `BackupJ4.ps1`
 ### [ ] P4-18 file.stat + hash — 45min — 用于共享文件的外部改动检测
-### [ ] P4-19 browser.download_link + browser.verify_action — 90min
-  ⚠ `verify_action` 原设想是「包装器」,但契约里 **step 不能调 step** ——
-  实现前先在 STEP-CONTRACT 补一段,二选一:做成 ui step 的可选 `verifyChange`
-  输入(fill/submit 自带前后对比),或做成 runner 的 flow 构造。不要发明第三种
+### [ ] P4-19 browser.download_link — 60min
+  ⚠ (第六轮)原卡里的 `browser.verify_action` 已由 P0-R12 定为 `fill` /
+  `submit` / `navigate` 的可选输入 `verifyChange`,不再是独立 step(契约里
+  step 不能调 step);这张卡只剩下载触发 + 交给 `file.wait_for_download`
 ### [ ] P4-20 layout.json + workflows/*.compose.json — 90min — 读 `spec/PROFILE-SCHEMA.md` §7
   ⚠ (第四轮)每个交付物一个工作簿 = `once:"group"` 开 + `once:"groupEnd"` 关,
     两者在 `each` 段内配对;**别写成 `teardown` 里关**——`teardown` 只跑一次,
     只关得掉最后一组,前面的组全部泄漏(`WORKFLOW-SCHEMA.md` §7.2,P0-R10)
 ### [ ] P4-21 workflows/*.annotate.json — 75min
   ⚠ 红框位置会随记录条数上下移动(`baseRow`/`rowHeight`),旧工具在这框错过行
+  ⚠ (第六轮,P0-R14)行号 / 条数从 capture 写的
+    `capture/<side>_<page>/<keySafe>.meta.json` 侧车读(`file.read_json`),
+    不读另一条工作流的 ledger;没有侧车的旧截图退回固定 `baseRow`
 ### [ ] P4-22 办公 PC 冒烟 compose + annotate — 120min [整块]
 
 # P5 — 掩码 + Agent 循环 + 校准(14 张)

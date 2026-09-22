@@ -62,6 +62,10 @@ kernel/                 runner internals. Trace.ps1 (append-only run trace,
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
+ebi.ps1                 ebi-dance CLI entry: run / dryrun / help so far
+                        (P1-07..P1-10 add lint / explain / doctor and the
+                        real run options). Has param(): call via -File or &,
+                        never dot-source.
 profiles/               per-project data: page bindings, decision rules, schemas
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
@@ -524,7 +528,8 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`,
-`Runner.ps1`.
+`Runner.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.
 

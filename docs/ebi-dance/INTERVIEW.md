@@ -19,7 +19,7 @@
 
 **先读这三份**:
 - `docs/ebi-dance/spec/VOCABULARY.md` — 中性词汇表(page role、action、字段名)
-- `docs/CATALOG.md` — 可用的 step 清单
+- `docs/ebi-dance/CATALOG.md` — 可用的 step 清单(`ebi docs build` 自动生成)
 - `docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` — 你要产出的 JSON 长什么样
 
 ---
@@ -239,7 +239,8 @@
 > Tab 的次数是固定的吗?页面上如果多一个字段 / 少一个按钮,会不会变?
 
 盲数 Tab 是可用的(旧工具一直这么干),但要在 profile 里注明次数,
-并且在填完之后加一个 `browser.verify_action` 确认真的填进去了。
+并且给 `browser.fill` 开 `verifyChange: true`(填前后对比页面文本,没变化
+就报 `no_effect`)确认真的填进去了。
 
 ---
 
@@ -487,7 +488,7 @@ ebi explain workflows/<id>.json     # 渲染成人类可读执行计划
 | 失败模式 | 表现 | 怎么避 |
 |----------|------|--------|
 | **过度自动化** | 什么都设成 auto,人被排除在外 | 第一版一律 ask,用数据说话再放开 |
-| **假成功** | 在错页上截图并判定成功 | 页面指纹 + `browser.verify_action` |
+| **假成功** | 在错页上截图并判定成功 | 页面指纹 + `fill` / `submit` 的 `verifyChange` |
 | **静默改数据** | 判定不确定时挑一个"看起来对的" | 铁律二、铁律三 |
 | **只在成功样本上验证** | 遇到第一个异常就崩,或更糟:悄悄错 | 跑通计划第 3 步强制异常样本 |
 | **把业务知识写进代码** | 换个项目要改 modules/ | 所有具体名字进 profile(见 VOCABULARY §5) |

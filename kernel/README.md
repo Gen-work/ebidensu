@@ -14,7 +14,8 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   `$Ctx` (including `$Ctx.Session`) and the resource channel of
   `docs/ebi-dance/spec/STEP-CONTRACT.md` section 3.4 point 7, and refuses
   `source` / `each` / `{{...}}` / `when` / `onError` up front rather than
-  half-running them. Until `ebi.ps1` exists (P1-10) it is driven by hand:
+  half-running them. `ebi.ps1 run|dryrun <workflow> -WorkDir <dir>` wraps it
+  (the P1-10 seed); it can also be driven by hand:
 
   ```powershell
   . .\kernel\Runner.ps1
