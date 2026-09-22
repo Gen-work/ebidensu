@@ -417,6 +417,33 @@ try {
     Assert-True ($res['runId'] -match '^\d{8}-\d{6}-[0-9a-f]{4}$') 'a minted run id is yyyyMMdd-HHmmss-xxxx'
     Assert-True (Test-Path -LiteralPath (Get-TraceFile $work $res['runId'])) 'the minted run id has its own trace file'
 
+    # ------------------------------------------------ P0-08: the shipped spike workflow dry-runs on the real steps
+    $repoRoot = Split-Path $here -Parent
+    $shipped  = Join-Path (Join-Path $repoRoot 'workflows') 'spike.capture_window.json'
+    Assert-True (Test-Path -LiteralPath $shipped) 'P0-08: workflows/spike.capture_window.json ships'
+    $res = Invoke-EbiWorkflow -Path $shipped -WorkDir $work -RunId 'r-p008-dry' -DryRun
+    Assert-True ($res['ok']) 'P0-08: prepare -> ensure -> capture dry-runs end to end on the real modules/ tree'
+    Assert-Equal 3 @($res['steps']).Count 'P0-08: three step calls'
+    Assert-Equal 'enter' (Get-Rec $res 'prepare')['outputs']['action'] 'P0-08: human.prepare answers Enter under DryRun without blocking'
+    Assert-True ($res['session'].Contains('mainWindow')) 'P0-08: browser.ensure registered mainWindow (null handle under DryRun)'
+    $shotPath = [string](Get-Rec $res 'shot')['outputs']['path']
+    Assert-True ($shotPath.StartsWith($work)) 'P0-08: a relative saveAs resolves under the work dir'
+    Assert-True ($shotPath.EndsWith('window.png')) 'P0-08: the PNG name is the one the workflow asked for'
+    Assert-True (-not (Test-Path -LiteralPath $shotPath)) 'P0-08: DryRun wrote no file'
+    $names = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'modules') -Filter '*.ps1' -Recurse | ForEach-Object { $_.Name })
+    foreach ($n in @('human.prepare.ps1', 'browser.ensure.ps1', 'screen.capture_window.ps1')) {
+        Assert-True ($names -contains $n) ('P0-08: ' + $n + ' is in modules/')
+    }
+
+    # the step's own pure helper
+    . (Join-Path (Join-Path (Join-Path $repoRoot 'modules') 'screen') 'screen.capture_window.ps1')
+    Assert-Equal ([System.IO.Path]::Combine('C:\w', 'capture\a.png')) (ScreenCaptureWindow-ResolvePath -SaveAs 'capture\a.png' -WorkDir 'C:\w') 'capture_window: relative saveAs joins the work dir'
+    $rooted = Join-Path ([System.IO.Path]::GetTempPath()) 'a.png'   # rooted on whichever OS runs the test
+    Assert-Equal $rooted (ScreenCaptureWindow-ResolvePath -SaveAs $rooted -WorkDir 'C:\w') 'capture_window: a rooted saveAs is kept'
+    Assert-Equal '' (ScreenCaptureWindow-ResolvePath -SaveAs '' -WorkDir 'C:\w') 'capture_window: an empty saveAs stays empty'
+    Assert-True ((ScreenCaptureWindow-ToHandle 4242) -eq [IntPtr]4242) 'capture_window: an int resource becomes an IntPtr'
+    Assert-True ((ScreenCaptureWindow-ToHandle $null) -eq [IntPtr]::Zero) 'capture_window: a null resource is IntPtr.Zero'
+
     # ------------------------------------------------ the fixtures pass the real contract checker
     . (Join-Path $here 'StepContract.ps1')
     $specText = [System.IO.File]::ReadAllText((Join-Path (Split-Path $here -Parent) 'docs/ebi-dance/spec/STEP-CONTRACT.md'))

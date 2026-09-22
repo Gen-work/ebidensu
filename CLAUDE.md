@@ -40,6 +40,10 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         (browser/screen/file/excel/table/verify/human/progress/
                         flow). Files here that are NOT steps are pre-conversion
                         libraries, listed and exempted on every test run.
+                        First three real steps (P0-08, ported from Common.ps1):
+                        human/human.prepare.ps1, browser/browser.ensure.ps1
+                        (provides 'window'), screen/screen.capture_window.ps1
+                        (consumes it via a type='session' input).
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
 kernel/                 runner internals. Trace.ps1 (append-only run trace,
@@ -55,7 +59,9 @@ kernel/                 runner internals. Trace.ps1 (append-only run trace,
                         traces every step; refuses source/each/templates/
                         when/onError up front with 'unsupported_in_spike'.
                         Unit-tested via Tests\Test-Runner.ps1).
-workflows/              JSON workflows (the artifact a human or Agent writes)
+workflows/              JSON workflows (the artifact a human or Agent writes).
+                        spike.capture_window.json is the P0-08 end-to-end
+                        spike (prepare -> ensure -> capture one window).
 profiles/               per-project data: page bindings, decision rules, schemas
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
