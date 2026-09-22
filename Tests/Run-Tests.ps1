@@ -20,6 +20,11 @@ $repoRoot = Split-Path $here -Parent
 Write-Host ''
 Write-Host '===== Parse check (all *.ps1) =====' -ForegroundColor Green
 $parseErrors = 0
+# Every failure of this run, collected here and printed again as ONE block at
+# the end. The live output above it is long and mixes in lines that only look
+# like failures ([note] exempt libraries, a fixture step's own [fail]/[refused]
+# console lines inside the Runner suite); this block is the part to copy.
+$Global:EbiTestFailures = New-Object System.Collections.ArrayList
 $psFiles = @(Get-ChildItem -LiteralPath $repoRoot -Filter '*.ps1' -File -Recurse)
 foreach ($f in $psFiles) {
     $tokens = $null; $errs = $null
@@ -29,6 +34,7 @@ foreach ($f in $psFiles) {
         Write-Host ('  [PARSE-FAIL] {0}' -f $f.Name) -ForegroundColor Red
         foreach ($e in $errs) {
             Write-Host ('      line {0}: {1}' -f $e.Extent.StartLineNumber, $e.Message) -ForegroundColor Red
+            [void]$Global:EbiTestFailures.Add(('parse: {0} line {1}: {2}' -f $f.Name, $e.Extent.StartLineNumber, $e.Message))
         }
     }
 }
@@ -63,6 +69,17 @@ foreach ($t in $testFiles) {
     if ($null -eq $rc) { $rc = 0 }
     $totalFail += [int]$rc
 }
+
+Write-Host ''
+Write-Host '===== Not passed (copy from here) =====' -ForegroundColor Green
+if ($Global:EbiTestFailures.Count -eq 0) {
+    Write-Host '  (none)' -ForegroundColor Green
+} else {
+    foreach ($line in $Global:EbiTestFailures) {
+        Write-Host ('  [FAIL] {0}' -f $line) -ForegroundColor Red
+    }
+}
+Write-Host ('  {0} not passed. Only these count: [note] lines are libraries still exempt from the step contract, and [info]/[fail]/[skip]/[refused] lines inside the Runner suite are fixture steps failing on purpose.' -f $Global:EbiTestFailures.Count) -ForegroundColor DarkGray
 
 Write-Host ''
 Write-Host '===== Run-Tests summary =====' -ForegroundColor Green
