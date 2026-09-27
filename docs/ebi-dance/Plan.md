@@ -154,19 +154,13 @@ profile 数据里。
 > 用途不唯一,不能当分类轴。**role 描述页面的形状(怎么找到东西),
 > 在一页上做几件事是 action,可以有任意多个。**
 
-| role | 结构特征 | 定位方式 | 现在对应 / 你提到的 |
-|------|----------|----------|---------------------|
-| `entry` | 没有目标数据,只是入口 | 不需要定位 | 各系统首页 |
-| `form` | 有输入框,要填要提交 | 焦点序列 | HM / MQ 查询画面 |
-| `record` | 单条记录,「标签: 值」结构 | 按标签取值 | HM 处理结果画面 |
-| `list` | 多行表格 | 解析全表 → 定位目标行 | MQ 转送状态、Jenkins 文件列表、作业列表、バッチ処理一覧、ETA 页 |
-| `document` | 排版好的成品,无可定位结构 | 整页 / 按区域 | 帳票 preview |
+5 个 role(`entry` / `form` / `record` / `list` / `document`)的结构特征、定位方式和
+例子,定义在 `spec/VOCABULARY.md` §2.1;这里只记为什么这么分。
 
 **5 个,不是 6 个。** 初版的 `artifact` 删掉了 —— 下载链接是长在某一页上的
 **元素**,不是一种页面形状。下载变成 action。
 
-**action(一页可有多个)**:`read` / `locate` / `capture` / `download` /
-`input` / `navigate`。典型组合:
+**action(一页可有多个)** 的完整列表见 `spec/VOCABULARY.md` §2.2。典型组合:
 
 ```
 list 页:  read → locate(找到我那一行) → capture(截图) → download(点那行的链接)
@@ -180,15 +174,8 @@ list 页:  read → locate(找到我那一行) → capture(截图) → download(
 
 ### 4.3 动作(工作流命名)
 
-| 中性动词 | 含义 | 现在对应 |
-|---------|------|----------|
-| `capture` | 抓证据(截图 + 文本 + 判定) | `*Snap` 系列 |
-| `collect` | 下载文件并归档 | `GfixLogDownload` / Jenkins 下载 |
-| `compose` | 把证据组装进交付物工作簿 | `Replace*` |
-| `annotate` | 在工作簿上画框 / 标注 | `Mark*` |
-| `review` | 人工复核 + 记录决定 | `Review*` |
-| `deliver` | 交付(文件 / 邮件 / 检查表) | `Deliver*` / `CheckSheet` |
-| `sync` | 与基线对比 / 同步 | `Align` |
+工作流动词(verb)的表和旧名对照定义在 `spec/VOCABULARY.md` §3,那张表是开放的,
+加 verb 只改那一处。
 
 工作流 id 形如 `before.transferStatus.capture`,取代 `GiftMqSnap`
 ——**注意用的是 page 名(`transferStatus`),不是 role 名(`list`)**:
