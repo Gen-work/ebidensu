@@ -5,8 +5,9 @@
 # stamped batch-run name ABC123.260824.10515511.dat while the worklist says
 # ABC123 (MappingStore.ps1 Resolve-CorrelFilePath), and the reverse.
 #
-# Normalization is kernel/Key.ps1's (P1-27): this file compares folded
-# stems, it never writes its own -eq rule. Several hits with expect=one is
+# Normalization is kernel/Key.ps1's (P1-27): the stem is handed to
+# Get-EbiKeyMatchTier under the profile's confirmedRules; this file has no
+# comparison of its own. Several hits with expect=one is
 # 'ambiguous' and the candidates come back in the P0-R4 standard shape
 # (PROFILE-SCHEMA.md 6.6 c) for human.choose to render -- the step does
 # not pick.
@@ -36,7 +37,7 @@ $Manifest = @{
     path       = @{ type='path';   desc='the hit (the only one, or the newest with expect=any)' }
     files      = @{ type='list';   desc='every hit, newest first' }
     found      = @{ type='int';    desc='how many files matched' }
-    matchedBy  = @{ type='string'; desc='exact | stamped | base | fullWidth | glob' }
+    matchedBy  = @{ type='string'; desc='exact | stripped | fullwidth | case | glob (kernel/Key.ps1 tiers)' }
     candidates = @{ type='map';    desc='P0-R4 candidate shape when ambiguous, else null' }
   }
   failures   = @(
@@ -45,7 +46,7 @@ $Manifest = @{
     @{ id = 'ambiguous';      transient = $false }
   )
   example    = @{ use = 'file.find'; with = @{ dir = '{{profile.paths.downloads}}'; key = '{{item.keySafe}}'; ext = 'dat' } }
-  notes      = 'file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order: exact stem, the key''s stamped forms, the stamp stripped, full-width folded; the first tier with hits wins.'
+  notes      = 'file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order is kernel/Key.ps1''s: exact stem, suffix/prefix rules stripped (the batch stamp), full-width folded, case folded; the first tier with hits wins.'
 }
 
 function FileFind-Stem {
@@ -53,40 +54,29 @@ function FileFind-Stem {
     return [System.IO.Path]::GetFileNameWithoutExtension($Name)
 }
 
-function FileFind-StripStamp {
-    # PURE. 'ABC123.260824.10515511' -> 'ABC123'; anything else unchanged.
-    param([string]$Stem)
-    return ($Stem -replace '\.\d{6}\.\d{8}$', '')
-}
-
 function FileFind-Tier {
-    # PURE. How a candidate name relates to the key: '' when it does not.
-    param([string]$Name, [string]$Key)
+    # PURE. How a file name's stem relates to the key, through kernel/Key.ps1
+    # (Get-EbiKeyMatchTier: exact > stripped > fullwidth > case under the
+    # profile's rules); '' when it does not; 'glob' when there is no key.
+    param([string]$Name, [string]$Key, $Rules = $null)
     if ([string]::IsNullOrEmpty($Key)) { return 'glob' }
-    $stem = FileFind-Stem -Name $Name
-    if ($stem -eq $Key) { return 'exact' }
-    $keyBase = FileFind-StripStamp -Stem $Key
-    if ((FileFind-StripStamp -Stem $stem) -eq $Key) { return 'stamped' }
-    if ($stem -eq $keyBase -or (FileFind-StripStamp -Stem $stem) -eq $keyBase) { return 'base' }
-    $f = ConvertTo-EbiHalfWidth -Value $stem
-    $k = ConvertTo-EbiHalfWidth -Value $Key
-    if ($f -eq $k -or (FileFind-StripStamp -Stem $f) -eq $k -or (FileFind-StripStamp -Stem $f) -eq (FileFind-StripStamp -Stem $k)) { return 'fullWidth' }
-    return ''
+    return (Get-EbiKeyMatchTier -Value (FileFind-Stem -Name $Name) -Key $Key -Rules $Rules)
 }
 
 function FileFind-Rank {
     # PURE. Names + key -> @{ tier; names } for the best tier that hit
-    # (exact > stamped > base > fullWidth); @{ tier=''; names=@() } if none.
-    param($Names, [string]$Key, [string]$Ext = '')
-    $byTier = @{ exact = (New-Object System.Collections.ArrayList); stamped = (New-Object System.Collections.ArrayList); base = (New-Object System.Collections.ArrayList); fullWidth = (New-Object System.Collections.ArrayList); glob = (New-Object System.Collections.ArrayList) }
+    # (exact > stripped > fullwidth > case > glob); @{ tier=''; names=@() } if none.
+    param($Names, [string]$Key, [string]$Ext = '', $Rules = $null)
+    $byTier = @{}
+    foreach ($tn in @(Get-EbiKeyTierOrder) + @('glob')) { $byTier[$tn] = New-Object System.Collections.ArrayList }
     $e = if ([string]::IsNullOrWhiteSpace($Ext)) { '' } else { '.' + $Ext.TrimStart('.') }
     foreach ($n in @($Names)) {
         $name = [string]$n
         if ($e -ne '' -and -not $name.EndsWith($e, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-        $t = FileFind-Tier -Name $name -Key $Key
+        $t = FileFind-Tier -Name $name -Key $Key -Rules $Rules
         if ($t -ne '') { [void]$byTier[$t].Add($name) }
     }
-    foreach ($t in @('exact', 'stamped', 'base', 'fullWidth', 'glob')) {
+    foreach ($t in @(Get-EbiKeyTierOrder) + @('glob')) {
         if ($byTier[$t].Count -gt 0) { return @{ tier = $t; names = $byTier[$t].ToArray() } }
     }
     return @{ tier = ''; names = @() }
@@ -124,7 +114,7 @@ function Invoke-Step {
     $items = @(Get-ChildItem -LiteralPath $dir -Filter $glob -File -Recurse:([bool]$In['recurse']) -ErrorAction SilentlyContinue)
     $byName = @{}
     foreach ($it in $items) { $byName[$it.Name] = $it }
-    $rank = FileFind-Rank -Names @($byName.Keys) -Key $key -Ext $ext
+    $rank = FileFind-Rank -Names @($byName.Keys) -Key $key -Ext $ext -Rules (Get-EbiKeyRules -Profile $Ctx['Profile'])
     if ($rank['tier'] -eq '') {
         return @{ ok = $false; failure = 'file_not_found'; message = ('nothing for key "' + $key + '"' + $(if ($ext -ne '') { ' (.' + $ext.TrimStart('.') + ')' } else { '' }) + ' under ' + $dir + ' (' + $items.Count + ' file(s) seen)'); path = ''; files = @(); found = 0; matchedBy = ''; candidates = $null }
     }
@@ -138,6 +128,6 @@ function Invoke-Step {
         return @{ ok = $false; failure = 'ambiguous'; message = ('' + $hits.Count + ' files match key "' + $key + '" (' + $rank['tier'] + ')'); path = ''; files = $paths; found = $hits.Count; matchedBy = $rank['tier']; candidates = $cand }
     }
     $warnings = @()
-    if ($rank['tier'] -eq 'fullWidth') { $warnings = @( @{ code = 'full_width_name'; message = 'matched only after folding full-width characters'; data = @{ name = $hits[0]['name'] } } ) }
+    if ($rank['tier'] -eq 'fullwidth') { $warnings = @( @{ code = 'full_width_name'; message = 'matched only after folding full-width characters'; data = @{ name = $hits[0]['name'] } } ) }
     return @{ ok = $true; path = $paths[0]; files = $paths; found = $hits.Count; matchedBy = $rank['tier']; candidates = $null; warnings = $warnings }
 }

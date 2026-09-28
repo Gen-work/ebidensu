@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-21 step(s) in 4 group(s).
+30 step(s) in 7 group(s).
 
 | group | steps |
 |-------|-------|
@@ -12,11 +12,11 @@
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.fit_window`, `screen.save` |
 | file | `file.assert_exists`, `file.find`, `file.read_json`, `file.write_json` |
 | excel | (none yet) |
-| table | (none yet) |
+| table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set` |
 | verify | (none yet) |
 | human | `human.prepare` |
-| progress | (none yet) |
-| flow | (none yet) |
+| progress | `progress.event`, `progress.status` |
+| flow | `flow.checkpoint` |
 
 ## browser
 
@@ -522,7 +522,7 @@ Find the file(s) for a key or glob; full-width and stamped names tolerated
 | `candidates` | map | P0-R4 candidate shape when ambiguous, else null |
 | `files` | list | every hit, newest first |
 | `found` | int | how many files matched |
-| `matchedBy` | string | exact \| stamped \| base \| fullWidth \| glob |
+| `matchedBy` | string | exact \| stripped \| fullwidth \| case \| glob (kernel/Key.ps1 tiers) |
 | `path` | path | the hit (the only one, or the newest with expect=any) |
 
 failures: `dir_not_found` (not transient), `file_not_found` (transient), `ambiguous` (not transient)
@@ -531,7 +531,7 @@ failures: `dir_not_found` (not transient), `file_not_found` (transient), `ambigu
 {"id":"find","use":"file.find","with":{"dir":"{{profile.paths.downloads}}","ext":"dat","key":"{{item.keySafe}}"}}
 ```
 
-Notes: file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order: exact stem, the key's stamped forms, the stamp stripped, full-width folded; the first tier with hits wins.
+Notes: file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order is kernel/Key.ps1's: exact stem, suffix/prefix rules stripped (the batch stamp), full-width folded, case folded; the first tier with hits wins.
 
 ### `file.read_json`
 
@@ -580,6 +580,171 @@ failures: `write_failed` (transient), `not_serializable` (not transient)
 {"id":"write_json","use":"file.write_json","with":{"data":{"capturedAt":"{{run.startedAt}}","key":"{{item.key}}"},"path":"capture/before_transferStatus/{{item.keySafe}}.meta.json"}}
 ```
 
+## table
+
+### `table.ensure_columns`
+
+Add missing columns (profile schema plus extras) with defaults
+
+- file: `modules/table/table.ensure_columns.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `columns` | map |  | {} |  | extra columns: name -> default value; profile columns are always included |
+| `worklist` | session:worklist | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `added` | list | names that were missing and got added |
+| `columns` | list | all column names afterwards |
+
+failures: `write_failed` (transient)
+
+```json
+{"id":"ensure_columns","use":"table.ensure_columns","with":{"columns":{"note":""},"worklist":"wl"}}
+```
+
+### `table.key`
+
+Match a key against candidate texts through the one rule set
+
+- file: `modules/table/table.key.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `among` | list | yes |  |  | candidate texts, or records (maps) whose key columns are compared |
+| `key` | string | yes |  |  | the key to find (display form for a composite key) |
+| `rules` | list |  | [] |  | override of profile.worklist.key.confirmedRules |
+
+| output | type | desc |
+|--------|------|------|
+| `candidates` | map | P0-R4 candidate shape when ambiguous, else null |
+| `found` | int | how many entries matched at that tier |
+| `index` | int | its 0-based position in among; -1 otherwise |
+| `match` | any | the one matching entry (text or record); null otherwise |
+| `matchedBy` | string | exact \| stripped \| fullwidth \| case \| empty |
+
+failures: `key_not_found` (not transient), `ambiguous` (not transient)
+
+```json
+{"id":"key","use":"table.key","with":{"among":"{{steps.rec.out.names}}","key":"{{item.key}}"}}
+```
+
+### `table.load`
+
+Load the worklist CSV and register it as a worklist resource
+
+- file: `modules/table/table.load.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: `worklist` / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `keyColumns` | list |  | [] |  | override of profile.worklist.key.columns |
+| `mustExist` | bool |  | true |  | false: a missing file loads as an empty table with the profile columns |
+| `path` | path | yes |  |  | the CSV (UTF-8 with BOM); relative paths resolve under the work dir |
+
+| output | type | desc |
+|--------|------|------|
+| `columns` | list | column names in file order, profile columns appended |
+| `path` | path |  |
+| `rowCount` | int |  |
+
+failures: `file_not_found` (not transient), `csv_invalid` (not transient), `key_column_missing` (not transient), `key_collision` (not transient)
+
+```json
+{"id":"load","use":"table.load","with":{"as":"wl","path":"{{profile.worklist.file}}"}}
+```
+
+Notes: provides is non-empty, so a resumed run loads the table again and sees the disk. A dry run reads the file too (read-only); a file that is not there dry-runs as an empty table with a warning.
+
+### `table.save`
+
+Write the worklist to CSV (UTF-8 with BOM, atomic)
+
+- file: `modules/table/table.save.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `path` | path |  | (empty) |  | write here instead of the path it was loaded from |
+| `worklist` | session:worklist | yes |  |  | the loaded table |
+
+| output | type | desc |
+|--------|------|------|
+| `path` | path |  |
+| `rowCount` | int |  |
+
+failures: `write_failed` (transient), `no_path` (not transient)
+
+```json
+{"id":"save","use":"table.save","with":{"worklist":"wl"}}
+```
+
+### `table.select`
+
+Rows whose field is pending under one of the five pendingWhen forms
+
+- file: `modules/table/table.select.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `field` | string |  | (empty) |  | the column to test (not needed for always) |
+| `limit` | int |  | 0 |  |  |
+| `only` | list |  | [] |  | key display strings; keep only these rows |
+| `pendingWhen` | string |  | != ok |  | empty \| != ok \| == ng \| bit !<name> \| always (WORKFLOW-SCHEMA 3.1) |
+| `worklist` | session:worklist | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `keyList` | list | their key display strings |
+| `rows` | list | the selected rows (copies of the hashtables) |
+| `selected` | int |  |
+| `total` | int |  |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"select","use":"table.select","with":{"field":"before_transferStatus","pendingWhen":"!= ok","worklist":"wl"}}
+```
+
+Notes: The five forms are checked by kernel/Worklist.ps1 (the same parser the runner uses); anything else is input_invalid naming the form list.
+
+### `table.set`
+
+Set a cell (value or named bit) of the row for a key, then flush
+
+- file: `modules/table/table.set.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `bit` | string |  | (empty) |  | instead of value: the bit NAME to set in a bitmask column |
+| `clear` | bool |  | false |  | with bit: clear it instead of setting it |
+| `field` | string | yes |  |  |  |
+| `key` | string |  | (empty) |  | which row (key display form); empty = the current item |
+| `value` | string |  | (empty) |  | logical value to store (translated through verdict.values) |
+| `worklist` | session:worklist | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `stored` | string | what the cell holds now |
+| `updated` | int | rows changed (0 or 1) |
+
+failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_missing` (not transient), `bit_unknown` (not transient), `write_failed` (transient)
+
+```json
+{"id":"set","use":"table.set","with":{"field":"note","value":"checked by hand","worklist":"wl"}}
+```
+
 ## human
 
 ### `human.prepare`
@@ -606,3 +771,89 @@ failures: `operator_quit` (not transient)
 ```
 
 Notes: DryRun prints the prompt and answers Enter on the operator's behalf, so a dry run never blocks.
+
+## progress
+
+### `progress.event`
+
+Append a workflow-authored event to run/<runId>/trace.jsonl
+
+- file: `modules/progress/progress.event.ps1`
+- effects: `write` / tier: `core` / idempotent: `false`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `action` | string | yes |  |  | short verb, e.g. captured, verdict, delivered |
+| `data` | map |  | {} |  | payload, JSON-serializable |
+| `key` | string |  | (empty) |  | the item; empty = the current item, if any |
+| `message` | string |  | (empty) |  |  |
+| `status` | string |  | info | ok, fail, skip, info, start | same words the runner uses |
+
+| output | type | desc |
+|--------|------|------|
+| `key` | string |  |
+
+failures: `internal_error` (transient)
+
+```json
+{"id":"event","use":"progress.event","with":{"action":"verdict","message":"{{steps.verdict.out.message}}","status":"ok"}}
+```
+
+Notes: Not idempotent by declaration (two calls are two events), though a replayed step on resume is not re-run, so the trace holds one event per item per run.
+
+### `progress.status`
+
+Print done / pending / ng counts per field as an ASCII table
+
+- file: `modules/progress/progress.status.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `field` | string |  | (empty) |  | one field; empty = every verdict / bitmask column the profile declares |
+| `groupBy` | string |  | (empty) |  | also count per value of this column |
+| `worklist` | session:worklist | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `lines` | list | the rendered table |
+| `summary` | map | field -> { total; done; pending; ng } |
+
+failures: `column_missing` (not transient)
+
+```json
+{"id":"status","use":"progress.status","with":{"field":"before_transferStatus","worklist":"wl"}}
+```
+
+## flow
+
+### `flow.checkpoint`
+
+Write the verdict (or a named bit) for the current item and flush
+
+- file: `modules/flow/flow.checkpoint.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `bit` | string |  | (empty) |  | instead of value: the bit NAME (profile bits map) to set |
+| `field` | string | yes |  |  |  |
+| `key` | string |  | (empty) |  | which row; empty = the current item |
+| `value` | string |  | (empty) |  | logical value: ok \| ng \| unknown \| empty |
+| `worklist` | session:worklist | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `key` | string | the row that was written |
+| `stored` | string | the code the cell holds now |
+
+failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_missing` (not transient), `bit_unknown` (not transient), `value_invalid` (not transient), `write_failed` (transient)
+
+```json
+{"id":"checkpoint","use":"flow.checkpoint","with":{"field":"before_transferStatus","value":"{{steps.gate.out.code}}","worklist":"wl"}}
+```
+
+Notes: value must be a logical verdict (ok / ng / unknown / empty); a stored code is refused (value_invalid) so a workflow cannot hard-wire the profile's encoding.

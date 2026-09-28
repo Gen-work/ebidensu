@@ -249,6 +249,8 @@ manifest 的 `outputs` 里不声明它。规则全文在 §3.4 第 7 点(P0-07 /
 | `$Ctx.Profile` | 已加载并合并好的 profile(hashtable) |
 | `$Ctx.Log` | `$Ctx.Log.Info('...')` / `.Warn(...)` / `.Debug(...)` |
 | `$Ctx.DryRun` | `$true` 时,有副作用的 step **必须**只打印不执行 |
+| `$Ctx.Item` | `each` 段里当前这一行(hashtable,列名 → 值);`setup` / `teardown` 里是 `$null`。给 `flow.checkpoint` / `progress.event` 这类"就是写当前这条"的 step 用,省得每个调用都写 `"key": "{{item.key}}"`(P1-28)。**只读**:改行内容一律经 `table.set` / `flow.checkpoint`,它们才做原子落盘 |
+| `$Ctx.KeyColumns` | 本次运行的键列(profile 的 `key.columns`,或 `source.keyColumns` 覆盖),和 `$Ctx.Item` 配套 |
 
 **`$Ctx` 里没有别的 step 的输出。** step 之间只通过 workflow JSON 的模板引用
 传值 —— 这是正交性的保证。

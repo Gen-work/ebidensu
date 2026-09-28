@@ -471,6 +471,8 @@ function New-EbiContext {
         Log     = (New-EbiLog)
         DryRun  = $DryRun
         Session = @{}          # name -> @{ kind; value; registeredBy }
+        Item    = $null        # the current worklist row inside "each" (P1-28), $null in setup / teardown
+        KeyColumns = @()       # the key columns the run iterates by (profile or source.keyColumns)
     }
 }
 
@@ -878,6 +880,7 @@ function Invoke-EbiWorkflow {
                     $gSteps = @{}
                     if ($groupOutputs.Contains($G)) { foreach ($k in $groupOutputs[$G].Keys) { $gSteps[$k] = $groupOutputs[$G][$k] } }
                     $gScope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $Row -Steps $gSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
+                    $ctx['Item'] = $Row; $ctx['KeyColumns'] = $keyColumns
                     foreach ($gCall in $groupEndCalls) {
                         $gDone = . Invoke-EbiStepWithPolicy -State $state -Section 'each' -Call $gCall -Scope $gScope -Steps $gSteps -Key $gKey -Group $G -LedgerGroup $G
                         foreach ($r in $gDone['records']) { [void]$records.Add($r) }
@@ -901,6 +904,7 @@ function Invoke-EbiWorkflow {
                     $steps = @{}
                     if ($groupBy -ne '' -and $groupOutputs.Contains($group)) { foreach ($k in $groupOutputs[$group].Keys) { $steps[$k] = $groupOutputs[$group][$k] } }
                     $scope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $row -Steps $steps -KeyColumns $keyColumns -GroupColumn $groupColumn
+                    $ctx['Item'] = $row; $ctx['KeyColumns'] = $keyColumns   # STEP-CONTRACT 3.2: the current row (flow.checkpoint / progress.event default key)
                     $itemRec = @{ key = $key; group = $group; status = 'ok'; failure = ''; message = '' }
                     Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Key $key -Tags $tagsBase -Action 'item' -Status 'start' -Data @{ group = $group }
                     $itemDone = $false
@@ -956,6 +960,7 @@ function Invoke-EbiWorkflow {
         # the exception itself propagates after this block.
         if ($workflow.Contains('teardown') -and $null -ne $workflow['teardown']) {
             $teardownSteps = @{}
+            $ctx['Item'] = $null; $ctx['KeyColumns'] = $keyColumns
             $scope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $null -Steps $teardownSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
             foreach ($call in $workflow['teardown']) {
                 $done = . Invoke-EbiStepWithPolicy -State $state -Section 'teardown' -Call $call -Scope $scope -Steps $teardownSteps

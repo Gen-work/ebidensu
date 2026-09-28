@@ -825,7 +825,7 @@
         }
       },
       "needs": [],
-      "notes": "file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order: exact stem, the key's stamped forms, the stamp stripped, full-width folded; the first tier with hits wins.",
+      "notes": "file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order is kernel/Key.ps1's: exact stem, suffix/prefix rules stripped (the batch stamp), full-width folded, case folded; the first tier with hits wins.",
       "outputs": {
         "candidates": {
           "desc": "P0-R4 candidate shape when ambiguous, else null",
@@ -840,7 +840,7 @@
           "type": "int"
         },
         "matchedBy": {
-          "desc": "exact | stamped | base | fullWidth | glob",
+          "desc": "exact | stripped | fullwidth | case | glob (kernel/Key.ps1 tiers)",
           "type": "string"
         },
         "path": {
@@ -950,6 +950,89 @@
       "summary": "Write a value to a JSON file (atomic, UTF-8 without BOM)",
       "tier": "core"
     },
+    "flow.checkpoint": {
+      "effects": "write",
+      "example": {
+        "use": "flow.checkpoint",
+        "with": {
+          "field": "before_transferStatus",
+          "value": "{{steps.gate.out.code}}",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "row_not_found",
+          "transient": false
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        },
+        {
+          "id": "column_missing",
+          "transient": false
+        },
+        {
+          "id": "bit_unknown",
+          "transient": false
+        },
+        {
+          "id": "value_invalid",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/flow/flow.checkpoint.ps1",
+      "group": "flow",
+      "id": "flow.checkpoint",
+      "idempotent": true,
+      "inputs": {
+        "bit": {
+          "default": "",
+          "desc": "instead of value: the bit NAME (profile bits map) to set",
+          "type": "string"
+        },
+        "field": {
+          "required": true,
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "desc": "which row; empty = the current item",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "desc": "logical value: ok | ng | unknown | empty",
+          "type": "string"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "value must be a logical verdict (ok / ng / unknown / empty); a stored code is refused (value_invalid) so a workflow cannot hard-wire the profile's encoding.",
+      "outputs": {
+        "key": {
+          "desc": "the row that was written",
+          "type": "string"
+        },
+        "stored": {
+          "desc": "the code the cell holds now",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write the verdict (or a named bit) for the current item and flush",
+      "tier": "core"
+    },
     "human.prepare": {
       "effects": "ui",
       "example": {
@@ -992,6 +1075,123 @@
       "provides": [],
       "releases": [],
       "summary": "Show a message and wait for Enter (ready) or q (quit)",
+      "tier": "core"
+    },
+    "progress.event": {
+      "effects": "write",
+      "example": {
+        "use": "progress.event",
+        "with": {
+          "action": "verdict",
+          "message": "{{steps.verdict.out.message}}",
+          "status": "ok"
+        }
+      },
+      "failures": [
+        {
+          "id": "internal_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/progress/progress.event.ps1",
+      "group": "progress",
+      "id": "progress.event",
+      "idempotent": false,
+      "inputs": {
+        "action": {
+          "desc": "short verb, e.g. captured, verdict, delivered",
+          "required": true,
+          "type": "string"
+        },
+        "data": {
+          "default": {},
+          "desc": "payload, JSON-serializable",
+          "type": "map"
+        },
+        "key": {
+          "default": "",
+          "desc": "the item; empty = the current item, if any",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "type": "string"
+        },
+        "status": {
+          "default": "info",
+          "desc": "same words the runner uses",
+          "enum": [
+            "ok",
+            "fail",
+            "skip",
+            "info",
+            "start"
+          ],
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Not idempotent by declaration (two calls are two events), though a replayed step on resume is not re-run, so the trace holds one event per item per run.",
+      "outputs": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Append a workflow-authored event to run/<runId>/trace.jsonl",
+      "tier": "core"
+    },
+    "progress.status": {
+      "effects": "read",
+      "example": {
+        "use": "progress.status",
+        "with": {
+          "field": "before_transferStatus",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "column_missing",
+          "transient": false
+        }
+      ],
+      "file": "modules/progress/progress.status.ps1",
+      "group": "progress",
+      "id": "progress.status",
+      "idempotent": true,
+      "inputs": {
+        "field": {
+          "default": "",
+          "desc": "one field; empty = every verdict / bitmask column the profile declares",
+          "type": "string"
+        },
+        "groupBy": {
+          "default": "",
+          "desc": "also count per value of this column",
+          "type": "string"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "lines": {
+          "desc": "the rendered table",
+          "type": "list"
+        },
+        "summary": {
+          "desc": "field -> { total; done; pending; ng }",
+          "type": "map"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Print done / pending / ng counts per field as an ASCII table",
       "tier": "core"
     },
     "screen.capture_region": {
@@ -1352,6 +1552,393 @@
       "provides": [],
       "releases": [],
       "summary": "Move or copy an image to <dir>/<keySafe>[__<tag>].<ext>",
+      "tier": "core"
+    },
+    "table.ensure_columns": {
+      "effects": "write",
+      "example": {
+        "use": "table.ensure_columns",
+        "with": {
+          "columns": {
+            "note": ""
+          },
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/table/table.ensure_columns.ps1",
+      "group": "table",
+      "id": "table.ensure_columns",
+      "idempotent": true,
+      "inputs": {
+        "columns": {
+          "default": {},
+          "desc": "extra columns: name -> default value; profile columns are always included",
+          "type": "map"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "added": {
+          "desc": "names that were missing and got added",
+          "type": "list"
+        },
+        "columns": {
+          "desc": "all column names afterwards",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Add missing columns (profile schema plus extras) with defaults",
+      "tier": "core"
+    },
+    "table.key": {
+      "effects": "pure",
+      "example": {
+        "use": "table.key",
+        "with": {
+          "among": "{{steps.rec.out.names}}",
+          "key": "{{item.key}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "key_not_found",
+          "transient": false
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.key.ps1",
+      "group": "table",
+      "id": "table.key",
+      "idempotent": true,
+      "inputs": {
+        "among": {
+          "desc": "candidate texts, or records (maps) whose key columns are compared",
+          "required": true,
+          "type": "list"
+        },
+        "key": {
+          "desc": "the key to find (display form for a composite key)",
+          "required": true,
+          "type": "string"
+        },
+        "rules": {
+          "default": [],
+          "desc": "override of profile.worklist.key.confirmedRules",
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "candidates": {
+          "desc": "P0-R4 candidate shape when ambiguous, else null",
+          "type": "map"
+        },
+        "found": {
+          "desc": "how many entries matched at that tier",
+          "type": "int"
+        },
+        "index": {
+          "desc": "its 0-based position in among; -1 otherwise",
+          "type": "int"
+        },
+        "match": {
+          "desc": "the one matching entry (text or record); null otherwise",
+          "type": "any"
+        },
+        "matchedBy": {
+          "desc": "exact | stripped | fullwidth | case | empty",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Match a key against candidate texts through the one rule set",
+      "tier": "core"
+    },
+    "table.load": {
+      "effects": "read",
+      "example": {
+        "use": "table.load",
+        "with": {
+          "as": "wl",
+          "path": "{{profile.worklist.file}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "csv_invalid",
+          "transient": false
+        },
+        {
+          "id": "key_column_missing",
+          "transient": false
+        },
+        {
+          "id": "key_collision",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.load.ps1",
+      "group": "table",
+      "id": "table.load",
+      "idempotent": true,
+      "inputs": {
+        "keyColumns": {
+          "default": [],
+          "desc": "override of profile.worklist.key.columns",
+          "type": "list"
+        },
+        "mustExist": {
+          "default": true,
+          "desc": "false: a missing file loads as an empty table with the profile columns",
+          "type": "bool"
+        },
+        "path": {
+          "desc": "the CSV (UTF-8 with BOM); relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "notes": "provides is non-empty, so a resumed run loads the table again and sees the disk. A dry run reads the file too (read-only); a file that is not there dry-runs as an empty table with a warning.",
+      "outputs": {
+        "columns": {
+          "desc": "column names in file order, profile columns appended",
+          "type": "list"
+        },
+        "path": {
+          "type": "path"
+        },
+        "rowCount": {
+          "type": "int"
+        }
+      },
+      "provides": [
+        "worklist"
+      ],
+      "releases": [],
+      "summary": "Load the worklist CSV and register it as a worklist resource",
+      "tier": "core"
+    },
+    "table.save": {
+      "effects": "write",
+      "example": {
+        "use": "table.save",
+        "with": {
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "write_failed",
+          "transient": true
+        },
+        {
+          "id": "no_path",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.save.ps1",
+      "group": "table",
+      "id": "table.save",
+      "idempotent": true,
+      "inputs": {
+        "path": {
+          "default": "",
+          "desc": "write here instead of the path it was loaded from",
+          "type": "path"
+        },
+        "worklist": {
+          "desc": "the loaded table",
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "path": {
+          "type": "path"
+        },
+        "rowCount": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write the worklist to CSV (UTF-8 with BOM, atomic)",
+      "tier": "core"
+    },
+    "table.select": {
+      "effects": "pure",
+      "example": {
+        "use": "table.select",
+        "with": {
+          "field": "before_transferStatus",
+          "pendingWhen": "!= ok",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.select.ps1",
+      "group": "table",
+      "id": "table.select",
+      "idempotent": true,
+      "inputs": {
+        "field": {
+          "default": "",
+          "desc": "the column to test (not needed for always)",
+          "type": "string"
+        },
+        "limit": {
+          "default": 0,
+          "type": "int"
+        },
+        "only": {
+          "default": [],
+          "desc": "key display strings; keep only these rows",
+          "type": "list"
+        },
+        "pendingWhen": {
+          "default": "!= ok",
+          "desc": "empty | != ok | == ng | bit !<name> | always (WORKFLOW-SCHEMA 3.1)",
+          "type": "string"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "The five forms are checked by kernel/Worklist.ps1 (the same parser the runner uses); anything else is input_invalid naming the form list.",
+      "outputs": {
+        "keyList": {
+          "desc": "their key display strings",
+          "type": "list"
+        },
+        "rows": {
+          "desc": "the selected rows (copies of the hashtables)",
+          "type": "list"
+        },
+        "selected": {
+          "type": "int"
+        },
+        "total": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Rows whose field is pending under one of the five pendingWhen forms",
+      "tier": "core"
+    },
+    "table.set": {
+      "effects": "write",
+      "example": {
+        "use": "table.set",
+        "with": {
+          "field": "note",
+          "value": "checked by hand",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "row_not_found",
+          "transient": false
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        },
+        {
+          "id": "column_missing",
+          "transient": false
+        },
+        {
+          "id": "bit_unknown",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/table/table.set.ps1",
+      "group": "table",
+      "id": "table.set",
+      "idempotent": true,
+      "inputs": {
+        "bit": {
+          "default": "",
+          "desc": "instead of value: the bit NAME to set in a bitmask column",
+          "type": "string"
+        },
+        "clear": {
+          "default": false,
+          "desc": "with bit: clear it instead of setting it",
+          "type": "bool"
+        },
+        "field": {
+          "required": true,
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "desc": "which row (key display form); empty = the current item",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "desc": "logical value to store (translated through verdict.values)",
+          "type": "string"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "stored": {
+          "desc": "what the cell holds now",
+          "type": "string"
+        },
+        "updated": {
+          "desc": "rows changed (0 or 1)",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Set a cell (value or named bit) of the row for a key, then flush",
       "tier": "core"
     }
   }

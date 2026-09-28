@@ -38,7 +38,7 @@ function New-TestLog {
 function New-TestCtx {
     param([bool]$DryRun = $false, [string]$WorkDir = '')
     if ($WorkDir -eq '') { $WorkDir = $tmpRoot }
-    return @{ WorkDir = $WorkDir; RunId = 'test'; Profile = @{}; Log = (New-TestLog); DryRun = $DryRun; Session = @{ mainWindow = @{ kind = 'window'; value = 4242; registeredBy = 'test' } } }
+    return @{ WorkDir = $WorkDir; RunId = 'test'; Profile = @{}; Log = (New-TestLog); DryRun = $DryRun; Session = @{ mainWindow = @{ kind = 'window'; value = 4242; registeredBy = 'test' } }; Item = $null; KeyColumns = @() }
 }
 
 $reg = New-EbiRegistry -ModulesRoot $modulesRoot
@@ -54,7 +54,8 @@ $expectedSteps = @(
 Write-Host '  -- dry run of every step from its manifest example'
 $uses = @(@($catalog) | Where-Object { $_['ok'] } | ForEach-Object { $_['use'] })
 foreach ($u in $expectedSteps) { Assert-True ($uses -contains $u) ("catalog has " + $u) }
-foreach ($u in $expectedSteps) {
+foreach ($u in $uses) {
+    # EVERY shipped step, not only the groups this file owns (P1-36 seed)
     $r = . Import-EbiStep -Registry $reg -Use $u
     Assert-True $r['ok'] ("loads: " + $u + ' ' + $r['message'])
     if (-not $r['ok']) { continue }
@@ -68,6 +69,23 @@ foreach ($u in $expectedSteps) {
         $v = $with[$k]
         if (-not ($v -is [string]) -or -not (Test-EbiTemplateString $v)) { continue }
         $type = if ($m['inputs'].Contains($k)) { [string]$m['inputs'][$k]['type'] } else { 'string' }
+        $enum = @(if ($m['inputs'].Contains($k) -and $m['inputs'][$k].Contains('enum') -and $null -ne $m['inputs'][$k]['enum']) { $m['inputs'][$k]['enum'] })
+        if ($enum.Count -gt 0) { $with[$k] = $enum[0]; continue }
+        # Named fixtures where the step's contract needs a particular shape
+        # (what the workflow's template would have produced).
+        $named = @{
+            value       = 'ok'                                            # {{steps.gate.out.code}}
+            code        = 'unknown'                                       # so a gate really asks (and auto-answers)
+            candidates  = @{ candidates = @(@{ id = 'c1'; candidate = 'fixture'; evidence = @{ source = 'test' } }); suggestion = @{ id = 'c1'; reason = 'fixture' }; doubts = '' }
+            grammar     = @{ parser = 'regex'; pattern = '^(?<key>\S+)\s+(?<time>.+)$' }
+            rules       = @{ rules = @(@{ field = 'key'; op = 'present'; else = 'unknown'; message = 'fixture' }); default = 'ok' }
+            fingerprint = @{ ok = @('fixture') }
+            records     = @(@{ key = 'fixture'; time = '2026/09/28 9:00:00' })
+            record      = @{ key = 'fixture' }
+            text        = 'fixture 2026/09/28 9:00:00'
+            key         = 'fixture'
+        }
+        if ($named.Contains($k)) { $with[$k] = $named[$k]; continue }
         switch ($type) {
             'int'  { $with[$k] = 100 }
             'bool' { $with[$k] = $false }
@@ -79,6 +97,9 @@ foreach ($u in $expectedSteps) {
         }
     }
     if ($with.Contains('as')) { $ctx['Session'] = @{} }   # a provides step registers its own
+    else { $ctx['Session']['wl'] = @{ kind = 'worklist'; value = @{ path = (Join-Path $tmpRoot 'wl.csv'); columns = @('Correl_ID_S', 'JOB_NAME', 'before_transferStatus', 'composed', 'note'); rows = @(@{ Correl_ID_S = 'ABC123'; JOB_NAME = 'J1'; before_transferStatus = ''; composed = '0'; note = '' }) }; registeredBy = 'test' } }
+    if ($ctx['Session'].Contains('wl')) { $ctx['Item'] = $ctx['Session']['wl']['value']['rows'][0] }
+    $ctx['KeyColumns'] = @('Correl_ID_S', 'JOB_NAME')
     $res = Resolve-EbiStepInputs -Manifest $m -With $with -Session $ctx['Session']
     Assert-True $res['ok'] ("example inputs resolve: " + $u + ' ' + $res['message'])
     if (-not $res['ok']) { continue }
@@ -226,21 +247,20 @@ Assert-True ($ret['ok'] -and -not (Test-Path -LiteralPath (Join-Path $tmpRoot 'd
 
 # --- 7. file.find ---------------------------------------------------------------------
 Write-Host '  -- file.find'
-Assert-Equal 'ABC123' (FileFind-StripStamp -Stem 'ABC123.260824.10515511') 'strip stamp'
-Assert-Equal 'ABC123.26' (FileFind-StripStamp -Stem 'ABC123.26') 'strip stamp: leaves non-stamps alone'
 Assert-Equal 'exact' (FileFind-Tier -Name 'ABC123.dat' -Key 'ABC123') 'tier: exact'
-Assert-Equal 'stamped' (FileFind-Tier -Name 'ABC123.260824.10515511.dat' -Key 'ABC123') 'tier: file carries a stamp the key lacks'
-Assert-Equal 'base' (FileFind-Tier -Name 'ABC123.dat' -Key 'ABC123.260824.10515511') 'tier: key carries a stamp the file lacks'
-Assert-Equal 'fullWidth' (FileFind-Tier -Name ($fwA + 'BC123.dat') -Key 'ABC123') 'tier: full-width folded'
+Assert-Equal 'stripped' (FileFind-Tier -Name 'ABC123.260824.10515511.dat' -Key 'ABC123') 'tier: file carries a stamp the key lacks'
+Assert-Equal 'stripped' (FileFind-Tier -Name 'ABC123.dat' -Key 'ABC123.260824.10515511') 'tier: key carries a stamp the file lacks'
+Assert-Equal 'fullwidth' (FileFind-Tier -Name ($fwA + 'BC123.dat') -Key 'ABC123') 'tier: full-width folded'
+Assert-Equal 'case' (FileFind-Tier -Name 'abc123.dat' -Key 'ABC123') 'tier: case folded'
 Assert-Equal '' (FileFind-Tier -Name 'ABC124.dat' -Key 'ABC123') 'tier: no match'
 Assert-Equal 'glob' (FileFind-Tier -Name 'anything.dat' -Key '') 'tier: no key = glob'
 $rk = FileFind-Rank -Names @('ABC123.260824.10515511.dat', 'ABC123.dat', 'ABC123.txt') -Key 'ABC123' -Ext 'dat'
 Assert-True ($rk['tier'] -eq 'exact' -and @($rk['names']).Count -eq 1) 'rank: exact beats stamped; ext filter drops .txt'
 $rk = FileFind-Rank -Names @('ABC123.260824.10515511.dat', 'ABC123.260824.10515533.dat') -Key 'ABC123' -Ext '.dat'
-Assert-True ($rk['tier'] -eq 'stamped' -and @($rk['names']).Count -eq 2) 'rank: two stamped reruns both kept'
+Assert-True ($rk['tier'] -eq 'stripped' -and @($rk['names']).Count -eq 2) 'rank: two stamped reruns both kept'
 $rk = FileFind-Rank -Names @() -Key 'X'
 Assert-Equal '' $rk['tier'] 'rank: nothing'
-$cands = FileFind-Candidates -Files @(@{ name = 'a'; path = 'p'; modifiedAt = '2026-09-28 09:53:40'; size = 12 }, @{ name = 'b'; path = 'q'; modifiedAt = '2026-09-28 09:51:02'; size = 12 }) -Dir 'D' -Tier 'stamped'
+$cands = FileFind-Candidates -Files @(@{ name = 'a'; path = 'p'; modifiedAt = '2026-09-28 09:53:40'; size = 12 }, @{ name = 'b'; path = 'q'; modifiedAt = '2026-09-28 09:51:02'; size = 12 }) -Dir 'D' -Tier 'stripped'
 Assert-True (@($cands['candidates']).Count -eq 2 -and $cands['candidates'][0]['id'] -eq 'c1' -and $cands['candidates'][1]['candidate'] -eq 'b' -and $cands['suggestion']['id'] -eq 'c1' -and $cands['candidates'][0]['evidence']['source'] -eq 'D') 'candidates: P0-R4 shape with ids, evidence, suggestion'
 
 $dl = Join-Path $tmpRoot 'downloads'
@@ -260,7 +280,7 @@ Assert-True ($ret['ok'] -and $ret['found'] -eq 2 -and $ret['path'].EndsWith('105
 $ret = Find @{ key = 'ABC123.260824.10515511'; ext = 'dat' }
 Assert-True ($ret['ok'] -and $ret['matchedBy'] -eq 'exact') 'find: the stamped key hits its own file exactly'
 $ret = Find @{ key = 'ABC789'; ext = 'dat' }
-Assert-True ($ret['ok'] -and $ret['matchedBy'] -eq 'fullWidth' -and @($ret['warnings']).Count -eq 1 -and $ret['warnings'][0]['code'] -eq 'full_width_name') 'find: full-width file name found, warned'
+Assert-True ($ret['ok'] -and $ret['matchedBy'] -eq 'fullwidth' -and @($ret['warnings']).Count -eq 1 -and $ret['warnings'][0]['code'] -eq 'full_width_name') 'find: full-width file name found, warned'
 $ret = Find @{ key = 'ZZZ'; ext = 'dat' }
 Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'file_not_found') 'find: nothing -> file_not_found'
 $ret = Find @{ key = 'GHI000'; ext = 'dat' }
@@ -284,6 +304,20 @@ Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'file_not_found') 'assert_
 $ctx = New-TestCtx -DryRun $true
 $ret = & $ae['Invoke'] @{ path = 'downloads/none.dat'; kind = 'any' } $ctx
 Assert-True ($ret['ok'] -and -not $ret['exists'] -and @($ret['warnings']).Count -eq 1 -and ($ctx['Log'].Lines[0] -like 'warn:would fail*')) 'assert_exists: dry run warns instead of failing'
+
+# --- 8b. P1-27: no step compares keys on its own ---------------------------------
+Write-Host '  -- P1-27 guard'
+$offenders = New-Object System.Collections.ArrayList
+foreach ($f in @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'modules') -Filter '*.ps1' -File -Recurse | Where-Object { $_.Name -match '^[a-z]+\.[a-z_]+\.ps1$' })) {
+    $n = 0
+    foreach ($line in (Get-Content -LiteralPath $f.FullName)) {
+        $n++
+        $code = ($line -replace '#.*$', '')
+        # an emptiness test ($key -eq '' / $null) is not a comparison of two keys
+        if ($code -match '\$(key|Key|keySafe|correl|CorrelId)\b\s*-(c?i?eq|c?i?ne)\s+(?!''''|""|\$null)' -or $code -match '(?<!''''|""|\$null)\s+-(c?i?eq|c?i?ne)\s*\$(key|Key|keySafe|correl|CorrelId)\b') { [void]$offenders.Add($f.Name + ':' + $n) }
+    }
+}
+Assert-Equal 0 $offenders.Count ('no step compares a key with -eq / -ne of its own (kernel/Key.ps1 is the one rule set)' + $(if ($offenders.Count) { ': ' + ($offenders.ToArray() -join ', ') } else { '' }))
 
 # --- 9. the four Invoke-CropPng copies are gone ---------------------------------
 Write-Host '  -- P1-20 retirement'

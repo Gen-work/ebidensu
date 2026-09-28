@@ -45,7 +45,7 @@ function ScreenSave-Name {
     $safe = ConvertTo-EbiKeySafeSegment -Value $Key
     $e = if ([string]::IsNullOrWhiteSpace($Ext)) { 'png' } else { $Ext.TrimStart('.') }
     $t = if ([string]::IsNullOrWhiteSpace($Tag)) { '' } else { '__' + (ConvertTo-EbiKeySafeSegment -Value $Tag) }
-    return @{ name = ($safe + $t + '.' + $e); folded = ($safe -ne $Key) }
+    return @{ name = ($safe + $t + '.' + $e); folded = (-not [string]::Equals($safe, $Key)) }   # "did folding change it", not a key match
 }
 
 function Invoke-Step {
