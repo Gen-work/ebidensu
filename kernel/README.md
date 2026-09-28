@@ -160,8 +160,27 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   fixed here because `Export-Csv -Encoding UTF8` means BOM on PS 5.1 and no
   BOM on pwsh 7), `New-EbiWorklist`, `Save-EbiWorklist` (the flush every
   writing table step does before returning).
+- `Rules.ps1` -- the rule-table engine of PROFILE-SCHEMA section 5
+  (`Test-EbiRuleTable`, `Invoke-EbiRuleTable`; twelve ops, else never ok,
+  a within rule with no window holds). verify.assert wraps it; `ebi
+  profile check` runs fixtures through it (P2-09).
+- `ProfileCheck.ps1` -- P2-09: `Test-EbiProfileSchema` (the five JSON
+  files), `Invoke-EbiFixtureCheck` (fingerprint -> grammar -> key match ->
+  rules, the workflow's own functions, against expected.json),
+  `Compare-EbiProfile`, `New-EbiProfileSkeleton`.
+- `GrammarTune.ps1` -- P2-02: `ebi grammar tune`, the interactive parser
+  debugger (view with every unrecognised line listed, one-letter edits,
+  save = grammar.json + fixture + expected.json behind the mask gate).
+- `Mask.ps1` -- P2-08 mask-lite: `Find-EbiMaskHitsInText` (employee id,
+  mail, UNC, C:\Users, intranet URL, private IP, dictionary words minus
+  allow patterns), `Invoke-EbiMaskCheck` over profiles/** and workflows/,
+  the gate Run-Tests.ps1 runs first. Interactive decisions and the
+  bijective replacement are P5.
 - `Parse.ps1` -- P1-30/P1-31, page text -> records: the four grammars of
   PROFILE-SCHEMA section 4 (`ConvertFrom-EbiGrammar`: delimited / labeled /
   columns / regex), every one returning the lines it did NOT recognise so
   `verify.parse_text` can report them, plus `ConvertTo-EbiDateTime` with
-  the single-digit-hour formats (`H:mm:ss`) that the old parsers lacked.
+  the single-digit-hour formats (`H:mm:ss`) that the old parsers lacked;
+  since P2-09 also `Get-EbiPageKind` (the fingerprint classifier) and
+  `Select-EbiNewestRecord` (the tie-break), so the fixture runner and the
+  steps share them.

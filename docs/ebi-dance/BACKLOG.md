@@ -1586,18 +1586,29 @@
   测试要求表里 ui/write/destructive 那行从「只做静态检查」改成「静态检查 +
   DryRun 合同测试」。
 
-# P2 — 对拍验证(10 张,1 张整块)
+# P2 — 对拍验证(10 张,1 张整块)—— 8 张关闭(2026-09-28),P2-03 / P2-06 等办公 PC
 
 目标:**用新引擎重跑一条现有流程,产出和旧脚本逐项一致。**
 这一步会暴露契约的全部错误 —— **P1 的设计不必完美,P2 之后重构一次是计划内的。**
 
-### [ ] P2-01 profiles/host-open 骨架
+### [x] P2-01 profiles/host-open 骨架
 - **估** 60min | **依赖** P0-R1, P0-R4 | **读** `spec/PROFILE-SCHEMA.md` §1,2,6
 - **做**:`vocabulary.json`(side/列名映射)+ `worklist.json`(列 schema、复合键、
   位定义;key 只声明在这里)+ `pages.json` 骨架 —— **按 page 名建条目**
   (如 `transferStatus`(role list)、`fileList`(role list)),不按 role 建
+- **已执行(2026-09-28)**:`profiles/host-open/`:`vocabulary.json`(sides
+  GIFT/GFIX、五个 role 泛称、`columns.group/owner/deliverable`,没有 key)、
+  `pages.json`(§3.0 的五个 page 按 page 名建条目:`hmResult` record、
+  `transferStatus` / `fileList` / `jobList` list、`reportPreview` document;
+  fingerprint / tab 计数 / crop / `timeField`)、`worklist.json`(复合键
+  `Correl_ID_S` + `JOB_NAME`,三条 confirmedRules,**列名用旧 mapping CSV 的名字**
+  `GIFT_MQ_snap` 等,`verdict.values` = ok 1 / ng 2 / pending 0 / unknown 空,
+  P0-R11 混跑规则;bitmask 位名 gift/gfix/df)、`layout.json` 骨架、
+  `window.json`(浏览器尺寸,新加进 `PROFILE-SCHEMA.md` §1 的文件表,机器差异
+  走 `ebi.local.json`)。已知的洞写在 `profiles/host-open/README.md`:URL 空、
+  `expired` 指纹空(仓库里没有会话超时页文本)、三个 page 没 fixture。
 
-### [ ] P2-02 ebi grammar tune
+### [x] P2-02 ebi grammar tune
 - **估** 120min | **依赖** P2-08 | **读** `spec/PROFILE-SCHEMA.md` §4.1
 - **做**:交互式解析器调试器 —— 喂真实页面文本 → 渲染解析结果表格 →
   改参数即时重解析 → `s` 存进 profile **同时存成 fixture**
@@ -1605,21 +1616,59 @@
   脱敏门禁**(fixture 的原料是真实内网页面文本 —— 这一步会自动积累敏感文件,
   掩码不能等到 P5)
 - **完成**:调一次 grammar 自动留下一个回归测试
+- **已执行(2026-09-28)**:`kernel/GrammarTune.ps1`:`Format-EbiTuneView`
+  (grammar 摘要 + 前 N 行 ASCII 表 + **未识别行全部列出**)、`Edit-EbiTuneGrammar`
+  (d 分隔符 / r 行规则 / c 字段 / p 换 parser / i ignore / x regex / l lastNonEmpty
+  / h 表头,改在副本上、立刻重解析)、`Save-EbiTuneResult`(**先过
+  `Find-EbiMaskHitsInText`**,命中一个就不写;然后 `grammar.json[<page>]` +
+  `fixtures/<page>/<name>.txt` + `expected.json` 条目带 records 数和 `_todo`)、
+  `Invoke-EbiGrammarTune`(循环,`-Reader` 可脚本化;无控制台直接退出)。
+  CLI:`ebi.ps1 grammar tune <text.txt> -Profile <名> -Var page=<page>`。
+  `a`(让 AI 提议)没做——那是 P5 的 Agent 循环。`Tests/Test-GrammarTune.ps1`。
 
 ### [ ] P2-03 用 grammar tune 调出 list 页解析
 - **估** 60min | **依赖** P2-02 | **做**:拿一份真实的 `list` 页 Ctrl+A 文本调到未识别行为 0
+- **未执行(2026-09-28)**:需要一份真实的 list 页 Ctrl+A 文本,仓库里没有;
+  工具(`ebi grammar tune`)已就绪,P2-02。在办公 PC 上:
+  `ebi.ps1 grammar tune capture\before_transferStatus\<key>.txt -Profile host-open -Var page=transferStatus`。
 
-### [ ] P2-04 pages.json + rules.json
+### [x] P2-04 pages.json + rules.json
 - **估** 90min | **抄** `SnapVerify.ps1 Test-MqRecord` 的判定语义**翻译成规则表**
 - **⚠ 判定语义一行不改**,靠 `Tests/Test-SnapVerify.ps1` 的既有 fixture 护住
+- **已执行(2026-09-28)**:`grammar.json` / `rules.json` 填了 `transferStatus`
+  (MQ)和 `hmResult`(HM),另三个 page 只有形状。`Test-MqRecord` 的语义 →
+  规则表:Rtncd == 0 else ng、Rsncd == 0 else ng、recvTime within
+  `{{run.timeWindow}}` else ng、recvTime present else unknown;`Test-HmAbend`
+  → status == 正常終了 else ng + startTime within。**两处语义差异,记下不
+  藏**:① 旧 `IsNoData → ng` 在新规格里是 fingerprint `empty` → `page_empty`
+  → 关卡(`PROFILE-SCHEMA.md` §3.1 定的,不是我改的);② 旧「找不到行 → ng /
+  ask」在新引擎里是 `verify.match_record` 的 `record_not_found`(transient → ask)。
+  为了让 `Expected` 为空时跳过时间窗的旧语义成立,`verify.assert` 的 `within`
+  在 value 为 null / 空 map 时**视为通过**(§5.1 已写)。HM 异常终了行多一个
+  空单元,按位置数 key 会读到 ◆——grammar 加了 `lastNonEmpty: key`
+  (`ConvertFrom-HmPageText` 就是取最后一个非空字段)。fixture 用的是
+  `Tests/Test-SnapVerify.ps1` 里早就在仓库里的合成页面文本(不是真实内网
+  文本);`expected.json` 支持 `<file>#<后缀>` 条目复用同一文件换 key / 时间窗,
+  transferStatus 9 例 + hmResult 3 例全部按预期。
 
-### [ ] P2-05 workflows/before.transferStatus.capture.json
+### [x] P2-05 workflows/before.transferStatus.capture.json
 - **估** 60min | **读** `spec/WORKFLOW-SCHEMA.md` §8(完整示例)
 - **完成**:`ebi lint` 全绿;`ebi explain` 的输出人工逐行确认过
 - ⚠ (第六轮)照 P0-R11 / R12 / R13 / R14 改过后的 §8 示例写:`setup` 里
   `table.load` 注册 worklist、发键 step 带 `window`、`gate` 无 `when`、
   `match_record` 后 `file.write_json` 写行号侧车——这份工作流是 P4-21
   annotate 的上游
+- **已执行(2026-09-28)**:`workflows/before.transferStatus.capture.json`
+  照 §8 写,三处和 §8 不同并把 §8 一起改了:`browser.tab_to` 的输入叫 `times`
+  (P1-12 `reserved_name`)、`{{steps.verdict.out.reason}}`(P1-33)、
+  `source.select.field` 是**真实列名** `GIFT_MQ_snap`(混跑期旧脚本要读同一列;
+  换工作时改这一处)。多出来的:`orderBy key`、`meta` 侧车写 `row.index/found`
+  + `records` + `capturedAt`、`progress.event`。`ebi lint` 0 错 0 警告;
+  `ebi explain` 逐行核过;`ebi dryrun` 对一份 3 行 mapping CSV 走完 setup /
+  1 个 pending item / teardown——dryrun 里 `wait` 拿不到页面文本,所以每个
+  item 在 `assert` 处按 onError=ask 的自动答 s 跳过,判定那一半由
+  `ebi profile check` 的 fixture 覆盖。`Tests/Test-Cli.ps1` 加了 lint /
+  explain / dryrun 三条。
 
 ### [ ] P2-06 [整块] 办公 PC 首跑 + 对拍
 - **估** 120min | **依赖** P2-05
@@ -1631,8 +1680,10 @@
   - [ ] (第六轮,P0-R11)CSV 标记经 `verdict.values` 映射后逐项一致;旧
         `Mark.ps1` 读新引擎写的清单能正常选到 pending 行
 - ⚠ 如果旧流程已无真实环境可跑,改用任意一条还能跑的。**对拍验证的是引擎,不是业务。**
+- **未执行(2026-09-28)**:办公 PC 整块。能在家里做完的前置全部做了:
+  `ebi lint` / `explain` / `dryrun` 绿,`profile check host-open` 绿,mask 门禁绿。
 
-### [ ] P2-07 human.input + run.timeWindow 接线
+### [x] P2-07 human.input + run.timeWindow 接线
 - **估** 60min | **依赖** P1-05, P0-R6
 - **做**:`human.input` step(默认值 + 校验 + 批量一次问,抄旧 Expected_Time 批量
   提示的交互方式)+ CLI `--time-window`,写入 run 作用域的 `run.timeWindow`
@@ -1645,8 +1696,21 @@
 - ⚠ (第六轮,P0-R16)`human.input` 带 `persistTo` 把答案写进 worklist 列
   (只填空格子),`within` 的 `value` 可引用 `{{item.<列>}}`;`run.timeWindow`
   同时落 `run/<runId>/run.json`,resume 不再问
+- **已执行(2026-09-28)**:`human.input`(`kind` text / time / timeWindow,
+  `default`(timeWindow 默认最近一小时,抄旧 Expected_Time 的「recent」),
+  Enter=默认、r 不再单独做(默认就是 recent)、答错重问最多 5 次、q =
+  `operator_quit`;`persistTo` 只填空格子并原子落盘;答案写进 **`$Ctx.Run`**
+  (`STEP-CONTRACT.md` §3.2 的新字段,runner 传的是同一个 hashtable),runner
+  在 setup 每一步之后发现 `run.timeWindow` 变了就**立刻重写 `run.json`** 并重建
+  模板作用域,后面的 setup step 和 each 段都看得到;resume 从 `run.json` 恢复,
+  不再问)。`Gate.ps1` 加了 `-Raw`(自由文本模式,只有 `q` 是动作)。CLI
+  `-TimeWindow "from..to"`(`9:00..12:00` 当天,或带日期)→
+  `Invoke-EbiWorkflow -TimeWindow`。`Tests/Test-P2.ps1`:解析 / 默认 /
+  重问 / persistTo / runner 三条(-TimeWindow → 步骤看到、run.json 落盘、resume
+  恢复、setup 里的 human.input 立刻生效)。`within {{run.timeWindow}}` 的规则
+  在 `Tests/Test-Profile.ps1` 的 fixture 里可判(`#window` / `#outside`)。
 
-### [ ] P2-08 mask-lite:脱敏门禁前移
+### [x] P2-08 mask-lite:脱敏门禁前移
 - **估** 60min | **依赖** —(可与 P2-01 并行)
 - **做**:只做规则版 `ebi mask check`(员工号 / 邮箱域 / UNC / `C:\Users\<id>` /
   内网 URL 的正则 + 一个词典文件),扫 `profiles/**/fixtures/` 和 tracked 文件,
@@ -1655,8 +1719,16 @@
   P2-02 起就在自动积累真实页面文本 —— 等到 P5,git 历史里已经躺满了没洗过的
   内网数据,再洗要改历史
 - **完成**:对一份埋了 4 类敏感项的 fixture 全部报出;`Run-Tests.ps1` 因此变红
+- **已执行(2026-09-28)**:`kernel/Mask.ps1`(规则版):员工号 `[A-Z]{2}\d{6}`、
+  邮箱、UNC、`C:\Users\<id>`、内网 URL(.local/.corp/.internal/…)、私网 IP,
+  加 `profiles/mask-dictionary.json` 的 `words`(字面词典)和 `allow`(已知安全
+  形状的正则)。`Invoke-EbiMaskCheck` 扫 `profiles/**`(txt/json/md/csv)+
+  `workflows/*.json`,命中即 `ok=$false`;`ebi.ps1 mask check [<file|dir>]`;
+  **挂进 `Tests/Run-Tests.ps1`**,在单元测试之前跑,命中计入失败。
+  `Tests/Test-P2.ps1`:埋了 7 类敏感项的文本全部报出、allow 生效、fixture
+  样式文本干净、仓库当前全绿。交互式决策和一致性替换留 P5。
 
-### [ ] P2-09 ebi profile new / check / diff
+### [x] P2-09 ebi profile new / check / diff
 - **估** 90min | **依赖** P2-01, P1-08 | **读** `spec/PROFILE-SCHEMA.md` §9,§10
 - **问题**:`spec/PROFILE-SCHEMA.md` §10 把这三个子命令写成了换工作的标准流程,
   P0-R4 让 `ebi profile check` 负责"检测未回填的本地规则",P3-06 的完成判据是
@@ -1674,8 +1746,25 @@
 - **完成**:对 `profiles/host-open` `check` 全绿;对一份故意写错的 profile
   (`else: ok`、key 列漂移、fixture 期望不符、`values` 里出现未知 verdict)四类
   错都报出
+- **已执行(2026-09-28)**:`kernel/ProfileCheck.ps1`:`Test-EbiProfileSchema`
+  (必填文件、roles 恰好五个、`columns.key` 禁止、page 的 role / fingerprint /
+  保留键 `grammar`/`rules`/`id`、grammar 的 parser 合法且能被 `ConvertFrom-EbiGrammar`
+  接受、rules 的 op / `else` 不为 ok / 缺 value / 字段不在 grammar 里(警告)、
+  worklist 的 role / `values` 只能是四个 verdict / bitmask 必须有 bits /
+  `role: key` ⇄ `key.columns` 双向 / confirmedRules 的 kind 和正则)、
+  `Invoke-EbiFixtureCheck`(每个 `fixtures/<page>/expected.json` 条目走
+  fingerprint → grammar → `Find-EbiKeyMatches` → `Select-EbiNewestRecord` →
+  规则表,和工作流**同一套函数**——为此把 `BrowserAssertPage-Classify`、
+  `VerifyMatchRecord-Pick`、`VerifyAssert-*` 的实现挪进 `kernel/Parse.ps1` /
+  `kernel/Rules.ps1`,step 里只剩带前缀的薄包装)、`Compare-EbiProfile`(叶子
+  级 diff:changed / 只在 a / 只在 b)、`New-EbiProfileSkeleton`(每个文件带
+  `_doc`)。CLI `profile check <名>`(还报 `ebi.local.json` 里未回填的
+  confirmedRules 数)/ `profile new <名>` / `profile diff <a> -Var <b>`。
+  `Tests/Test-Profile.ps1`:host-open 0 错;故意写坏的 profile 报出 `else: ok`
+  / key 列漂移 / 未知 verdict 码 / role 缺一 / grammar 键不是 page 五类;
+  fixture 期望不符和文件缺失都算失败。
 
-### [ ] P2-10 verify.crosscheck —— 多来源同一事实的一致性检查
+### [x] P2-10 verify.crosscheck —— 多来源同一事实的一致性检查
 - **估** 75min | **依赖** P1-33 | **读** `Plan.md` §6.3;`INTERVIEW.md` §1(铁律二)
 - **问题**:`Plan.md` §6.3 把它定为 legacy 3/9 层里**唯一要保留并提升为通用
   step** 的思想,`INTERVIEW.md` 铁律二要求"能从多处读到的事实就都读,不一致
@@ -1693,6 +1782,13 @@
   manifest 过 P0-06
 
 ---
+- **已执行(2026-09-28)**:`verify.crosscheck`(`effects='pure'`):
+  `readings` + `compare`(equal / numericEqual / timeWithinSec + `toleranceSec`)
+  + `normalize`(trim / fullwidth / thousands);两两比较,任一对不同 →
+  `code='unknown'` + `disagreements` 列出哪两个来源、各自原值;**没有多数表决**
+  (三个里一个不同 → unknown,两对都列);只有一个来源 → ok + warning
+  `single_source`;读不成数字 / 时间算不一致不算通过。`Tests/Test-P2.ps1`
+  覆盖三种 compare、三种 normalize、两个一致 / 三个里一个不同 / 单来源。
 
 # P3 — 新工作实战(8 张)
 

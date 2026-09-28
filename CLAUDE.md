@@ -40,36 +40,25 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         (browser/screen/file/excel/table/verify/human/progress/
                         flow). Files here that are NOT steps are pre-conversion
                         libraries, listed and exempted on every test run.
-                        Steps so far: human/human.prepare.ps1 (P0-08);
-                        browser/ ensure (provides 'window') + focus_body,
-                        send_keys, tab_to, fill, submit, read_text, wait_for,
-                        assert_page, navigate, find (P1-11..P1-17: every
-                        key-sending step takes a 'window' session input,
-                        brings it to front and VERIFIES it, else
-                        foreground_lost; fill/submit/navigate have
-                        verifyChange -> no_effect); screen/ capture_window,
-                        capture_region (clamped + reported), fit_window,
-                        crop (STEP-CONTRACT 8), save (<keySafe>[__<tag>].ext)
-                        (P1-18..P1-21); file/ write_json, read_json (missing
-                        -> ok + data=null + warning), find (exact > stamped >
-                        base > full-width tiers; several hits -> 'ambiguous'
-                        with the P0-R4 candidate shape), assert_exists
-                        (P1-21..P1-23); table/ load (provides 'worklist';
+                        The P1 catalog (38 steps, docs/ebi-dance/CATALOG.md
+                        is the list): browser/ ensure (provides 'window'),
+                        focus_body, send_keys, tab_to, fill, submit,
+                        read_text, wait_for, assert_page, navigate, find
+                        (every key-sending step takes a 'window' session
+                        input and VERIFIES the foreground, else
+                        foreground_lost); screen/ capture_window,
+                        capture_region, fit_window, crop, save; file/
+                        write_json, read_json, find (Key.ps1 tiers; several
+                        hits -> 'ambiguous' + P0-R4 candidate shape),
+                        assert_exists; table/ load (provides 'worklist',
                         keySafe collision check), save, ensure_columns,
-                        select (the runner's own Select-EbiWorklistRows),
-                        key (P1-27 face of kernel/Key.ps1), set (named
-                        bits, verdict.values translation, atomic flush);
-                        flow/ checkpoint ($Ctx.Item default row, logical
-                        values only); progress/ event (run trace), status
-                        (ASCII done/pending/ng table) (P1-24..P1-29);
-                        verify/ parse_text (kernel/Parse.ps1 grammars;
-                        unrecognised lines -> warnings), match_record
-                        (Key.ps1 tiers; newest / first / none), assert (12
-                        ops, else never ok, output 'reason') (P1-30..
-                        P1-33); human/ prepare, gate (always runs; pass
-                        outside askWhen), choose (the one P0-R4 candidate
-                        renderer) on kernel/Gate.ps1 (P1-34). Steps share
-                        kernel/ libraries via
+                        select, key, set; flow/ checkpoint; progress/
+                        event, status; verify/ parse_text, match_record,
+                        assert (12 ops, else never ok, output 'reason'),
+                        crosscheck (P2-10: any disagreement is unknown);
+                        human/ prepare, gate (always runs), choose (the one
+                        P0-R4 renderer), input (P2-07: sets
+                        $Ctx.Run.timeWindow). Steps share kernel/ libraries via
                         `. (Join-Path $PSScriptRoot '..\..\kernel\X.ps1')`;
                         they never call each other. Tests\Test-StepDryRun.ps1
                         (P1-36, harness Tests\StepDryRun.ps1) dry-runs EVERY
@@ -183,18 +172,33 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         UTF-8 with BOM fixed in code) and Parse.ps1
                         (P1-30/31: the four page-text grammars +
                         ConvertTo-EbiDateTime with H:mm:ss single-digit
-                        hours). Key.ps1 grew its matching half in P1-27
-                        (rules, tiers, composite keys column by column,
-                        keySafe collisions, the P0-R4 candidate shape).
+                        hours; P2-09 added Get-EbiPageKind and
+                        Select-EbiNewestRecord). Key.ps1 grew its matching
+                        half in P1-27 (rules, tiers, composite keys column
+                        by column, keySafe collisions, the P0-R4 candidate
+                        shape). P2 libraries: Rules.ps1 (the rule-table
+                        engine behind verify.assert), ProfileCheck.ps1
+                        (schema check + fixture runner + diff + skeleton
+                        for `ebi profile check/new/diff`), GrammarTune.ps1
+                        (`ebi grammar tune`), Mask.ps1 (mask-lite rules;
+                        `ebi mask check`, run first by Tests\Run-Tests.ps1).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
-ebi.ps1                 ebi-dance CLI entry (P1-10): help [<step>] / lint /
+ebi.ps1                 ebi-dance CLI entry (P1-10, P2): help [<step>] / lint /
                         explain / dryrun / run (-Resume [-RunId], -Only,
-                        -Operator, -Limit, -Var k=v, -Profile) / doctor /
-                        catalog. Exit 0 ok, 1 failed, 2 usage, 3 cancelled.
+                        -Operator, -Limit, -Var k=v, -Profile, -TimeWindow
+                        "from..to") / doctor / catalog / profile check|new|
+                        diff / mask check / grammar tune. Exit 0 ok, 1
+                        failed, 2 usage, 3 cancelled.
                         Has param(): call via -File or &, never dot-source.
-profiles/               per-project data: page bindings, decision rules, schemas
+profiles/               per-project data: page bindings, decision rules, schemas.
+                        host-open/ (P2-01/P2-04): the current work as data --
+                        vocabulary / pages (5 pages by page name) / grammar +
+                        rules for transferStatus and hmResult / worklist
+                        (legacy column names + verdict.values codes) / window /
+                        fixtures with expected.json. mask-dictionary.json holds
+                        the mask-lite words and allow patterns (P2-08).
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
 MappingStore.ps1        single source of truth for mapping_<Owner>.csv: read/filter/
@@ -656,7 +660,8 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
 `Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
 `Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
-`Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`, `Rules.ps1`, `ProfileCheck.ps1`,
+`GrammarTune.ps1`, `Mask.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`, `StepDryRun.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

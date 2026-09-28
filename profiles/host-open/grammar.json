@@ -1,0 +1,77 @@
+{
+  "transferStatus": {
+    "parser": "delimited",
+    "delimiter": "\t",
+    "rowWhen": {
+      "field": "no",
+      "matches": "^\\d+$"
+    },
+    "fields": [
+      "no",
+      "sendNode",
+      "recvNode",
+      "key",
+      "sendTime",
+      "tmode",
+      "recvTime",
+      "rtncd",
+      "rsncd"
+    ],
+    "ignore": [
+      "^Transfer status inquiry results",
+      "^Number of records",
+      "^No\\t",
+      "^Msgid\\t",
+      "^[A-Z]\\d{7}[A-Z]\\d{10}\\t"
+    ]
+  },
+  "hmResult": {
+    "parser": "delimited",
+    "delimiter": "\t",
+    "rowWhen": {
+      "field": "startTime",
+      "matches": "^\\d{4}/\\d{2}/\\d{2} \\d{1,2}:\\d{2}:\\d{2}$"
+    },
+    "fields": [
+      "startTime",
+      "endTime",
+      "duration",
+      "batchId",
+      "ss",
+      "status",
+      "dataCreated",
+      "recordCount",
+      "result",
+      "key"
+    ],
+    "ignore": [
+      "^開始日時\\t"
+    ],
+    "lastNonEmpty": "key"
+  },
+  "fileList": {
+    "parser": "regex",
+    "pattern": "^(?<name>\\S+)\\s+(?<date>\\d{4}/\\d{2}/\\d{2})\\s+(?<time>\\d{1,2}:\\d{2}:\\d{2})\\s+(?<size>.+?)\\s+参照$",
+    "ignore": []
+  },
+  "jobList": {
+    "parser": "delimited",
+    "delimiter": "\t",
+    "rowWhen": {
+      "field": "jobNo",
+      "matches": "^\\d{6,}$"
+    },
+    "fields": [
+      "jobNo",
+      "projectName",
+      "folder",
+      "status",
+      "user",
+      "startTime",
+      "endTime",
+      "seconds",
+      "method"
+    ],
+    "ignore": []
+  }
+}

@@ -42,7 +42,13 @@ P1-11..P1-17(browser 组 11 个 step + `kernel/Native.ps1`)`[x]`,P1-18..P1-21
 (verify 组 3 个 step + `kernel/Parse.ps1`)`[x]`,P1-34(human 组 3 个 step 上
 `Gate.ps1`)`[x]`,P1-36(`Tests/Test-StepDryRun.ps1`:36 个 step 全部在 CI 里
 DryRun 真跑一遍,返回键 == manifest outputs;两条补漏的 manifest 规则)`[x]`——
-**P1 全部关闭(2026-09-28)**。下一张:P2-01(`profiles/host-open` 骨架)。
+**P1 全部关闭(2026-09-28)**。**P2**:P2-01(`profiles/host-open`)、P2-02
+(`ebi grammar tune`)、P2-04(MQ / HM 的 grammar + rules + fixture)、P2-05
+(`workflows/before.transferStatus.capture.json`,lint / explain / dryrun 绿)、
+P2-07(`human.input` + `run.timeWindow` + CLI `-TimeWindow`)、P2-08(`ebi mask
+check`,挂进 `Run-Tests.ps1`)、P2-09(`ebi profile check / new / diff`,
+`kernel/ProfileCheck.ps1`)、P2-10(`verify.crosscheck`)`[x]`;**P2-03 和 P2-06
+要真实页面文本和办公 PC**,在家做不了。下一步:办公 PC 上 P2-03 → P2-06。
 
 ---
 

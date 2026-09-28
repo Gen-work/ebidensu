@@ -9,6 +9,7 @@
 #    ebi.ps1 run     <workflow.json>           the real thing
 #    ebi.ps1 doctor                            PS version, Excel COM, Edge, encoding
 #    ebi.ps1 catalog                           regenerate docs/ebi-dance/CATALOG.md + catalog.json
+#    ebi.ps1 profile check|new|diff ...        PROFILE-SCHEMA 10 (P2-09)
 #
 #  run / dryrun options:
 #    -WorkDir <dir>        default: the current directory
@@ -27,6 +28,7 @@
 param(
     [Parameter(Position = 0)] [string]$Command = 'help',
     [Parameter(Position = 1)] [string]$Target  = '',
+    [Parameter(Position = 2)] [string]$Target2 = '',
     [string]$WorkDir  = '',
     [string]$RunId    = '',
     [string]$Profile  = '',
@@ -62,6 +64,9 @@ function Show-EbiUsage {
     Write-Host '  ebi.ps1 run     <workflow.json>    [-Resume [-RunId <id>]] [-Only k1,k2] [-Operator n] [-Limit n] [-Var k=v]'
     Write-Host '  ebi.ps1 doctor                     PS version, Excel COM, Edge, encoding policy'
     Write-Host '  ebi.ps1 catalog                    regenerate docs/ebi-dance/CATALOG.md + catalog.json'
+    Write-Host '  ebi.ps1 profile check <name|dir>   schema check + every fixture through grammar -> rules'
+    Write-Host '  ebi.ps1 profile new   <name>       write profiles/<name>/ with commented skeleton files'
+    Write-Host '  ebi.ps1 profile diff  <a> <b>      what still differs between two profiles'
     Write-Host '  common: -WorkDir <dir> (default .)  -Profile <name|dir> (default: the workflow''s "profile")'
     Write-Host ''
 }
@@ -179,6 +184,54 @@ if ($cmd -eq 'catalog') {
     if (-not $w['ok']) { Write-Host ('[ERROR] ' + $w['message']) -ForegroundColor Red; exit 1 }
     Write-Host ('wrote {0} and {1} ({2} step(s), {3} broken)' -f $w['markdownPath'], $w['jsonPath'], $w['steps'], $w['broken'])
     exit $(if ($w['broken'] -gt 0) { 1 } else { 0 })
+}
+
+if ($cmd -eq 'profile') {
+    . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'ProfileCheck.ps1')
+    $sub = $Target.ToLowerInvariant()
+    $wd = if ([string]::IsNullOrWhiteSpace($WorkDir)) { (Get-Location).ProviderPath } else { $WorkDir }
+    if ($sub -eq 'check') {
+        if ([string]::IsNullOrWhiteSpace($Target2)) { Write-Host '[ERROR] profile check <name|dir>' -ForegroundColor Red; exit 2 }
+        $dir = Resolve-EbiProfileDir -NameOrPath $Target2
+        if ($dir -eq '' -or -not (Test-Path -LiteralPath $dir -PathType Container)) { Write-Host ('[ERROR] profile directory not found: ' + $Target2) -ForegroundColor Red; exit 2 }
+        $pr = Read-EbiProfile -Dir $dir -WorkDir $wd
+        if (-not $pr['ok']) { Write-Host ('[ERROR] ' + $pr['message']) -ForegroundColor Red; exit 1 }
+        $s = Test-EbiProfileSchema -Profile $pr['value'] -Missing $pr['missing']
+        Write-Host ''
+        Write-Host ('profile ' + $pr['name'] + ' (' + $dir + ')') -ForegroundColor Cyan
+        foreach ($e in @($s['errors'])) { Write-Host ('  [ERROR] ' + $e) -ForegroundColor Red }
+        foreach ($w in @($s['warnings'])) { Write-Host ('  [WARN ] ' + $w) -ForegroundColor Yellow }
+        $fx = Invoke-EbiFixtureCheck -Dir $dir -Profile $pr['value']
+        foreach ($r in @($fx['results'])) { Write-Host ('  [' + $(if ($r['ok']) { 'ok  ' } else { 'FAIL' }) + '] fixtures/' + $r['page'] + '/' + $r['name'] + '  ' + $r['message']) -ForegroundColor $(if ($r['ok']) { 'Gray' } else { 'Red' }) }
+        $learned = 0
+        if ($pr['overlay'] -is [System.Collections.IDictionary] -and $pr['overlay'].Contains('worklist') -and ($pr['overlay']['worklist'] -is [System.Collections.IDictionary]) -and $pr['overlay']['worklist'].Contains('key') -and ($pr['overlay']['worklist']['key'] -is [System.Collections.IDictionary]) -and $pr['overlay']['worklist']['key'].Contains('confirmedRules')) {
+            $learned = @($pr['overlay']['worklist']['key']['confirmedRules']).Count
+            if ($learned -gt 0) { Write-Host ('  [WARN ] ' + $learned + ' learned rule(s) in ebi.local.json not yet written back to ' + $pr['name'] + '/worklist.json (PROFILE-SCHEMA 6.6 b)') -ForegroundColor Yellow }
+        }
+        Write-Host ('  schema: {0} error(s), {1} warning(s); fixtures: {2} passed, {3} failed, {4} skipped' -f @($s['errors']).Count, @($s['warnings']).Count, $fx['passed'], $fx['failed'], $fx['skipped']) -ForegroundColor $(if ($s['ok'] -and $fx['ok']) { 'Green' } else { 'Red' })
+        if ($s['ok'] -and $fx['ok']) { exit 0 }
+        exit 1
+    }
+    if ($sub -eq 'new') {
+        if ([string]::IsNullOrWhiteSpace($Target2) -or $Target2 -notmatch '^[A-Za-z0-9._-]+$') { Write-Host '[ERROR] profile new <name>  (letters, digits, . _ -)' -ForegroundColor Red; exit 2 }
+        $n = New-EbiProfileSkeleton -Dir (Join-Path (Get-EbiDefaultProfilesRoot) $Target2) -Name $Target2
+        if (-not $n['ok']) { Write-Host ('[ERROR] ' + $n['message']) -ForegroundColor Red; exit 1 }
+        Write-Host ('wrote ' + $n['dir'])
+        Write-Host ('fill it in, then: ebi.ps1 profile check ' + $Target2)
+        exit 0
+    }
+    if ($sub -eq 'diff') {
+        if ([string]::IsNullOrWhiteSpace($Target2) -or @($Var).Count -eq 0) { Write-Host '[ERROR] profile diff <a> -Var <b>   (the second profile goes in -Var)' -ForegroundColor Red; exit 2 }
+        $da = Resolve-EbiProfileDir -NameOrPath $Target2; $db = Resolve-EbiProfileDir -NameOrPath ([string]$Var[0])
+        if ($da -eq '' -or $db -eq '') { Write-Host ('[ERROR] profile directory not found: ' + $(if ($da -eq '') { $Target2 } else { [string]$Var[0] })) -ForegroundColor Red; exit 2 }
+        $pa = Read-EbiProfile -Dir $da -WorkDir $wd; $pb = Read-EbiProfile -Dir $db -WorkDir $wd
+        if (-not $pa['ok'] -or -not $pb['ok']) { Write-Host ('[ERROR] ' + $pa['message'] + $pb['message']) -ForegroundColor Red; exit 1 }
+        $d = Compare-EbiProfile -A $pa['value'] -B $pb['value'] -NameA $pa['name'] -NameB $pb['name']
+        foreach ($l in @($d['lines'])) { Write-Host ('  ' + $l) -ForegroundColor $(if ($l -like '- *') { 'Yellow' } elseif ($l -like '+ *') { 'Cyan' } elseif ($l -like '~ *') { 'Gray' } else { 'Green' }) }
+        exit 0
+    }
+    Write-Host ('[ERROR] profile ' + $Target + ': check | new | diff') -ForegroundColor Red
+    exit 2
 }
 
 if ($cmd -ne 'lint' -and $cmd -ne 'explain' -and $cmd -ne 'run' -and $cmd -ne 'dryrun') {

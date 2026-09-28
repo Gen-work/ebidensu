@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "id": "before.transferStatus.capture",
+  "title": "MQ transfer status page: capture + verdict for every pending key (before side)",
+  "version": "1.0.0",
+  "profile": "host-open",
+  "page": "transferStatus",
+
+  "vars": { "side": "before" },
+
+  "source": {
+    "table": "wl",
+    "select": { "field": "GIFT_MQ_snap", "pendingWhen": "!= ok" },
+    "groupBy": "JOB_NAME",
+    "orderBy": "key"
+  },
+
+  "onError": { "policy": "ask" },
+
+  "setup": [
+    { "id": "load", "use": "table.load",
+      "with": { "path": "{{profile.worklist.file}}", "as": "wl" } },
+    { "id": "prepare", "use": "human.prepare",
+      "with": { "message": "{{page.openHint}}", "url": "{{page.url}}" } },
+    { "id": "ensure", "use": "browser.ensure", "with": { "as": "mainWindow" } },
+    { "id": "fit", "use": "screen.fit_window",
+      "with": { "window": "mainWindow", "width": "{{profile.window.width}}", "height": "{{profile.window.height}}" } }
+  ],
+
+  "each": [
+    { "id": "focus", "use": "browser.focus_body", "with": { "window": "mainWindow" } },
+
+    { "id": "tabToForm", "use": "browser.tab_to",
+      "with": { "window": "mainWindow", "times": "{{page.tabsToForm}}" } },
+    { "id": "submitForm", "use": "browser.submit", "with": { "window": "mainWindow" } },
+    { "id": "tabToInput", "use": "browser.tab_to",
+      "with": { "window": "mainWindow", "times": "{{page.tabsToInput}}" } },
+    { "id": "fill", "use": "browser.fill",
+      "with": { "window": "mainWindow", "text": "{{item.Correl_ID_S}}", "verifyChange": true } },
+    { "id": "submitQuery", "use": "browser.submit", "with": { "window": "mainWindow" } },
+
+    { "id": "wait", "use": "browser.wait_for",
+      "with": { "window": "mainWindow",
+                "contains": "{{item.Correl_ID_S}}",
+                "timeoutSec": "{{page.timeoutSec}}",
+                "pollMs": "{{page.pollMs}}",
+                "archiveTo": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.txt" } },
+
+    { "id": "assert", "use": "browser.assert_page",
+      "with": { "text": "{{steps.wait.out.text}}", "fingerprint": "{{page.fingerprint}}" } },
+
+    { "id": "shot", "use": "screen.capture_window",
+      "with": { "window": "mainWindow",
+                "saveAs": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.png" } },
+
+    { "id": "crop", "use": "screen.crop",
+      "with": { "path": "{{steps.shot.out.path}}",
+                "left": "{{page.crop.left}}", "top": "{{page.crop.top}}",
+                "right": "{{page.crop.right}}", "bottom": "{{page.crop.bottom}}" } },
+
+    { "id": "rec", "use": "verify.parse_text",
+      "with": { "text": "{{steps.wait.out.text}}", "grammar": "{{page.grammar}}" } },
+
+    { "id": "row", "use": "verify.match_record",
+      "with": { "records": "{{steps.rec.out.records}}",
+                "key": "{{item.Correl_ID_S}}",
+                "tieBreak": "newest",
+                "timeField": "{{page.timeField}}",
+                "window": "{{run.timeWindow}}" } },
+
+    { "id": "meta", "use": "file.write_json",
+      "with": { "path": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.meta.json",
+                "data": { "key": "{{item.key}}",
+                          "row": { "index": "{{steps.row.out.index}}", "found": "{{steps.row.out.found}}" },
+                          "records": "{{steps.rec.out.recordCount}}",
+                          "capturedAt": "{{run.startedAt}}" } } },
+
+    { "id": "verdict", "use": "verify.assert",
+      "with": { "record": "{{steps.row.out.record}}", "rules": "{{page.rules}}" } },
+
+    { "id": "gate", "use": "human.gate",
+      "with": { "code": "{{steps.verdict.out.code}}",
+                "askWhen": ["unknown"],
+                "reason": "{{steps.verdict.out.reason}}",
+                "evidence": "{{steps.crop.out.path}}" } },
+
+    { "id": "checkpoint", "use": "flow.checkpoint",
+      "when": "steps.gate.out.action != skip",
+      "with": { "worklist": "wl", "field": "GIFT_MQ_snap", "value": "{{steps.gate.out.code}}" } },
+
+    { "id": "event", "use": "progress.event",
+      "with": { "action": "verdict", "status": "ok", "message": "{{steps.gate.out.code}} {{steps.verdict.out.reason}}" } }
+  ],
+
+  "teardown": [
+    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "GIFT_MQ_snap" } }
+  ]
+}

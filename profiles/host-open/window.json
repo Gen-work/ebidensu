@@ -1,0 +1,5 @@
+{
+  "width": 1280,
+  "height": 900,
+  "_doc": "browser window size for screen.fit_window; a machine may override it in <WorkDir>/ebi.local.json { \"window\": { ... } }"
+}

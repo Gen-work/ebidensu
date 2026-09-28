@@ -70,6 +70,8 @@ $r = ConvertFrom-EbiGrammar -Text $delimText -Grammar $g2
 Assert-True ($r['ok'] -and @($r['records']).Count -eq 2) 'delimited: rowWhen.field by name'
 $r = ConvertFrom-EbiGrammar -Text "a b c`r`n1 2 3" -Grammar @{ parser = 'delimited'; delimiter = 'ws'; fields = @('x', 'y', 'z') }
 Assert-True ($r['ok'] -and @($r['records']).Count -eq 2 -and $r['records'][1]['z'] -eq '3') 'delimited: whitespace delimiter, no rowWhen = every full line'
+$r = ConvertFrom-EbiGrammar -Text ("a${tab}b${tab}${tab}KEY1`r`na${tab}b${tab}KEY2${tab}") -Grammar @{ parser = 'delimited'; delimiter = "`t"; fields = @('x', 'y', 'key'); lastNonEmpty = 'key' }
+Assert-True ($r['ok'] -and $r['records'][0]['key'] -eq 'KEY1' -and $r['records'][1]['key'] -eq 'KEY2') 'delimited: lastNonEmpty takes the last non-empty cell (the HM abend row shifts one cell)'
 $r = ConvertFrom-EbiGrammar -Text 'x' -Grammar @{ parser = 'delimited' }
 Assert-True (-not $r['ok']) 'delimited: fields required'
 
@@ -165,6 +167,8 @@ Assert-Equal 'ng' (Judge @((Rule 'count' 'empty')))['code'] 'op empty fails'
 Assert-Equal 'ok' (Judge @((Rule 'recvTime' 'within' @{ from = '2026/08/24 9:50:03'; to = '2026/08/24 9:50:03' })))['code'] 'op within: endpoints inclusive'
 Assert-Equal 'ng' (Judge @((Rule 'recvTime' 'within' @{ from = '2026/08/24 10:00:00'; to = '2026/08/24 11:00:00' })))['code'] 'op within fails'
 Assert-Equal 'ng' (Judge @((Rule 'blank' 'within' @{ from = '2026/08/24 9:00:00'; to = '2026/08/24 11:00:00' })))['code'] 'op within: unreadable time never passes'
+Assert-Equal 'ok' (Judge @(@{ field = 'recvTime'; op = 'within'; value = $null; else = 'ng'; message = 'w' }))['code'] 'op within: value present but null (run.timeWindow unset) -> the rule holds (P2-04)'
+Assert-Equal 'ok' (Judge @((Rule 'recvTime' 'within' @{})))['code'] 'op within: empty window map -> holds'
 Assert-Equal 'ok' (Judge @((Rule 'count' 'gt' '1000')))['code'] 'op gt (comma-grouped number)'
 Assert-Equal 'ng' (Judge @((Rule 'count' 'gt' '2000')))['code'] 'op gt fails'
 Assert-Equal 'ok' (Judge @((Rule 'count' 'lt' '2000')))['code'] 'op lt'

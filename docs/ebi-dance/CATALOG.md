@@ -773,7 +773,7 @@ failures: `rules_invalid` (not transient)
 {"id":"assert","use":"verify.assert","with":{"record":"{{steps.row.out.record}}","rules":"{{page.rules}}"}}
 ```
 
-Notes: A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails.
+Notes: A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails. A within rule whose value is null or an empty map (no run.timeWindow given) holds: an absent window is not a failed check.
 
 ### `verify.match_record`
 

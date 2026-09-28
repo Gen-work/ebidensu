@@ -660,10 +660,10 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
     { "id": "focus", "use": "browser.focus_body", "with": { "window": "mainWindow" } },
 
     { "id": "tabToForm", "use": "browser.tab_to",
-      "with": { "window": "mainWindow", "count": "{{page.tabsToForm}}" } },
+      "with": { "window": "mainWindow", "times": "{{page.tabsToForm}}" } },
     { "id": "submitForm", "use": "browser.submit", "with": { "window": "mainWindow" } },
     { "id": "tabToInput", "use": "browser.tab_to",
-      "with": { "window": "mainWindow", "count": "{{page.tabsToInput}}" } },
+      "with": { "window": "mainWindow", "times": "{{page.tabsToInput}}" } },
     { "id": "fill", "use": "browser.fill",
       "with": { "window": "mainWindow", "text": "{{item.Correl_ID_S}}", "verifyChange": true } },
     { "id": "submitQuery", "use": "browser.submit", "with": { "window": "mainWindow" } },

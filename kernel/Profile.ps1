@@ -21,7 +21,7 @@
 . (Join-Path $PSScriptRoot 'Json.ps1')
 
 function Get-EbiProfileFiles {
-    return @('vocabulary', 'pages', 'grammar', 'rules', 'worklist', 'layout', 'calibration')
+    return @('vocabulary', 'pages', 'grammar', 'rules', 'worklist', 'layout', 'calibration', 'window')
 }
 
 function Get-EbiDefaultProfilesRoot {

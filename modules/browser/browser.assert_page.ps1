@@ -5,6 +5,8 @@
 # (P1-15). An unknown page is the worst failure there is -- it looks like
 # success -- so it is never ok.
 
+. (Join-Path $PSScriptRoot '..\..\kernel\Parse.ps1')   # Get-EbiPageKind
+
 $Manifest = @{
   id         = 'browser.assert_page'
   group      = 'browser'
@@ -33,42 +35,11 @@ $Manifest = @{
   notes      = 'Order of judgment: blank text is loading; then expired, then empty, then loading (any listed string), then ok (ALL listed strings); anything else is unknown. expired / empty / unknown are not transient: retrying the same page changes nothing, a person must look.'
 }
 
-function BrowserAssertPage-Strings {
-    # PURE. The fingerprint entry for a kind as string[] (missing -> empty).
-    param($Fingerprint, [string]$Kind)
-    $out = New-Object System.Collections.ArrayList
-    if ($null -eq $Fingerprint -or -not ($Fingerprint -is [System.Collections.IDictionary]) -or -not $Fingerprint.Contains($Kind) -or $null -eq $Fingerprint[$Kind]) { return $out.ToArray() }
-    $v = $Fingerprint[$Kind]
-    if ($v -is [string]) { [void]$out.Add($v); return $out.ToArray() }
-    foreach ($s in $v) { if ($null -ne $s -and [string]$s -ne '') { [void]$out.Add([string]$s) } }
-    return $out.ToArray()
-}
-
 function BrowserAssertPage-Classify {
-    <#
-      PURE. -> @{ kind; matched }.
-        blank text                     -> loading (nothing arrived yet)
-        any 'expired' string present   -> expired
-        any 'empty' string present     -> empty
-        any 'loading' string present   -> loading
-        ALL 'ok' strings present       -> ok   (an empty ok list never matches)
-        otherwise                      -> unknown
-    #>
+    # The kernel classifier (kernel/Parse.ps1 Get-EbiPageKind), kept under the
+    # step prefix so the step file owns a name the tests can call.
     param([string]$Text, $Fingerprint)
-    $matched = New-Object System.Collections.ArrayList
-    if ([string]::IsNullOrWhiteSpace($Text)) { return @{ kind = 'loading'; matched = $matched.ToArray() } }
-    foreach ($kind in @('expired', 'empty', 'loading')) {
-        foreach ($s in @(BrowserAssertPage-Strings -Fingerprint $Fingerprint -Kind $kind)) {
-            if ($Text.IndexOf($s, [System.StringComparison]::Ordinal) -ge 0) { [void]$matched.Add($s); return @{ kind = $kind; matched = $matched.ToArray() } }
-        }
-    }
-    $okList = @(BrowserAssertPage-Strings -Fingerprint $Fingerprint -Kind 'ok')
-    if ($okList.Count -gt 0) {
-        $all = $true
-        foreach ($s in $okList) { if ($Text.IndexOf($s, [System.StringComparison]::Ordinal) -ge 0) { [void]$matched.Add($s) } else { $all = $false } }
-        if ($all) { return @{ kind = 'ok'; matched = $matched.ToArray() } }
-    }
-    return @{ kind = 'unknown'; matched = $matched.ToArray() }
+    return (Get-EbiPageKind -Text $Text -Fingerprint $Fingerprint)
 }
 
 function Invoke-Step {

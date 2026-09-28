@@ -1,0 +1,12 @@
+{
+  "sheets": {
+    "before": "移行前結果",
+    "after": "移行後結果"
+  },
+  "anchor": {
+    "column": "A",
+    "matchesKey": true
+  },
+  "pictures": {},
+  "boxes": {}
+}

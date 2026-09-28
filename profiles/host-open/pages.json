@@ -1,0 +1,120 @@
+{
+  "hmResult": {
+    "role": "record",
+    "label": "バッチ処理状況一覧(HM)",
+    "url": "",
+    "openHint": "HM の処理結果画面(該当 appl)をブラウザで開いてください",
+    "fingerprint": {
+      "ok": [
+        "バッチ処理状況一覧"
+      ],
+      "loading": [],
+      "empty": [],
+      "expired": []
+    },
+    "tabsToInput": 0,
+    "tabsToSearch": 0,
+    "tabsToBack": 0,
+    "timeoutSec": 12,
+    "pollMs": 800,
+    "crop": {
+      "left": 6,
+      "top": 6,
+      "right": 6,
+      "bottom": 6
+    },
+    "timeField": "startTime"
+  },
+  "transferStatus": {
+    "role": "list",
+    "label": "転送状態一覧(MQ)",
+    "url": "",
+    "openHint": "MQ の転送状態照会ページをブラウザで開いてください",
+    "fingerprint": {
+      "ok": [
+        "Transfer status inquiry results",
+        "Number of records"
+      ],
+      "loading": [],
+      "empty": [
+        "No Data!"
+      ],
+      "expired": []
+    },
+    "tabsToForm": 1,
+    "tabsToInput": 4,
+    "timeoutSec": 12,
+    "pollMs": 800,
+    "crop": {
+      "left": 6,
+      "top": 6,
+      "right": 6,
+      "bottom": 6
+    },
+    "timeField": "recvTime"
+  },
+  "fileList": {
+    "role": "list",
+    "label": "ファイル一覧(Jenkins)",
+    "url": "",
+    "openHint": "Jenkins の受信ファイル一覧をブラウザで開いてください",
+    "fingerprint": {
+      "ok": [
+        "参照"
+      ],
+      "loading": [],
+      "empty": [],
+      "expired": []
+    },
+    "timeoutSec": 12,
+    "pollMs": 800,
+    "crop": {
+      "left": 6,
+      "top": 6,
+      "right": 6,
+      "bottom": 6
+    },
+    "timeField": "time"
+  },
+  "jobList": {
+    "role": "list",
+    "label": "作業一覧(GoAnywhere)",
+    "url": "",
+    "openHint": "GoAnywhere の完了ジョブ一覧をブラウザで開いてください",
+    "fingerprint": {
+      "ok": [],
+      "loading": [],
+      "empty": [],
+      "expired": []
+    },
+    "timeoutSec": 12,
+    "pollMs": 800,
+    "crop": {
+      "left": 6,
+      "top": 6,
+      "right": 6,
+      "bottom": 6
+    },
+    "timeField": "endTime"
+  },
+  "reportPreview": {
+    "role": "document",
+    "label": "帳票プレビュー",
+    "url": "",
+    "openHint": "帳票のプレビューを開いてください",
+    "fingerprint": {
+      "ok": [],
+      "loading": [],
+      "empty": [],
+      "expired": []
+    },
+    "timeoutSec": 12,
+    "pollMs": 800,
+    "crop": {
+      "left": 6,
+      "top": 6,
+      "right": 6,
+      "bottom": 6
+    }
+  }
+}

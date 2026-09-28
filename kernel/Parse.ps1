@@ -101,6 +101,12 @@ function ConvertFrom-EbiDelimitedText {
         if (-not $ok) { [void]$unrec.Add(@{ line = $n; text = $line }); continue }
         $rec = @{}
         for ($i = 0; $i -lt $fields.Count; $i++) { $rec[$fields[$i]] = ([string]$parts[$i]).Trim() }
+        # lastNonEmpty: a page whose rows sometimes carry an extra empty cell
+        # (the HM abend row) keeps its key as the LAST non-empty cell, the
+        # way ConvertFrom-HmPageText read it; the field named here takes it.
+        if ($Grammar.Contains('lastNonEmpty') -and -not [string]::IsNullOrWhiteSpace([string]$Grammar['lastNonEmpty'])) {
+            for ($i = $parts.Count - 1; $i -ge 0; $i--) { if (([string]$parts[$i]).Trim() -ne '') { $rec[[string]$Grammar['lastNonEmpty']] = ([string]$parts[$i]).Trim(); break } }
+        }
         $rec['_line'] = $n
         [void]$records.Add($rec)
     }
@@ -228,3 +234,85 @@ function ConvertFrom-EbiGrammar {
     $missing = @(if ($r.Contains('missing')) { $r['missing'] })
     return @{ ok = $r['ok']; message = $r['message']; parser = $parser; records = @($r['records']); unrecognized = @($r['unrecognized']); missing = $missing }
 }
+
+# ============================================================
+#  Page fingerprint (PROFILE-SCHEMA 3.1) -- browser.assert_page's classifier,
+#  here so `ebi profile check` judges fixtures with the very same function.
+# ============================================================
+
+function Get-EbiFingerprintStrings {
+    # PURE. The fingerprint entry for a kind as string[] (missing -> empty).
+    param($Fingerprint, [string]$Kind)
+    $out = New-Object System.Collections.ArrayList
+    if ($null -eq $Fingerprint -or -not ($Fingerprint -is [System.Collections.IDictionary]) -or -not $Fingerprint.Contains($Kind) -or $null -eq $Fingerprint[$Kind]) { return $out.ToArray() }
+    $v = $Fingerprint[$Kind]
+    if ($v -is [string]) { [void]$out.Add($v); return $out.ToArray() }
+    foreach ($s in $v) { if ($null -ne $s -and [string]$s -ne '') { [void]$out.Add([string]$s) } }
+    return $out.ToArray()
+}
+
+function Get-EbiPageKind {
+    <#
+      PURE. -> @{ kind; matched }. (P1-15; moved here in P2-09.)
+        blank text                     -> loading (nothing arrived yet)
+        any 'expired' string present   -> expired
+        any 'empty' string present     -> empty
+        any 'loading' string present   -> loading
+        ALL 'ok' strings present       -> ok   (an empty ok list never matches)
+        otherwise                      -> unknown
+    #>
+    param([string]$Text, $Fingerprint)
+    $matched = New-Object System.Collections.ArrayList
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @{ kind = 'loading'; matched = $matched.ToArray() } }
+    foreach ($kind in @('expired', 'empty', 'loading')) {
+        foreach ($s in @(Get-EbiFingerprintStrings -Fingerprint $Fingerprint -Kind $kind)) {
+            if ($Text.IndexOf($s, [System.StringComparison]::Ordinal) -ge 0) { [void]$matched.Add($s); return @{ kind = $kind; matched = $matched.ToArray() } }
+        }
+    }
+    $okList = @(Get-EbiFingerprintStrings -Fingerprint $Fingerprint -Kind 'ok')
+    if ($okList.Count -gt 0) {
+        $all = $true
+        foreach ($s in $okList) { if ($Text.IndexOf($s, [System.StringComparison]::Ordinal) -ge 0) { [void]$matched.Add($s) } else { $all = $false } }
+        if ($all) { return @{ kind = 'ok'; matched = $matched.ToArray() } }
+    }
+    return @{ kind = 'unknown'; matched = $matched.ToArray() }
+}
+
+
+# ============================================================
+#  Tie-break among several records for one key (verify.match_record,
+#  P1-32; here since P2-09 so the fixture runner picks the same row).
+# ============================================================
+
+function Select-EbiNewestRecord {
+    <#
+      PURE. Matched records (with their 1-based index) -> the chosen one
+      under a tie-break. @{ index; record; reason }.
+    #>
+    param($Hits, [string]$TieBreak, [string]$TimeField, $Window)
+    $hits = @($Hits)
+    if ($hits.Count -eq 1) { return @{ index = $hits[0]['index']; record = $hits[0]['record']; reason = 'the only match' } }
+    if ($TieBreak -eq 'first') { return @{ index = $hits[0]['index']; record = $hits[0]['record']; reason = 'first listed' } }
+    $dated = New-Object System.Collections.ArrayList
+    foreach ($h in $hits) {
+        $rec = $h['record']
+        $t = if ($rec.Contains($TimeField)) { ConvertTo-EbiDateTime -Text ([string]$rec[$TimeField]) } else { @{ ok = $false } }
+        if ($t['ok']) { [void]$dated.Add(@{ index = $h['index']; record = $rec; time = $t['value'] }) }
+    }
+    if ($dated.Count -eq 0) { return @{ index = $hits[0]['index']; record = $hits[0]['record']; reason = 'no usable time on any match; first listed' } }
+    $from = $null; $to = $null
+    if ($null -ne $Window -and ($Window -is [System.Collections.IDictionary])) {
+        if ($Window.Contains('from')) { $p = ConvertTo-EbiDateTime -Text ([string]$Window['from']); if ($p['ok']) { $from = $p['value'] } }
+        if ($Window.Contains('to')) { $p = ConvertTo-EbiDateTime -Text ([string]$Window['to']); if ($p['ok']) { $to = $p['value'] } }
+    }
+    $pool = @($dated.ToArray())
+    $reason = 'newest by ' + $TimeField
+    if ($null -ne $from -or $null -ne $to) {
+        $inside = @($pool | Where-Object { ($null -eq $from -or $_['time'] -ge $from) -and ($null -eq $to -or $_['time'] -le $to) })
+        if ($inside.Count -gt 0) { $pool = $inside; $reason = 'newest inside the run window' }
+    }
+    $best = $pool[0]
+    foreach ($d in $pool) { if ($d['time'] -gt $best['time']) { $best = $d } }
+    return @{ index = $best['index']; record = $best['record']; reason = $reason }
+}
+

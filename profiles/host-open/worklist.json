@@ -1,0 +1,179 @@
+{
+  "file": "mapping_{{run.operator}}.csv",
+  "encoding": "utf8-bom",
+  "key": {
+    "columns": [
+      "Correl_ID_S",
+      "JOB_NAME"
+    ],
+    "confirmedRules": [
+      {
+        "kind": "suffix",
+        "pattern": "\\.\\d{6}\\.\\d{8}$",
+        "note": "転送バッチのタイムスタンプ付き表記(MappingStore Get-CorrelIdAliases)",
+        "confirmedAt": "2026-09-28",
+        "confirmedBy": "port"
+      },
+      {
+        "kind": "fullwidth"
+      },
+      {
+        "kind": "case-insensitive"
+      }
+    ],
+    "ambiguityPolicy": "listAndAsk"
+  },
+  "columns": [
+    {
+      "name": "Correl_ID_S",
+      "role": "key"
+    },
+    {
+      "name": "JOB_NAME",
+      "role": "key"
+    },
+    {
+      "name": "Correl_ID_M",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "Excel_NAME",
+      "role": "deliverable",
+      "default": ""
+    },
+    {
+      "name": "Owner",
+      "role": "owner",
+      "default": ""
+    },
+    {
+      "name": "Expected_Time",
+      "role": "time",
+      "default": ""
+    },
+    {
+      "name": "GIFT_HM_snap",
+      "role": "verdict",
+      "default": "0",
+      "values": {
+        "ok": "1",
+        "ng": "2",
+        "unknown": "",
+        "pending": "0"
+      }
+    },
+    {
+      "name": "GIFT_MQ_snap",
+      "role": "verdict",
+      "default": "0",
+      "values": {
+        "ok": "1",
+        "ng": "2",
+        "unknown": "",
+        "pending": "0"
+      }
+    },
+    {
+      "name": "GIFT_Jenkins_snap",
+      "role": "verdict",
+      "default": "0",
+      "values": {
+        "ok": "1",
+        "ng": "2",
+        "unknown": "",
+        "pending": "0"
+      }
+    },
+    {
+      "name": "GIFT_noGfixfile_snap",
+      "role": "verdict",
+      "default": "0",
+      "values": {
+        "ok": "1",
+        "ng": "2",
+        "unknown": "",
+        "pending": "0"
+      }
+    },
+    {
+      "name": "GFIX_HM_snap",
+      "role": "verdict",
+      "default": "0",
+      "values": {
+        "ok": "1",
+        "ng": "2",
+        "unknown": "",
+        "pending": "0"
+      }
+    },
+    {
+      "name": "GFIX_Jenkins_snap",
+      "role": "verdict",
+      "default": "0",
+      "values": {
+        "ok": "1",
+        "ng": "2",
+        "unknown": "",
+        "pending": "0"
+      }
+    },
+    {
+      "name": "GFIX_log",
+      "role": "verdict",
+      "default": "0",
+      "values": {
+        "ok": "1",
+        "ng": "2",
+        "unknown": "",
+        "pending": "0"
+      }
+    },
+    {
+      "name": "DF_snap",
+      "role": "verdict",
+      "default": "0",
+      "values": {
+        "ok": "1",
+        "ng": "2",
+        "unknown": "",
+        "pending": "0"
+      }
+    },
+    {
+      "name": "isReplaced",
+      "role": "bitmask",
+      "default": "0",
+      "bits": {
+        "gift": 1,
+        "gfix": 2,
+        "df": 4
+      }
+    },
+    {
+      "name": "isMarked",
+      "role": "bitmask",
+      "default": "0",
+      "bits": {
+        "gift": 1,
+        "gfix": 2,
+        "df": 4
+      }
+    },
+    {
+      "name": "isReviewed",
+      "role": "bitmask",
+      "default": "0",
+      "bits": {
+        "gift": 1,
+        "gfix": 2,
+        "df": 4
+      }
+    },
+    {
+      "name": "ReviewComment",
+      "role": "text",
+      "default": ""
+    }
+  ]
+}

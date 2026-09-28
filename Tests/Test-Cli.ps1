@@ -280,6 +280,31 @@ $r = Invoke-Ebi @('run', $badWf, '-WorkDir', $cliWork, '-Resume', '-RunId', 'nev
 Assert-True ($r['code'] -eq 1 -and $r['out'].Contains('cannot resume run never-existed')) 'cli run -Resume -RunId: an unknown run id is refused'
 $r = Invoke-Ebi @('doctor')
 Assert-True (($r['code'] -eq 0 -or $r['code'] -eq 1) -and $r['out'].Contains('PowerShell') -and $r['out'].Contains('Step catalog')) 'cli doctor: runs and reports PowerShell and the catalog'
+# ---- P2-05 / P2-09: the host-open workflow and profile commands
+$wfMq = Join-Path (Join-Path $repoRoot 'workflows') 'before.transferStatus.capture.json'
+$r = Invoke-Ebi @('lint', $wfMq)
+Assert-True ($r['code'] -eq 0 -and $r['out'].Contains('0 error(s), 0 warning(s)')) ('cli lint: before.transferStatus.capture lints clean with the host-open profile' + $(if ($r['code'] -ne 0) { "`n" + $r['out'] } else { '' }))
+$r = Invoke-Ebi @('explain', $wfMq)
+Assert-True ($r['code'] -eq 0 -and $r['out'].Contains('list(') -and $r['out'].Contains('gates: 2') -and $r['out'].Contains('groupBy JOB_NAME')) 'cli explain: page shown as role(label), two gates'
+$mqWork = Join-Path $tmpRoot 'mqwork'
+New-Item -ItemType Directory -Path $mqWork -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $mqWork 'mapping_tester.csv'), "`"Correl_ID_S`",`"JOB_NAME`",`"GIFT_MQ_snap`"`r`n`"JIDSK05S`",`"JOB_A`",`"0`"`r`n`"JIDSK06S`",`"JOB_A`",`"1`"`r`n", (New-Object System.Text.UTF8Encoding($true)))
+$r = Invoke-Ebi @('dryrun', $wfMq, '-WorkDir', $mqWork, '-Operator', 'tester')
+Assert-True ($r['code'] -eq 0 -and $r['out'].Contains('setup/load  table.load') -and $r['out'].Contains('1 item(s)') -and $r['out'].Contains('GIFT_MQ_snap')) ('cli dryrun: the host-open workflow walks setup, one pending item and teardown' + $(if ($r['code'] -ne 0) { "`n" + $r['out'] } else { '' }))
+$r = Invoke-Ebi @('profile', 'check', 'host-open')
+Assert-True ($r['code'] -eq 0 -and $r['out'].Contains('schema: 0 error(s)') -and $r['out'].Contains('fixtures/transferStatus/ok.txt')) ('cli profile check host-open: green' + $(if ($r['code'] -ne 0) { "`n" + $r['out'] } else { '' }))
+$r = Invoke-Ebi @('profile', 'check', 'no-such')
+Assert-Equal 2 $r['code'] 'cli profile check: unknown profile is usage'
+$newProfile = 'cli-new-' + [Guid]::NewGuid().ToString('N').Substring(0, 6)
+$newDir = Join-Path (Join-Path $repoRoot 'profiles') $newProfile
+$r = Invoke-Ebi @('profile', 'new', $newProfile)
+Assert-True ($r['code'] -eq 0 -and $r['out'].Contains('wrote ') -and (Test-Path -LiteralPath (Join-Path $newDir 'pages.json'))) 'cli profile new: writes the skeleton'
+if (Test-Path -LiteralPath $newDir) { Remove-Item -LiteralPath $newDir -Recurse -Force }
+$r = Invoke-Ebi @('profile', 'diff', 'host-open', '-Var', 'host-open')
+Assert-True ($r['code'] -eq 0 -and $r['out'] -match '\d+ same, 0 changed') 'cli profile diff: a profile against itself'
+$r = Invoke-Ebi @('profile', 'bogus')
+Assert-Equal 2 $r['code'] 'cli profile: unknown subcommand is usage'
+
 $r = Invoke-Ebi @('lint', $spike, '-Profile', 'no-such-profile')
 Assert-True ($r['code'] -eq 2 -and $r['out'].Contains('profile directory not found')) 'cli: a missing -Profile is usage (exit 2)'
 

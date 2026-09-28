@@ -29,6 +29,8 @@ profiles/<name>/
   worklist.json       清单列 schema、主键、变体规则、checkpoint 位
   layout.json         工作簿位置、画框坐标(有 compose/annotate 才需要)
   calibration.json    降级层的阈值和有效期(用到 fallback 才需要)
+  window.json         浏览器窗口尺寸 { width, height }(§8 示例的 `profile.window.*`;
+                      机器差异用 `<WorkDir>/ebi.local.json` 的 `window` 覆盖,P2-05)
   fixtures/           脱敏后的页面文本样本,用于单测
   ocr-truth/          OCR 校准样本(用到 fallback 才需要)
 ```
@@ -240,6 +242,13 @@ HM/MQ 这样。
 | `columns` | 固定列宽的等宽表格 | `ConvertFrom-JenkinsListText` |
 | `regex` | **逃生舱**:一条正则,命名捕获组即字段 | — |
 
+`delimited` 的两个可选键(P2-04 对拍 HM 页时补的):`ignore`(正则列表,
+命中的行是预期噪音——页眉、页脚、MQ 记录的第二行——不进未识别行报告)和
+`lastNonEmpty`(字段名:把该行**最后一个非空单元**赋给这个字段——HM 的异常
+终了行比正常行多一个空单元,按位置数会把 ◆ 当成 key,旧
+`ConvertFrom-HmPageText` 正是"取最后一个非空字段"读 correl id 的)。四种
+parser 都认 `ignore`。
+
 ### 4.1 不要指望这四种能猜准 —— 用 `ebi grammar tune` 调
 
 四种解析器覆盖不了所有页面,而且**即使覆盖得了,参数(分隔符、列宽、行识别
@@ -335,7 +344,7 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 | `in` / `notIn` | 值在数组里 |
 | `matches` | 正则 |
 | `present` / `empty` | 有值 / 无值 |
-| `within` | 时间落在窗口内 |
+| `within` | 时间落在窗口内(含端点)。`value` 为 `null` / 空 map(没人给 `run.timeWindow`)时**这条规则视为通过**——没有窗口是「没检查」不是「检查失败」,沿用旧 `Test-MqRecord` 在 Expected 为空时跳过时间窗的语义(P2-04);字段值读不成时间则永不通过 |
 | `gt` / `lt` / `gte` / `lte` | 数值比较 |
 
 需要更复杂的判断 → **不要扩展 op**,写一个新的 `verify.*` step。

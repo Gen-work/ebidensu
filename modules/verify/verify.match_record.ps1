@@ -43,35 +43,9 @@ $Manifest = @{
 }
 
 function VerifyMatchRecord-Pick {
-    <#
-      PURE. Matched records (with their 1-based index) -> the chosen one
-      under a tie-break. @{ index; record; reason }.
-    #>
+    # kernel/Parse.ps1 Select-EbiNewestRecord under the step prefix.
     param($Hits, [string]$TieBreak, [string]$TimeField, $Window)
-    $hits = @($Hits)
-    if ($hits.Count -eq 1) { return @{ index = $hits[0]['index']; record = $hits[0]['record']; reason = 'the only match' } }
-    if ($TieBreak -eq 'first') { return @{ index = $hits[0]['index']; record = $hits[0]['record']; reason = 'first listed' } }
-    $dated = New-Object System.Collections.ArrayList
-    foreach ($h in $hits) {
-        $rec = $h['record']
-        $t = if ($rec.Contains($TimeField)) { ConvertTo-EbiDateTime -Text ([string]$rec[$TimeField]) } else { @{ ok = $false } }
-        if ($t['ok']) { [void]$dated.Add(@{ index = $h['index']; record = $rec; time = $t['value'] }) }
-    }
-    if ($dated.Count -eq 0) { return @{ index = $hits[0]['index']; record = $hits[0]['record']; reason = 'no usable time on any match; first listed' } }
-    $from = $null; $to = $null
-    if ($null -ne $Window -and ($Window -is [System.Collections.IDictionary])) {
-        if ($Window.Contains('from')) { $p = ConvertTo-EbiDateTime -Text ([string]$Window['from']); if ($p['ok']) { $from = $p['value'] } }
-        if ($Window.Contains('to')) { $p = ConvertTo-EbiDateTime -Text ([string]$Window['to']); if ($p['ok']) { $to = $p['value'] } }
-    }
-    $pool = @($dated.ToArray())
-    $reason = 'newest by ' + $TimeField
-    if ($null -ne $from -or $null -ne $to) {
-        $inside = @($pool | Where-Object { ($null -eq $from -or $_['time'] -ge $from) -and ($null -eq $to -or $_['time'] -le $to) })
-        if ($inside.Count -gt 0) { $pool = $inside; $reason = 'newest inside the run window' }
-    }
-    $best = $pool[0]
-    foreach ($d in $pool) { if ($d['time'] -gt $best['time']) { $best = $d } }
-    return @{ index = $best['index']; record = $best['record']; reason = $reason }
+    return (Select-EbiNewestRecord -Hits $Hits -TieBreak $TieBreak -TimeField $TimeField -Window $Window)
 }
 
 function Invoke-Step {
