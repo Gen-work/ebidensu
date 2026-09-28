@@ -748,7 +748,7 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
 |----------------|------|
 | `pure` | **必须**有单测,放 `Tests/Test-<Group>.ps1` |
 | `read` | 应有单测(用临时目录 fixture) |
-| `ui` / `write` / `destructive` | 只做**静态检查**(parse check + manifest 校验)。COM/Edge 路径在当前开发环境无法验证,必须在办公 PC 上冒烟确认 |
+| `ui` / `write` / `destructive` | 静态检查(parse check + manifest 校验)**加 DryRun 合同测试**(`Tests/Test-StepDryRun.ps1`,P1-36:从 `example.with` 造输入,`$Ctx.DryRun=$true` 真调一次,返回值要 `ok`、含 manifest `outputs` 的每个键、可 JSON 序列化、说了自己会做什么、没写文件)。COM/Edge 的真路径在当前开发环境无法验证,必须在办公 PC 上冒烟确认 |
 
 `Tests/Run-Tests.ps1` 额外强制:
 
@@ -769,6 +769,12 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
   声明它泄漏了要不要紧)(§3.4 第 6 点,P0-R10 第四轮)
 - `provides` 或 `releases` 非空的 step,`idempotent` 必须是 `$true`
   (resume 时它们总是真执行,见 §6.2,P0-R10 第五轮)
+- `needs` 含 `foreground` 的 step,必须有一个 `type='session';
+  sessionKind='window'` 的输入(§4,P0-R12:发键 / 点击的 step 点名自己的
+  窗口,不对"前台是谁"下手);规则 id `foreground_needs_window`(P1-36)
+- `provides` 非空的 step,`example.with` 必须带 `as`(§3.4 第 7 点:注册资源
+  的调用必须写 `as`,示例不能示范违规写法);规则 id `provides_example_as`
+  (P1-36)
 - `$Manifest` 必须是 **`[hashtable]`**(就是 `@{}`),`inputs`/`outputs` 这两个
   容器本身、以及 `inputs`/`outputs`/`failures` 里的每一项,也都必须是。
   一个 step 文件可以给 `$Manifest` 赋任何值(`$Manifest = 'bad'`、

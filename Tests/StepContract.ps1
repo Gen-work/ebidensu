@@ -424,6 +424,23 @@ function Get-StepContractFindings {
 
     $provides = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'provides')) { $Manifest['provides'] } else { $null }))
     $releases = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'releases')) { $Manifest['releases'] } else { $null }))
+    $needs    = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'needs')) { $Manifest['needs'] } else { $null }))
+
+    # P0-R12 (section 4): a step that needs the foreground sends keys or
+    # clicks, so it must name the window it means -- a 'window' session
+    # input -- instead of acting on whatever is in front.
+    if (($needs | ForEach-Object { [string]$_ }) -contains 'foreground' -and -not ($sessionKinds -contains 'window')) {
+        Add-Finding 'foreground_needs_window' "needs 'foreground' but no input is type='session' sessionKind='window'; a foreground step names the window it sends to (section 4, P0-R12)"
+    }
+
+    # P0-R17 (section 3.4 point 7): a call to a provides step must carry
+    # 'as'; the example must not demonstrate the one way to call it wrong.
+    if ($provides.Count -gt 0) {
+        $exWith = if ($example -is [hashtable] -and (Test-StepDictHasKey -Dict $example -Key 'with') -and ($example['with'] -is [hashtable])) { $example['with'] } else { $null }
+        if ($null -eq $exWith -or -not (Test-StepDictHasKey -Dict $exWith -Key 'as')) {
+            Add-Finding 'provides_example_as' "provides is non-empty but example.with has no 'as'; a call that registers a resource must name it (section 3.4 point 7)"
+        }
+    }
 
     if ($provides.Count -gt 1) {
         Add-Finding 'provides_multiple' ('provides has ' + $provides.Count + ' kinds; one call registers at most one resource, so split the step')

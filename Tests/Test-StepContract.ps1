@@ -189,6 +189,7 @@ Assert-True (Test-HasRule -Findings $f -Rule 'resource_not_idempotent') 'a resou
 $m = New-CleanManifest
 $m['provides']   = @('window')
 $m['idempotent'] = $true
+$m['example']['with']['as'] = 'mainWindow'   # P1-36: a provides example names its resource
 $f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
 Assert-Equal 0 $f.Count ('a well-formed resource step is clean (got: ' + (Test-RuleList -Findings $f) + ')')
 
@@ -243,6 +244,21 @@ Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'a non-hashtabl
 $m = New-CleanManifest; $m['outputs']['broken'] = 'not a hashtable'
 $f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
 Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'a non-hashtable output spec is reported, not skipped'
+
+# ---- P1-36: the two manifest-side rules P0-R12 / P0-R17 left out ---------
+
+$m = New-CleanManifest; $m['needs'] = @('foreground')
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'foreground_needs_window') 'needs foreground without a window session input is refused'
+$m = New-CleanManifest; $m['needs'] = @('foreground'); $m['inputs']['window'] = @{ type = 'session'; sessionKind = 'window'; required = $true }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (-not (Test-HasRule -Findings $f -Rule 'foreground_needs_window')) 'needs foreground with a window input is fine'
+$m = New-CleanManifest; $m['provides'] = @('window'); $m['idempotent'] = $true
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'provides_example_as') 'a provides step whose example lacks as is refused'
+$m = New-CleanManifest; $m['provides'] = @('window'); $m['idempotent'] = $true; $m['example']['with']['as'] = 'mainWindow'
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (-not (Test-HasRule -Findings $f -Rule 'provides_example_as')) 'a provides step whose example carries as is fine'
 
 # ---- reserved names ---------------------------------------------------------
 

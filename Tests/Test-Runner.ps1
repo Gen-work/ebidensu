@@ -49,7 +49,7 @@ $Manifest = @{
   inputs  = @{ title = @{ type='string'; required=$true } }
   outputs = @{ title = @{ type='string' }; sawAs = @{ type='bool' } }
   failures = @( @{ id = 'no_window'; transient = $true } )
-  example = @{ use='fake.ensure'; with=@{ title='x' } }
+  example = @{ use='fake.ensure'; with=@{ title='x'; as='win' } }
 }
 function FakeEnsure-Handle { return 4242 }
 function Invoke-Step {
@@ -255,7 +255,7 @@ $Manifest = @{
   inputs  = @{}
   outputs = @{}
   failures = @( @{ id = 'no_window'; transient = $true } )
-  example = @{ use='fake.noresource'; with=@{} }
+  example = @{ use='fake.noresource'; with=@{ as='win' } }
 }
 function Invoke-Step { param($In, $Ctx) return @{ ok = $true } }
 '@

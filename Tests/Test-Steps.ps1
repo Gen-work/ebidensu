@@ -18,6 +18,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $repoRoot 'kernel/Image.ps1')
 . (Join-Path $repoRoot 'kernel/Key.ps1')
 . (Join-Path $repoRoot 'kernel/Context.ps1')   # Test-EbiTemplateString
+. (Join-Path $PSScriptRoot 'StepDryRun.ps1')
 
 Reset-Tests 'Steps'
 
@@ -51,65 +52,17 @@ $expectedSteps = @(
 )
 
 # --- 1. every step loads and dry-runs on its own example ------------------------
+# (the harness is Tests/StepDryRun.ps1; Test-StepDryRun.ps1 owns it, P1-36)
 Write-Host '  -- dry run of every step from its manifest example'
 $uses = @(@($catalog) | Where-Object { $_['ok'] } | ForEach-Object { $_['use'] })
 foreach ($u in $expectedSteps) { Assert-True ($uses -contains $u) ("catalog has " + $u) }
+$dryReg = New-EbiRegistry -ModulesRoot $modulesRoot
 foreach ($u in $uses) {
-    # EVERY shipped step, not only the groups this file owns (P1-36 seed)
-    $r = . Import-EbiStep -Registry $reg -Use $u
-    Assert-True $r['ok'] ("loads: " + $u + ' ' + $r['message'])
-    if (-not $r['ok']) { continue }
-    $m = $r['Entry']['Manifest']
-    $ctx = New-TestCtx -DryRun $true
-    $with = @{}
-    if ($m['example'].Contains('with') -and $null -ne $m['example']['with']) { foreach ($k in $m['example']['with'].Keys) { $with[[string]$k] = $m['example']['with'][$k] } }
-    # A template in the example stands for a value the workflow supplies; the
-    # dry run gets a fixture of the declared type instead.
-    foreach ($k in @($with.Keys)) {
-        $v = $with[$k]
-        if (-not ($v -is [string]) -or -not (Test-EbiTemplateString $v)) { continue }
-        $type = if ($m['inputs'].Contains($k)) { [string]$m['inputs'][$k]['type'] } else { 'string' }
-        $enum = @(if ($m['inputs'].Contains($k) -and $m['inputs'][$k].Contains('enum') -and $null -ne $m['inputs'][$k]['enum']) { $m['inputs'][$k]['enum'] })
-        if ($enum.Count -gt 0) { $with[$k] = $enum[0]; continue }
-        # Named fixtures where the step's contract needs a particular shape
-        # (what the workflow's template would have produced).
-        $named = @{
-            value       = 'ok'                                            # {{steps.gate.out.code}}
-            code        = 'unknown'                                       # so a gate really asks (and auto-answers)
-            candidates  = @{ candidates = @(@{ id = 'c1'; candidate = 'fixture'; evidence = @{ source = 'test' } }); suggestion = @{ id = 'c1'; reason = 'fixture' }; doubts = '' }
-            grammar     = @{ parser = 'regex'; pattern = '^(?<key>\S+)\s+(?<time>.+)$' }
-            rules       = @{ rules = @(@{ field = 'key'; op = 'present'; else = 'unknown'; message = 'fixture' }); default = 'ok' }
-            fingerprint = @{ ok = @('fixture') }
-            records     = @(@{ key = 'fixture'; time = '2026/09/28 9:00:00' })
-            record      = @{ key = 'fixture' }
-            text        = 'fixture 2026/09/28 9:00:00'
-            key         = 'fixture'
-        }
-        if ($named.Contains($k)) { $with[$k] = $named[$k]; continue }
-        switch ($type) {
-            'int'  { $with[$k] = 100 }
-            'bool' { $with[$k] = $false }
-            'map'  { $with[$k] = @{ ok = @('fixture') } }
-            'list' { $with[$k] = @('fixture') }
-            'rect' { $with[$k] = @{ x = 0; y = 0; w = 1; h = 1 } }
-            'path' { $with[$k] = 'fixture/' + $k }
-            default { $with[$k] = 'fixture' }
-        }
-    }
-    if ($with.Contains('as')) { $ctx['Session'] = @{} }   # a provides step registers its own
-    else { $ctx['Session']['wl'] = @{ kind = 'worklist'; value = @{ path = (Join-Path $tmpRoot 'wl.csv'); columns = @('Correl_ID_S', 'JOB_NAME', 'before_transferStatus', 'composed', 'note'); rows = @(@{ Correl_ID_S = 'ABC123'; JOB_NAME = 'J1'; before_transferStatus = ''; composed = '0'; note = '' }) }; registeredBy = 'test' } }
-    if ($ctx['Session'].Contains('wl')) { $ctx['Item'] = $ctx['Session']['wl']['value']['rows'][0] }
-    $ctx['KeyColumns'] = @('Correl_ID_S', 'JOB_NAME')
-    $res = Resolve-EbiStepInputs -Manifest $m -With $with -Session $ctx['Session']
-    Assert-True $res['ok'] ("example inputs resolve: " + $u + ' ' + $res['message'])
-    if (-not $res['ok']) { continue }
-    $ret = & $r['Entry']['Invoke'] $res['In'] $ctx
-    $chk = Test-EbiStepReturn -Manifest $m -Return $ret -WantsResource ($res['As'] -ne '')
-    Assert-True $chk['ok'] ("dry-run return honours the contract: " + $u + ' ' + $chk['message'])
-    Assert-True ($ret['ok'] -eq $true) ("dry-run is ok: " + $u + ' ' + $(if ($ret.Contains('message')) { $ret['message'] } else { '' }))
-    $isUiOrWrite = ([string]$m['effects'] -in @('ui', 'write', 'destructive'))
-    if ($isUiOrWrite) { Assert-True ($ctx['Log'].Lines.Count -gt 0) ("dry-run says what it would do: " + $u) }
+    $c = Invoke-StepDryRunCheck -Registry $dryReg -Use $u -TmpRoot $tmpRoot
+    Assert-True $c['ok'] ('dry-run contract: ' + $u + $(if (-not $c['ok']) { ' -- ' + (@($c['problems']) -join ' | ') } else { '' }))
 }
+# the helpers this file tests directly
+foreach ($u in $expectedSteps) { $r = . Import-EbiStep -Registry $reg -Use $u; Assert-True $r['ok'] ("loads: " + $u + ' ' + $r['message']) }
 Assert-True (-not (Test-Path -LiteralPath 'function:Invoke-Step')) 'no bare Invoke-Step left after loading'
 Assert-True ((Get-ChildItem -LiteralPath $tmpRoot -Recurse -File | Measure-Object).Count -eq 0) 'the dry runs wrote nothing'
 

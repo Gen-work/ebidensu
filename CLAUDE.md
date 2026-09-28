@@ -71,9 +71,14 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         renderer) on kernel/Gate.ps1 (P1-34). Steps share
                         kernel/ libraries via
                         `. (Join-Path $PSScriptRoot '..\..\kernel\X.ps1')`;
-                        they never call each other. Tests\Test-Steps.ps1
-                        dry-runs every step from its manifest example and
-                        runs the file steps for real on a temp folder.
+                        they never call each other. Tests\Test-StepDryRun.ps1
+                        (P1-36, harness Tests\StepDryRun.ps1) dry-runs EVERY
+                        catalog step from its manifest example and checks
+                        the return holds every declared output, is JSON-
+                        serializable and wrote nothing; Test-Steps.ps1 /
+                        Test-TableSteps.ps1 / Test-VerifySteps.ps1 run the
+                        pure helpers and the file / table / verify / human
+                        steps for real on temp fixtures.
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
 kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
@@ -653,7 +658,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
 `Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
-In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
+In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`, `StepDryRun.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.
 
 The dot-source **path** moved with the file -- `. (Join-Path $PSScriptRoot

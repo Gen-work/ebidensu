@@ -840,7 +840,7 @@
 
 ---
 
-# P1 — 内核 + 32 个 MVP step + 文档生成(36 张,4 张整块)
+# P1 — 内核 + 32 个 MVP step + 文档生成(36 张,4 张整块)—— **全部关闭(2026-09-28)**
 
 ## kernel(6 张)
 
@@ -1538,7 +1538,7 @@
   (和契约检查的豁免一致),没改它——它在办公 PC 上的 HmSnap/MqSnap 路径
   在用,这张卡不碰生产路径;它改写成 step 时自然消掉。
 
-### [ ] P1-36 DryRun 合同测试(每个 step 在 CI 里至少真的跑一次)
+### [x] P1-36 DryRun 合同测试(每个 step 在 CI 里至少真的跑一次)
 - **估** 75min | **依赖** P1-01, P1-02 | **读** `spec/STEP-CONTRACT.md` §3.3,§7
 - **问题**:`spec/STEP-CONTRACT.md` §7 把 `ui`/`write`/`destructive` 的 step 定为
   "只做静态检查",于是 catalog 里过半的 step 在 CI 里**一行都不会被执行**——
@@ -1564,6 +1564,27 @@
   违规写法)。§7 的元规则说新增 manifest 侧规则要进清单,这两条漏了。
 
 ---
+- **已执行(2026-09-28)**:`Tests/StepDryRun.ps1`(dot-source 的 harness):
+  `ConvertTo-StepDryRunWith`(`example.with` 里的 `{{...}}` 按类型换成占位值——
+  `int` 100 / `bool` `$false` / `path` `fixture/<名>` / enum 取第一项 / 按输入名的
+  形状占位:`candidates` 给 P0-R4 形状、`grammar` 给一条 regex、`rules` 给一条
+  规则、`value` 给 `ok`、`code` 给 `unknown`——`type='session'` 的输入在假
+  `$Ctx.Session` 里按 `sessionKind` 注册假资源;示例带 `as` 的 provides step
+  Session 从空开始)+ `Invoke-StepDryRunCheck`(在函数自己的作用域里
+  `. Import-EbiStep`,过 P1-02 的 schema 校验,`$Ctx.DryRun=$true` 真调一次;
+  断言:返回 hashtable、`ok=$true`、过 `Test-EbiStepReturn`、**manifest
+  `outputs` 的每个键都在返回值里**、`Test-EbiJsonSerializable`、
+  ui/write/destructive 至少 `$Ctx.Log` 一句、工作目录没多出文件;抛异常也收成
+  一条 problem)。`Tests/Test-StepDryRun.ps1`:九个故意写坏的 fixture step
+  (漏 `path` → 报 `lacks output 'path'`;不说话;返回超过 20 层;`ok=$false`;
+  写了文件;抛异常;返回标量;pure step 不用说话)各报出对应问题,然后对
+  catalog 里全部 36 个 step 跑一遍——**全部通过**。`Tests/Test-Steps.ps1` 的
+  dryrun 段改调同一个 harness。顺手补的两条 manifest 规则进了
+  `Tests/StepContract.ps1` + `STEP-CONTRACT.md` §7:`foreground_needs_window`
+  (`needs` 含 `foreground` ⇒ 有 `sessionKind='window'` 输入)和
+  `provides_example_as`(`provides` 非空 ⇒ `example.with` 带 `as`);§7 的
+  测试要求表里 ui/write/destructive 那行从「只做静态检查」改成「静态检查 +
+  DryRun 合同测试」。
 
 # P2 — 对拍验证(10 张,1 张整块)
 

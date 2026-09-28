@@ -40,8 +40,9 @@ P1-11..P1-17(browser 组 11 个 step + `kernel/Native.ps1`)`[x]`,P1-18..P1-21
 `file.assert_exists`)`[x]`,P1-24..P1-29(table / flow / progress 组 9 个 step +
 `kernel/Table.ps1`,`kernel/Key.ps1` 的匹配半边 = P1-27)`[x]`,P1-30..P1-33
 (verify 组 3 个 step + `kernel/Parse.ps1`)`[x]`,P1-34(human 组 3 个 step 上
-`Gate.ps1`)`[x]`。下一张:P1-36(DryRun 契约测试收尾;每个 step 的 dryrun 已在
-`Tests/Test-Steps.ps1` 里跑)。
+`Gate.ps1`)`[x]`,P1-36(`Tests/Test-StepDryRun.ps1`:36 个 step 全部在 CI 里
+DryRun 真跑一遍,返回键 == manifest outputs;两条补漏的 manifest 规则)`[x]`——
+**P1 全部关闭(2026-09-28)**。下一张:P2-01(`profiles/host-open` 骨架)。
 
 ---
 
