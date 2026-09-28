@@ -113,6 +113,27 @@ function Get-StepNonAsciiLines {
     return $hits
 }
 
+function Get-StepDirectJsonLines {
+    <#
+      Rule R8 (BACKLOG.md iron-rule table, STEP-CONTRACT.md 1.1): JSON is
+      read and written through kernel/Json.ps1 only. Returns the 1-based
+      line numbers that call ConvertFrom-Json / ConvertTo-Json directly, or
+      Get-Content on a .json/.jsonl file. Comment lines are skipped so a
+      file may still SAY what it avoids. Same family as the R4 @($h[$k])
+      ban: a source pattern that PS 5.1 punishes silently.
+    #>
+    param([string]$Text)
+    $hits = @()
+    if ([string]::IsNullOrEmpty($Text)) { return $hits }
+    $rx = [regex]'(?i)\b(ConvertFrom-Json|ConvertTo-Json)\b|\bGet-Content\b[^\r\n]*\.jsonl?\b'
+    $lines = $Text -split "`r?`n"
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i].TrimStart().StartsWith('#')) { continue }
+        if ($rx.IsMatch($lines[$i])) { $hits += ($i + 1) }
+    }
+    return $hits
+}
+
 function Get-StepContractSerializableTypes {
     # Output types that survive ConvertTo-Json without losing anything. This is
     # the section 2.2 type table minus 'session': handles and COM objects go
@@ -216,6 +237,11 @@ function Get-StepContractFindings {
     $nonAscii = @(Get-StepNonAsciiLines -Text $Text)
     if ($nonAscii.Count -gt 0) {
         Add-Finding 'non_ascii' ('non-ASCII source on line(s) ' + ($nonAscii -join ', ') + '; build Japanese from [char]')
+    }
+
+    $directJson = @(Get-StepDirectJsonLines -Text $Text)
+    if ($directJson.Count -gt 0) {
+        Add-Finding 'direct_json' ('direct JSON call on line(s) ' + ($directJson -join ', ') + '; read and write JSON through kernel/Json.ps1 only (R8)')
     }
 
     # $null FunctionNames means "not known" -- the file could not be parsed, so

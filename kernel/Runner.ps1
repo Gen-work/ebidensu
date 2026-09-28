@@ -40,6 +40,8 @@
 #  with failure 'unsupported_in_spike', so a literal "{{item.key}}" is
 #  never handed to a step as if it were a value.
 #
+#  JSON comes and goes through kernel/Json.ps1 only (R8).
+#
 #  Hashtable access in this file is by index ($h['k']), never by dot:
 #  under Set-StrictMode (which Tests/Run-Tests.ps1 turns on) a missing
 #  key read with dot syntax throws.
@@ -53,39 +55,6 @@ function Get-EbiRunnerFailureIds {
     return @('internal_error', 'contract_violation', 'step_not_found', 'input_invalid',
              'session_missing', 'session_kind_mismatch', 'session_name_taken',
              'unsupported_in_spike')
-}
-
-function ConvertTo-EbiHashtable {
-    <#
-      ConvertFrom-Json hands back PSCustomObjects; the runner wants plain
-      hashtables (index access never throws under StrictMode, and the step
-      contract is written in terms of hashtables). Recursive. Arrays come
-      back as object[] built by an explicit loop -- the @() wrap over an
-      indexed collection is the shape this repo bans (CLAUDE.md, R4).
-    #>
-    param($Value)
-    if ($null -eq $Value) { return $null }
-    if ($Value -is [System.Collections.IDictionary]) {
-        $h = @{}
-        foreach ($k in $Value.Keys) { $h[[string]$k] = ConvertTo-EbiHashtable $Value[$k] }
-        return $h
-    }
-    if ($Value -is [string]) { return $Value }
-    if ($Value -is [System.Collections.IList]) {
-        $list = New-Object System.Collections.ArrayList
-        foreach ($item in $Value) { [void]$list.Add((ConvertTo-EbiHashtable $item)) }
-        # The unary comma matters: a one-element array returned bare is
-        # unrolled into its element, and a "setup" with a single step call
-        # would come back as that call instead of a list of one. Callers
-        # assign the result; none wraps it in @().
-        return ,$list.ToArray()
-    }
-    if ($Value -is [System.Management.Automation.PSCustomObject]) {
-        $h = @{}
-        foreach ($p in $Value.PSObject.Properties) { $h[$p.Name] = ConvertTo-EbiHashtable $p.Value }
-        return $h
-    }
-    return $Value
 }
 
 function New-EbiRunId {
@@ -275,16 +244,14 @@ function Invoke-EbiWorkflow {
 
     # ---- read + refuse what the spike cannot run --------------------------
     $workflow = $null
-    try {
-        if (-not (Test-Path -LiteralPath $Path)) { throw ('workflow file not found: {0}' -f $Path) }
-        $raw = [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding($false)))
-        $workflow = ConvertTo-EbiHashtable ($raw | ConvertFrom-Json)
-    } catch {
+    $read = Read-EbiJson -Path $Path     # kernel/Json.ps1: UTF-8, hashtables, failure as a record
+    if (-not $read['ok']) {
         $result['failure'] = 'unsupported_in_spike'
-        $result['message'] = ('cannot read workflow: {0}' -f $_.Exception.Message)
+        $result['message'] = ('cannot read workflow: {0}' -f $read['message'])
         Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
         return $result
     }
+    $workflow = $read['value']
     if (-not ($workflow -is [hashtable])) {
         $result['failure'] = 'unsupported_in_spike'; $result['message'] = 'workflow JSON must be an object'
         Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red

@@ -49,6 +49,14 @@ function Invoke-Step { param($In, $Ctx) ... }   # 见 §3
   `[pscustomobject]`
 - **禁止 `@($hashtable[$key])` 这个包装形状**。PS 5.1 的 binder 在
   `List[object]` 上会抛「参数类型不匹配」。旧仓库两次同类事故都是这个模式
+- **JSON 只走 `kernel/Json.ps1`**(BACKLOG 铁律 R8,P1-35):`modules/**`、
+  `kernel/**` 里不直接写 `ConvertFrom-Json` / `ConvertTo-Json` /
+  `Get-Content <x>.json`。理由是 PS 5.1 的四个坑——`ConvertFrom-Json` 给
+  PSCustomObject 不给 hashtable、`ConvertTo-Json` 默认 `-Depth 2` **静默**
+  截断、非 ASCII 全成 `\uXXXX`、不指定编码在 JP locale 上按 ANSI 解——每个
+  都在旧仓库出过事;`Read-EbiJson` / `Write-EbiJson` / `ConvertFrom-EbiJson`
+  / `ConvertTo-EbiJson` / `Add-EbiJsonLine` / `Read-EbiJsonLines` 一次绕过
+  全部四个。P0-06 的检查器 grep 源码(`direct_json`)
 
 ---
 
@@ -781,6 +789,9 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
   捕获(P1-02);裸名辅助函数(`Get-Row` 一类)则会互相覆盖,而且没有任何
   地方会报错 —— 后加载的那个静默赢
 - 源码纯 ASCII
+- 不直接调用 `ConvertFrom-Json` / `ConvertTo-Json` / `Get-Content <x>.json`
+  ——JSON 一律经 `kernel/Json.ps1`(§1.1,铁律 R8,P1-35)。注释行不算;
+  `Test-StepContract.ps1` 对 `kernel/*.ps1`(`Json.ps1` 自身除外)也逐个查
 
 > 上面这份清单和 `WORKFLOW-SCHEMA.md` §9 的 `ebi lint` 清单是**同一类
 > 汇总处的两份**——前者管 manifest 本身写得对不对(P0-06 的契约检查器,

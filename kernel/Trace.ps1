@@ -34,13 +34,16 @@
 #  JSON-serializable -- handles and COM objects belong in $Ctx.Session
 #  and never appear in a trace (spec/STEP-CONTRACT.md 3.4, which also says
 #  the trace is where a step's outputs land). It is serialized
-#  at depth 10; anything nested deeper than that is truncated by
-#  ConvertTo-Json, so do not put a whole object graph in here.
+#  through kernel/Json.ps1 (P1-35): depth 20, and a value deeper than
+#  that is refused with a [trace WARN] rather than silently truncated,
+#  so do not put a whole object graph in here.
 #
-#  UTF-8 is written without a BOM. In Windows PowerShell 5.1,
-#  Set-Content -Encoding UTF8 would add a BOM and can corrupt JSONL when
-#  used repeatedly, so writes use UTF8Encoding($false) directly.
+#  All file I/O goes through kernel/Json.ps1: UTF-8 without a BOM
+#  (Set-Content -Encoding UTF8 would add one and corrupt JSONL when used
+#  repeatedly), non-ASCII readable, events read back as hashtables.
 # ============================================================
+
+. (Join-Path $PSScriptRoot 'Json.ps1')
 
 function Get-TraceRunId {
     # A blank RunId is a caller bug, but losing the trace is worse than
@@ -98,9 +101,8 @@ function Write-TraceEvent {
         # "payload that happened to be null".
         if ($null -ne $Data) { $evt['data'] = $Data }
 
-        $line = $evt | ConvertTo-Json -Compress -Depth 10
-        $encoding = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::AppendAllText($file, $line + [Environment]::NewLine, $encoding)
+        $written = Add-EbiJsonLine -Path $file -Value $evt
+        if (-not $written['ok']) { throw $written['message'] }
     } catch {
         Write-Host ('  [trace WARN] {0}' -f $_.Exception.Message) -ForegroundColor DarkYellow
     }
@@ -118,23 +120,21 @@ function Read-TraceEvents {
     $file = Get-TraceFile $WorkDir $RunId
     if (-not (Test-Path -LiteralPath $file)) { return @() }
 
-    $lines = @(Get-Content -LiteralPath $file -Encoding UTF8 -ErrorAction SilentlyContinue)
-
-    $events = [System.Collections.Generic.List[object]]::new()
-    foreach ($line in $lines) {
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try {
-            $events.Add(($line | ConvertFrom-Json))
-        } catch {
-            # A partial final line can be observed while another process writes.
-        }
+    # Events come back as hashtables (index access, never dot). A partial
+    # final line can be observed while another process writes and is not
+    # reported; a malformed line anywhere else is corruption and is said
+    # out loud, once, instead of being dropped in silence.
+    $read = Read-EbiJsonLines -Path $file
+    if (-not $read['ok']) { return @() }
+    if (@($read['badLines']).Count -gt 0) {
+        Write-Host ('  [trace WARN] {0}: {1}' -f $file, $read['message']) -ForegroundColor DarkYellow
     }
 
     # Tail counts complete events, not raw lines. Slicing the lines first
     # would let a half-written final line eat one of the N slots and then
     # vanish in the parse, so -Tail 1 would return nothing at the exact
     # moment a reader most wants the newest event.
-    $result = @($events.ToArray())
+    $result = @($read['value'])
     if ($Tail -gt 0 -and $result.Count -gt $Tail) {
         $result = @($result | Select-Object -Last $Tail)
     }

@@ -26,8 +26,10 @@
 机制)。**P0 已全部关闭**(2026-09-22):冻结标签在办公 PC 的 GitLab 镜像上
 (P0-01),runner spike(P0-07)和三个 step + `workflows/spike.capture_window.json`
 (P0-08)在办公 PC 上真截到了 PNG。**P1 已开**:P1-01(`kernel/Context.ps1`,
-模板求值)`[x]`,P1-02(`kernel/Registry.ps1`,step 加载 + 参数校验)`[x]`;
-下一张从 P1-35(Json 入口)或 P1-03(Runner 主体,`[整块]`)挑。
+模板求值)`[x]`,P1-02(`kernel/Registry.ps1`,step 加载 + 参数校验)`[x]`,
+P1-35(`kernel/Json.ps1`,唯一的 JSON 入口 + 铁律 R8)`[x]`;kernel 里剩下的
+依赖都已满足,下一张是 P1-03(Runner 主体,`[整块]`),碎片时间可先做
+P1-05 之外不依赖 P1-03 的 step 卡(P1-11 起)。
 
 ---
 

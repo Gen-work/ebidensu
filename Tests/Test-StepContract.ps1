@@ -355,6 +355,7 @@ try {
         '}'
         '# non-ASCII marker: ' + [string][char]0x65E5
         'function Get-Unprefixed { return 1 }'
+        'function Get-Unprefixed2 { return (Get-Content -LiteralPath x.json -Raw | ConvertFrom-Json) }'
     ) -join [Environment]::NewLine
     [System.IO.File]::WriteAllText($badPath, $bad)
 
@@ -362,6 +363,7 @@ try {
 
     Assert-True (Test-HasRule -Findings $f -Rule 'param_block')             'fixture: file-level param() is reported'
     Assert-True (Test-HasRule -Findings $f -Rule 'non_ascii')               'fixture: non-ASCII source is reported'
+    Assert-True (Test-HasRule -Findings $f -Rule 'direct_json')             'fixture: a direct ConvertFrom-Json / Get-Content x.json call is reported (R8)'
     Assert-True (Test-HasRule -Findings $f -Rule 'invoke_step_missing')     'fixture: missing Invoke-Step is reported'
     Assert-True (Test-HasRule -Findings $f -Rule 'helper_prefix')           'fixture: unprefixed helper is reported'
     Assert-True (Test-HasRule -Findings $f -Rule 'id_mismatch')             'fixture: id/file-name mismatch is reported'
@@ -495,6 +497,19 @@ Assert-True (Test-IsStepFile -FileName 'helpers.ps1' -GroupName 'verify' -Manife
     'defining $Manifest opts a misnamed file in, so it cannot hide from the checker'
 Assert-True (Test-IsStepFile -FileName 'helpers.ps1' -GroupName 'verify' -Manifest $null -FunctionNames @('Invoke-Step')) `
     'defining Invoke-Step opts a misnamed file in too'
+
+# ---- R8: JSON goes through kernel/Json.ps1 only ------------------------------
+
+Assert-Equal '2,3' ((Get-StepDirectJsonLines -Text ("ok`nConvertTo-Json -Depth 2`n`$x | ConvertFrom-Json`n# ConvertTo-Json in a comment is fine")) -join ',') 'R8: both cmdlets are found by line, comments are skipped'
+Assert-Equal '1' ((Get-StepDirectJsonLines -Text 'Get-Content -LiteralPath a\b.jsonl -Encoding UTF8') -join ',') 'R8: Get-Content on a .jsonl file is found'
+Assert-Equal 0 @(Get-StepDirectJsonLines -Text 'Get-Content -LiteralPath notes.txt').Count 'R8: Get-Content on a non-JSON file is fine'
+Assert-Equal 0 @(Get-StepDirectJsonLines -Text 'Read-EbiJson -Path x.json').Count 'R8: the kernel entry point is not a hit'
+$kernelRoot = Join-Path $repoRoot 'kernel'
+foreach ($kf in @(Get-ChildItem -LiteralPath $kernelRoot -Filter '*.ps1' -File | Sort-Object Name)) {
+    if ($kf.Name -eq 'Json.ps1') { continue }
+    $hits = @(Get-StepDirectJsonLines -Text ([System.IO.File]::ReadAllText($kf.FullName)))
+    Assert-Equal 0 $hits.Count ('R8: kernel/' + $kf.Name + ' has no direct JSON call' + $(if ($hits.Count -gt 0) { ' (line(s) ' + ($hits -join ', ') + ')' } else { '' }))
+}
 
 # ---- and finally the real tree --------------------------------------------
 

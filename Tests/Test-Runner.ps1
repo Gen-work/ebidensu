@@ -169,7 +169,7 @@ function Get-StepEvents {
     param([string]$RunId, [string]$Id)
     $out = New-Object System.Collections.ArrayList
     foreach ($e in @(Read-TraceEvents -WorkDir $work -RunId $RunId)) {
-        if ($e.action -eq 'step' -and $e.tags.step -eq $Id) { [void]$out.Add($e) }
+        if ($e['action'] -eq 'step' -and $e['tags']['step'] -eq $Id) { [void]$out.Add($e) }
     }
     return $out.ToArray()
 }
@@ -183,14 +183,13 @@ try {
     Assert-True ((Get-EbiDefaultModulesRoot).EndsWith('modules')) 'default modules root is the repo modules/ dir'
     Assert-True (Test-Path -LiteralPath (Get-EbiDefaultModulesRoot)) 'default modules root exists'
 
-    $obj = '{"a":1,"b":{"c":[1,2,{"d":"x"}]},"e":null}' | ConvertFrom-Json
-    $h = ConvertTo-EbiHashtable $obj
+    $h = (ConvertFrom-EbiJson -Text '{"a":1,"b":{"c":[1,2,{"d":"x"}]},"e":null}')['value']
     Assert-True ($h -is [hashtable]) 'JSON object becomes a hashtable'
     Assert-True ($h['b'] -is [hashtable]) 'nested object becomes a hashtable'
     Assert-True ($h['b']['c'] -is [array]) 'array stays an array'
     Assert-Equal 'x' $h['b']['c'][2]['d'] 'object inside array becomes a hashtable'
     Assert-True ($h.Contains('e') -and $null -eq $h['e']) 'null is kept as a null key'
-    $h = ConvertTo-EbiHashtable ('{"one":[{"id":"a"}],"none":[]}' | ConvertFrom-Json)
+    $h = (ConvertFrom-EbiJson -Text '{"one":[{"id":"a"}],"none":[]}')['value']
     Assert-True ($h['one'] -is [array] -and $h['one'].Count -eq 1) 'a one-element array is still an array (not unrolled)'
     Assert-True ($h['one'][0] -is [hashtable]) 'the one element is a hashtable'
     Assert-True ($h['none'] -is [array] -and $h['none'].Count -eq 0) 'an empty array is an empty array'
@@ -261,14 +260,14 @@ try {
 
     $events = @(Read-TraceEvents -WorkDir $work -RunId 'r-happy')
     Assert-True ($events.Count -ge 8) 'happy: trace has run start/end plus start+ok per step'
-    Assert-Equal 'run' $events[0].action 'happy: first trace event is the run start'
-    Assert-Equal 'ok' $events[$events.Count - 1].status 'happy: last trace event is the run result'
-    $ensEv = @(Get-StepEvents -RunId 'r-happy' -Id 'ensure' | Where-Object { $_.status -eq 'ok' })
+    Assert-Equal 'run' $events[0]['action'] 'happy: first trace event is the run start'
+    Assert-Equal 'ok' $events[$events.Count - 1]['status'] 'happy: last trace event is the run result'
+    $ensEv = @(Get-StepEvents -RunId 'r-happy' -Id 'ensure' | Where-Object { $_['status'] -eq 'ok' })
     Assert-Equal 1 $ensEv.Count 'happy: ensure has one ok event'
-    Assert-Equal 'Edge' $ensEv[0].data.outputs.title 'happy: outputs land in trace data'
-    Assert-True (-not ($ensEv[0].data.outputs.PSObject.Properties.Name -contains 'resource')) 'happy: the handle never appears in the trace'
-    Assert-Equal 'spike.happy' $ensEv[0].tags.workflow 'happy: trace tags carry the workflow id'
-    Assert-Equal 'setup' $ensEv[0].phase 'happy: trace phase is the section'
+    Assert-Equal 'Edge' $ensEv[0]['data']['outputs']['title'] 'happy: outputs land in trace data'
+    Assert-True (-not $ensEv[0]['data']['outputs'].Contains('resource')) 'happy: the handle never appears in the trace'
+    Assert-Equal 'spike.happy' $ensEv[0]['tags']['workflow'] 'happy: trace tags carry the workflow id'
+    Assert-Equal 'setup' $ensEv[0]['phase'] 'happy: trace phase is the section'
 
     # ------------------------------------------------ 2. captured Invoke-Step survives later loads
     $wf = Write-Workflow 'twice.json' @'
@@ -299,7 +298,7 @@ try {
     Assert-Equal 'skip' (Get-Rec $res 'c')['status'] 'dup: later setup steps are skipped, not run'
     Assert-Equal 'session_name_taken' $res['failure'] 'dup: the first failure is the run failure'
     $skipEv = @(Get-StepEvents -RunId 'r-dup' -Id 'c')
-    Assert-Equal 'skip' $skipEv[0].status 'dup: the skip is traced'
+    Assert-Equal 'skip' $skipEv[0]['status'] 'dup: the skip is traced'
 
     # ------------------------------------------------ 4/5. missing name, wrong kind
     $wf = Write-Workflow 'missing.json' @'
@@ -375,9 +374,10 @@ try {
     $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-warn'
     Assert-True ($res['ok']) 'warn: warnings do not fail the step'
     Assert-Equal 1 @((Get-Rec $res 'w')['warnings']).Count 'warn: the warning is on the record'
-    $wEv = @(Get-StepEvents -RunId 'r-warn' -Id 'w' | Where-Object { $_.status -eq 'ok' })
-    Assert-Equal 'odd' $wEv[0].data.warnings[0].code 'warn: the warning reached the trace as structured data'
-    Assert-Equal 3 $wEv[0].data.warnings[0].data.lines[0] 'warn: nested warning data survives the trace round trip'
+    $wEv = @(Get-StepEvents -RunId 'r-warn' -Id 'w' | Where-Object { $_['status'] -eq 'ok' })
+    Assert-True ($wEv[0]['data']['warnings'] -is [array]) 'warn: ONE warning is still an array in the trace (a one-element array must not unroll into its element)'
+    Assert-Equal 'odd' $wEv[0]['data']['warnings'][0]['code'] 'warn: the warning reached the trace as structured data'
+    Assert-Equal 3 $wEv[0]['data']['warnings'][0]['data']['lines'][0] 'warn: nested warning data survives the trace round trip'
 
     # ------------------------------------------------ 13b. "with" is checked against the inputs schema (P1-02)
     Assert-True ((Get-EbiRunnerFailureIds) -contains 'input_invalid') 'schema: input_invalid is a runner-reserved failure id'
@@ -386,8 +386,8 @@ try {
     Assert-Equal 'input_invalid' (Get-Rec $res 'f')['failure'] 'schema: an undeclared parameter fails the call before Invoke-Step'
     Assert-True ((Get-Rec $res 'f')['message'] -like "*unknown input 'colour'*") 'schema: ... naming the parameter'
     Assert-True (-not (Get-Rec $res 'f')['outputs'].Contains('partial')) 'schema: the step did not run (no outputs)'
-    $ev = @(Get-StepEvents -RunId 'r-unknownwith' -Id 'f' | Where-Object { $_.status -eq 'fail' })
-    Assert-Equal 'input_invalid' $ev[0].data.failure 'schema: the failure id reaches the trace'
+    $ev = @(Get-StepEvents -RunId 'r-unknownwith' -Id 'f' | Where-Object { $_['status'] -eq 'fail' })
+    Assert-Equal 'input_invalid' $ev[0]['data']['failure'] 'schema: the failure id reaches the trace'
 
     $wf = Write-Workflow 'missingwith.json' '{ "id": "spike.missingwith", "setup": [ { "id": "f", "use": "fake.fail" } ] }'
     $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-missingwith'

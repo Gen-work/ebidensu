@@ -8,7 +8,20 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
 
 ## What is here today
 
-- `Trace.ps1` -- append-only `run/<runId>/trace.jsonl` (P0-03).
+- `Json.ps1` -- P1-35, the one place JSON is read or written. `Read-EbiJson`
+  / `Write-EbiJson` (atomic: temp file + replace), `ConvertFrom-EbiJson` /
+  `ConvertTo-EbiJson`, `Add-EbiJsonLine` / `Read-EbiJsonLines` (JSONL: trace,
+  ledger), `ConvertTo-EbiHashtable`, `Test-EbiJsonSerializable`. Values come
+  back as hashtables and `object[]`, never PSCustomObjects; depth is fixed at
+  20 and a deeper value is refused loudly instead of truncated to a string;
+  Japanese is written as characters; UTF-8 without BOM. Failures are records
+  (`@{ ok; value; message }`); the depth guard in `ConvertTo-EbiJson` is the
+  one exception and throws. Iron rule R8: nothing else under `modules/` or
+  `kernel/` calls `ConvertFrom-Json` / `ConvertTo-Json` / `Get-Content` on a
+  `.json` file (`Tests/StepContract.ps1` rule `direct_json`).
+- `Trace.ps1` -- append-only `run/<runId>/trace.jsonl` (P0-03), over
+  `Json.ps1`. `Read-TraceEvents` returns hashtables; a malformed line in the
+  middle of a trace is reported once, a half-written final line is not.
 - `Registry.ps1` -- P1-02, the step registry. Discovery
   (`Find-EbiStepFiles`: every `modules/<group>/<group>.<verb>.ps1`;
   `Get-EbiStepCatalog`: manifest-only scan in a throwaway scope, the list

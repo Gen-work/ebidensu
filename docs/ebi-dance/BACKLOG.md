@@ -28,6 +28,7 @@
 | R5 | 不用 PowerShell `class` | PS 5.1 的 class 跨 dot-source 有作用域坑 |
 | R6 | 失败用**返回值**表达,不抛异常 | 见 `spec/STEP-CONTRACT.md` §3.1 |
 | R7 | `effects` 为 `write`/`destructive`/`ui` 的 step **必须**处理 `$Ctx.DryRun` | 见 `spec/STEP-CONTRACT.md` §3.3 |
+| R8 | `modules/**`、`kernel/**` 里**不许直接出现** `ConvertFrom-Json` / `ConvertTo-Json` / `Get-Content <x>.json`,一律走 `kernel/Json.ps1` | PS 5.1 的 JSON 有四个坑(PSCustomObject、`-Depth 2` 静默截断、`\uXXXX`、ANSI 解码),见 P1-35;P0-06 的检查器 grep 源码(`direct_json`) |
 
 ## 状态
 
@@ -1165,7 +1166,7 @@
 
 ## kernel 补充(2 张,第六轮评审追加)
 
-### [ ] P1-35 kernel/Json.ps1 —— 唯一的 JSON 读写入口
+### [x] P1-35 kernel/Json.ps1 —— 唯一的 JSON 读写入口
 - **估** 60min | **依赖** P0-06 | **读** `ConfigOverlay.ps1` 的 `ConvertFrom-ConfigJson` /
   `ConvertTo-ConfigHashtable` / `ConvertFrom-JsonUnicodeEscape`
 - **问题**:PS 5.1 的 JSON 有四个坑,每个都在本仓库出过事或有专门的绕法:
@@ -1190,6 +1191,32 @@
   不截断、写出的文件无 BOM 且日文不是 `\uXXXX`;
   `grep -rn 'ConvertFrom-Json\|ConvertTo-Json' modules/ kernel/` 只命中
   `kernel/Json.ps1`
+- **已执行(2026-09-28)**:`kernel/Json.ps1`(`Read-EbiJson` / `Write-EbiJson`
+  / `ConvertFrom-EbiJson` / `ConvertTo-EbiJson` / `Add-EbiJsonLine` /
+  `Read-EbiJsonLines` / `ConvertTo-EbiHashtable`(从 Runner 搬来)/
+  `Test-EbiJsonSerializable`(从 Registry 搬来)/ `Get-EbiJsonDepth`),
+  `Tests/Test-Json.ps1` 87 例;`Trace.ps1` / `Runner.ps1` / `Registry.ps1`
+  全部改走它;铁律表新增 **R8**,`Tests/StepContract.ps1` 加 `direct_json`
+  规则(step 文件)+ `Test-StepContract.ps1` 对 `kernel/*.ps1` 逐个 grep。
+  决定了几条卡面没写死的细节:① 深度上限 20,**超过就抛**(`ConvertTo-
+  EbiJson` 是唯一抛异常的入口——静默截断正是这张卡要消灭的东西,字符串
+  返回值没地方放失败;`Write-EbiJson` / `Add-EbiJsonLine` 把它接成返回值,
+  trace 接成 `[trace WARN]`);② 解析时把文本包成 `{"v":<text>}` 再解,顶层
+  数组在 5.1 / 7 上都不会被管道拆开(`[[1,2]]` 和 `[1,2]` 拆开后分不清);
+  ③ 原子写 = 同目录临时文件 + `File.Replace`(目标已存在)/ `File.Move`;
+  备份路径要传 `[NullString]::Value`,传 `$null` 会被 PowerShell 变成 `''`
+  而被拒;④ `Read-EbiJsonLines` 把**中间**的坏行按行号报出来(`badLines`),
+  只把**最后一行**坏的当成「正在写」(`partial`)——不再有静默跳过;
+  `Read-TraceEvents` 因此改为返回 **hashtable**(不再是 PSCustomObject),
+  `Test-Trace.ps1` / `Test-Runner.ps1` 的读法同步改成索引;⑤ 改读法时撞出
+  runner 一个潜伏 bug:`Test-EbiStepReturn` 里 `$w = if (...) { $Return
+  ['warnings'] }` 会把**单元素数组拆成那个元素**,恰好一条 warning 时 trace
+  里写的是对象不是数组——旧测试没发现是因为 PSCustomObject 上 `[0]` 对非
+  数组返回自身。已修(显式 ArrayList),补断言。**偏离卡面一处**:
+  `modules/verify/SnapVerify.ps1`(P0-04 停在 `modules/` 的旧库,不是
+  step)还有一处 `ConvertTo-Json`,按「库文件豁免、列名可见」的既有规则处理
+  (和契约检查的豁免一致),没改它——它在办公 PC 上的 HmSnap/MqSnap 路径
+  在用,这张卡不碰生产路径;它改写成 step 时自然消掉。
 
 ### [ ] P1-36 DryRun 合同测试(每个 step 在 CI 里至少真的跑一次)
 - **估** 75min | **依赖** P1-01, P1-02 | **读** `spec/STEP-CONTRACT.md` §3.3,§7

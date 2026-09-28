@@ -43,6 +43,8 @@
 #  Set-StrictMode a missing key read with dot syntax throws.
 # ============================================================
 
+. (Join-Path $PSScriptRoot 'Json.ps1')   # Test-EbiJsonSerializable, ConvertTo-EbiHashtable
+
 # --- input types the runner can check (STEP-CONTRACT.md 2.2) ---------------
 
 function Get-EbiInputTypes {
@@ -330,12 +332,6 @@ function Get-EbiSessionInputs {
     return $map
 }
 
-function Test-EbiJsonSerializable {
-    param($Value)
-    try { [void]($Value | ConvertTo-Json -Compress -Depth 10 -ErrorAction Stop); return $true }
-    catch { return $false }
-}
-
 # --- "with" -> $In --------------------------------------------------------------
 
 function Resolve-EbiStepInputs {
@@ -450,9 +446,20 @@ function Test-EbiStepReturn {
                   message = ('outputs of {0} are not JSON-serializable; handles belong in $Ctx.Session (3.4)' -f [string]$Manifest['id']) }
     }
 
-    $warnings = if ($Return.Contains('warnings') -and $null -ne $Return['warnings']) { $Return['warnings'] } else { @() }
+    # Always an object[]: `$w = if (...) { $Return['warnings'] }` would unroll
+    # a ONE-element array into its single hashtable, and the trace then held
+    # "warnings": {...} instead of "warnings": [...] for exactly one warning
+    # (found when the trace reader started returning hashtables, P1-35). A
+    # step handing back a bare hashtable is taken as one warning.
+    $warnings = New-Object System.Collections.ArrayList
+    if ($Return.Contains('warnings') -and $null -ne $Return['warnings']) {
+        $w = $Return['warnings']
+        if ($w -is [System.Collections.IDictionary] -or $w -is [string]) { [void]$warnings.Add($w) }
+        elseif ($w -is [System.Collections.IEnumerable]) { foreach ($item in $w) { if ($null -ne $item) { [void]$warnings.Add($item) } } }
+        else { [void]$warnings.Add($w) }
+    }
     $resource = if ($hasResource) { $Return['resource'] } else { $null }
-    return @{ ok = $true; failure = ''; message = ''; Outputs = $outputs; Warnings = $warnings;
+    return @{ ok = $true; failure = ''; message = ''; Outputs = $outputs; Warnings = $warnings.ToArray();
               Resource = $resource; HasResource = $hasResource }
 }
 

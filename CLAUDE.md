@@ -46,8 +46,20 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         (consumes it via a type='session' input).
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
-kernel/                 runner internals. Trace.ps1 (append-only run trace,
-                        unit-tested via Tests\Test-Trace.ps1), Registry.ps1
+kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
+                        entry point -- Read/Write-EbiJson (atomic write),
+                        ConvertFrom/To-EbiJson, Add-EbiJsonLine /
+                        Read-EbiJsonLines for JSONL, ConvertTo-EbiHashtable;
+                        hashtables not PSCustomObjects, depth 20 and LOUD
+                        beyond it instead of silent truncation, Japanese
+                        written as characters, UTF-8 no BOM. Iron rule R8:
+                        nothing else under modules/ or kernel/ calls
+                        ConvertFrom-Json / ConvertTo-Json / Get-Content on
+                        a .json -- the contract checker greps for it.
+                        Tests\Test-Json.ps1), Trace.ps1 (append-only run
+                        trace over Json.ps1; events read back as
+                        hashtables; unit-tested via Tests\Test-Trace.ps1),
+                        Registry.ps1
                         (P1-02: step discovery under modules/ -- Find-EbiStep
                         Files / Get-EbiStepCatalog, a manifest-only scan for
                         lint/help/docs -- and loading for running: Import-
@@ -547,7 +559,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. In `modules/verify/`:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
-`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`,
+`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
 `Registry.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
