@@ -4,13 +4,13 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-13 step(s) in 3 group(s).
+19 step(s) in 4 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
-| screen | `screen.capture_window` |
-| file | (none yet) |
+| screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.fit_window`, `screen.save` |
+| file | `file.read_json`, `file.write_json` |
 | excel | (none yet) |
 | table | (none yet) |
 | verify | (none yet) |
@@ -320,6 +320,38 @@ failures: `timeout` (transient), `foreground_lost` (transient), `archive_failed`
 
 ## screen
 
+### `screen.capture_region`
+
+Save a PNG of a screen rectangle, clamped to the screen
+
+- file: `modules/screen/screen.capture_region.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `height` | int | yes |  |  |  |
+| `saveAs` | path | yes |  |  | PNG path; relative paths resolve under the work dir |
+| `width` | int | yes |  |  |  |
+| `x` | int | yes |  |  | left edge, screen pixels |
+| `y` | int | yes |  |  | top edge, screen pixels |
+
+| output | type | desc |
+|--------|------|------|
+| `clamped` | bool | the rectangle was cut down to the screen |
+| `clampedEdges` | string | which of x,y,width,height moved; empty when none |
+| `height` | int |  |
+| `path` | path |  |
+| `width` | int | pixels actually captured (after the clamp) |
+
+failures: `region_empty` (not transient), `save_failed` (transient)
+
+```json
+{"id":"capture_region","use":"screen.capture_region","with":{"height":300,"saveAs":"capture/df/{{item.keySafe}}__result.png","width":800,"x":100,"y":200}}
+```
+
+Notes: A clamp is also a warning (region_clamped) so it shows in the run log; a rectangle entirely off screen is region_empty.
+
 ### `screen.capture_window`
 
 Save a PNG screenshot of the window held in a session resource
@@ -346,6 +378,148 @@ failures: `window_gone` (transient), `save_failed` (transient)
 ```
 
 Notes: Captures the window rectangle from the screen (CopyFromScreen), so the window must be in front and unobscured -- run browser.ensure first.
+
+### `screen.crop`
+
+Crop a PNG by per-side pixel amounts and write the result
+
+- file: `modules/screen/screen.crop.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `bottom` | int |  | 0 |  |  |
+| `left` | int |  | 0 |  |  |
+| `out` | path |  | (empty) |  | write here instead of overwriting path |
+| `path` | path | yes |  |  | PNG to crop, modified in place unless out is given |
+| `right` | int |  | 0 |  |  |
+| `top` | int |  | 0 |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `height` | int |  |
+| `path` | path | the file that was written |
+| `width` | int |  |
+
+failures: `file_not_found` (not transient), `crop_exceeds_image` (not transient), `image_read_error` (transient)
+
+```json
+{"id":"crop","use":"screen.crop","with":{"bottom":6,"left":6,"path":"{{steps.shot.out.path}}","right":6,"top":6}}
+```
+
+Notes: Idempotent only in the "out" form: cropping in place twice takes the border off twice. Zero on all four sides copies (or leaves) the file untouched.
+
+### `screen.fit_window`
+
+Move and size a registered window to x,y width x height
+
+- file: `modules/screen/screen.fit_window.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `height` | int | yes |  |  |  |
+| `settleMs` | int |  | 300 |  | wait after the move |
+| `width` | int | yes |  |  |  |
+| `window` | session:window | yes |  |  | the window to move |
+| `x` | int |  | 40 |  | left edge, screen pixels |
+| `y` | int |  | 40 |  | top edge, screen pixels |
+
+| output | type | desc |
+|--------|------|------|
+| `height` | int |  |
+| `width` | int |  |
+| `x` | int | where the window actually is afterwards |
+| `y` | int |  |
+
+failures: `window_gone` (transient), `move_failed` (transient)
+
+```json
+{"id":"fit_window","use":"screen.fit_window","with":{"height":"{{profile.window.height}}","width":"{{profile.window.width}}","window":"mainWindow"}}
+```
+
+Notes: The outputs are read back with GetWindowRect: a window with a minimum size larger than asked reports what it settled on, and a workflow that cares compares them (verify.assert).
+
+### `screen.save`
+
+Move or copy an image to <dir>/<keySafe>[__<tag>].<ext>
+
+- file: `modules/screen/screen.save.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `copy` | bool |  | false |  | copy instead of move (the source stays) |
+| `dir` | path | yes |  |  | destination folder, e.g. capture/before_transferStatus |
+| `ext` | string |  | png |  |  |
+| `key` | string | yes |  |  | the item key (keySafe form; a raw key is folded) |
+| `source` | path | yes |  |  | the image to place |
+| `tag` | string |  | (empty) |  | distinguishes several images of one key: <key>__<tag> |
+
+| output | type | desc |
+|--------|------|------|
+| `name` | string | the file name that was chosen |
+| `path` | path | where the image is now |
+
+failures: `file_not_found` (not transient), `save_failed` (transient)
+
+```json
+{"id":"save","use":"screen.save","with":{"dir":"capture/before_transferStatus","key":"{{item.keySafe}}","source":"{{steps.shot.out.path}}","tag":"row"}}
+```
+
+Notes: An existing file of the same name is replaced: re-running a key re-captures it. A key that had to be folded is reported as a warning (key_folded).
+
+## file
+
+### `file.read_json`
+
+Read a JSON file; a missing file gives data=null and a warning
+
+- file: `modules/file/file.read_json.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `path` | path | yes |  |  | the file; relative paths resolve under the work dir |
+
+| output | type | desc |
+|--------|------|------|
+| `data` | any | the parsed value (hashtables, not objects); null when the file is missing |
+| `exists` | bool |  |
+| `path` | path |  |
+
+failures: `json_invalid` (not transient), `read_failed` (transient)
+
+```json
+{"id":"read_json","use":"file.read_json","with":{"path":"capture/before_transferStatus/{{item.keySafe}}.meta.json"}}
+```
+
+### `file.write_json`
+
+Write a value to a JSON file (atomic, UTF-8 without BOM)
+
+- file: `modules/file/file.write_json.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `data` | any | yes |  |  | the value (map, list, string, number, bool) |
+| `path` | path | yes |  |  | where to write; relative paths resolve under the work dir |
+
+| output | type | desc |
+|--------|------|------|
+| `path` | path | the file that was written |
+
+failures: `write_failed` (transient), `not_serializable` (not transient)
+
+```json
+{"id":"write_json","use":"file.write_json","with":{"data":{"capturedAt":"{{run.startedAt}}","key":"{{item.key}}"},"path":"capture/before_transferStatus/{{item.keySafe}}.meta.json"}}
+```
 
 ## human
 

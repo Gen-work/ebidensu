@@ -612,15 +612,16 @@ try {
         Assert-True ($names -contains $n) ('P0-08: ' + $n + ' is in modules/')
     }
 
-    # the step's own pure helper
+    # the path / handle helpers the step uses come from kernel/Native.ps1
+    # since P1-18 (the step dot-sources it); the rules are the P0-08 ones
     . (Join-Path (Join-Path (Join-Path $repoRoot 'modules') 'screen') 'screen.capture_window.ps1')
     $wd = [System.IO.Path]::GetTempPath().TrimEnd([System.IO.Path]::DirectorySeparatorChar)   # rooted on whichever OS runs the test
-    Assert-Equal ([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($wd, 'capture/a.png'))) (ScreenCaptureWindow-ResolvePath -SaveAs 'capture/a.png' -WorkDir $wd) 'capture_window: relative saveAs joins the work dir (separators normalized)'
+    Assert-Equal ([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($wd, 'capture/a.png'))) (Resolve-EbiWorkPath -PathValue 'capture/a.png' -WorkDir $wd) 'capture_window: relative saveAs joins the work dir (separators normalized)'
     $rooted = Join-Path ([System.IO.Path]::GetTempPath()) 'a.png'   # rooted on whichever OS runs the test
-    Assert-Equal $rooted (ScreenCaptureWindow-ResolvePath -SaveAs $rooted -WorkDir 'C:\w') 'capture_window: a rooted saveAs is kept'
-    Assert-Equal '' (ScreenCaptureWindow-ResolvePath -SaveAs '' -WorkDir 'C:\w') 'capture_window: an empty saveAs stays empty'
-    Assert-True ((ScreenCaptureWindow-ToHandle 4242) -eq [IntPtr]4242) 'capture_window: an int resource becomes an IntPtr'
-    Assert-True ((ScreenCaptureWindow-ToHandle $null) -eq [IntPtr]::Zero) 'capture_window: a null resource is IntPtr.Zero'
+    Assert-Equal $rooted (Resolve-EbiWorkPath -PathValue $rooted -WorkDir 'C:\w') 'capture_window: a rooted saveAs is kept'
+    Assert-Equal '' (Resolve-EbiWorkPath -PathValue '' -WorkDir 'C:\w') 'capture_window: an empty saveAs stays empty'
+    Assert-True ((ConvertTo-EbiHandle 4242) -eq [IntPtr]4242) 'capture_window: an int resource becomes an IntPtr'
+    Assert-True ((ConvertTo-EbiHandle $null) -eq [IntPtr]::Zero) 'capture_window: a null resource is IntPtr.Zero'
 
     # ================================================ P1-03: templates, source + each, when, once: group
     $profile = @{

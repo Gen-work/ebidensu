@@ -709,6 +709,103 @@
       "summary": "Poll the page text until it contains a string, or time out",
       "tier": "core"
     },
+    "file.read_json": {
+      "effects": "pure",
+      "example": {
+        "use": "file.read_json",
+        "with": {
+          "path": "capture/before_transferStatus/{{item.keySafe}}.meta.json"
+        }
+      },
+      "failures": [
+        {
+          "id": "json_invalid",
+          "transient": false
+        },
+        {
+          "id": "read_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.read_json.ps1",
+      "group": "file",
+      "id": "file.read_json",
+      "idempotent": true,
+      "inputs": {
+        "path": {
+          "desc": "the file; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "data": {
+          "desc": "the parsed value (hashtables, not objects); null when the file is missing",
+          "type": "any"
+        },
+        "exists": {
+          "type": "bool"
+        },
+        "path": {
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Read a JSON file; a missing file gives data=null and a warning",
+      "tier": "core"
+    },
+    "file.write_json": {
+      "effects": "write",
+      "example": {
+        "use": "file.write_json",
+        "with": {
+          "data": {
+            "capturedAt": "{{run.startedAt}}",
+            "key": "{{item.key}}"
+          },
+          "path": "capture/before_transferStatus/{{item.keySafe}}.meta.json"
+        }
+      },
+      "failures": [
+        {
+          "id": "write_failed",
+          "transient": true
+        },
+        {
+          "id": "not_serializable",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.write_json.ps1",
+      "group": "file",
+      "id": "file.write_json",
+      "idempotent": true,
+      "inputs": {
+        "data": {
+          "desc": "the value (map, list, string, number, bool)",
+          "required": true,
+          "type": "any"
+        },
+        "path": {
+          "desc": "where to write; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "path": {
+          "desc": "the file that was written",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write a value to a JSON file (atomic, UTF-8 without BOM)",
+      "tier": "core"
+    },
     "human.prepare": {
       "effects": "ui",
       "example": {
@@ -751,6 +848,84 @@
       "provides": [],
       "releases": [],
       "summary": "Show a message and wait for Enter (ready) or q (quit)",
+      "tier": "core"
+    },
+    "screen.capture_region": {
+      "effects": "write",
+      "example": {
+        "use": "screen.capture_region",
+        "with": {
+          "height": 300,
+          "saveAs": "capture/df/{{item.keySafe}}__result.png",
+          "width": 800,
+          "x": 100,
+          "y": 200
+        }
+      },
+      "failures": [
+        {
+          "id": "region_empty",
+          "transient": false
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.capture_region.ps1",
+      "group": "screen",
+      "id": "screen.capture_region",
+      "idempotent": true,
+      "inputs": {
+        "height": {
+          "required": true,
+          "type": "int"
+        },
+        "saveAs": {
+          "desc": "PNG path; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "width": {
+          "required": true,
+          "type": "int"
+        },
+        "x": {
+          "desc": "left edge, screen pixels",
+          "required": true,
+          "type": "int"
+        },
+        "y": {
+          "desc": "top edge, screen pixels",
+          "required": true,
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "A clamp is also a warning (region_clamped) so it shows in the run log; a rectangle entirely off screen is region_empty.",
+      "outputs": {
+        "clamped": {
+          "desc": "the rectangle was cut down to the screen",
+          "type": "bool"
+        },
+        "clampedEdges": {
+          "desc": "which of x,y,width,height moved; empty when none",
+          "type": "string"
+        },
+        "height": {
+          "type": "int"
+        },
+        "path": {
+          "type": "path"
+        },
+        "width": {
+          "desc": "pixels actually captured (after the clamp)",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Save a PNG of a screen rectangle, clamped to the screen",
       "tier": "core"
     },
     "screen.capture_window": {
@@ -806,6 +981,233 @@
       "provides": [],
       "releases": [],
       "summary": "Save a PNG screenshot of the window held in a session resource",
+      "tier": "core"
+    },
+    "screen.crop": {
+      "effects": "write",
+      "example": {
+        "use": "screen.crop",
+        "with": {
+          "bottom": 6,
+          "left": 6,
+          "path": "{{steps.shot.out.path}}",
+          "right": 6,
+          "top": 6
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "crop_exceeds_image",
+          "transient": false
+        },
+        {
+          "id": "image_read_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.crop.ps1",
+      "group": "screen",
+      "id": "screen.crop",
+      "idempotent": true,
+      "inputs": {
+        "bottom": {
+          "default": 0,
+          "type": "int"
+        },
+        "left": {
+          "default": 0,
+          "type": "int"
+        },
+        "out": {
+          "default": "",
+          "desc": "write here instead of overwriting path",
+          "type": "path"
+        },
+        "path": {
+          "desc": "PNG to crop, modified in place unless out is given",
+          "required": true,
+          "type": "path"
+        },
+        "right": {
+          "default": 0,
+          "type": "int"
+        },
+        "top": {
+          "default": 0,
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "Idempotent only in the \"out\" form: cropping in place twice takes the border off twice. Zero on all four sides copies (or leaves) the file untouched.",
+      "outputs": {
+        "height": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "the file that was written",
+          "type": "path"
+        },
+        "width": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Crop a PNG by per-side pixel amounts and write the result",
+      "tier": "core"
+    },
+    "screen.fit_window": {
+      "effects": "ui",
+      "example": {
+        "use": "screen.fit_window",
+        "with": {
+          "height": "{{profile.window.height}}",
+          "width": "{{profile.window.width}}",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "window_gone",
+          "transient": true
+        },
+        {
+          "id": "move_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.fit_window.ps1",
+      "group": "screen",
+      "id": "screen.fit_window",
+      "idempotent": true,
+      "inputs": {
+        "height": {
+          "required": true,
+          "type": "int"
+        },
+        "settleMs": {
+          "default": 300,
+          "desc": "wait after the move",
+          "type": "int"
+        },
+        "width": {
+          "required": true,
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window to move",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        },
+        "x": {
+          "default": 40,
+          "desc": "left edge, screen pixels",
+          "type": "int"
+        },
+        "y": {
+          "default": 40,
+          "desc": "top edge, screen pixels",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "The outputs are read back with GetWindowRect: a window with a minimum size larger than asked reports what it settled on, and a workflow that cares compares them (verify.assert).",
+      "outputs": {
+        "height": {
+          "type": "int"
+        },
+        "width": {
+          "type": "int"
+        },
+        "x": {
+          "desc": "where the window actually is afterwards",
+          "type": "int"
+        },
+        "y": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Move and size a registered window to x,y width x height",
+      "tier": "core"
+    },
+    "screen.save": {
+      "effects": "write",
+      "example": {
+        "use": "screen.save",
+        "with": {
+          "dir": "capture/before_transferStatus",
+          "key": "{{item.keySafe}}",
+          "source": "{{steps.shot.out.path}}",
+          "tag": "row"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.save.ps1",
+      "group": "screen",
+      "id": "screen.save",
+      "idempotent": true,
+      "inputs": {
+        "copy": {
+          "default": false,
+          "desc": "copy instead of move (the source stays)",
+          "type": "bool"
+        },
+        "dir": {
+          "desc": "destination folder, e.g. capture/before_transferStatus",
+          "required": true,
+          "type": "path"
+        },
+        "ext": {
+          "default": "png",
+          "type": "string"
+        },
+        "key": {
+          "desc": "the item key (keySafe form; a raw key is folded)",
+          "required": true,
+          "type": "string"
+        },
+        "source": {
+          "desc": "the image to place",
+          "required": true,
+          "type": "path"
+        },
+        "tag": {
+          "default": "",
+          "desc": "distinguishes several images of one key: <key>__<tag>",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "An existing file of the same name is replaced: re-running a key re-captures it. A key that had to be folded is reported as a warning (key_folded).",
+      "outputs": {
+        "name": {
+          "desc": "the file name that was chosen",
+          "type": "string"
+        },
+        "path": {
+          "desc": "where the image is now",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Move or copy an image to <dir>/<keySafe>[__<tag>].<ext>",
       "tier": "core"
     }
   }
