@@ -126,26 +126,26 @@ ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         partial, correl-seen > unseen, newest among equals),
                         Get-ProcessTimeOcrMissNote (why a read yielded nothing),
                         Get-NewestProcessTimeRow (newest-by-StartTime;
-                        -MinimumTimeOfDay default 09:00, v2.14.0),
+                        -MinimumTimeOfDay default 09:00),
                         Resolve-ProcessTimeRowPlan (-Stage + sidecar-exists +
                         ProcessTime_Inserted bitmask bits + -Force -> per-row
-                        NeedsOcr/NeedsWrite; v2.13.0, bitmask v2.15.0) +
+                        NeedsOcr/NeedsWrite) +
                         Get-ProcessTimeMigratedInsertedValue (legacy plain
                         '1' -> bitmask '3'), Get-ProcessTimeOutputTag /
                         Get-ProcessTimeOutputFileName / Resolve-ProcessTime
                         OutputDir (config-driven output tag classification,
                         not hardcoded to JDL/JRV; -DeriveFromName derives an
-                        unlisted tag from Excel_NAME chars 2-4, v2.15.2) and
+                        unlisted tag from Excel_NAME chars 2-4) and
                         Get-ProcessTimeCheckSummaryLine (end-of-run
-                        manual-check summary line), all v2.15.0.
+                        manual-check summary line).
                         ConvertTo-ProcessTimeDateTimeValue / ConvertTo-
-                        ProcessTimeDurationValue (v2.15.2) parse the
+                        ProcessTimeDurationValue parse the
                         sidecar's formatted stamps back into real Excel
                         date/time serials for the output workbook's value
                         cells + check-formula columns.
                         ConvertTo-ProcessTimeCorrelKey
-                        also strips OCR-inserted whitespace before folding
-                        (v2.14.0); Select-ProcessTimeRow's -MinimumTimeOfDay
+                        also strips OCR-inserted whitespace before folding;
+                        Select-ProcessTimeRow's -MinimumTimeOfDay
                         (default 09:00) drops HM history rows; Get-ProcessTime
                         RecordCount falls back to the count immediately before
                         the result diamond when no datestamp anchors it (JDL).
@@ -158,7 +158,7 @@ ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
                         duration), K 件数チェック (record-count check; first
                         version flags a blank/zero/non-numeric count) -- and
                         New-ProcessTimeCheckFormula fills a formula template's
-                        {0} with a row number. v2.18.0: pass -CountReference
+                        {0} with a row number. With -CountReference
                         (Resolve-ProcessTimeCountReference expands {Tag}/
                         {Month} in the reference workbook/sheet names;
                         New-ProcessTimeExternalRange builds the
@@ -167,7 +167,7 @@ ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
                         INDEX/MATCH) and the spec grows to four columns --
                         K 件数(参照) pulls the EXPECTED count out of the
                         project's monthly workbook and L 件数チェック compares
-                        it against the OCR-read count. v2.19.0: the layout is
+                        it against the OCR-read count. The layout is
                         ALWAYS I/J/K/L -- with no reference configured K holds
                         an inert TEXT placeholder carrying <DIR>/<BOOK>/
                         <SHEET> tokens (New-ProcessTimeCountPlaceholderFormula,
@@ -179,7 +179,7 @@ ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
                         Set-ProcessTimeCheckColumns walks the spec to write the
                         headers/formulas/number-formats uniformly after the
                         data rows. Japanese headers via [char]. Unit-tested
-                        (Tests\Test-ProcessTimeCheck.ps1). v2.16.0.
+                        (Tests\Test-ProcessTimeCheck.ps1).
 
   -- modules/verify/ : the same pure libs, moved out of the repo root by
      P0-04. Still plain dot-source libraries, NOT ebi-dance steps yet --
@@ -220,7 +220,7 @@ OwnerFilter.ps1         pure WBS owner-cell matching (Test-OwnerMatch: exact /
                         WBS owner; jobs absent from WBS kept as temp). No Excel.
                         Unit-tested (Tests\Test-OwnerFilter.ps1).
 GiftMqProcessTime.ps1   pure library behind the standalone GiftMqProcessTime
-                        .ps1 driver (v2.22.0): GIFT MQ LIST-page Ctrl+A text
+                        .ps1 driver: GIFT MQ LIST-page Ctrl+A text
                         -> records (ConvertFrom-GiftMqListText; two-line
                         records, Send date = job START), Detail-page text ->
                         fields (ConvertFrom-GiftMqDetailText;
@@ -251,7 +251,7 @@ OldSnapVerify.ps1       pure old-snap 9->3 hand-verification helpers (dot-source
                         pure 3<->9 swap), Get-OldSnapVerifyVerdict (the
                         conservative Txt/OcrOk/NeedsCheck/NoSnap decision) +
                         Get-OldSnapVerifyLabel / Get-OldSnapVerifyColumnSpec (the
-                        検証 column). v2.18.0 adds the D1 FALLBACK image
+                        検証 column), the D1 FALLBACK image
                         helpers: Resolve-OldSnapExportImageDir (the per-correl
                         snap\ProcessTime\<correl> export folder) and
                         Select-OldSnapFallbackImageName (rank the pictures this
@@ -260,12 +260,12 @@ OldSnapVerify.ps1       pure old-snap 9->3 hand-verification helpers (dot-source
                         first; *_pre.png OCR derivatives never linked) so a
                         correl with no standalone snap PNG still gets a
                         clickable image, plus Resolve-OldSnapPromotionMarker
-                        Path (v2.19.0: '<snap>.promoted.json', marking a snap
+                        Path ('<snap>.promoted.json', marking a snap
                         PNG that was copied out of the evidence workbook
                         rather than captured, so the pixel check keeps
                         excluding its re-scaled geometry on later runs).
                         Japanese via [char]. Unit-tested
-                        (Tests\Test-OldSnapVerify.ps1). v2.17.0.
+                        (Tests\Test-OldSnapVerify.ps1).
 PixelDigitMatch.ps1     pure D2 per-digit 3/9 image scorer (dot-source, no
                         param(), no COM/GDI): grayscale ink -> binarize -> trim
                         bbox -> average-pool to a normalized grid -> normalized
@@ -274,7 +274,7 @@ PixelDigitMatch.ps1     pure D2 per-digit 3/9 image scorer (dot-source, no
                         Similarity, Compare-DigitCandidate, Get-DigitPixelVerdict,
                         Merge-DigitPixelVerdicts). The PS port of the Phase-0
                         GO-proven mock-page/pixeldiff.mjs metric. Unit-tested
-                        (Tests\Test-PixelDigitMatch.ps1). v2.17.0.
+                        (Tests\Test-PixelDigitMatch.ps1).
 OldSnapPixelVerify.ps1  PARKED with the rest of the D2 image-check line
                         (docs/Parked-Ideas.md); kept, off by default -- do
                         not run two competing D2 paths.
@@ -287,7 +287,7 @@ OldSnapPixelVerify.ps1  PARKED with the rest of the D2 image-check line
                         conservative '') and Get-OldSnapRowPixelVerdict. Drives
                         PixelDigitMatch. Every entry point swallows errors ->
                         '' so an image check never blocks the write. Off by
-                        default (OldSnapVerify.PixelDiff.Enabled). v2.17.0.
+                        default (OldSnapVerify.PixelDiff.Enabled).
 TimeDigitVerify.ps1     pure 3<->9 digit-risk analysis for OCR'd HM times
                         (dot-source, no param(), no COM/OCR/IO, ASCII).
                         The project's answer to the ja recognizer reading
@@ -317,7 +317,7 @@ TimeDigitVerify.ps1     pure 3<->9 digit-risk analysis for OCR'd HM times
                         Also Get-TimeDigitFieldSpec / Get-TimeDigitSwapVariants
                         / ConvertTo-TimeDigitDurationSeconds /
                         Format-TimeDigitDuration. Unit-tested
-                        (Tests\Test-TimeDigitVerify.ps1). v2.21.0.
+                        (Tests\Test-TimeDigitVerify.ps1).
 
 
 Clone.ps1               Phase Clone
@@ -335,17 +335,17 @@ ProcessTime.ps1         Phase ProcessTime: extracts each correl's HM batch
                         ConvertFrom-ProcessTimeOcrLines / Select-ProcessTimeRow.
                         Writes one row per GIFT/GFIX side per correl to
                         <label>(<Tag>).xlsx evidence workbooks under
-                        ProcessTime.OutputDirectory (v2.14.0; classified per
+                        ProcessTime.OutputDirectory (classified per
                         ProcessTime.OutputTags, default JDL/JRV but
-                        extendable, e.g. JDS -- v2.15.0; a row matching no
+                        extendable, e.g. JDS; a row matching no
                         tag goes to UnclassifiedTag instead of aborting the
                         run; OutputMode 'Single' writes one untagged
                         workbook instead; OutputDirectoryByTag routes a tag
                         to its own destination directory). Run after
                         ReplaceGift/ReplaceGfix. Sets ProcessTime_Inserted,
-                        a bitmask since v2.15.0 (bit 1 = OCR'd, bit 2 =
+                        a bitmask (bit 1 = OCR'd, bit 2 =
                         written; a legacy plain '1' is migrated to '3').
-                        -Stage Ocr|Write|Both (v2.13.0) runs the
+                        -Stage Ocr|Write|Both runs the
                         extract-and-cache-to-sidecar step and the
                         write-the-output-workbooks step independently; each
                         correl's OCR result (both sides, combined) is cached
@@ -353,7 +353,7 @@ ProcessTime.ps1         Phase ProcessTime: extracts each correl's HM batch
                         Write-only rerun opens no evidence workbook at all.
                         Prints an end-of-run "needs manual check" summary
                         listing every correl whose GIFT and/or GFIX side was
-                        not matched (v2.15.0).
+                        not matched.
 Mark.ps1                Phase MarkGift / MarkGfix / MarkDf. Each Mark.Boxes
                         entry may add a 'Template' key to try image-recognition
                         placement (Locate-ByImage.ps1 LockBits match against
@@ -432,7 +432,7 @@ docs/Parked-Ideas.md    designed-then-deliberately-shelved work, with what
                         and the never-wired Repair-ProcessTimeStartFromStamp.
 docs/ProcessTime-OldSnap-MockMatch-Plan.md
                         PARKED (see docs/Parked-Ideas.md). Designed
-                        replacement for v2.17.0's D2 image check: render the
+                        replacement for the D2 image check: render the
                         reference row from mock-page in Edge on the office PC
                         (same engine/font/CSS as the snap) and whole-field
                         template-match it via Locate-ByImage, instead of GDI+
@@ -474,14 +474,13 @@ Find-ActiveHighlightRow.ps1  detects Edge Ctrl+F active-match (orange) row
 Locate-ByImage.ps1      C#-compiled LockBits template matcher; called by
                         Mark.ps1 (see the Mark.ps1 entry above) for optional
                         image-recognition box placement
-Mark.ps1                draws red rectangles on evidence Excel shapes
 Pack-LlmContext.ps1     packs project context to clipboard for LLM ingestion
 Apply-LlmPatch.ps1      applies XML / git-unified-diff patches from clipboard
 Export-DailyPatch.ps1   extracts today's git diff to clipboard
 Parse-GiftMq.ps1        parses GIFT/MQ transfer status page text
 GiftMqProcessTime.ps1   STANDALONE (not a phase, has param(): call via -File /
                         &) daily 処理時間(<Tag>).xlsx filler from the GIFT MQ
-                        page (v2.22.0, docs/GiftMqProcessTime.md): reads the
+                        page (docs/GiftMqProcessTime.md): reads the
                         operator's own mapping.xlsx (JOB / owner / GIFT run
                         date / GIFT TIME), captures the MQ LIST page once
                         (Send date = start), keyboard-navigates each row's
@@ -506,7 +505,7 @@ JenkinsDownload.ps1     Jenkins receive-file download glue: Select-Jenkins
                         (reports the passed-over entries as Superseded).
                         Unit-tested via Tests\Test-JenkinsDownload.ps1.
 Probe-Shapes.ps1        lists all shapes in an evidence workbook (calibration aid)
-Probe-SheetFormat.ps1   read-only cell-FORMAT probe (calibration aid, v2.15.2):
+Probe-SheetFormat.ps1   read-only cell-FORMAT probe (calibration aid):
                         dumps a workbook's / one sheet's column widths, row
                         heights and distinct format signatures (NumberFormat,
                         font, colors as raw BGR Longs, alignment, borders)
@@ -516,7 +515,6 @@ Probe-SheetFormat.ps1   read-only cell-FORMAT probe (calibration aid, v2.15.2):
 Read-ClipboardJson.ps1  polls clipboard for JSON from bookmarklet
 Read-PageText.ps1       captures visible text from foreground Edge page via clipboard
 Resolve-ExpectedTime.ps1  interactive Expected_Time column helper
-ReviewEvidence.ps1      manual review driver
 Sample-HighlightColor.ps1  samples a single pixel RGB for highlight calibration
 
 CLAUDE.md               this file
@@ -628,7 +626,7 @@ mapping.
 value columns (NOT a bitmask, NOT this phase's `Get-PendingRows` field):
 `0` not yet attempted, `1` start/end extracted, `2` not found. The
 `ProcessTime` phase gates its own reprocessing on `ProcessTime_Inserted`,
-which **is** a bitmask (v2.15.0, matching the `isReplaced`/`isMarked`/
+which **is** a bitmask (matching the `isReplaced`/`isMarked`/
 `isReviewed` convention above): bit 1 (1) = this correl's OCR result has
 been extracted and cached (per-correl sidecar under
 `snap\ProcessTime\<correl>\result.json`); bit 2 (2) = the row has been
@@ -699,392 +697,15 @@ defaults (not just hand-built fixtures) to confirm `-Phase InitConfig`
 repair never drops an operator value and never throws against the actual
 production config shape.
 
-## Current state (last bump: 2026-09-18 v2.22.0)
+## Current state
 
-v2.22.0 (GiftMqProcessTime: standalone 処理時間 filler from the GIFT MQ
-page): the operator's daily hand routine -- match the leader's schedule
-(own `mapping.xlsx`: JOB / 担当 / GIFT実行日 / GIFT TIME) to the GIFT MQ
-LIST page (Send date = start), click every row's Detail for
-INSERTDATETIME (= end), read counts off the Teams chat, type it all into
-`処理時間(BIX).xlsx` -- becomes one run of the new standalone
-`GiftMqProcessTime.ps1` (NOT a VerifyTool phase; touches only the two
-operator workbooks). Pure logic in `modules/verify/GiftMqProcessTime.ps1`
-(unit-tested, 105 cases): two-line LIST record parser, Detail key/value
-parser, schedule-window (+-10 min) + day-order matching with
-ok/ambiguous/notime/none statuses, Excel float-artefact time rounding
-(`10:14:59.99999` -> 10:15:00), Teams `送信予定:N件` extraction (W-name ->
-J-job), and the output-sheet plan (update blank cells of an existing GIFT
-row, else append a GIFT+GFIX pair; n-th match pairs with n-th row). The
-driver's Detail navigation is keyboard-only (Ctrl+F the row's Send date ->
-Esc -> Tab -> Enter, fallback Ctrl+F title -> Tab N with the leading-control
-offset auto-tried) and EVERY detail page reached is verified against its
-record (CORRELID(CHAR) + SENDDATETIME) before its end time is trusted.
-Teams itself is not reachable from the tool: paste the chat into a text
-file (`-TeamsTextFile`) or type the counts the end-of-run summary lists.
-Default scope is the page's own days when no `-FromDate`/`-ToDate` is
-given. Docs: `docs/GiftMqProcessTime.md` (with the office-PC confirmation
-order). COM + SendKeys paths static-checked only.
+The current version and per-release history live in `CHANGELOG.md` (newest
+entry at the top); the phase list lives in `docs/Operations.md`. This file
+does not record either, so it cannot go stale against them.
 
-v2.21.0 (deterministic 3<->9 handling + timestamped-id tolerance cleanup +
-docs): **policy reversal on the ja-OCR `9`/`3` confusion -- the tool no
-longer guesses.** It acts only where the answer is arithmetically FORCED and
-leaves everything else exactly as read, marked red for a human. The old
-behaviour could turn a CORRECT reading into a wrong one: the reported case
-had a real start/end of `...:02`/`...:03` with the page's own printed
-duration reading `00:00:01`, and `Resolve-ProcessTimeSide` silently shipped
-`00:00:07` derived from a misread end second while merely NOTING the
-disagreement on the value it had already overwritten. New pure
-`TimeDigitVerify.ps1` (unit-tested) supplies the three rules:
-(1) `Repair-ImpossibleTimeDigit` fixes a digit only when its field is out of
-range and exactly one 3<->9 substitution inside that field restores it
-(minute `93` -> `33` forced; `99` -> `39` forced since `93` is still
-illegal; month `19` untouched + `Invalid`); (2)
-`Resolve-ProcessTimeDurationConflict` treats start, end and the page's
-printed processing-time column as three readings of one fact and repairs a
-disagreement only when exactly one substitution reconciles all three --
-`ambiguous`/`conflict` change nothing and flag the row (new
-`Get-OldSnapVerifyVerdict -DigitConflict` -> 要確認); (3) everything left
-over is marked, not fixed -- `Set-ProcessTimeDigitFormat` reddens every
-start/end/duration cell whose SECONDS digit is a 3 or 9 (config
-`ProcessTime.EmitDigitFormat`, default on), which together with the existing
-D1 hyperlink gets the operator from a red digit to its snap image in one
-click. `ConvertFrom-ProcessTimeOcrLines` also now RESCUES an impossible
-digit instead of dropping the whole row (`10:93:20` used to make the correl
-report "not found"). Per-side `DigitFlag` persists to the sidecar.
-**Timestamped-correl-id tolerance cleaned up**: `Find-GfixLogForCorrel`
-derives run identity from the log's own `Command:` line
-(`Select-GfixLogCandidate`), so the plain and batch-stamped spellings of ONE
-download collapse into a single run instead of warning on every run, and a
-batch-stamped `Correl_ID_S` selects its own run outright -- the warning is
-now reserved for genuinely different receive runs. `Find-DataFile`
-(DfSnap.ps1) prefers an exact spelling over newest-mtime. **Jenkins
-newest-wins**: Ctrl+F is a plain substring search, so the bare correl id
-stopped on whatever row the page listed FIRST (routinely an older rerun) --
-the screenshot highlighted the wrong row and the right file was downloaded
-by hand. New pure `Get-JenkinsSearchTerm` (SnapVerify.ps1) resolves the
-intended entry off the page's own Ctrl+A list and returns its EXACT file
-name, which `JenkinsSnap.ps1` Ctrl+F's (one row, no ambiguity); the same
-choice narrows the download to that one file
-(`Select-JenkinsDownloadFiles -PreferNewest`, older entries reported as
-`[older] ... superseded`). `Parse-JenkinsList.ps1`'s `-First 1` and the
-readiness poll's literal stamped-id match are fixed too. Config
-`SnapVerify.PreferNewestJenkinsFile` (default on). **Fixed**:
-`Expand-DfZip` named the extracted compare file after `Correl_ID_S`, so a
-batch-stamped id made df.exe read `.10515511` as the file's extension and
-the file would not open -- it now keeps the ZIP ENTRY's own name in a
-per-correl subfolder. **Docs**: `README.md` rewritten as a project front
-page (slogan, the single interactive entry point, the pipeline as one
-diagram, zero-dependency table, verification posture); operational detail
-moved to `docs/Operations.md`; the 未来展望 vision prose moved verbatim into
-`docs/Generalization-Roadmap.md` Appendix A; the D2 image-check line and the
-never-wired `Repair-ProcessTimeStartFromStamp` parked in
-`docs/Parked-Ideas.md`. Pure logic unit-tested; COM paths static-checked
-only -- confirm the conditional formatting, the 要確認 verdict, the df.exe
-open and the quiet log folder on an office PC.
-
-
-
-v2.20.0 (timestamped correl id: DF evidence linking + snap-verify alias
-tolerance + Jenkins Ctrl+F fix): Correl_ID_S can carry a transfer-batch
-stamp (`<correl>.<YYMMDD>.<8-digit>`); an in-progress change had already
-landed partial fixes (`Get-CorrelIdAliases`/`Test-CorrelIdEquivalent` in
-MappingStore.ps1, `Find-DataFile`/`Find-DfZipFile`/`Expand-DfZip` in
-DfSnap.ps1, `Get-GfixExpectedCommandPattern` in GfixLog.ps1) but left the DF
-evidence-linking gap its own pending test was written to catch, and never
-expanded the tolerance to sibling matchers. This release closes both.
-**DF evidence linking** -- new `Resolve-CorrelFilePath` (MappingStore.ps1)
-resolves a correl-named file whether it is saved under the plain id or the
-batch-stamped one; `EvidencePlan.ps1`'s `Get-SnapPath` (used by every
-`New-PicOp` across DF/GIFT/GFIX) falls back to it when the exact plain snap
-filename is missing, so `Build-DfEvidencePlan` links a DF snap PNG saved
-under its batch-stamped mapping id to a workbook whose Soushin-data sheet
-column A still shows the plain id. `Select-ValidCorrelIds` also accepts a
-batch-stamped token read directly off a sheet. **Snap-verify alias
-tolerance** -- new `Test-SnapCorrelIdMatch`/`Get-SnapCorrelIdBase`
-(SnapVerify.ps1, self-contained -- SnapVerify stays mapping-I/O-free) wired
-into every place a row's own correl-id text was matched against
-`Correl_ID_S`: `Test-HmAbend` (F1), `Test-MqRecord` (F2), `Test-JenkinsFile`
-(F3/F4), `Get-MatchedRowIndex` (F5); previously an exact `-eq` meant a
-batch-stamped id could silently fail to match its own HM/MQ/Jenkins record.
-Same tolerance applied to `Select-JenkinsDownloadFiles`
-(`JenkinsDownload.ps1`), `Parse-JenkinsList.ps1`, `ProcessTime.ps1`'s two
-archived-HM-text lookups, `SendVsGift.ps1`'s `Find-GiftFileForZipRow`
-(mirrors `DfSnap.ps1`'s `Find-DfZipFile`), and `Resolve-ExpectedTime.ps1`.
-**Jenkins Ctrl+F fix** -- Ctrl+F is a literal substring search, so
-searching the full batch-stamped id failed outright (no highlight, no hit
-row in the screenshot) whenever the Jenkins page's own rendered text showed
-only the base id; `JenkinsSnap.ps1` now searches on the base id only
-(always a prefix of either spelling). **Duplicate-candidate tie-break** --
-new `Get-HmArchivedCorrelTime` + `Test-JenkinsFile -PreferredTime`: when
-multiple Jenkins list rows share a correl (genuine batch reruns),
-`JenkinsSnap.ps1` reads this SAME correl's own already-archived HM Ctrl+A
-capture and passes its newest run time in as a ground-truth tie-break
-(`Select-JenkinsFileCandidate`) -- used only when no `Expected_Time`/
-time-check already narrows things, and it can only help disambiguate, never
-turn an otherwise-ok verdict into ng. Pure logic unit-tested
-(`Test-MappingStore.ps1`, `Test-SnapVerify.ps1`, `Test-EvidencePlan.ps1`,
-`Test-JenkinsDownload.ps1`); the JenkinsSnap.ps1 Ctrl+F/PreferredTime wiring
-and the GIFT_HM/GFIX_HM archive-folder-per-Mode assumption are COM/SendKeys-
-adjacent and static-checked only -- confirm on an office PC.
-
-v2.19.0 (ProcessTime: count check reworked + identified-snap promotion):
-three fixes from the operator's review of v2.18.0's real output.
-**Count check** -- a zero record count is legitimate, and what the operator
-wants checked is whether the two sides AGREE, so `L 件数チェック` now compares
-the OCR-read count against the reference count `K` when K has a value and
-otherwise against the SAME correl's other side (GIFT vs GFIX). Equal reads
-`OK`, INCLUDING `0` vs `0`; blank whenever there is nothing to compare
-against. The paired row is resolved per row by the pure
-`Get-ProcessTimeCountPairMap` (read off the sheet, so retained rows pair too)
-and filled into the template's `{1}` -- the cross-row check v2.16.0 listed as
-a follow-up. The columns are now ALWAYS I/J/K/L, so enabling a reference no
-longer shifts 検証. **K placeholder** -- with no reference configured K still
-carries the lookup shape with `<DIR>`/`<BOOK>`/`<SHEET>` tokens, written as
-TEXT (no broken-link prompt); the operator replaces the tokens and converts
-the column back to formulas. **Identified-snap promotion**
-(`OldSnapVerify.PromoteIdentifiedSnap`) -- v2.18.0's D1 fallback RANKED a
-correl's exported pictures and could link one the OCR had rejected (often the
-Excel screenshot). `Resolve-ProcessTimeSide` now records the picture the
-accepted read really came from, and saves an evidence-workbook export under
-the canonical `snap\<Stage>_HM\<correl>.png` name, so the hyperlink opens the
-exact page the numbers came from and later runs OCR it directly. It never
-overwrites a real capture and never writes a `<correl>.txt` (that tier means
-"immune Ctrl+A page text" and is trusted absolutely); the copy is marked with
-`<snap>.promoted.json` so the D2 pixel check keeps excluding its re-scaled
-geometry on every later run. Pure logic unit-tested; COM paths static-checked
-only -- confirm on an office PC.
-
-
-v2.18.0 (ProcessTime: reference-workbook 件数チェック + D1 fallback image):
-two fixes from the operator's first real run of the non-pixel build.
-**件数チェック against the project's reference workbook** -- new
-`ProcessTime.CountReference` (default OFF) replaces the v2.16.0 "count is a
-positive number" K check with the one the operator actually does by hand:
-K 件数(参照) pulls the EXPECTED count out of the project's monthly workbook
-(`=IFERROR(INDEX(<Value>,MATCH(LEFT(C行,KeyLength)&"*",<Key>,0)),"")`) and
-L 件数チェック compares it T/F against the OCR-read count. The file/sheet
-names take a `{Tag}` token (this workbook's JOD/JRV/... tag) and a `{Month}`
-token, so `GPCS({Tag})_{Month}月.xlsx` resolves per output workbook; a miss
-or a partial row leaves the check blank, never `#N/A`/NG. **D1 fallback
-image** -- `OldSnapVerify.FallbackImage` (default ON): a correl whose HM page
-was only ever captured INSIDE the evidence workbook has no standalone
-`snap\<Stage>_HM\<correl>.png`, so v2.17.0 left its row with no hyperlink at
-all (and 画像なし) -- exactly the rows a human most needs to open. Those rows
-now link the picture this phase exported out of the workbook
-(`snap\ProcessTime\<correl>\<SIDE>_<correl>_NN.png`), and 検証's
-`SnapExists` accepts either image, so they are triaged like any other OCR row
-(the deterministic checks never depended on which image exists). The D2 pixel
-check stays gated on the REAL snap PNG, so with `PixelDiff` on a
-fallback-image row still lands on 要確認. Pure logic unit-tested
-(`Test-ProcessTimeCheck.ps1` 70, `Test-OldSnapVerify.ps1` 72); the K/L
-formulas evaluating in real Excel and the fallback hyperlink are
-static-checked only -- confirm on an office PC. Also lands
-`docs/ProcessTime-OldSnap-MockMatch-Plan.md` (PLANNED): render the D2
-reference row from the mock page in Edge on the office PC instead of GDI+,
-and whole-field template-match it.
-
-
-v2.17.0 (ProcessTime old-snap 9->3 hand-verification: D1 + deterministic
-triage + D2): triages the finite backlog of OLD HM snaps that have only a
-low-res PNG (no immune Ctrl+A `.txt`) and so fell back to OCR, where the ja
-recognizer misreads MS Gothic `9` as `3`. **D1** -- each `処理時間(*).xlsx`
-output row's 相関ID cell hyperlinks to its snap image (one click to human
-review). **検証 column** -- `txt` (trusted) / `OCR-OK` (auto-confirmed) /
-`要確認` / `画像なし`, from a conservative pure verdict
-(`Get-OldSnapVerifyVerdict`, `OldSnapVerify.ps1`): never auto-confirm unless
-every enabled check passes -- deterministic duration arithmetic
-(`Test-OldSnapDurationArithmetic`) + a 3<->9 datestamp cross-check
-(`Repair-ProcessTimeStartFromStamp`), plus (when on) the D2 image check.
-**Phase 0** (node/CI, `mock-page/pixeldiff.mjs` + `node --test`) proved the
-3/9 pixel metric separable with margin -- **GO** -- so **D2** is implemented:
-pure scorer `PixelDigitMatch.ps1` (unit-tested) + GDI+ glue
-`OldSnapPixelVerify.ps1` (static-checked), OFF by default
-(`ProcessTime.OldSnapVerify.PixelDiff.Enabled`) until the crop geometry per
-snap-window size is calibrated on an office PC. New config section
-`ProcessTime.OldSnapVerify` (nested under the already-grouped ProcessTime, so
-the ConfigOverlay schema-drift guard stays satisfied). Pure logic
-unit-tested (`Test-OldSnapVerify.ps1` 50, `Test-PixelDigitMatch.ps1` 26); the
-COM hyperlink/verify write path + the GDI+ D2 glue are static-checked only --
-confirm on an office PC (hyperlinks open the right snap; a known 9->3 row
-flags `要確認` not auto-confirm; calibrate D2 geometry+threshold before
-enabling `PixelDiff`).
-
-v2.16.2 (DfSnap: check file existence before the isZip unzip attempt): an
-isZip=1 row whose GIFT/GFIX side had NO data file at all (neither zip nor
-plain) was still printing `[WARN] isZip=1 but no readable <side> zip found
-for <correl>; using the plain data file` before the real
-`[FAIL] <side> data file not found for <correl>`, which read like unzip had
-been attempted and failed when in fact the file was simply missing.
-**Fixed** -- `Resolve-DfCompareFile` now checks for ANY file matching the
-correl id first (`Find-DataFile`, reused from the existing glob lookup); if
-none exists it returns `$null` immediately with no zip-related warning at
-all, leaving the caller's normal "data file not found" fail line as the
-only log output. Only when a file IS present does it then try to open it as
-a zip, warning (and falling back to the plain file) solely when that file
-exists but is not a readable zip archive. No unit tests (COM-adjacent phase
-script, static-checked only per project convention) -- confirm the log
-output on an office PC against a correl id with no data file on one side.
-
-v2.16.1 (SnapVerify/Jenkins: fix single-digit-hour false NG in GfixRecv file-
-list matching): `JenkinsSnap.ps1`'s F3 GfixRecv detection was reporting
-`file not in list` for files that were plainly visible on the Jenkins page
--- root cause was `SnapVerify.ps1`'s `ConvertFrom-JenkinsListText` (and the
-standalone `Parse-JenkinsList.ps1`) requiring an exactly-2-digit, zero-
-padded hour (`\d{2}:\d{2}:\d{2}` + `ParseExact 'HH:mm:ss'`), while Jenkins
-renders morning timestamps with a single-digit hour and no leading zero
-(e.g. `2026/07/24 9:50:03`, not `09:50:03`). Any row with an hour before 10
-silently failed the line regex and was dropped from the parsed file list
-entirely, so `Test-JenkinsFile` correctly-but-wrongly reported the file
-missing. **Fixed** -- both parsers now accept `\d{1,2}` for the hour and
-parse with the single-character `H` format specifier (`'yyyy/MM/dd
-H:mm:ss'`), which .NET's `ParseExact` accepts as either 1 or 2 digits on
-input. Added a regression case to `Tests\Test-SnapVerify.ps1` for a
-single-digit-hour row. Pure logic, unit-tested; no COM/Excel involved.
-
-v2.16.0 (ProcessTime: check-formula module + unified generation, pure
-refactor -- no OCR change): the ProcessTime output workbook's audit
-formulas -- previously inlined into `Write-ProcessTimeWorkbook`'s per-row
-write loop (col I `=E-D`, col J `=IF(ROUND(F*86400)=ROUND(I*86400),"T","F")`)
-where they were untestable and coupled to the data write -- are extracted
-into a data-driven module and generated in one uniform pass. **Added** --
-new pure `ProcessTimeCheck.ps1` (dot-source, no param(), no COM):
-`Get-ProcessTimeCheckColumnSpec` returns the ordered spec for the columns
-appended after the A..H data -- I 処理時間(検算) (=E-D), J チェック (T/F
-compare), and a new K 件数チェック that formalizes the operator's manual
-"count check" (first version: the per-row record count in col G parses to a
-positive number, thousands commas stripped; blank -> blank, zero/non-numeric
--> NG; a stricter GIFT-vs-GFIX cross-row equality check is a documented
-follow-up because the vertical layout groups all GIFT then all GFIX rows per
-job, so a single-{0} template cannot reference the paired row). Japanese
-headers via `[char]` (ASCII source). `New-ProcessTimeCheckFormula
--Template -Row` fills a template's `{0}` with the row number (pure, unit-
-tested, e.g. row 5 -> `=E5-D5`). The spec formulas are SELF-GUARDING (blank/
-text source cells -> "" in the cell) so the "partial row stays blank" rule
-holds with no per-row inspection. **Changed** -- `Write-ProcessTimeWorkbook`
-writes A..H data only; a new COM finalizer `Set-ProcessTimeCheckColumns`
-walks the spec after all data rows exist to write the check headers, per-row
-formulas and number formats, gated on the new `ProcessTime.EmitCheckColumns`
-config (default `$true`; `$false` writes A..H only). Every table
-range/border/fill/width now uses a dynamic last-column letter (A..H or
-A..K). **Added (reserved)** -- `ProcessTime.OcrPreprocessBinarize` /
-`OcrPreprocessThreshold` config: carried through config + CLI + docs but NOT
-wired into the OCR image pipeline yet (a placeholder for a later stage).
-**Notes** -- pure logic (`ProcessTimeCheck.ps1`) is unit-tested
-(`Tests\Test-ProcessTimeCheck.ps1`), the COM finalizer
-`Set-ProcessTimeCheckColumns` and the dynamic-range formatting are
-static-checked only -- confirm the I/J/K columns' formulas + values (and
-that a partial row stays blank) against a real evidence run on an office PC
-with Excel.
-
-v2.15.3 (ProcessTime: code-review hardening): three review findings against
-v2.15.2. **Changed** -- tag auto-derivation is now gated on a STRICT
-whole-name regex (`^[0-9A-Za-z][A-Za-z]{3}[0-9A-Za-z]{4}$` -- the full
-`?XXX????` shape, exactly 8 alphanumerics with letters in the tag slot);
-any non-conforming name fails safe to UnclassifiedTag instead of minting a
-junk tag from a blind substring. **Added** -- OCR image preprocessing
-(`ConvertTo-ProcessTimeOcrImage`, System.Drawing) as the ROOT-CAUSE fix for
-the ja `9`->`3` digit misreads: every picture is upscaled (2x, auto-capped
-below the WinRT OCR MaxImageDimension) + grayscaled + contrast-stretched
-(1.3) at the single OCR choke point (`Read-ProcessTimeOcrLines`) before
-either recognizer reads it; `<stem>_pre.png` artifacts live next to the OCR
-dumps and any failure falls back to the original image. Config:
-`ProcessTime.OcrPreprocess`/`OcrPreprocessScale`/`OcrPreprocessContrast`.
-(A post-hoc regex check + bounding-box en-US re-read cannot catch this bug:
-the misread yields a format-VALID timestamp.) **PS 5.1 note** -- the target
-runtime is Windows PowerShell 5.1; pwsh 7 runs here prove parse + pure
-logic only. The unit suite now bans the whole `@($var[index])` wrap shape
-from ProcessTime.ps1 (both real "Argument types do not match" incidents
-were that pattern); indexed-collection enumeration goes through
-`ConvertTo-ProcessTimeBucketArray`. Confirm all three on an office PC.
-
-v2.15.2 (ProcessTime: auto-derived output tags, snap-PNG OCR tier, real
-date/time cells + check formulas): driven by a real 257-row JOD office-PC
-run. **Fixed** -- (1) the `[FAIL] ... 引数の型が一致しません` on the 'Other'
-workbook followed by a contradictory `[OK]` for the same path: the workbook
-had SAVED fine -- the throw came after, from
-`@($writtenRowsByCorrel[$r.CorrelId])` in the write-bit marking loop (the
-PS 5.1 @()-over-hashtable-indexed-List[object] binder bug
-`ConvertTo-ProcessTimeBucketArray` already works around, one call site
-over), so the tag reported both FAILED and written and no write bit was
-ever set; now routed through the helper + a source-guard unit test. (2) all
-257 JOD rows piled into `処理時間(Other).xlsx`: new `ProcessTime.AutoDeriveTag`
-(default `$true`) derives the tag from the Excel_NAME's own `?XXX????`
-shape (chars 2-4: `CJODWDEJ` -> `JOD`) when no configured OutputTags entry
-matches, so an unlisted project family still gets its own workbook
-(`Get-ProcessTimeOutputTag -DeriveFromName`, unit-tested; UnclassifiedTag
-now only catches non-conforming names). **Added** -- (a) snap-PNG OCR tier:
-per-side source priority is now `snap\<Stage>_HM\<correl>.txt` -> OCR of
-`snap\<Stage>_HM\<correl>.png` (the cleaner, per-correl-named original
-screenshot; trusted like the section tier, source `ocr:snap-png`, dump
-`<side>_<correl>_snapocr.ocr.txt`) -> evidence-workbook picture OCR.
-(b) output workbook start/end are REAL Excel date/time values (OADate +
-NumberFormat set before the value) and duration a real `[h]:mm:ss` serial,
-with text fallback; new audit columns I `=E{r}-D{r}` and J
-`=IF(ROUND(F*86400,0)=ROUND(I*86400,0),"T","F")` (blank on partial rows);
-pure `ConvertTo-ProcessTimeDateTimeValue`/`ConvertTo-ProcessTimeDurationValue`
-unit-tested. (c) new standalone `Probe-SheetFormat.ps1` (see file map).
-**Notes** -- RECORDED recurring ja-OCR confusion: digit `9` read as `3`
-(JIGPC06S: page `11:19:16/11:19:28/20260701111906/29,264` -> ja
-`11:13:.../111306/23,264` while en-US read `11:19:` right); see the TODO
-below for the planned en-US digit cross-check. COM paths static-checked
-only -- confirm on an office PC against the same JOD folder.
-
-v2.15.1 (ProcessTime: template-matched worksheet formatting + code-review
-fixes): the office-PC formatting fix from the v2.15.0 follow-up (Yu Gothic
-11pt template styling, A1-address ranges to dodge the `Cells.Item` COM
-overload mismatch) went through a code review that caught three real bugs,
-all fixed here. **Fixed** -- (1) the formatting block's single bare
-`catch {}` silently skipped every remaining step (and printed no warning)
-the moment one COM call failed, so a workbook could report success while
-only partially formatted; split into one try/catch per concern (range
-resolve / AutoFilter+borders / header fill+font / font+row-height /
-alignment / GIFT-GFIX row fill / column widths), each logging
-`Write-Warning` with the failing step and output path. (2)
-`Generate-HostOpenMapping.ps1`'s snap `ID.txt`/`ID.png` bulk-ID selector --
-documented as only for `-FromBizCode JOD -Owner all` -- actually fired for
-ANY call omitting `-CorrelIdsM`/`-JobNames`/`-ExcelNames`, so a stale
-`ID.txt` left over from an earlier JOD batch could silently hijack an
-unrelated run (e.g. `-FromBizCode JRV -Owner AAA`) into a tiny ID-file-
-limited temp mapping instead of the intended WBS+FromBizCode scan; gated
-behind a new pure, unit-tested `Test-MappingIdBulkSelectorEnabled`
-(`MappingInput.ps1`). (3) a duplicated `CHANGELOG.md` entry from the prior
-commit was merged into one, versioned entry. **Notes** -- current
-`ProcessTime.ps1` output formatting settings (colors/fonts/sizes/widths) are
-now documented inline as a reference point; a dedicated formatting module
-is still a TODO, and Start/End are written as plain formatted TEXT rather
-than real Excel date/time values with a cell `NumberFormat`. Also removed an
-accidentally committed `VerifyConfig_bk.psd1` backup and added a
-`.gitignore` rule for `*_bk.ps1`/`*_bk.psd1`/`*.bak`; line-ending
-normalization (`.gitattributes`) done as a separate commit per review
-feedback. No PowerShell/Excel in this dev environment -- confirm the
-per-step formatting warnings and the mapping selector gate on an office PC.
-
-v2.15.0 and earlier (bitmask ProcessTime_Inserted + config-driven output
-tags; the v2.14.x JDL/JRV split + OCR robustness; v2.13.0 staged Ocr/Write;
-the v2.12.x ProcessTime OCR-parsing fixes; v2.11-v2.6 snap crop, Mark
-image-match, DeliverFiles/BackupJ4, SnapVerify, config overlay, incremental
--Add, and the major MappingStore/plan-driven-Replace refactor) -- folded
-here; see CHANGELOG.md for the full per-version history.
-
-Major refactor: shared MappingStore, plan-driven Replace, recovery + monitoring.
 Pure (COM-free) libs are unit-tested via `Tests\Run-Tests.ps1`; COM/Edge phases
-validated by static analysis only (no PowerShell/Excel in the cloud build env)
-and need a Windows + Excel 2019 run to confirm end to end.
-
-Phases: Mapping, InitConfig (new), ExcelSnap (legacy), GiftHmSnap, GiftMqSnap, GiftJenkins,
-GiftJenkinsNoFile, GfixHmSnap, GfixJenkins, GfixLogDownload, DfSnap,
-Clone, **Align (new)**, ReplaceGift/Gfix/Df, MarkGift/Gfix/Df,
-ReviewGift/Gfix/Df, ReviewEvidence, **Comments (new, review-note list)**,
-**CheckSheet (new, fill review check sheet)**, **DeliverMail (new, review-request mail)**,
-Validate, RepairMapping, ProbeShapes, Crop, **WatchProgress (new)**.
-The GFIX-log highlight is folded into MarkGfix; `MarkGfixLog.ps1` remains only as
-a standalone re-highlight utility (reachable by name, no mapping column).
-
-Replace is now plan-driven (EvidencePlan + EvidenceExecutor), correl-major per the
-review standard. GFIX log is matched by `GfixLog.ps1` (whole file pasted) instead
-of the old TODO placeholder. All mapping I/O goes through MappingStore (atomic
-writes). Every phase appends events to `status\progress.jsonl`; watch them live
-with `Watch-MappingProgress.ps1` (read-only, never locks the CSV).
+are validated by static analysis only (no PowerShell/Excel in the cloud build
+env) and need a Windows + Excel 2019 run to confirm end to end.
 
 To run the tests on Windows: `powershell -File Tests\Run-Tests.ps1` (parse-checks
 every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encoding.ps1`.
@@ -1106,188 +727,7 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## TODOs
 
-- **ProcessTime: ja-OCR digit 9<->3 -- DETERMINISTIC FIX SHIPPED (v2.21.0),
-  measurement still open.** The confusion itself is now handled without
-  guessing, by `TimeDigitVerify.ps1`: (a) a digit that makes its field
-  illegal is forced back when exactly one 3<->9 substitution can do it
-  (`Repair-ImpossibleTimeDigit` -- '10:93:20' can only have been
-  '10:33:20'); (b) start, end and the page's own printed processing-time
-  column are treated as three readings of one fact, so a disagreement that
-  exactly one substitution reconciles is repaired by arithmetic
-  (`Resolve-ProcessTimeDurationConflict`) and anything ambiguous is left
-  exactly as read and flagged; (c) every remaining ambiguous 3/9 -- one
-  sitting where the opposite digit would also be legal -- is marked red in
-  the output workbook by conditional formatting for a human glance. **No
-  heuristic ever rewrites a plausible reading**; that was the v2.20.0-era
-  bug (a misread end second turned a printed 00:00:01 into a derived
-  00:00:07 silently). Still open: there is no way to MEASURE 3/9 accuracy,
-  so preprocessing (`ConvertTo-ProcessTimeOcrImage`, v2.15.3) cannot be
-  tuned -- see the benchmark item below.
-
-- **ProcessTime: OCR benchmark harness** (Phase 2,
-  `docs/ProcessTime-OcrBenchmark-Plan.md`) -- new office-PC-only
-  `Export-OcrBenchmarkTruth.ps1` (reverse-export truth manifest from a
-  confirmed `処理時間(*).xlsx`), `Build-OcrBenchmarkImages.ps1` (Edge render of
-  a faithful HM template + crop reusing `ScreenRegion.ps1`), and
-  `Test-OcrAccuracy.ps1` (`-Sweep`/`-Json`). The synthetic HTML template needs
-  operator-supplied CSS + office-PC visual calibration (real captured snaps
-  stay the primary ground truth; synthetic pages only cover 3/9 combinations
-  absent from real data). Windows/Edge/OCR paths are static-checked only; pure
-  `Compare-OcrDigits` / `Get-OcrBenchmarkScore` are CI-unit-tested. NOTE the
-  plan's `Repair-ProcessTimeStartFromStamp` step is parked, not pending --
-  it exists, was never wired, and is superseded (`docs/Parked-Ideas.md`).
-
-- **NEXT: ReplaceGfix duplicate-candidate confirmation** — since v2.9.18,
-  `GfixLogDownload` deliberately downloads *every* GoAnywhere job matching a
-  needed IF_NO (not just one), because duplicate-IF_NO rows are common and
-  content matching (`Find-GfixLogForCorrel`) is what actually decides which
-  correl a log belongs to. This means `log\` can now legitimately hold more
-  than one candidate log for a single correl (e.g. genuine retries of the
-  same job) more often than before. **Partly addressed in v2.21.0**:
-  `Find-GfixLogForCorrel` now decides run identity from the log's own
-  `Command:` line (`Select-GfixLogCandidate`), so the plain and
-  batch-stamped spellings of ONE download collapse into a single run
-  instead of warning, and a batch-stamped `Correl_ID_S` selects its own run
-  outright. What is left is the genuine case: two real reruns of the same
-  job, where it still silently picks the newest and only prints a
-  `[WARN] N different receive runs matched; chose newest (...)` — it never
-  stops for operator confirmation. Planned next step: when `ReplaceGfix` (or `GfixLogDownload`'s
-  finalize step) hits a multi-candidate `Warning`, show the operator each
-  candidate's file name + parsed timestamp and require an explicit pick
-  (Enter = accept newest, or choose another) before the log is pasted into
-  the evidence workbook / before `GFIX_log`/`isReplaced` is marked done,
-  instead of trusting "newest wins" silently. Needs: (1) deciding where the
-  prompt belongs (`GfixLogDownload` finalize vs `ReplaceGfix`'s log op in
-  `EvidenceExecutor.ps1` — the latter runs later and closer to when the log
-  is actually inserted, so may be the more meaningful place to ask), (2) a
-  non-interactive fallback (keep "newest wins" under `-NonInteractive`, same
-  as the rest of this codebase's interactive/non-interactive split).
-
-- **Mark: image-recognition placement for the red rectangle -- WIRING DONE**
-  (v2.9.23), calibration still open. `Mark.Boxes` entries can now add a
-  `Template` key (filename resolved against `Mark.TemplateDir`, then
-  `mark_templates/`); when present, Mark.ps1 calls the existing
-  `Locate-ByImage.ps1` (LockBits template match) against the original snap
-  PNG (`<WorkDir>\snap\<folder>\<correl>.png`, the same file
-  ReplaceEvidence pasted) instead of trusting a fixed offset, scales the hit
-  from source-PNG pixels to the inserted picture's on-sheet point size, and
-  falls back to the configured `OffsetX/OffsetY/Width/Height` box whenever
-  there is no Template, the file is missing, or no match is found -- so this
-  degrades gracefully and never blocks Mark. Per-box `Tolerance`/`PadX`/`PadY`
-  overrides; console lines are tagged `[MARK-IMG]` (matched) vs `[MARK]`
-  (fixed offset fallback) so a run makes it obvious which path was used.
-  Still needs: real reference template PNGs per mark target (a small,
-  visually distinctive crop of the target field -- see
-  `mark_templates/README.txt` for the how-to) captured from real evidence,
-  and an office-PC/Excel session to calibrate and confirm the pixel->point
-  scaling -- no Windows/Excel in this dev environment, so `mark_templates/`
-  ships empty and this stays fixed-offset-only until templates are added.
-
-- **GiftJenkinsNoFile: callout bubble on the past-data mark** — SnapVerify M6
-  (v2.9.11) already detects an unexpected *old* file in the no-GFIX-expected
-  case (`Test-JenkinsFile -ExpectExists:$false`), draws the red box on the
-  file's timestamp field, and stamps `過去分データー` (`ProjectLabels.NoGfixPastData`)
-  into `SnapVerify.NoGfixNoteColumn` (default `AZ`). Requested follow-up: add
-  an actual callout/comment-bubble shape next to the mark (not just the AZ
-  column text) so the "this is old/past data" note is visible directly on the
-  evidence picture itself. Needs a design decision on the shape to use (Excel
-  `msoShapeCallout` via COM ~= `Shapes.AddCallout`, sized/positioned relative
-  to the existing `verifyNote` AltText rect) plus an office-PC/Excel session
-  to confirm placement -- no Windows/Excel in this dev environment.
-
-- **Edge activation robustness DONE** (v2.9.18) — `Common.ps1`'s
-  `Activate-EdgeWindow` (used by `Switch-ToEdge`, which `GfixLogDownload` /
-  `MqSnap` / `HmSnap` all call after the operator presses Enter) used to
-  activate Edge purely via `$Shell.AppActivate("Microsoft Edge")`, a
-  title-substring match, and silently discarded its success/failure return
-  value. `JenkinsSnap.ps1` had already independently fixed this exact
-  flakiness for itself with a process-name-based lookup
-  (`Get-EdgeMainWindowHandle` / `Activate-JenkinsEdgeWindow`, msedge.exe by
-  process rather than window title), but that fix never made it into the
-  shared `Common.ps1` helper the other phases use. Promoted the
-  process-handle-first / title-match-fallback approach into
-  `Common.ps1.Activate-EdgeWindow` (title match is now only a fallback, and a
-  real `[WARN]` is printed when both paths fail instead of silently
-  "activating" whatever window already happened to be foreground);
-  `JenkinsSnap.ps1`'s duplicate local copy was removed in favor of the shared
-  one. Static-checked only (no Windows/Edge in this dev environment) --
-  confirm on an office PC that `Switch-ToEdge` reliably reaches GoAnywhere
-  again.
-
-- **SnapVerify M1–M5 done** — M1: `SnapVerify.ps1` pure library +
-  `Tests/Test-SnapVerify.ps1` unit tests + `SnapVerify` config section in
-  `VerifyConfig.psd1`. M2: `MqSnap.ps1` migrated to MappingStore/ProgressLog and
-  wired to F2 (page-text poll, page-kind sentinel, MQ verdict ok=1/ng=2, batch
-  `Expected_Time` prompt); two new pure helpers (`ConvertTo-ExpectedDateTime`,
-  `Set-EmptyRunTimeCells`) are unit-tested. M3: `JenkinsSnap.ps1` wired
-  to F3 (GiftRecv/GfixRecv NG=2 + summary, batch time prompt, sentinel,
-  `Test-JenkinsSnapDone`); NoGfix stays pure-screenshot until M6. **M4 done** --
-  `HmSnap.ps1` migrated to MappingStore/ProgressLog and wired to F1
-  (page-text poll, page-kind sentinel, `Test-HmAbend` verdict ok=1/ng=2/ask with
-  newest-wins in the time window, batch `Expected_Time` prompt, local
-  `Test-HmSnapDone`); per-`TO_code` appl grouping preserved; VerifyTool dispatch
-  passes SnapVerify+ExpectedTime config (mirrors MqSnap). **M5 done** -- F5 pixel
-  localisation: pure `Get-MatchedRowIndex` / `Get-RowPixelRect` /
-  `Get-JenkinsHighlightRect` / `New-SnapLocRect` / `Save-SnapLocSidecar` in
-  `SnapVerify.ps1` (unit-tested) produce a `snap\<folder>\<correl>.loc.json` rect
-  for the verdict's row; non-pure glue `SnapLocalize.ps1` (`Write-SnapLocalize`,
-  System.Drawing + `Find-ActiveHighlightRow` scan) is dot-sourced by the three
-  snap scripts and writes the sidecar after each verdict when
-  `SnapVerify.Localize.Enabled` (default `$false`; HM/MQ geometry must be
-  calibrated first, Jenkins uses the orange highlight). **M6 done** (v2.9.11) --
-  NoGfix annotation: `GiftJenkinsNoFile` detects an unexpected file
-  (`Test-JenkinsFile -ExpectExists:$false`), writes `<correl>.note.json` when
-  `Localize.Enabled`, ReplaceEvidence stamps `verifyNote` AltText, MarkGift
-  pixel->point scales + draws the red box and writes `過去分データー`
-  (`ProjectLabels.NoGfixPastData`) to `SnapVerify.NoGfixNoteColumn` (default `AZ`).
-  v2.9.12 field fixes: `TimeCheck` default-off, time-only run-time input, Edge
-  refocus after prompts, NoGfix poll `-RequireTerm $false`, stale-note cleanup.
-  M3/M4 copied MqSnap's `Test-MqSnapDone` pattern (done == exactly '1')
-  so NG='2' rows stay pending -- `Get-PendingRows`/`Test-SnapDone` treat any
-  non-'0' value as done and would hide NG rows. Design + open questions (only Q5,
-  Rtncd/Rsncd semantics, is non-blocking) live in `docs/SnapVerify-Plan.md`. The
-  M5 COM/GDI+ wiring is static-checked only; confirm on an office PC + calibrate
-  `SnapVerify.Localize.*Row1Top/*RowHeight/*ColLeft/*ColWidth` before trusting it.
-
-- **Generate-HostOpenMapping `-Add` + owner filter compose DONE** (v2.9.13) —
-  explicit `-Add` selectors (`JOB_NAME` / `Correl_ID_M` / `Excel_NAME`) used to
-  bypass the WBS owner-match scan, so jobs were added regardless of owner. They
-  are now looked up in the WBS (col A) via the new `Build-WbsJobOwnerMap` and
-  filtered through pure `Select-JobsByOwner` (`OwnerFilter.ps1`): a job whose WBS
-  owner cell (col P) belongs to another operator is dropped (warned); a job
-  absent from the WBS is kept as a temp/not-yet-listed job and reported. The
-  WBS-range `-Add` path already owner-filtered (Step C) and is unchanged. Pure
-  logic unit-tested in `Tests\Test-OwnerFilter.ps1`; the COM scan needs an
-  office-PC run to confirm.
-
-- **GfixLogDownload: auto-set GoAnywhere max rows to 100**
-  Currently requires manual setup (default GoAnywhere list shows 20 rows — not enough for
-  busy BIZ codes). Future: use SendKeys / UI automation to set the rows-per-page dropdown
-  to 100 automatically after `Switch-ToEdge`, before the per-row search loop.
-
-- **DfSnap: DfExePath configurable + first-run prompt DONE** — `Df.ExePath`
-  (empty by default) holds a locked path that skips the prompt entirely; the new
-  `Df.DefaultExePath` (default `C:\tools\DF\DF.exe`) is the suggestion the
-  first-run prompt pre-fills (Enter accepts). Resolution is CLI `-DfExePath` >
-  `verify_session.json` > `Df.ExePath` > prompt(`Df.DefaultExePath`). VerifyTool
-  prompts once on the first DfSnap run, remembers the answer in
-  `verify_session.json` (`DfExePath`), and passes both values to `DfSnap.ps1`
-  (which keeps its own default-pre-filled prompt for standalone use). To lock a
-  path and never be prompted, set `Df.ExePath` directly. COM/Excel parts are
-  static-checked only; confirm the prompt + persistence on an office PC.
-
-- **DfSnap region calibration** — default capture is `region` (x=120,y=280,w=1250,h=657
-  for ~1980x1020). Tune `Df.RegionX/Y/Width/Height` and per-direction
-  `Df.CropLeft/Top/Right/Bottom` (the window shadow is asymmetric). A pixel-color
-  auto-detect of the window edge is a future option (no vision in a PS script).
-
-- **GfixLogDownload max-rows** — still relies on manual "rows=100" setup.
-  - **SS_CODE override DONE**: ReplaceGfix now reads an optional `SS_CODE` mapping
-    column and threads it through the plan (`Build-GfixEvidencePlan -CorrelToSs`
-    -> log op `SsCode` -> `Find-GfixLogForCorrel`). When the column is present and
-    non-empty it wins; otherwise `GfixLog.ps1` infers SS from `Correl_ID_S`
-    (5th char, or `J` for `J<biz>LxxS` jobs) exactly as before. Add an `SS_CODE`
-    column to the mapping to take effect.
+Open work lives in [`docs/TODO.md`](docs/TODO.md).
 
 ## Cross-environment workflow
 

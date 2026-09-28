@@ -169,5 +169,23 @@
       ],
       "pattern": "最小集是 (\\d+) 张"
     }
-  ]
+  ],
+  "agentContext": {
+    "file": "CLAUDE.md",
+    "maxLines": 900,
+    "allowVersionTags": [
+      {
+        "text": "pre-v2.15.0 mapping",
+        "note": "defines migration behaviour: which mappings get the legacy '1' -> '3' rewrite"
+      },
+      {
+        "text": "(added v2.9.4",
+        "note": "the incident that motivates the config-overlay-groups rule"
+      },
+      {
+        "text": "since v2.10.7",
+        "note": "tells a reader with an older work folder where the answer used to be stored"
+      }
+    ]
+  }
 }

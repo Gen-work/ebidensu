@@ -104,6 +104,10 @@ Assert-Equal 1            $iss2.Count 'an unresolvable {{steps.X}} is reported'
 Assert-Equal 'undef-step' $iss2[0].Kind 'reported as undef-step'
 Assert-Equal 'ghost'      $iss2[0].Name 'reports which step id is missing'
 
+$vt = @(Find-DocsVersionTag -Text "a v2.1.0 b`nplain`nold v1.2.3 note`nv2 only" -Allow @('old v1'))
+Assert-Equal 1 $vt.Count 'version tag found, allowed line skipped, bare v2 ignored'
+Assert-Equal 1 $vt[0]    'version tag hit reports its line number'
+
 $frag = @(Get-DocsJsonBlock -Text ("``````jsonc`n" + '{ "id": "cp", "use": "flow.checkpoint", "with": { "v": "{{steps.verdict.out.code}}" } }' + "`n``````"))
 Assert-Equal 0 @(Test-DocsExampleBlock -Block $frag[0]).Count 'a fragment may reference a step defined elsewhere'
 
@@ -210,5 +214,20 @@ foreach ($f in $docFiles) {
 }
 foreach ($h in $exBad) { Write-Host ('      ' + $h) -ForegroundColor Yellow }
 Assert-Equal 0 $exBad.Count 'workflow examples define every step they reference'
+
+# --- check 5: CLAUDE.md stays a small, version-free agent context ---
+# CLAUDE.md is read into every agent session. It once reached 1323 lines,
+# most of them restating CHANGELOG.md, and its "last bump" heading had
+# already fallen behind the real release. Both failures are mechanical.
+$ac = $cfg.agentContext
+$acPath = Join-Path $repoRoot $ac.file
+Assert-True (Test-Path -LiteralPath $acPath) ('{0} present' -f $ac.file)
+$acText  = Get-Content -LiteralPath $acPath -Raw -Encoding UTF8
+$acLines = @($acText -split "`n").Count
+Assert-True ($acLines -le [int]$ac.maxLines) ('{0} is {1} lines (limit {2}); move history to CHANGELOG.md, open work to docs/TODO.md' -f $ac.file, $acLines, $ac.maxLines)
+$acAllow = @($ac.allowVersionTags | ForEach-Object { $_.text })
+$acHits  = @(Find-DocsVersionTag -Text $acText -Allow $acAllow)
+foreach ($ln in $acHits) { Write-Host ('      {0}:{1} version tag -- link CHANGELOG.md instead' -f $ac.file, $ln) -ForegroundColor Yellow }
+Assert-Equal 0 $acHits.Count ('{0} records no release versions (history lives in CHANGELOG.md)' -f $ac.file)
 
 exit (Complete-Tests)

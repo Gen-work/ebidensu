@@ -1,7 +1,7 @@
 # Parked ideas
 
 Work that was designed (sometimes partly built) and then deliberately set
-aside. Nothing here is on the active TODO list in `CLAUDE.md` — that list is
+aside. Nothing here is on the active TODO list in `TODO.md` — that list is
 for what the project is working on **now**. Items move back out of this file
 only when someone decides to pick them up again.
 
