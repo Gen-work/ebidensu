@@ -73,23 +73,31 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         parameter; failure 'input_invalid', or 'contract_
                         violation' when the manifest is wrong), then session
                         names -> instances; and Test-EbiStepReturn (3.1).
-                        Unit-tested via Tests\Test-Registry.ps1) and Runner.ps1
-                        (P0-07 spike of the workflow runner: Invoke-EbiWorkflow
-                        reads a workflow JSON, loads each step through the
-                        registry, runs setup then teardown in a finally, keeps
-                        $Ctx.Session and the STEP-CONTRACT 3.4 point 7 resource
-                        channel -- reserved return key 'resource', 'with.as'
-                        registration, session-input name -> instance
-                        replacement -- enforces the 3.1 return contract and
-                        traces every step; refuses source/each/templates/
-                        when/onError up front with 'unsupported_in_spike'.
-                        Unit-tested via Tests\Test-Runner.ps1). Context.ps1
-                        (P1-01: pure {{}} template evaluation -- scopes
-                        vars/profile/page/run/item/steps, whole-value type
-                        preservation, \{\{ escape, one-pass evaluation of
-                        profile/page subtrees, failures as records naming
-                        the unresolved segment; not yet wired into Runner,
-                        P1-03 does that; Tests\Test-Context.ps1) and Key.ps1
+                        Unit-tested via Tests\Test-Registry.ps1), Worklist.ps1
+                        (P1-03: the in-memory worklist resource shape
+                        @{ path; columns; rows } and the ONE row filter,
+                        Select-EbiWorklistRows -- runner source.select and
+                        table.select share it; five pendingWhen forms,
+                        verdict values translation, bitmask by name/number,
+                        stable groupBy/orderBy sort; Tests\Test-Worklist.ps1),
+                        Runner.ps1 (P1-03 main body: Invoke-EbiWorkflow
+                        validates the workflow shape ('workflow_invalid',
+                        schema 1 required), runs setup / each per selected
+                        row / teardown in a finally, expands {{}} templates
+                        per call, evaluates when (skipped steps = null
+                        fields + skipped=true), replays once:group outputs
+                        to later items of the group, ends only the failing
+                        item on a failure, turns operator_quit into
+                        'cancelled'; keeps $Ctx.Session and the 3.4 point 7
+                        resource channel; onError / ledger / resume /
+                        groupEnd are P1-04. Tests\Test-Runner.ps1),
+                        Context.ps1 (P1-01: pure {{}} template evaluation --
+                        scopes vars/profile/page/run/item/steps, whole-value
+                        type preservation, \{\{ escape, one-pass evaluation
+                        of profile/page subtrees, failures as records naming
+                        the unresolved segment; plus the four when forms,
+                        ConvertFrom-EbiWhen / Test-EbiWhen, P1-03;
+                        Tests\Test-Context.ps1) and Key.ps1
                         (P1-27 seed: full-width folding, item.key display
                         form, item.keySafe file-safe form -- the ONE place
                         key normalization lives).
@@ -560,7 +568,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
-`Registry.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Registry.ps1`, `Worklist.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

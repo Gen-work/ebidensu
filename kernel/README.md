@@ -38,13 +38,25 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   unknown type) is `contract_violation`. `path` inputs are type-checked
   only; where a relative path resolves stays the step's decision until
   P1-18/P1-20 settle it.
-- `Runner.ps1` -- the P0-07 spike of the workflow runner, and the seed of
-  P1-03/P1-04. It runs a workflow's `setup` and `teardown` sections, loads
-  steps through `Registry.ps1`, owns
-  `$Ctx` (including `$Ctx.Session`) and the resource channel of
-  `docs/ebi-dance/spec/STEP-CONTRACT.md` section 3.4 point 7, and refuses
-  `source` / `each` / `{{...}}` / `when` / `onError` up front rather than
-  half-running them. `ebi.ps1 run|dryrun <workflow> -WorkDir <dir>` wraps it
+- `Worklist.ps1` -- P1-03, the in-memory worklist (`@{ path; columns;
+  rows }`, a Session resource of kind `worklist`) and the ONE row filter
+  `Select-EbiWorklistRows` that the runner's `source.select` and the
+  `table.select` step share: the five `pendingWhen` forms, `verdict.values`
+  translation both ways, bitmask by name or number, `Sort-EbiWorklistRows`
+  (stable, groupBy then orderBy). Pure.
+- `Runner.ps1` -- P1-03, the runner's main body (P0-07 spike grown up).
+  `Invoke-EbiWorkflow` validates the workflow's shape (`workflow_invalid`;
+  `schema: 1` is required), runs `setup`, then `each` once per selected
+  worklist row, then `teardown` in a `finally`; expands `{{...}}` in `with`
+  per call (`Context.ps1`), evaluates `when` (a skipped step has every
+  output null plus `skipped=true`), replays `once: "group"` outputs to the
+  later items of the group, ends only the failing item on a step failure
+  and turns `operator_quit` into the reserved `cancelled`. Loads steps
+  through `Registry.ps1`, owns `$Ctx` (including `$Ctx.Session`) and the
+  resource channel of `docs/ebi-dance/spec/STEP-CONTRACT.md` section 3.4
+  point 7. `onError` policies, the ledger, resume and `once: "groupEnd"`
+  are P1-04 and are refused until then. `-Profile` is passed in as a
+  hashtable (loading `profiles/<name>/` is P2-01). `ebi.ps1 run|dryrun <workflow> -WorkDir <dir>` wraps it
   (the P1-10 seed); it can also be driven by hand:
 
   ```powershell
@@ -60,7 +72,9 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   `docs/ebi-dance/spec/WORKFLOW-SCHEMA.md` section 4: `New-EbiTemplateScope`,
   `Resolve-EbiPath`, `Expand-EbiTemplate`, plus `Test-EbiTemplateString` /
   `Get-EbiTemplateReferences` for `ebi lint`. Failures are records naming the
-  unresolved segment, never exceptions. Not wired into `Runner.ps1` yet (P1-03).
+  unresolved segment, never exceptions. Also the four `when` forms of
+  section 5 (`ConvertFrom-EbiWhen` / `Test-EbiWhen`, P1-03). Wired into
+  `Runner.ps1` since P1-03.
 - `Key.ps1` -- key normalization shared by everything that renders an item's
   key (`Context.ps1` today; `table.load` and `table.key` later): full-width
   folding, the `" / "` display form, the `_`-joined file-safe form. The seed

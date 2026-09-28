@@ -910,7 +910,7 @@
   验过),P1-18 / P1-20 决定要不要收回 runner;`Test-Runner.ps1` 里
   「plain with-values pass through」这条断言就是这个决定的守卫。
 
-### [ ] P1-03 [整块] kernel/Runner.ps1 主体
+### [x] P1-03 [整块] kernel/Runner.ps1 主体
 - **估** 120min | **依赖** P1-01, P1-02 | **读** `spec/WORKFLOW-SCHEMA.md` §1,3,7
 - **做**:`setup` / `each` / `teardown` 三段;`source.select` 的五种 `pendingWhen`;
   `flow.foreach`(隐式)、`flow.if`(`when` 的四种形式)、`once: group`
@@ -923,6 +923,38 @@
   **排除 `provides`/`releases` 非空的 step 的历史记录**(`STEP-CONTRACT.md`
   §6.2,P0-R10 决定 7)——跨进程不继承,进程内 `once` 语义照旧。这条写错的
   后果是 compose 类工作流被 Ctrl+C 之后永久跑不完。
+- **已执行(2026-09-28)**:`kernel/Runner.ps1` 重写为主体(`Get-EbiWorkflow
+  Problems` 形状校验 → `setup` → `each` → `finally { teardown }`),
+  `kernel/Worklist.ps1`(新,纯:`Select-EbiWorklistRows` 就是 runner 的
+  `source.select` **和** P1-26 `table.select` 共用的那一个函数;五种
+  `pendingWhen` 解析、`verdict.values` 正反翻译、位掩码按名/按数、
+  `Sort-EbiWorklistRows` 稳定排序),`kernel/Context.ps1` 追加 `when` 的四种
+  形式(`ConvertFrom-EbiWhen` / `Test-EbiWhen`)。`Tests/Test-Runner.ps1` 211 例
+  (原 P0-07 用例全保留)、`Tests/Test-Worklist.ps1` 60 例、`Test-Context.ps1`
+  +24 例。卡面两条完成判据都在 `Test-Runner.ps1` 里:4 行 fixture 的
+  setup+each 跑通(模板 vars / page / item / item.key / item.keySafe / run /
+  steps 全部命中),`once:"group"` 下 JOB_A 的第 2 条 item 引用到第 1 条跑出的
+  输出。决定了几条卡面没写死的细节:① worklist 资源的内存形状定为
+  `@{ path; columns; rows = @(hashtable...) }`(P1-24 `table.load` 照此产出);
+  ② 工作流形状问题是新增保留 id **`workflow_invalid`**(进 §3.1 的表),
+  第一步之前一次列全;`{{}}` 运行期解析失败归 `input_invalid`(message 带
+  `template {{路径}}`);③ `schema: 1` 从现在起必填(P0-R15),
+  `workflows/spike.capture_window.json` 补上;④ `each` 里一步失败只终止**那条
+  item**(余步记 `skip`),run 继续下一条——P1-04 的 onError 策略落地前的默认
+  行为;`operator_quit` 已转成保留 id `cancelled`(不再跑后续 item,未到的
+  item 记 `skip`,`teardown` 照 §1.1 跑,`ebi.ps1` 退出码 3 改看 `cancelled`);
+  ⑤ `once:"group"` 的组内跳过在本卡先用进程内的 `groupOutputs` 表,不写 ledger
+  ——P1-04 落 ledger 时把它换成 (group, step) 记录;`once:"groupEnd"` 本卡
+  只校验形状,执行是 P1-04;⑥ `empty` = 空 / `0` / 逻辑值 `pending`,空单元格
+  永远读作空(即便 `values` 里 `unknown: ""`);⑦ `bit !<名>` 和 `bit !<数>`
+  都收(P1-28 改 spec 时二选一或保留两种);⑧ `when` 的字面量只能是单个
+  token 或引号串——`a == 3 && b == 4` 被拒,不会被读成字面量 `3 && b == 4`;
+  ⑨ `-Profile` 由调用方传 hashtable(P2-01 才从 `profiles/<name>/` 加载),
+  `-Vars` / `-Operator` / `-Only` / `-Limit` 先做成参数,P1-10 接 CLI。
+  **撞出两处 PS 坑**,都记在代码里:`$vars` 和参数 `$Vars` 是同一个变量
+  (大小写不敏感),改名 `$wfVars`;`Invoke-EbiStepCall` 因为要 dot-source
+  `Import-EbiStep`,自己也必须被 dot-source 调用,局部状态全部收进一个
+  `$ebiCall` hashtable 以免污染 `Invoke-EbiWorkflow` 的变量。
 ### [ ] P1-04 [整块] Runner 的 onError + ledger
 - **估** 120min | **依赖** P1-03, P0-R3, P0-R5 | **读** `spec/WORKFLOW-SCHEMA.md` §6;`STEP-CONTRACT.md` §6
 - **做**:四种 policy(`retry` 退避 / `ask` / `skip` / `fail`)+ **`byFailure` 按失败

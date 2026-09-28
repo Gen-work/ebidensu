@@ -61,6 +61,6 @@ if (-not [System.IO.Path]::IsPathRooted($wfPath)) {
 }
 
 $summary = Invoke-EbiWorkflow -Path $wfPath -WorkDir $wd -RunId $RunId -DryRun:$dryRunFlag
-if ([string]$summary['failure'] -eq 'operator_quit') { exit 3 }
+if ([string]$summary['failure'] -eq 'cancelled') { exit 3 }
 if ([bool]$summary['ok']) { exit 0 }
 exit 1

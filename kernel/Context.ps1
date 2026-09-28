@@ -392,3 +392,61 @@ function Expand-EbiTemplate {
 
     return @{ ok = $true; value = $Value }
 }
+
+# --- "when" (WORKFLOW-SCHEMA.md 5) ------------------------------------------
+#
+# Four fixed forms, evaluated against the same scope as templates:
+#     <path> == <literal>     <path> != <literal>     <path> exists     <path> empty
+# A path that does not resolve is not an error here: WORKFLOW-SCHEMA 5.1
+# says a when-skipped step's fields are null values, and a missing
+# segment on a null is treated the same way (exists false, empty true,
+# == / != compare against nothing). ebi lint (P1-08) is where a path
+# that can never resolve is reported.
+
+function ConvertFrom-EbiWhen {
+    # PURE. Parse a when string -> @{ ok; path; op; literal; message }.
+    # op: eq | ne | exists | empty. The literal is a bare string or number
+    # (quotes, if any, are stripped).
+    param([string]$Text)
+    $t = if ($null -eq $Text) { '' } else { $Text.Trim() }
+    if ($t -eq '') { return @{ ok = $false; path = ''; op = ''; literal = ''; message = 'when is empty' } }
+    # The literal is one bare token or one quoted string: "a == 3 && b == 4"
+    # is refused, not read as the literal "3 && b == 4".
+    if ($t -match '^(\S+)\s+(==|!=)\s+("[^"]*"|''[^'']*''|\S+)$') {
+        $lit = $Matches[3].Trim()
+        if ($lit.Length -ge 2 -and (($lit.StartsWith('"') -and $lit.EndsWith('"')) -or ($lit.StartsWith("'") -and $lit.EndsWith("'")))) { $lit = $lit.Substring(1, $lit.Length - 2) }
+        return @{ ok = $true; path = $Matches[1]; op = $(if ($Matches[2] -eq '==') { 'eq' } else { 'ne' }); literal = $lit; message = '' }
+    }
+    if ($t -match '^(\S+)\s+(exists|empty)$') {
+        return @{ ok = $true; path = $Matches[1]; op = $Matches[2]; literal = ''; message = '' }
+    }
+    return @{ ok = $false; path = ''; op = ''; literal = ''; message = ('when "' + $t + '" is not one of: <path> == <literal>, <path> != <literal>, <path> exists, <path> empty') }
+}
+
+function Test-EbiWhen {
+    # PURE. Evaluate a parsed when against a scope -> [bool].
+    # null (an unresolved or null path): exists -> false, empty -> true,
+    # == -> false, != -> true. Comparison is by text, case-sensitive;
+    # booleans compare as 'true' / 'false'.
+    param([hashtable]$Parsed, [hashtable]$Scope)
+    $r = Resolve-EbiPath -Scope $Scope -Path $Parsed['path']
+    $value = $null
+    if ($r['ok']) { $value = $r['value'] }
+    switch ([string]$Parsed['op']) {
+        'exists' { return ($null -ne $value) }
+        'empty'  {
+            if ($null -eq $value) { return $true }
+            if ($value -is [string]) { return ($value -eq '') }
+            if ($value -is [System.Collections.ICollection]) { return ($value.Count -eq 0) }
+            return $false
+        }
+    }
+    $text = $null
+    if ($null -ne $value) {
+        $asText = ConvertTo-EbiTemplateText -Value $value -Path $Parsed['path']
+        $text = if ($asText['ok']) { [string]$asText['text'] } else { $null }
+    }
+    $same = ($null -ne $text -and $text -ceq [string]$Parsed['literal'])
+    if ([string]$Parsed['op'] -eq 'eq') { return $same }
+    return (-not $same)
+}

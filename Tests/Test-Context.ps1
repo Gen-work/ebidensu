@@ -157,4 +157,35 @@ $refs = @(Get-EbiTemplateReferences -Value @{ a = '{{vars.x}}/{{item.key}}'; b =
 Assert-Equal 3 $refs.Count                                                'references collected across a container'
 Assert-True  ($refs -contains 'steps.s.out.p')                            '...including inside arrays'
 
+
+# ---------------------------------------------------------------- when (WORKFLOW-SCHEMA 5)
+$w = ConvertFrom-EbiWhen -Text 'steps.gate.out.action != skip'
+Assert-True ($w['ok'] -and $w['op'] -eq 'ne' -and $w['path'] -eq 'steps.gate.out.action' -and $w['literal'] -eq 'skip') 'when: != parses'
+$w = ConvertFrom-EbiWhen -Text 'vars.n == 3'
+Assert-True ($w['ok'] -and $w['op'] -eq 'eq' -and $w['literal'] -eq '3') 'when: == parses a number literal as text'
+$w = ConvertFrom-EbiWhen -Text 'item.x == "a b"'
+Assert-Equal 'a b' $w['literal'] 'when: a quoted literal loses its quotes'
+$w = ConvertFrom-EbiWhen -Text 'steps.shot.out.path exists'
+Assert-True ($w['ok'] -and $w['op'] -eq 'exists') 'when: exists parses'
+$w = ConvertFrom-EbiWhen -Text 'item.note empty'
+Assert-True ($w['ok'] -and $w['op'] -eq 'empty') 'when: empty parses'
+foreach ($bad in @('', 'vars.n', 'vars.n > 3', 'vars.n == 3 && vars.m == 4', 'exists vars.n')) {
+    Assert-True (-not (ConvertFrom-EbiWhen -Text $bad)['ok']) ('when: "' + $bad + '" is refused')
+}
+function W { param([string]$t) return (Test-EbiWhen -Parsed (ConvertFrom-EbiWhen -Text $t) -Scope $scope) }
+Assert-True (W 'vars.side == before') 'when eval: == true'
+Assert-True (-not (W 'vars.side == after')) 'when eval: == false'
+Assert-True (W 'vars.n == 3') 'when eval: a number compares by text'
+Assert-True (W 'vars.flag == true') 'when eval: a bool compares as true/false'
+Assert-True (W 'vars.side != after') 'when eval: != true'
+Assert-True (W 'steps.shot.out.path exists') 'when eval: exists on a value'
+Assert-True (-not (W 'steps.gate.out.code exists')) 'when eval: exists is false on a null field'
+Assert-True (-not (W 'steps.nosuch.out.x exists')) 'when eval: exists is false on an unresolvable path (no throw)'
+Assert-True (W 'steps.gate.out.code empty') 'when eval: empty is true on null'
+Assert-True (-not (W 'vars.side empty')) 'when eval: empty is false on text'
+Assert-True (W 'steps.gate.out.code != ok') 'when eval: != against null is true'
+Assert-True (-not (W 'steps.gate.out.code == ok')) 'when eval: == against null is false'
+Assert-True (W 'steps.gate.out.skipped == true') 'when eval: the skipped flag'
+Assert-True (-not (W 'steps.shot.out.rect == x')) 'when eval: an object never equals a literal'
+
 exit (Complete-Tests)
