@@ -201,8 +201,9 @@ manifest 的 `outputs` 里不声明它。规则全文在 §3.4 第 7 点(P0-07 /
 | id | `transient` | 含义 |
 |----|-------------|------|
 | `internal_error` | `$false` | step 抛出了未预期异常(§3.1 上文) |
-| `contract_violation` | `$false` | 返回值不是含 `ok` 的 hashtable;`failure` 不在 manifest 的 `failures` 里;`provides` 为空却返回了 `resource`;写了 `as` 却没有 `resource`;`outputs` 无法 JSON 序列化(§3.4 第 7 点) |
+| `contract_violation` | `$false` | 返回值不是含 `ok` 的 hashtable;`failure` 不在 manifest 的 `failures` 里;`provides` 为空却返回了 `resource`;写了 `as` 却没有 `resource`;`outputs` 无法 JSON 序列化(§3.4 第 7 点);manifest 的 `inputs` 不是 hashtable,或某个输入声明了 §2.2 表以外的 `type`(P1-02:runner 校验不了它不认识的类型,这是 step 的错不是工作流的错) |
 | `step_not_found` | `$false` | `use` 指向的 step 文件不存在或加载失败 |
+| `input_invalid` | `$false` | 调用点的 `with` 不符合 manifest 的 `inputs`:缺 `required` 参数、类型对不上(§2.2)、不在 `enum` 里、或写了 `inputs` 没声明的参数(`as` 除外)。一次报出全部问题,每条带参数名;没进 `Invoke-Step`(P1-02,`kernel/Registry.ps1`) |
 | `needs_unmet` | `$false` | §4 的前置条件不满足,没进 `Invoke-Step` |
 | `session_missing` | `$false` | 某个 `type='session'` 输入填的名字没在 `$Ctx.Session` 里注册过(或已释放) |
 | `session_kind_mismatch` | `$false` | 注册的种类和参数声明的 `sessionKind` 不一致 |

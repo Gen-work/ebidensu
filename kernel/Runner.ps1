@@ -11,10 +11,10 @@
 #
 #  What runs today:
 #    - read a workflow JSON (spec/WORKFLOW-SCHEMA.md 1-2)
-#    - load each step file named by "use" -- dot-source it in THIS
-#      runspace and capture its Invoke-Step right away, because every
-#      step defines the same function name (P1-02 will lift this into
-#      kernel/Registry.ps1; the mechanism is decided here)
+#    - load each step file named by "use" through kernel/Registry.ps1
+#      (P1-02): dot-sourced into this scope, Invoke-Step captured at once
+#      because every step defines the same function name, "with" checked
+#      against the manifest's inputs schema before the step sees it
 #    - run "setup", then "teardown" in a finally block (the 1.1 guarantee:
 #      normal end, a step failure and an unexpected exception all reach
 #      teardown; Ctrl+C is explicitly NOT covered)
@@ -35,7 +35,6 @@
 #    - "source" / "each"        -> P1-03 (foreach, once, groupBy)
 #    - "{{...}}" templates       -> P1-01 (kernel/Context.ps1)
 #    - "when" / "onError"        -> P1-03 / P1-04
-#    - input schema validation   -> P1-02 (kernel/Registry.ps1)
 #    - ledger / resume           -> P1-04
 #  A workflow that uses any of these fails BEFORE the first step runs,
 #  with failure 'unsupported_in_spike', so a literal "{{item.key}}" is
@@ -47,10 +46,11 @@
 # ============================================================
 
 . (Join-Path $PSScriptRoot 'Trace.ps1')
+. (Join-Path $PSScriptRoot 'Registry.ps1')
 
-# --- runner-level reserved failure ids (STEP-CONTRACT.md 3.4 point 7 table) ---
+# --- runner-level reserved failure ids (STEP-CONTRACT.md 3.1 table) ---
 function Get-EbiRunnerFailureIds {
-    return @('internal_error', 'contract_violation', 'step_not_found',
+    return @('internal_error', 'contract_violation', 'step_not_found', 'input_invalid',
              'session_missing', 'session_kind_mismatch', 'session_name_taken',
              'unsupported_in_spike')
 }
@@ -110,22 +110,6 @@ function ConvertTo-EbiAbsolutePath {
     if ([System.IO.Path]::IsPathRooted($PathValue)) { return $PathValue }
     $base = (Get-Location).ProviderPath
     return [System.IO.Path]::GetFullPath((Join-Path $base $PathValue))
-}
-
-function Get-EbiDefaultModulesRoot {
-    # kernel/ and modules/ are siblings under the repo root.
-    return (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules')
-}
-
-function Get-EbiStepPath {
-    # 'screen.capture_window' -> <ModulesRoot>/screen/screen.capture_window.ps1
-    # '' when the id has no group part (a bare verb is not a step id).
-    param([string]$ModulesRoot, [string]$Use)
-    if ([string]::IsNullOrWhiteSpace($Use)) { return '' }
-    $dot = $Use.IndexOf('.')
-    if ($dot -le 0 -or $dot -eq ($Use.Length - 1)) { return '' }
-    $group = $Use.Substring(0, $dot)
-    return (Join-Path (Join-Path $ModulesRoot $group) ($Use + '.ps1'))
 }
 
 function Test-EbiValueHasTemplate {
@@ -202,160 +186,6 @@ function Get-EbiWorkflowSpikeProblems {
         }
     }
     return $problems.ToArray()
-}
-
-function Test-EbiJsonSerializable {
-    param($Value)
-    try { [void]($Value | ConvertTo-Json -Compress -Depth 10 -ErrorAction Stop); return $true }
-    catch { return $false }
-}
-
-function Get-EbiManifestArray {
-    # provides / releases / needs may be missing, $null, a scalar or an
-    # array. Always hand back string[] (explicit loop, see R4).
-    param($Manifest, [string]$Key)
-    $out = New-Object System.Collections.ArrayList
-    if ($null -eq $Manifest -or -not $Manifest.Contains($Key)) { return $out.ToArray() }
-    $v = $Manifest[$Key]
-    if ($null -eq $v) { return $out.ToArray() }
-    if ($v -is [string]) { [void]$out.Add($v); return $out.ToArray() }
-    if ($v -is [System.Collections.IEnumerable]) {
-        foreach ($item in $v) { if ($null -ne $item) { [void]$out.Add([string]$item) } }
-        return $out.ToArray()
-    }
-    [void]$out.Add([string]$v)
-    return $out.ToArray()
-}
-
-function Get-EbiManifestFailureIds {
-    param($Manifest)
-    $ids = New-Object System.Collections.ArrayList
-    if ($null -eq $Manifest -or -not $Manifest.Contains('failures')) { return $ids.ToArray() }
-    $f = $Manifest['failures']
-    if ($null -eq $f) { return $ids.ToArray() }
-    foreach ($item in $f) {
-        if ($item -is [System.Collections.IDictionary] -and $item.Contains('id')) { [void]$ids.Add([string]$item['id']) }
-    }
-    return $ids.ToArray()
-}
-
-function Get-EbiSessionInputs {
-    # name -> sessionKind for every inputs entry with type = 'session'.
-    param($Manifest)
-    $map = @{}
-    if ($null -eq $Manifest -or -not $Manifest.Contains('inputs')) { return $map }
-    $inputs = $Manifest['inputs']
-    if (-not ($inputs -is [System.Collections.IDictionary])) { return $map }
-    foreach ($name in $inputs.Keys) {
-        $spec = $inputs[$name]
-        if (-not ($spec -is [System.Collections.IDictionary])) { continue }
-        if (-not $spec.Contains('type') -or [string]$spec['type'] -ne 'session') { continue }
-        $kind = if ($spec.Contains('sessionKind')) { [string]$spec['sessionKind'] } else { '' }
-        $map[[string]$name] = $kind
-    }
-    return $map
-}
-
-function Resolve-EbiStepInputs {
-    <#
-      PURE (given Session). Turn a call's "with" into the $In a step
-      receives (STEP-CONTRACT.md 3.4 points 3 and 7):
-        - "as" is a runner field: taken out, never reaches $In
-        - each type='session' input named in "with" is looked up in
-          $Session and REPLACED by the registered value
-      Returns @{ ok; In; As; failure; message }.
-    #>
-    param($Manifest, [hashtable]$With, [hashtable]$Session)
-
-    $in = @{}
-    $as = ''
-    if ($null -ne $With) {
-        foreach ($k in $With.Keys) {
-            if ([string]$k -eq 'as') { $as = [string]$With[$k]; continue }
-            $in[[string]$k] = $With[$k]
-        }
-    }
-
-    $provides = @(Get-EbiManifestArray -Manifest $Manifest -Key 'provides')
-    if ($as -ne '' -and $provides.Count -eq 0) {
-        return @{ ok = $false; In = $in; As = $as; failure = 'contract_violation';
-                  message = ('"as" given but step "{0}" provides nothing' -f [string]$Manifest['id']) }
-    }
-    if ($as -ne '' -and $Session.Contains($as)) {
-        return @{ ok = $false; In = $in; As = $as; failure = 'session_name_taken';
-                  message = ('session name "{0}" is already registered and not released' -f $as) }
-    }
-
-    $sessionInputs = Get-EbiSessionInputs -Manifest $Manifest
-    foreach ($name in $sessionInputs.Keys) {
-        if (-not $in.Contains($name)) { continue }   # required-ness is P1-02's check
-        $wanted = [string]$in[$name]
-        if (-not $Session.Contains($wanted)) {
-            return @{ ok = $false; In = $in; As = $as; failure = 'session_missing';
-                      message = ('input "{0}" names session resource "{1}", which is not registered' -f $name, $wanted) }
-        }
-        $entry = $Session[$wanted]
-        $kind  = [string]$sessionInputs[$name]
-        if ($kind -ne '' -and [string]$entry['kind'] -ne $kind) {
-            return @{ ok = $false; In = $in; As = $as; failure = 'session_kind_mismatch';
-                      message = ('input "{0}" wants kind "{1}" but "{2}" is a "{3}"' -f $name, $kind, $wanted, [string]$entry['kind']) }
-        }
-        $in[$name] = $entry['value']
-    }
-    return @{ ok = $true; In = $in; As = $as; failure = ''; message = '' }
-}
-
-function Test-EbiStepReturn {
-    <#
-      PURE. The 3.1 return-value contract plus 3.4 point 7's resource rule.
-      Returns @{ ok; failure; message; Outputs; Warnings; Resource; HasResource }
-      where ok=$false means a contract violation (never the step's own
-      failure -- that is reported separately by the caller).
-    #>
-    param($Manifest, $Return, [bool]$WantsResource)
-
-    if (-not ($Return -is [hashtable])) {
-        return @{ ok = $false; failure = 'contract_violation';
-                  message = 'Invoke-Step must return a [hashtable] (got ' + $(if ($null -eq $Return) { 'null' } else { $Return.GetType().Name }) + ')' }
-    }
-    if (-not $Return.Contains('ok')) {
-        return @{ ok = $false; failure = 'contract_violation'; message = 'return value has no "ok" key' }
-    }
-
-    $reserved = @('ok', 'failure', 'message', 'warnings', 'resource')
-    $outputs  = @{}
-    foreach ($k in $Return.Keys) { if ($reserved -notcontains [string]$k) { $outputs[[string]$k] = $Return[$k] } }
-
-    $stepOk = [bool]$Return['ok']
-    if (-not $stepOk) {
-        $fid = if ($Return.Contains('failure')) { [string]$Return['failure'] } else { '' }
-        $declared = @(Get-EbiManifestFailureIds -Manifest $Manifest)
-        if ($fid -eq '' -or $declared -notcontains $fid) {
-            return @{ ok = $false; failure = 'contract_violation';
-                      message = ('failure id "{0}" is not declared in the manifest of {1}' -f $fid, [string]$Manifest['id']) }
-        }
-    }
-
-    $hasResource = $Return.Contains('resource')
-    $provides = @(Get-EbiManifestArray -Manifest $Manifest -Key 'provides')
-    if ($hasResource -and $provides.Count -eq 0) {
-        return @{ ok = $false; failure = 'contract_violation';
-                  message = ('{0} returned "resource" but provides nothing' -f [string]$Manifest['id']) }
-    }
-    if ($WantsResource -and $stepOk -and -not $hasResource) {
-        return @{ ok = $false; failure = 'contract_violation';
-                  message = ('{0} was called with "as" but returned no "resource" key (return resource = $null under DryRun)' -f [string]$Manifest['id']) }
-    }
-
-    if (-not (Test-EbiJsonSerializable $outputs)) {
-        return @{ ok = $false; failure = 'contract_violation';
-                  message = ('outputs of {0} are not JSON-serializable; handles belong in $Ctx.Session (3.4)' -f [string]$Manifest['id']) }
-    }
-
-    $warnings = if ($Return.Contains('warnings') -and $null -ne $Return['warnings']) { $Return['warnings'] } else { @() }
-    $resource = if ($hasResource) { $Return['resource'] } else { $null }
-    return @{ ok = $true; failure = ''; message = ''; Outputs = $outputs; Warnings = $warnings;
-              Resource = $resource; HasResource = $hasResource }
 }
 
 function New-EbiLog {
@@ -473,7 +303,7 @@ function Invoke-EbiWorkflow {
     # ---- context ------------------------------------------------------------
     $ctx = New-EbiContext -WorkDir $WorkDir -RunId $RunId -DryRun $dryRunFlag
     $result['session'] = $ctx['Session']
-    $registry = @{}     # use -> @{ Manifest; Invoke }
+    $registry = New-EbiRegistry -ModulesRoot $ModulesRoot     # use -> @{ Manifest; Invoke; Path }
     $wfId = [string]$workflow['id']
     $tagsBase = @{ workflow = $wfId }
 
@@ -503,46 +333,23 @@ function Invoke-EbiWorkflow {
                 Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase $section -Tags $tags -Action 'step' -Status 'start'
 
                 # -- load (once per use) --------------------------------------
-                if (-not $registry.Contains($use)) {
-                    $stepPath = Get-EbiStepPath -ModulesRoot $ModulesRoot -Use $use
-                    $loadErr = ''
-                    if ($stepPath -eq '' -or -not (Test-Path -LiteralPath $stepPath)) {
-                        $loadErr = ('no step file for "{0}" (looked at {1})' -f $use, $(if ($stepPath -eq '') { '<not a <group>.<verb> id>' } else { $stepPath }))
-                    } else {
-                        try {
-                            $Manifest = $null
-                            $captured = $null
-                            # A step that forgets Invoke-Step must not inherit the previous
-                            # step's, so the name is cleared before every load.
-                            if (Test-Path -LiteralPath 'function:Invoke-Step') { Remove-Item -LiteralPath 'function:Invoke-Step' -ErrorAction SilentlyContinue }
-                            # Dot-sourced HERE, in the runner's own scope, so the step's
-                            # prefixed helper functions outlive this block; Invoke-Step is
-                            # captured immediately because the next file overwrites it.
-                            . $stepPath
-                            $fnItem = Get-Item -LiteralPath 'function:Invoke-Step' -ErrorAction SilentlyContinue
-                            if ($null -ne $fnItem) { $captured = $fnItem.ScriptBlock }
-                            if ($null -eq $Manifest -or -not ($Manifest -is [hashtable])) { throw 'step defines no [hashtable] $Manifest' }
-                            if ($null -eq $captured) { throw 'step defines no Invoke-Step' }
-                            if (-not $Manifest.Contains('id') -or [string]$Manifest['id'] -ne $use) {
-                                throw ('manifest id "{0}" does not match "{1}"' -f $(if ($Manifest.Contains('id')) { [string]$Manifest['id'] } else { '' }), $use)
-                            }
-                            $registry[$use] = @{ Manifest = $Manifest; Invoke = $captured }
-                        } catch {
-                            $loadErr = ('{0}: {1}' -f $stepPath, $_.Exception.Message)
-                        }
-                    }
-                    if ($loadErr -ne '') {
-                        [void]$records.Add(@{ section = $section; id = $id; use = $use; status = 'fail'; failure = 'step_not_found'; message = $loadErr; outputs = @{}; warnings = @() })
-                        Write-EbiStepLine -Status 'fail' -Section $section -Id $id -Use $use -Detail ('step_not_found: ' + $loadErr)
-                        Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase $section -Tags $tags -Action 'step' -Status 'fail' -Message $loadErr -Data @{ failure = 'step_not_found' }
+                # Dot-sourced on purpose: the step's helper functions must land
+                # in THIS scope and outlive the import (Registry.ps1 header).
+                if ($null -eq (Get-EbiStep -Registry $registry -Use $use)) {
+                    $imported = . Import-EbiStep -Registry $registry -Use $use
+                    if (-not $imported['ok']) {
+                        $loadErr = [string]$imported['message']
+                        [void]$records.Add(@{ section = $section; id = $id; use = $use; status = 'fail'; failure = $imported['failure']; message = $loadErr; outputs = @{}; warnings = @() })
+                        Write-EbiStepLine -Status 'fail' -Section $section -Id $id -Use $use -Detail ($imported['failure'] + ': ' + $loadErr)
+                        Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase $section -Tags $tags -Action 'step' -Status 'fail' -Message $loadErr -Data @{ failure = $imported['failure'] }
                         if ($section -eq 'setup') { $stopped = $true }
                         continue
                     }
                 }
-                $entry    = $registry[$use]
+                $entry    = Get-EbiStep -Registry $registry -Use $use
                 $manifest = $entry['Manifest']
 
-                # -- inputs: strip "as", resolve session names ------------------
+                # -- inputs: strip "as", check against the schema, resolve session names --
                 $resolved = Resolve-EbiStepInputs -Manifest $manifest -With $with -Session $ctx['Session']
                 if (-not $resolved['ok']) {
                     [void]$records.Add(@{ section = $section; id = $id; use = $use; status = 'fail'; failure = $resolved['failure']; message = $resolved['message']; outputs = @{}; warnings = @() })

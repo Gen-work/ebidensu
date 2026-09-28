@@ -1,5 +1,6 @@
 #Requires -Version 5.1
-# Test-Runner.ps1 -- the P0-07 minimal runner spike (kernel/Runner.ps1).
+# Test-Runner.ps1 -- the P0-07 minimal runner spike (kernel/Runner.ps1), on
+# top of the P1-02 registry (kernel/Registry.ps1) it loads steps through.
 #
 # The card's completion criterion: a workflow JSON with only a three-step
 # "setup" runs, and the window handle travels ensure -> capture through
@@ -377,6 +378,32 @@ try {
     $wEv = @(Get-StepEvents -RunId 'r-warn' -Id 'w' | Where-Object { $_.status -eq 'ok' })
     Assert-Equal 'odd' $wEv[0].data.warnings[0].code 'warn: the warning reached the trace as structured data'
     Assert-Equal 3 $wEv[0].data.warnings[0].data.lines[0] 'warn: nested warning data survives the trace round trip'
+
+    # ------------------------------------------------ 13b. "with" is checked against the inputs schema (P1-02)
+    Assert-True ((Get-EbiRunnerFailureIds) -contains 'input_invalid') 'schema: input_invalid is a runner-reserved failure id'
+    $wf = Write-Workflow 'unknownwith.json' '{ "id": "spike.unknownwith", "setup": [ { "id": "f", "use": "fake.fail", "with": { "mode": "declared", "colour": "red" } } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-unknownwith'
+    Assert-Equal 'input_invalid' (Get-Rec $res 'f')['failure'] 'schema: an undeclared parameter fails the call before Invoke-Step'
+    Assert-True ((Get-Rec $res 'f')['message'] -like "*unknown input 'colour'*") 'schema: ... naming the parameter'
+    Assert-True (-not (Get-Rec $res 'f')['outputs'].Contains('partial')) 'schema: the step did not run (no outputs)'
+    $ev = @(Get-StepEvents -RunId 'r-unknownwith' -Id 'f' | Where-Object { $_.status -eq 'fail' })
+    Assert-Equal 'input_invalid' $ev[0].data.failure 'schema: the failure id reaches the trace'
+
+    $wf = Write-Workflow 'missingwith.json' '{ "id": "spike.missingwith", "setup": [ { "id": "f", "use": "fake.fail" } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-missingwith'
+    Assert-Equal 'input_invalid' (Get-Rec $res 'f')['failure'] 'schema: a missing required parameter is input_invalid'
+    Assert-True ((Get-Rec $res 'f')['message'] -like "*missing required input 'mode'*") 'schema: ... naming it'
+
+    $wf = Write-Workflow 'typewith.json' '{ "id": "spike.typewith", "setup": [ { "id": "e", "use": "fake.ensure", "with": { "title": { "x": 1 }, "as": "w" } } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-typewith'
+    Assert-Equal 'input_invalid' (Get-Rec $res 'e')['failure'] 'schema: a type mismatch is input_invalid'
+    Assert-True ((Get-Rec $res 'e')['message'] -like "*input 'title' expects string, got map*") 'schema: ... saying what was expected and what came'
+    Assert-Equal 0 $res['session'].Count 'schema: nothing was registered for a call that failed the check'
+
+    $wf = Write-Workflow 'defaultwith.json' '{ "id": "spike.defaultwith", "setup": [ { "id": "d", "use": "fake.pure" } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-defaultwith'
+    Assert-True ($res['ok']) 'schema: a call without with is fine when every input has a default'
+    Assert-Equal '' (Get-Rec $res 'd')['outputs']['echo'] 'schema: the default reached the step'
 
     # ------------------------------------------------ 14. missing step / no Invoke-Step
     $wf = Write-Workflow 'nostep.json' '{ "id": "spike.nostep", "setup": [ { "id": "x", "use": "fake.absent" } ] }'

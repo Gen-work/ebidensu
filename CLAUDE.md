@@ -47,11 +47,24 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
 kernel/                 runner internals. Trace.ps1 (append-only run trace,
-                        unit-tested via Tests\Test-Trace.ps1) and Runner.ps1
+                        unit-tested via Tests\Test-Trace.ps1), Registry.ps1
+                        (P1-02: step discovery under modules/ -- Find-EbiStep
+                        Files / Get-EbiStepCatalog, a manifest-only scan for
+                        lint/help/docs -- and loading for running: Import-
+                        EbiStep MUST be dot-sourced (`. Import-EbiStep ...`)
+                        so the step's helpers land in the caller's scope; it
+                        captures Invoke-Step into the registry table at once
+                        and removes the bare name. Also the "with" -> $In
+                        pipeline: 'as' lifted out, Test-EbiStepInputs checks
+                        required / type / enum / default / unknown parameters
+                        against the manifest (every problem names the
+                        parameter; failure 'input_invalid', or 'contract_
+                        violation' when the manifest is wrong), then session
+                        names -> instances; and Test-EbiStepReturn (3.1).
+                        Unit-tested via Tests\Test-Registry.ps1) and Runner.ps1
                         (P0-07 spike of the workflow runner: Invoke-EbiWorkflow
-                        reads a workflow JSON, loads each step by dot-sourcing
-                        it in the runner's own scope and capturing Invoke-Step
-                        at once, runs setup then teardown in a finally, keeps
+                        reads a workflow JSON, loads each step through the
+                        registry, runs setup then teardown in a finally, keeps
                         $Ctx.Session and the STEP-CONTRACT 3.4 point 7 resource
                         channel -- reserved return key 'resource', 'with.as'
                         registration, session-input name -> instance
@@ -535,7 +548,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`,
-`Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Registry.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

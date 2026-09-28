@@ -867,7 +867,7 @@
   两侧空白;对象 / 数组只能整值引用,拼进字符串是 `not_scalar`。**没接进
   runner**(P1-03 的事),spike 仍在第一步前拒绝 `{{`。
 
-### [ ] P1-02 kernel/Registry.ps1
+### [x] P1-02 kernel/Registry.ps1
 - **估** 75min | **依赖** P0-06 | **读** `spec/STEP-CONTRACT.md` §2
 - **做**:扫描 `modules/**`、加载 `$Manifest`、按 `inputs` schema 校验一次调用的参数
   (类型、required、enum、default 填充)。纯函数,单测。
@@ -884,6 +884,30 @@
   `kernel/Registry.ps1` 并补上缺的一半**——type / required / enum / default
   校验(Runner 现在注明 "required-ness is P1-02's check")——不是重写。
   `Tests/Test-Runner.ps1` 的 128 例要照样绿。
+- **已执行(2026-09-28)**:`kernel/Registry.ps1`,`Tests/Test-Registry.ps1`
+  140 例;`Test-Runner.ps1` 128 例原样绿 + 12 例新增(`with` 校验走完整条
+  runner 路径)。抽出来的:`Get-EbiStepPath` / `Get-EbiManifestArray` /
+  `Get-EbiSessionInputs` / `Resolve-EbiStepInputs` / `Test-EbiStepReturn`;
+  补上的另一半:`Test-EbiStepInputs`(required / type / enum / default /
+  未声明参数,**一次报全部,每条带参数名**,`problems = @(@{ input; kind;
+  message })`)、`ConvertTo-EbiInputValue`(§2.2 逐类型检查)、
+  `Find-EbiStepFiles` + `Get-EbiStepCatalog`(扫 `modules/<group>/<group>.
+  <verb>.ps1`,只读 manifest,给 P1-06 / P1-08 用)。决定了几条卡面没写死的
+  细节:① 调用点写错是新增保留 id **`input_invalid`**(已加进 §3.1 的表),
+  manifest 自己写错(`inputs` 不是 hashtable、输入类型不在 §2.2 表里)是
+  `contract_violation`——分开是因为要改的人不同;② `Import-EbiStep` **必须
+  用 `.` 调用**(`. Import-EbiStep -Registry $r -Use 'x.y'`):step 的辅助
+  函数落在谁 dot-source 它的作用域里,在 Registry 函数自己的作用域里加载
+  会在函数返回时一起消失,运行期报「not recognized」——实测只有 dot-source
+  函数调用这一条路能让辅助函数活到调用时;非 `.` 调用直接拒绝(`internal_
+  error` + 怎么调),不静默加载一个残废的 step;③ 捕获之后**删掉裸名
+  `Invoke-Step`**,表是唯一入口;④ 宽容只有两处:`int` 收数字字符串
+  (worklist 单元格是字符串)、`bool` 收 `"true"/"false"`,其余不转(4.5 不是
+  int,裸标量不是单元素 list);`null` 一律当没给;`enum` 区分大小写;
+  ⑤ `path` 只校验是字符串,**没做**§2.2 说的「路径规范化」——相对路径落在
+  哪里现在由 step 自己定(P0-08 的 `screen.capture_window` 已在办公 PC 上
+  验过),P1-18 / P1-20 决定要不要收回 runner;`Test-Runner.ps1` 里
+  「plain with-values pass through」这条断言就是这个决定的守卫。
 
 ### [ ] P1-03 [整块] kernel/Runner.ps1 主体
 - **估** 120min | **依赖** P1-01, P1-02 | **读** `spec/WORKFLOW-SCHEMA.md` §1,3,7

@@ -9,8 +9,25 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
 ## What is here today
 
 - `Trace.ps1` -- append-only `run/<runId>/trace.jsonl` (P0-03).
+- `Registry.ps1` -- P1-02, the step registry. Discovery
+  (`Find-EbiStepFiles`: every `modules/<group>/<group>.<verb>.ps1`;
+  `Get-EbiStepCatalog`: manifest-only scan in a throwaway scope, the list
+  `ebi lint` / `ebi help` / `Docs.ps1` start from), loading for running
+  (`Import-EbiStep`: dot-source, capture `Invoke-Step` at once, remove the
+  bare name -- **must itself be dot-sourced**, `. Import-EbiStep -Registry
+  $r -Use 'x.y'`, so the step's helper functions land in the caller's
+  scope; any other call is refused), the `with` -> `$In` pipeline
+  (`Resolve-EbiStepInputs`: `as` lifted out, `Test-EbiStepInputs` checks
+  required / type / enum / default / unknown parameters and names each
+  offending parameter, then session names become instances) and the
+  section 3.1 return check (`Test-EbiStepReturn`). A bad call is
+  `input_invalid`; a manifest the runner cannot check against (an input of
+  unknown type) is `contract_violation`. `path` inputs are type-checked
+  only; where a relative path resolves stays the step's decision until
+  P1-18/P1-20 settle it.
 - `Runner.ps1` -- the P0-07 spike of the workflow runner, and the seed of
-  P1-03/P1-04. It runs a workflow's `setup` and `teardown` sections, owns
+  P1-03/P1-04. It runs a workflow's `setup` and `teardown` sections, loads
+  steps through `Registry.ps1`, owns
   `$Ctx` (including `$Ctx.Session`) and the resource channel of
   `docs/ebi-dance/spec/STEP-CONTRACT.md` section 3.4 point 7, and refuses
   `source` / `each` / `{{...}}` / `when` / `onError` up front rather than

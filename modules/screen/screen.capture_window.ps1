@@ -56,8 +56,9 @@ public static class EbiScreenCaptureNative {
 }
 
 function ScreenCaptureWindow-ResolvePath {
-    # PURE. Relative -> under the work dir; the runner's path normalization
-    # (STEP-CONTRACT.md 2.2) is P1-02, so the step does it for now.
+    # PURE. Relative -> under the work dir. The runner (kernel/Registry.ps1,
+    # P1-02) checks that a 'path' input is a string and nothing more; where a
+    # relative path resolves stays the step's decision until P1-18/P1-20.
     param([string]$SaveAs, [string]$WorkDir)
     if ([string]::IsNullOrWhiteSpace($SaveAs)) { return '' }
     if ([System.IO.Path]::IsPathRooted($SaveAs)) { return $SaveAs }
