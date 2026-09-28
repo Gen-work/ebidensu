@@ -710,7 +710,7 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
     { "id": "gate", "use": "human.gate",
       "with": { "code":     "{{steps.verdict.out.code}}",
                 "askWhen":  ["unknown"],
-                "reason":   "{{steps.verdict.out.message}}",
+                "reason":   "{{steps.verdict.out.reason}}",
                 "evidence": "{{steps.shot.out.path}}" } },
 
     { "id": "checkpoint", "use": "flow.checkpoint",

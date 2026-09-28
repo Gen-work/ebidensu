@@ -351,6 +351,9 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 ### 5.3 `message` 是给人看的
 
 出现在 `human.gate` 面板和结束汇总里。用操作员的语言写,不是技术语言。
+`verify.assert` 把决定结论的那条规则的 `message` 放在输出 **`reason`** 里
+(`{{steps.verdict.out.reason}}`)——`message` 是 step 返回值的保留键
+(`STEP-CONTRACT.md` §3.1,失败说明),不能同时当输出名(P1-33)。
 
 ---
 

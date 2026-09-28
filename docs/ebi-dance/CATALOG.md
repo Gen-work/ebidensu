@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-30 step(s) in 7 group(s).
+33 step(s) in 8 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,7 +13,7 @@
 | file | `file.assert_exists`, `file.find`, `file.read_json`, `file.write_json` |
 | excel | (none yet) |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set` |
-| verify | (none yet) |
+| verify | `verify.assert`, `verify.match_record`, `verify.parse_text` |
 | human | `human.prepare` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint` |
@@ -744,6 +744,98 @@ failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_
 ```json
 {"id":"set","use":"table.set","with":{"field":"note","value":"checked by hand","worklist":"wl"}}
 ```
+
+## verify
+
+### `verify.assert`
+
+Run a rule table over a record: ok / ng / unknown plus the message
+
+- file: `modules/verify/verify.assert.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `record` | map | yes |  |  | the record to judge (field -> text) |
+| `rules` | map | yes |  |  | { rules: [ { field, op, value?, else, message } ], default: ok } |
+
+| output | type | desc |
+|--------|------|------|
+| `code` | string | ok \| ng \| unknown |
+| `field` | string | that rule's field |
+| `reason` | string | the failing rule's message, for people (named reason: message is a reserved return key) |
+| `rule` | int | 1-based index of the rule that decided; 0 when every rule passed |
+
+failures: `rules_invalid` (not transient)
+
+```json
+{"id":"assert","use":"verify.assert","with":{"record":"{{steps.row.out.record}}","rules":"{{page.rules}}"}}
+```
+
+Notes: A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails.
+
+### `verify.match_record`
+
+Find the record for a key; newest / first / ask on several
+
+- file: `modules/verify/verify.match_record.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `field` | string |  | key |  | the record field that holds the key |
+| `key` | string | yes |  |  | what to find (a column value, or the key display form) |
+| `records` | list | yes |  |  | verify.parse_text output |
+| `tieBreak` | string |  | newest | newest, first, none |  |
+| `timeField` | string |  | time |  | the record field with the time, for newest |
+| `window` | map |  | {} |  | { from, to } ISO; with newest, a hit inside the window beats one outside |
+
+| output | type | desc |
+|--------|------|------|
+| `candidates` | map | P0-R4 candidate shape when ambiguous with tieBreak none |
+| `found` | int | how many records matched the key |
+| `index` | int | 1-based position among the records; 0 when none |
+| `matchedBy` | string | exact \| stripped \| fullwidth \| case |
+| `record` | map | the chosen record (null when none) |
+
+failures: `record_not_found` (transient), `ambiguous` (not transient)
+
+```json
+{"id":"match_record","use":"verify.match_record","with":{"key":"{{item.Correl_ID_S}}","records":"{{steps.rec.out.records}}","tieBreak":"newest"}}
+```
+
+Notes: record_not_found is transient: the row is usually still arriving. The key input is a raw column value ({{item.<col>}}), not {{item.key}}, unless the records carry the composite key in one field.
+
+### `verify.parse_text`
+
+Parse page text into records with a delimited / labeled / columns / regex grammar
+
+- file: `modules/verify/verify.parse_text.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `grammar` | map | yes |  |  | { parser: delimited\|labeled\|columns\|regex, ... } (PROFILE-SCHEMA 4) |
+| `maxWarnings` | int |  | 20 |  | unrecognised lines reported one by one up to this many, then one summary |
+| `text` | string | yes |  |  | the page text (browser.wait_for / read_text output) |
+
+| output | type | desc |
+|--------|------|------|
+| `names` | list | the "key" field of every record when the grammar has one (for table.key) |
+| `recordCount` | int |  |
+| `records` | list | hashtables field -> text, plus _line |
+| `unrecognized` | int | non-blank lines the grammar did not recognise |
+
+failures: `grammar_invalid` (not transient), `no_records` (transient)
+
+```json
+{"id":"parse_text","use":"verify.parse_text","with":{"grammar":"{{page.grammar}}","text":"{{steps.wait.out.text}}"}}
+```
+
+Notes: no_records is transient: the usual cause is a page still loading. A labeled grammar always yields one record; a label it could not find is a warning (label_missing) with the field blank, and verify.assert's present/empty rules decide what that means.
 
 ## human
 

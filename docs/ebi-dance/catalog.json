@@ -1940,6 +1940,215 @@
       "releases": [],
       "summary": "Set a cell (value or named bit) of the row for a key, then flush",
       "tier": "core"
+    },
+    "verify.assert": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.assert",
+        "with": {
+          "record": "{{steps.row.out.record}}",
+          "rules": "{{page.rules}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "rules_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.assert.ps1",
+      "group": "verify",
+      "id": "verify.assert",
+      "idempotent": true,
+      "inputs": {
+        "record": {
+          "desc": "the record to judge (field -> text)",
+          "required": true,
+          "type": "map"
+        },
+        "rules": {
+          "desc": "{ rules: [ { field, op, value?, else, message } ], default: ok }",
+          "required": true,
+          "type": "map"
+        }
+      },
+      "needs": [],
+      "notes": "A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails.",
+      "outputs": {
+        "code": {
+          "desc": "ok | ng | unknown",
+          "type": "string"
+        },
+        "field": {
+          "desc": "that rule's field",
+          "type": "string"
+        },
+        "reason": {
+          "desc": "the failing rule's message, for people (named reason: message is a reserved return key)",
+          "type": "string"
+        },
+        "rule": {
+          "desc": "1-based index of the rule that decided; 0 when every rule passed",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Run a rule table over a record: ok / ng / unknown plus the message",
+      "tier": "core"
+    },
+    "verify.match_record": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.match_record",
+        "with": {
+          "key": "{{item.Correl_ID_S}}",
+          "records": "{{steps.rec.out.records}}",
+          "tieBreak": "newest"
+        }
+      },
+      "failures": [
+        {
+          "id": "record_not_found",
+          "transient": true
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.match_record.ps1",
+      "group": "verify",
+      "id": "verify.match_record",
+      "idempotent": true,
+      "inputs": {
+        "field": {
+          "default": "key",
+          "desc": "the record field that holds the key",
+          "type": "string"
+        },
+        "key": {
+          "desc": "what to find (a column value, or the key display form)",
+          "required": true,
+          "type": "string"
+        },
+        "records": {
+          "desc": "verify.parse_text output",
+          "required": true,
+          "type": "list"
+        },
+        "tieBreak": {
+          "default": "newest",
+          "enum": [
+            "newest",
+            "first",
+            "none"
+          ],
+          "type": "string"
+        },
+        "timeField": {
+          "default": "time",
+          "desc": "the record field with the time, for newest",
+          "type": "string"
+        },
+        "window": {
+          "default": {},
+          "desc": "{ from, to } ISO; with newest, a hit inside the window beats one outside",
+          "type": "map"
+        }
+      },
+      "needs": [],
+      "notes": "record_not_found is transient: the row is usually still arriving. The key input is a raw column value ({{item.<col>}}), not {{item.key}}, unless the records carry the composite key in one field.",
+      "outputs": {
+        "candidates": {
+          "desc": "P0-R4 candidate shape when ambiguous with tieBreak none",
+          "type": "map"
+        },
+        "found": {
+          "desc": "how many records matched the key",
+          "type": "int"
+        },
+        "index": {
+          "desc": "1-based position among the records; 0 when none",
+          "type": "int"
+        },
+        "matchedBy": {
+          "desc": "exact | stripped | fullwidth | case",
+          "type": "string"
+        },
+        "record": {
+          "desc": "the chosen record (null when none)",
+          "type": "map"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Find the record for a key; newest / first / ask on several",
+      "tier": "core"
+    },
+    "verify.parse_text": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.parse_text",
+        "with": {
+          "grammar": "{{page.grammar}}",
+          "text": "{{steps.wait.out.text}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "grammar_invalid",
+          "transient": false
+        },
+        {
+          "id": "no_records",
+          "transient": true
+        }
+      ],
+      "file": "modules/verify/verify.parse_text.ps1",
+      "group": "verify",
+      "id": "verify.parse_text",
+      "idempotent": true,
+      "inputs": {
+        "grammar": {
+          "desc": "{ parser: delimited|labeled|columns|regex, ... } (PROFILE-SCHEMA 4)",
+          "required": true,
+          "type": "map"
+        },
+        "maxWarnings": {
+          "default": 20,
+          "desc": "unrecognised lines reported one by one up to this many, then one summary",
+          "type": "int"
+        },
+        "text": {
+          "desc": "the page text (browser.wait_for / read_text output)",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "no_records is transient: the usual cause is a page still loading. A labeled grammar always yields one record; a label it could not find is a warning (label_missing) with the field blank, and verify.assert's present/empty rules decide what that means.",
+      "outputs": {
+        "names": {
+          "desc": "the \"key\" field of every record when the grammar has one (for table.key)",
+          "type": "list"
+        },
+        "recordCount": {
+          "type": "int"
+        },
+        "records": {
+          "desc": "hashtables field -> text, plus _line",
+          "type": "list"
+        },
+        "unrecognized": {
+          "desc": "non-blank lines the grammar did not recognise",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Parse page text into records with a delimited / labeled / columns / regex grammar",
+      "tier": "core"
     }
   }
 }
