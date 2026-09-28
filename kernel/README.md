@@ -36,8 +36,9 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   section 3.1 return check (`Test-EbiStepReturn`). A bad call is
   `input_invalid`; a manifest the runner cannot check against (an input of
   unknown type) is `contract_violation`. `path` inputs are type-checked
-  only; where a relative path resolves stays the step's decision until
-  P1-18/P1-20 settle it.
+  only; a relative path resolves under the work dir through
+  `Native.ps1`'s `Resolve-EbiWorkPath`, which every step that touches a
+  file calls (settled by P1-18/P1-20).
 - `Worklist.ps1` -- P1-03, the in-memory worklist (`@{ path; columns;
   rows }`, a Session resource of kind `worklist`) and the ONE row filter
   `Select-EbiWorklistRows` that the runner's `source.select` and the
@@ -117,6 +118,29 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   unresolved segment, never exceptions. Also the four `when` forms of
   section 5 (`ConvertFrom-EbiWhen` / `Test-EbiWhen`, P1-03). Wired into
   `Runner.ps1` since P1-03.
+- `Native.ps1` -- P1-11, the one Win32 / SendKeys / clipboard binding.
+  `Get-EbiNative` compiles `EbiNative` lazily (nothing is touched on a dry
+  run); `Set-EbiForeground` restores + `SetForegroundWindow` + **verifies
+  with `GetForegroundWindow`** (one retry) and returns `@{ ok; message }`,
+  which every key-sending step turns into `foreground_lost`;
+  `Get-EbiWindowRect`, `Send-EbiKeys`, `Read-EbiPageText` (Ctrl+A, Ctrl+C,
+  Esc, clipboard), `Invoke-EbiClick`, `Set-/Get-EbiClipboardText`,
+  `Get-EbiVirtualScreen`; pure `Resolve-EbiWorkPath` (relative -> under the
+  work dir, separators normalized) and `Write-EbiTextFile` (UTF-8, no BOM).
+  Steps dot-source it with `. (Join-Path $PSScriptRoot
+  '..\..\kernel\Native.ps1')` -- a step may not call another step, but
+  every step may share a kernel library.
+- `Image.ps1` -- P1-18/P1-20, the one GDI+ binding: `Save-EbiScreenRegionPng`,
+  `Invoke-EbiCropPng` (per-side crop, atomic write; the legacy `-CropPx`
+  + `-1`-inherits convention kept via `Resolve-EbiCropSides`, so HmSnap /
+  MqSnap / JenkinsSnap / Crop-Snap call it in place of the four
+  `Invoke-CropPng` copies they carried), `Get-EbiPngSize`; pure
+  `Get-EbiCropGeometry`, `Resolve-EbiScreenRegion` (clamp + which edges
+  moved). **Every impure entry point is a pure check plus a `*Core`
+  function that alone names `System.Drawing` types**: on Linux pwsh the
+  first call of any function whose body mentions `System.Drawing` throws
+  `PlatformNotSupported` before a statement runs, so the dry-run and
+  file-not-found branches must never share a function with GDI+ code.
 - `Key.ps1` -- key normalization shared by everything that renders an item's
   key (`Context.ps1` today; `table.load` and `table.key` later): full-width
   folding, the `" / "` display form, the `_`-joined file-safe form. The seed

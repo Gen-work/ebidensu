@@ -1129,15 +1129,29 @@
 
 ## browser 组(7 张,11 个 step)
 
-### [ ] P1-11 browser.ensure + browser.focus_body
+### [x] P1-11 browser.ensure + browser.focus_body
 - **估** 60min | **抄** `Common.ps1` `Activate-EdgeWindow` / `Click-PageBody`
 - **注意**:进程句柄优先、标题匹配只做回退、两条路都失败要 `[WARN]`(旧版静默"激活"了随便哪个前台窗口)
 - ⚠ (第六轮,P0-R12)`browser.ensure` 带 `process` 输入(默认 `msedge`),
   df.exe / Excel 窗口迁移时复用;`browser.focus_body` 带 `window` Session 输入
   并在点击前核对前台
 - **完成**:manifest 过 lint;dryrun 打印正确
+- **已执行(2026-09-28)**:`kernel/Native.ps1` 新增——Win32 / SendKeys /
+  剪贴板**唯一**的绑定处(`Get-EbiNative` 惰性 Add-Type;`Set-EbiForeground`
+  = 还原窗口 + `SetForegroundWindow` + **`GetForegroundWindow` 核对**,一次重试,
+  不等则 `@{ok=$false}`;`Get-EbiWindowRect` / `Send-EbiKeys` / `Read-EbiPageText`
+  (Ctrl+A/C/Esc → 剪贴板)/ `Invoke-EbiClick` / `Set-EbiClipboardText` /
+  `Resolve-EbiWorkPath`(相对路径落 WorkDir,P0-08 的规则)/
+  `Write-EbiTextFile`)。step 用 `. (Join-Path $PSScriptRoot
+  '..\..\kernel\Native.ps1')` 共享——step 不许调 step,但可以共用 kernel 库
+  (和 P1-27 的 `Key.ps1` 同一条规则)。`browser.ensure` 改用它,窗口找到但
+  前台核对失败新增 `foreground_lost`(旧版只 SetForeground 不核对)。
+  `browser.focus_body`:`window` Session 输入,先 `Set-EbiForeground` 再按
+  `offsetX/offsetY` 点窗口内(默认 150/150),`BrowserFocusBody-Point` 纯。
+  DryRun 一行说明,不碰 Win32(Linux CI 上每个 step 都 dryrun 过,
+  `Tests/Test-Steps.ps1`)。
 
-### [ ] P1-12 browser.send_keys + tab_to + fill + submit
+### [x] P1-12 browser.send_keys + tab_to + fill + submit
 - **估** 75min | **抄** `Common.ps1` `Send-Key` / `Send-Tab` / `Send-ShiftTab` / `Paste-Replace` / `Send-Enter`
   ⚠ 少不了 `Send-ShiftTab`(`Common.ps1:174`):`spec/PROFILE-SCHEMA.md` §3.0
   写明 HM 的按键序列是 `Tab n → 粘贴 → Shift+Tab m → 回车`,没有它这条序列
@@ -1147,64 +1161,146 @@
   `window` 输入,发键前 `SetForegroundWindow` + 核对,不等则 `foreground_lost`;
   `fill` / `submit` 带可选 `verifyChange`(替代原 P4-19 的 `verify_action`)
 - **完成**:4 个 manifest 过 lint;全局变量依赖为 0
+- **已执行(2026-09-28)**:四个 step 都带 `window` Session 输入,发键前
+  `Set-EbiForeground` 核对,不等 → `foreground_lost`(transient);时序全部是
+  `waitMs` 输入,`$Global:Timing` 引用 0。`browser.send_keys`(输入叫
+  **`sequence`** 不叫 `keys`,见下)、`browser.tab_to`(`times` + `shift`,一个
+  step 两个方向,`+{TAB}`)、`browser.fill`(剪贴板 + `^{a}` + `^v`;`verifyChange`
+  = 动作前后 `Read-EbiPageText` 比较,没变 → `no_effect`)、`browser.submit`
+  (`{ENTER}` + `verifyChange`)。**顺带一条契约规则 `reserved_name`**:
+  inputs/outputs 不许叫 `count` / `keys` / `values` / `item` 等 `[hashtable]`
+  成员名——`keys` 让所有读 manifest 的 `$with.Keys` 拿到条目而不是键集合,
+  `count` 让 `Docs.ps1` 的 `$inputs.Count` 变成 hashtable 直接抛;检查器自己
+  改成 `GetEnumerator()` 遍历,`STEP-CONTRACT.md` §7 加了这条。
 
-### [ ] P1-13 browser.read_text
+### [x] P1-13 browser.read_text
 - **估** 45min | **抄** `Read-PageText.ps1`
 - **完成**:能把 Ctrl+A 文本返回,并可选归档到指定路径
+- **已执行(2026-09-28)**:`browser.read_text`:`Read-EbiPageText`
+  (Ctrl+A → Ctrl+C → Esc → 剪贴板),`selectWaitMs` / `copyWaitMs` 输入,
+  `archiveTo`(相对路径落 WorkDir,UTF-8 无 BOM)。空剪贴板是 warning
+  `empty_text` 不是失败——等文本是 `browser.wait_for` 的事。
 
-### [ ] P1-14 browser.wait_for
+### [x] P1-14 browser.wait_for
 - **估** 75min | **抄** `MqSnap.ps1 Wait-MqPageReady`(**去掉 MQ 特有的硬编码**)
 - **做**:轮询页面文本直到 `contains` 匹配或超时;可选 `archiveTo` 同时留档
 - **注意**:归档是**强制的最佳实践** —— 有文本就永远不用 OCR(`Plan.md` §6.1)
 - **完成**:超时返回 `failure='timeout'` 而不是抛异常
+- **已执行(2026-09-28)**:`browser.wait_for`:轮询 `Read-EbiPageText` 直到
+  `contains`(序数、区分大小写,`BrowserWaitFor-Matches` 纯)或 `timeoutSec`,
+  超时返回 `failure='timeout'`(transient)不抛;**无论命中与否**最后一次文本都
+  写到 `archiveTo`——超时也留下可诊断的页面文本。MQ 特有的页面种类判断不在
+  这里(是 `browser.assert_page`)。
 
-### [ ] P1-15 browser.assert_page
+### [x] P1-15 browser.assert_page
 - **估** 60min | **抄** `SnapVerify.ps1 Get-SnapPageKind`;**读** `spec/PROFILE-SCHEMA.md` §3.1
 - **做**:按 fingerprint 判 `ok` / `loading` / `empty` / `expired` / 未知
 - **注意**:**未知页面必须失败,绝不允许继续截图** —— 这是最坏的一类失败(看起来成功)
 - **完成**:5 种页面状态各有一个 fixture 单测
+- **已执行(2026-09-28)**:`browser.assert_page`(`effects='pure'`,吃
+  `text` + `fingerprint` map):`BrowserAssertPage-Classify` 纯——空白 →
+  loading;`expired` / `empty` / `loading` 任一串命中 → 该类;`ok` 列表**全部**
+  命中 → ok;否则 unknown。**除 ok 外一律失败**(`page_loading` transient,
+  `page_empty` / `page_expired` / `page_unknown` 不 transient——重试同一页不会
+  变,得有人看)。`Tests/Test-Steps.ps1` 五种状态 + 空白 + 单串 fingerprint +
+  「没有 ok 列表永不 ok」各一例。
 
-### [ ] P1-16 browser.navigate
+### [x] P1-16 browser.navigate
 - **估** 45min | **做**:Ctrl+L 粘贴 URL 回车;URL 为空时降级为提示人工打开
+- **已执行(2026-09-28)**:`browser.navigate`:剪贴板放 URL → `^{l}` →
+  `^v` → `{ENTER}`,可选 `verifyChange`。URL 为空 → `ok` + `navigated=false` +
+  warning `no_url`,不发任何键(页面由 `human.prepare` 关卡让人打开)。
 
-### [ ] P1-17 browser.find
+### [x] P1-17 browser.find
 - **估** 60min | **做**:Ctrl+F 查找**精确串**,返回是否命中;可选 Esc 关闭
 - **注意**:Ctrl+F 是**子串搜索,会停在页面列出的第一行** —— 所以调用方必须传完整的、
   已经由 `verify.match_record` 选定的那一行的标识,不能传裸 key(旧工具在这栽过)
+- **已执行(2026-09-28)**:`browser.find`:先读页面文本判 `hit`(SendKeys
+  读不到查找条,所以命中与否**从页面文本判**),再剪贴板 + `^{f}` + `^v` +
+  `{ENTER}`,可选 `closeAfter`(Esc)。未命中不是失败:`hit=false` 交给
+  `verify.assert` / `human.gate` 决定。manifest notes 明写:传 `verify.match_record`
+  选定那一行的完整标识,不传裸 key。
 
 ## screen 组(4 张,5 个 step)
 
-### [ ] P1-18 screen.capture_window + capture_region
+### [x] P1-18 screen.capture_window + capture_region
 - **估** 60min | **抄** `Common.ps1 Take-WindowScreenshot` + `ScreenRegion.ps1 Resolve-ScreenRegion`
 - **完成**:region 越界时自动 clamp 并在返回值里报告 clamped
+- **已执行(2026-09-28)**:`kernel/Image.ps1` 新增——GDI+ **唯一**的落点
+  (`Save-EbiScreenRegionPng` / `Invoke-EbiCropPng` / `Get-EbiPngSize`;纯几何
+  `Get-EbiCropGeometry` / `Resolve-EbiCropSides` / `Resolve-EbiScreenRegion`)。
+  踩坑记录:Linux pwsh 上**任何函数体里出现 `[System.Drawing.*]` 字面量,函数
+  第一次被调用就抛 PlatformNotSupported**(编译期绑定静态成员),哪怕那行不
+  执行——所以每个入口拆成「纯检查」+ `*Core`(只在真路径调),DryRun 和文件
+  不存在的分支永远不进 Core。`screen.capture_window` 改走 `Native.ps1` +
+  `Image.ps1`(自带的 Add-Type 删掉);`screen.capture_region`:`x/y/width/
+  height` 按虚拟屏幕 `Resolve-EbiScreenRegion` 夹紧,输出 `clamped` +
+  `clampedEdges` 并发 warning `region_clamped`,整块在屏外 → `region_empty`。
+  Registry 的「相对路径落哪里由 step 决定,等 P1-18/P1-20」到此收口:
+  `Resolve-EbiWorkPath`,所有写文件的 step 共用。
 
-### [ ] P1-19 screen.fit_window
+### [x] P1-19 screen.fit_window
 - **估** 45min | **抄** `MqSnap.ps1 Move-EdgeAwayFromBorder` + `WinAPI MoveWindow`
+- **已执行(2026-09-28)**:`screen.fit_window`:`window` Session 输入,
+  `x/y` 默认 40,`width/height` 必填;先 `SW_RESTORE`(最大化窗口无视
+  MoveWindow)再 `MoveWindow`,输出用 `GetWindowRect` **读回**的实际位置——
+  有最小尺寸的窗口报它自己停在哪。
 
-### [ ] P1-20 screen.crop —— **消掉 4 份重复**
+### [x] P1-20 screen.crop —— **消掉 4 份重复**
 - **估** 60min | **抄** `ScreenRegion.ps1 Resolve-DirectionalCrop` + 任一份 `Invoke-CropPng`
 - **做**:四边裁剪;per-role 覆盖走 profile
 - **完成**:`grep -c "function Invoke-CropPng" *.ps1` 在迁移完成后为 0(现在是 4)
 - **参考**:`spec/STEP-CONTRACT.md` §8 就是这张卡的完整答案
+- **已执行(2026-09-28)**:`screen.crop` 按 §8 的 manifest 落地(`out`
+  默认空 = 原地),实际裁剪是 `Invoke-EbiCropPng`(临时文件 + Move,四边全 0
+  时原样复制/不动)。**四份 `Invoke-CropPng` 全部删除**:`HmSnap.ps1` /
+  `MqSnap.ps1` / `JenkinsSnap.ps1` / `Crop-Snap.ps1` 改 dot-source
+  `kernel/Image.ps1`,调用点改 `$cropResult = Invoke-EbiCropPng ...; if
+  (-not $cropResult.ok) { throw $cropResult.message }`(旧的 try/catch 不动);
+  `-CropPx` + `-1` 继承的旧约定由 `Resolve-EbiCropSides` 保留。
+  `grep -c "function Invoke-CropPng" *.ps1` = 0,`Tests/Test-Steps.ps1` 守着。
+  per-page 裁剪量走 profile → 输入。
 
-### [ ] P1-21 screen.save
+### [x] P1-21 screen.save
 - **估** 45min | **做**:按命名模板定位保存;支持 `<keySafe>__<tag>.png` 的多张形式
   (文件名一律用 P0-R4 的 `keySafe`,不用裸 key)
 - **读** `spec/VOCABULARY.md` §2.5
 - ⚠ (第六轮,P0-R14)同一张卡顺带做 `file.write_json` / `file.read_json` 两个
   薄 step(侧车 `<keySafe>.meta.json` 的写和读,走 P1-35 的 `kernel/Json.ps1`);
   `read_json` 对不存在的文件返回 `ok` + `data=$null` + warning,不算失败
+- **已执行(2026-09-28)**:`screen.save`:`source` 移/复制到
+  `<dir>/<keySafe>[__<tag>].<ext>`,key 经 `ConvertTo-EbiKeySafeSegment` 折叠
+  (传了裸 key 也落到同一个名字,折叠过发 warning `key_folded`),`tag` 同样折叠。
+  `file.write_json`(`Write-EbiJson`,原子;先 `Test-EbiJsonSerializable`,
+  句柄/COM → `not_serializable`)和 `file.read_json`(不存在 → `ok` +
+  `data=$null` + warning `not_found`;存在但不是 JSON → `json_invalid`,那是
+  损坏不是缺席)都走 `kernel/Json.ps1`(R8)。
 
 ## file 组(2 张)
 
-### [ ] P1-22 file.find
+### [x] P1-22 file.find
 - **估** 75min | **依赖** P0-R4 | **抄** `WorkbookResolver.ps1 FullWidthFilenameResolver` + `MappingStore.ps1 Resolve-CorrelFilePath`
 - **做**:glob/key 查找,全角回退 + key 变体容忍(规范化调 `kernel/Key.ps1`,见 P1-27,
   自己不写比较)。**匹配到多个时按 P0-R4 的标准候选形状返回全部候选 + 证据**,不自己挑
 - **完成**:同名多文件时返回标准候选数组而不是单个
+- **已执行(2026-09-28)**:`file.find`(`effects='pure'`):`dir` + `key` +
+  `ext` + `glob` + `recurse` + `expect`(`one`|`any`)。匹配分层
+  `FileFind-Tier`:exact(词干相等)> stamped(文件带 `.yymmdd.hhmmssff`
+  戳而 key 不带,`MappingStore.Resolve-CorrelFilePath` 的规则)> base(反过来)>
+  fullWidth(`kernel/Key.ps1` 的 `ConvertTo-EbiHalfWidth` 折叠后相等,
+  `WorkbookResolver` 的规则)> glob(没有 key)——**取第一个有命中的层**,
+  比较规则只从 `Key.ps1` 拿,自己不写 `-eq`。多个命中且 `expect=one` →
+  `ambiguous` + `candidates` 按 P0-R4 标准形状(`id`/`candidate`/`evidence{source,
+  modifiedAt,size,matchedBy}` + `suggestion`(最新)+ `doubts`),**step 不挑**。
+  `file_not_found` 定为 transient(下载还没落地是常态)。全角命中发 warning
+  `full_width_name`。DryRun 目录不存在 → warning 不失败。
 
-### [ ] P1-23 file.assert_exists
+### [x] P1-23 file.assert_exists
 - **估** 30min | **做**:存在性断言,不存在按策略走 gate
+- **已执行(2026-09-28)**:`file.assert_exists`:`path` + `kind`
+  (`any`|`file`|`dir`),不存在 → `file_not_found`(transient),由工作流的
+  onError 策略决定 retry / skip / ask——step 只陈述事实。DryRun 下不存在是
+  warning `would_fail`,`ebi dryrun` 在没有任何文件的机器上也能走完全流程。
 
 ## table / progress 组(6 张)
 

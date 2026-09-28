@@ -709,6 +709,150 @@
       "summary": "Poll the page text until it contains a string, or time out",
       "tier": "core"
     },
+    "file.assert_exists": {
+      "effects": "pure",
+      "example": {
+        "use": "file.assert_exists",
+        "with": {
+          "kind": "file",
+          "path": "{{steps.find.out.path}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.assert_exists.ps1",
+      "group": "file",
+      "id": "file.assert_exists",
+      "idempotent": true,
+      "inputs": {
+        "kind": {
+          "default": "any",
+          "desc": "what it must be",
+          "enum": [
+            "any",
+            "file",
+            "dir"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "desc": "relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "notes": "file_not_found is transient here for the same reason as in file.find: the file is usually on its way.",
+      "outputs": {
+        "exists": {
+          "type": "bool"
+        },
+        "path": {
+          "desc": "the resolved path that was checked",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Fail with file_not_found unless the path exists",
+      "tier": "core"
+    },
+    "file.find": {
+      "effects": "pure",
+      "example": {
+        "use": "file.find",
+        "with": {
+          "dir": "{{profile.paths.downloads}}",
+          "ext": "dat",
+          "key": "{{item.keySafe}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "dir_not_found",
+          "transient": false
+        },
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.find.ps1",
+      "group": "file",
+      "id": "file.find",
+      "idempotent": true,
+      "inputs": {
+        "dir": {
+          "desc": "folder to look in; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "expect": {
+          "default": "one",
+          "desc": "one: several hits are ambiguous; any: return them all",
+          "enum": [
+            "one",
+            "any"
+          ],
+          "type": "string"
+        },
+        "ext": {
+          "default": "",
+          "desc": "extension the file must have (e.g. dat, .png); empty = any",
+          "type": "string"
+        },
+        "glob": {
+          "default": "*",
+          "desc": "wildcard filter applied first",
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "desc": "the item key the file is named after (stem); empty = glob only",
+          "type": "string"
+        },
+        "recurse": {
+          "default": false,
+          "type": "bool"
+        }
+      },
+      "needs": [],
+      "notes": "file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order: exact stem, the key's stamped forms, the stamp stripped, full-width folded; the first tier with hits wins.",
+      "outputs": {
+        "candidates": {
+          "desc": "P0-R4 candidate shape when ambiguous, else null",
+          "type": "map"
+        },
+        "files": {
+          "desc": "every hit, newest first",
+          "type": "list"
+        },
+        "found": {
+          "desc": "how many files matched",
+          "type": "int"
+        },
+        "matchedBy": {
+          "desc": "exact | stamped | base | fullWidth | glob",
+          "type": "string"
+        },
+        "path": {
+          "desc": "the hit (the only one, or the newest with expect=any)",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Find the file(s) for a key or glob; full-width and stamped names tolerated",
+      "tier": "core"
+    },
     "file.read_json": {
       "effects": "pure",
       "example": {

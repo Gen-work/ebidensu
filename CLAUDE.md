@@ -40,10 +40,25 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         (browser/screen/file/excel/table/verify/human/progress/
                         flow). Files here that are NOT steps are pre-conversion
                         libraries, listed and exempted on every test run.
-                        First three real steps (P0-08, ported from Common.ps1):
-                        human/human.prepare.ps1, browser/browser.ensure.ps1
-                        (provides 'window'), screen/screen.capture_window.ps1
-                        (consumes it via a type='session' input).
+                        Steps so far: human/human.prepare.ps1 (P0-08);
+                        browser/ ensure (provides 'window') + focus_body,
+                        send_keys, tab_to, fill, submit, read_text, wait_for,
+                        assert_page, navigate, find (P1-11..P1-17: every
+                        key-sending step takes a 'window' session input,
+                        brings it to front and VERIFIES it, else
+                        foreground_lost; fill/submit/navigate have
+                        verifyChange -> no_effect); screen/ capture_window,
+                        capture_region (clamped + reported), fit_window,
+                        crop (STEP-CONTRACT 8), save (<keySafe>[__<tag>].ext)
+                        (P1-18..P1-21); file/ write_json, read_json (missing
+                        -> ok + data=null + warning), find (exact > stamped >
+                        base > full-width tiers; several hits -> 'ambiguous'
+                        with the P0-R4 candidate shape), assert_exists
+                        (P1-21..P1-23). Steps share kernel/ libraries via
+                        `. (Join-Path $PSScriptRoot '..\..\kernel\X.ps1')`;
+                        they never call each other. Tests\Test-Steps.ps1
+                        dry-runs every step from its manifest example and
+                        runs the file steps for real on a temp folder.
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
 kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
@@ -127,7 +142,23 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         Tests\Test-Context.ps1) and Key.ps1
                         (P1-27 seed: full-width folding, item.key display
                         form, item.keySafe file-safe form -- the ONE place
-                        key normalization lives).
+                        key normalization lives). Native.ps1 (P1-11: the ONE
+                        Win32 / SendKeys / clipboard binding -- Get-EbiNative
+                        lazy Add-Type, Set-EbiForeground bring-to-front WITH
+                        GetForegroundWindow check, Get-EbiWindowRect,
+                        Send-EbiKeys, Read-EbiPageText Ctrl+A/C/Esc,
+                        Invoke-EbiClick, clipboard, Resolve-EbiWorkPath
+                        relative-under-WorkDir, Write-EbiTextFile) and
+                        Image.ps1 (P1-18/P1-20: the ONE GDI+ binding --
+                        Save-EbiScreenRegionPng, Invoke-EbiCropPng (also
+                        what HmSnap/MqSnap/JenkinsSnap/Crop-Snap call now;
+                        the four Invoke-CropPng copies are gone),
+                        Get-EbiPngSize, pure Get-EbiCropGeometry /
+                        Resolve-EbiCropSides / Resolve-EbiScreenRegion.
+                        Every entry point is split into a pure check plus a
+                        *Core that names System.Drawing types, because on
+                        Linux pwsh a function that mentions System.Drawing
+                        throws on its first call before running a line).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
@@ -597,7 +628,8 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
 `Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
-`Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
+`Native.ps1`, `Image.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

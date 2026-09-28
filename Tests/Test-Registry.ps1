@@ -363,8 +363,11 @@ try {
     Assert-Equal 0 $realBad.Count ('real: every shipped step reads ok' + $(if ($realBad.Count -gt 0) { ': ' + (($realBad | ForEach-Object { $_['message'] }) -join '; ') } else { '' }))
     foreach ($e in $real) {
         $chk = Test-EbiStepInputs -Manifest $e['Manifest'] -In $(if ($e['Manifest']['example'].Contains('with')) { $e['Manifest']['example']['with'] } else { @{} })
-        # the example may carry 'as' (a runner field), which the resolver strips before this check
-        $probs = @($chk['problems'] | Where-Object { $_['input'] -ne 'as' })
+        # the example may carry 'as' (a runner field), which the resolver strips
+        # before this check, and a typed input may hold a {{template}} in the
+        # example -- the runner expands it before the check runs (P1-03)
+        $exWith = $(if ($e['Manifest']['example'].Contains('with')) { $e['Manifest']['example']['with'] } else { @{} })
+        $probs = @($chk['problems'] | Where-Object { $_['input'] -ne 'as' -and -not ($exWith.Contains($_['input']) -and ($exWith[$_['input']] -is [string]) -and $exWith[$_['input']] -match '\{\{') })
         Assert-Equal 0 $probs.Count ('real: the example of ' + $e['use'] + ' passes its own inputs schema' + $(if ($probs.Count -gt 0) { ': ' + $chk['message'] } else { '' }))
     }
 } finally {

@@ -4,13 +4,13 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-19 step(s) in 4 group(s).
+21 step(s) in 4 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.fit_window`, `screen.save` |
-| file | `file.read_json`, `file.write_json` |
+| file | `file.assert_exists`, `file.find`, `file.read_json`, `file.write_json` |
 | excel | (none yet) |
 | table | (none yet) |
 | verify | (none yet) |
@@ -473,6 +473,65 @@ failures: `file_not_found` (not transient), `save_failed` (transient)
 Notes: An existing file of the same name is replaced: re-running a key re-captures it. A key that had to be folded is reported as a warning (key_folded).
 
 ## file
+
+### `file.assert_exists`
+
+Fail with file_not_found unless the path exists
+
+- file: `modules/file/file.assert_exists.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `kind` | string |  | any | any, file, dir | what it must be |
+| `path` | path | yes |  |  | relative paths resolve under the work dir |
+
+| output | type | desc |
+|--------|------|------|
+| `exists` | bool |  |
+| `path` | path | the resolved path that was checked |
+
+failures: `file_not_found` (transient)
+
+```json
+{"id":"assert_exists","use":"file.assert_exists","with":{"kind":"file","path":"{{steps.find.out.path}}"}}
+```
+
+Notes: file_not_found is transient here for the same reason as in file.find: the file is usually on its way.
+
+### `file.find`
+
+Find the file(s) for a key or glob; full-width and stamped names tolerated
+
+- file: `modules/file/file.find.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `dir` | path | yes |  |  | folder to look in; relative paths resolve under the work dir |
+| `expect` | string |  | one | one, any | one: several hits are ambiguous; any: return them all |
+| `ext` | string |  | (empty) |  | extension the file must have (e.g. dat, .png); empty = any |
+| `glob` | string |  | * |  | wildcard filter applied first |
+| `key` | string |  | (empty) |  | the item key the file is named after (stem); empty = glob only |
+| `recurse` | bool |  | false |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `candidates` | map | P0-R4 candidate shape when ambiguous, else null |
+| `files` | list | every hit, newest first |
+| `found` | int | how many files matched |
+| `matchedBy` | string | exact \| stamped \| base \| fullWidth \| glob |
+| `path` | path | the hit (the only one, or the newest with expect=any) |
+
+failures: `dir_not_found` (not transient), `file_not_found` (transient), `ambiguous` (not transient)
+
+```json
+{"id":"find","use":"file.find","with":{"dir":"{{profile.paths.downloads}}","ext":"dat","key":"{{item.keySafe}}"}}
+```
+
+Notes: file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order: exact stem, the key's stamped forms, the stamp stripped, full-width folded; the first tier with hits wins.
 
 ### `file.read_json`
 

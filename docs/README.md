@@ -34,7 +34,10 @@ P1-35(`kernel/Json.ps1`,唯一的 JSON 入口 + 铁律 R8)`[x]`,P1-03(Runner
 关卡面板)`[x]`,P1-06(`kernel/Docs.ps1` → `CATALOG.md` / `catalog.json`,已生成
 并提交)`[x]`,P1-07..P1-10(`ebi.ps1`:help / lint / explain / dryrun / run
 -Resume·-Only·-Operator / doctor / catalog)`[x]`——**kernel + CLI 全部关闭**;
-下一张从 step 卡开始:P1-11(`browser.ensure` + `browser.focus_body`)。
+P1-11..P1-17(browser 组 11 个 step + `kernel/Native.ps1`)`[x]`,P1-18..P1-21
+(screen 组 5 个 step + `kernel/Image.ps1`,四份 `Invoke-CropPng` 消掉,
+`file.write_json` / `file.read_json`)`[x]`,P1-22 / P1-23(`file.find` /
+`file.assert_exists`)`[x]`。下一张:P1-24(`table.load` + `table.save`)。
 
 ---
 
