@@ -218,7 +218,6 @@ manifest 的 `outputs` 里不声明它。规则全文在 §3.4 第 7 点(P0-07 /
 | `session_kind_mismatch` | `$false` | 注册的种类和参数声明的 `sessionKind` 不一致 |
 | `session_name_taken` | `$false` | `with.as` 的名字已被一个还活着的资源占用(§3.4 第 3 点) |
 | `cancelled` | `$false` | 操作员在关卡上选了 `q`:step 返回通用词表的 `operator_quit`,runner 不走 `onError`,直接以 `cancelled` 结束 run,`teardown` 照 `WORKFLOW-SCHEMA.md` §1.1 保证跑 |
-| `unsupported_in_spike` | `$false` | **过渡**:P0-07 的 runner 在第一步跑之前拒绝它还不支持的 `source` / `each` / `{{}}` / `when` / `onError` / `once`;P1-03 / P1-04 落地后删除 |
 
 全部由 runner 产生,step 不返回它们;资源"还活着吗"由消费 step 用**自己
 声明的** id 报(§3.4 第 7 点),不是保留 id。

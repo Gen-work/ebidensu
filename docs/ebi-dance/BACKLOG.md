@@ -955,7 +955,7 @@
   (大小写不敏感),改名 `$wfVars`;`Invoke-EbiStepCall` 因为要 dot-source
   `Import-EbiStep`,自己也必须被 dot-source 调用,局部状态全部收进一个
   `$ebiCall` hashtable 以免污染 `Invoke-EbiWorkflow` 的变量。
-### [ ] P1-04 [整块] Runner 的 onError + ledger
+### [x] P1-04 [整块] Runner 的 onError + ledger
 - **估** 120min | **依赖** P1-03, P0-R3, P0-R5 | **读** `spec/WORKFLOW-SCHEMA.md` §6;`STEP-CONTRACT.md` §6
 - **做**:四种 policy(`retry` 退避 / `ask` / `skip` / `fail`)+ **`byFailure` 按失败
   id 覆盖;`retry` 只重试 manifest 标了 `transient` 的失败**(P0-R5);
@@ -979,6 +979,35 @@
   **中途 Ctrl+C 后 resume,`each` 里 `once:"group"` 注册的工作簿会被重新
   注册,后续 item 不报"名字未注册"**(P0-R10 决定 7,推演见
   `WORKFLOW-SCHEMA.md` §7.6)
+- **已执行(2026-09-28)**:`kernel/Ledger.ps1`(新:`run/<runId>/ledger.jsonl`
+  的键 `item:<key>|<step>` / `group:<组>|<step>`、读(同键后写者胜)、追加、
+  `run.json` 读写、`Find-EbiUnfinishedRuns`),`kernel/Runner.ps1` 加
+  `Invoke-EbiStepWithPolicy`(ledger 重放 → destructive 确认关卡 → 按策略
+  尝试)。`Tests/Test-Runner.ps1` 305 例、`Tests/Test-Ledger.ps1` 31 例。
+  卡面完成判据逐条:中断后 `-Resume` 同一 runId,已完成的 (item, step) 记
+  `replayed` 不再执行(`fake.count` 的计数文件证明),重放的输出被后续步引用
+  到;`timeout` 退避重试而 `not_found` 直接降到 `ask`;`confirm:false` 跳过
+  自动关卡;`once:"groupEnd"` 在组尾触发一次且仅一次,最后一条 item 被
+  `skip` 策略跳过时照跑;`with.as` 撞活名 → `session_name_taken`(P0-07 的
+  用例原样);resume 时 `once:"group"` 注册的资源在两个组里都真执行了
+  `open`/`close`,中间的 item 全部重放,新 item 不报 `session_missing`。决定了
+  几条卡面没写死的细节:① 问人走一个 `-AskHandler` scriptblock(两种问题
+  形状 `error` → r/s/q、`confirm` → y/n/q,写在 `Invoke-EbiDefaultAsk` 的注释
+  里,P1-05 的面板只替换渲染);默认实现是控制台提示,**DryRun 或标准输入被
+  重定向(CI、计划任务)时自答**——error 答 s、confirm 答 y,并打印原因,
+  绝不挂在 `Read-Host` 上(第一版就是这么挂死的);② `retry` 用尽 → `ask`;
+  `retry` 对非 transient 的失败在解析策略时就降成 `ask`,`source` 字段记下
+  「retry refused」;③ `ask` 答 s / 策略 `skip` / confirm 答 n 都是「放弃**这条
+  item**」(余步记 `skip`,item 状态 `skip`,worklist 不动,run 仍算 ok);
+  `setup`/`teardown` 里的放弃算未恢复的失败(下游没法信);④ `fail` 中止
+  时未到的 item 记 `skip` + 「run aborted」,`teardown` 照跑,`groupEnd`
+  **不**跑(§7.2:走 §1.1 的 teardown 保证);⑤ 只有 `each` 进 ledger,失败
+  的尝试永不进 ledger,`when` 跳过的进(`skipped` + 全 null 输出);⑥ `run.json`
+  开始时 `finished=false`、结束时按结果写 `finished`,`--resume` 校验工作流 id
+  一致;⑦ `warnings` 在 run 末尾按 `段[item]/step: code message` 逐条重印,
+  `result.warnings` 计数;⑧ `unsupported_in_spike` 已从 §3.1 的表和 runner
+  删除。**撞出一个 PS 坑**:函数参数不能叫 `$Args`(自动变量 `$args` 抢绑定,
+  报「Object[] 转不成 Hashtable」),改 `$RunArgs`。
 
 ### [ ] P1-05 kernel/Gate.ps1
 - **估** 75min | **依赖** P1-03 | **读** `Plan.md` §3.2 第 4 点(人工关卡)

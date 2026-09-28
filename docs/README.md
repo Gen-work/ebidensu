@@ -29,7 +29,9 @@
 模板求值)`[x]`,P1-02(`kernel/Registry.ps1`,step 加载 + 参数校验)`[x]`,
 P1-35(`kernel/Json.ps1`,唯一的 JSON 入口 + 铁律 R8)`[x]`,P1-03(Runner
 主体:setup/each/teardown、模板接线、`source.select`、`when`、`once:group`)
-`[x]`;下一张是 P1-04(onError + ledger + resume + `groupEnd`,`[整块]`)。
+`[x]`,P1-04(onError 四策略 + `byFailure`、destructive 确认关卡、ledger +
+`-Resume` 重放、`once:"groupEnd"`、`run.json`)`[x]`;下一张是 P1-05
+(`kernel/Gate.ps1`,统一 ASCII 关卡面板——接进 runner 已留好的 `-AskHandler`)。
 
 ---
 

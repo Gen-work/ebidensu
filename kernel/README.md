@@ -54,9 +54,24 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   and turns `operator_quit` into the reserved `cancelled`. Loads steps
   through `Registry.ps1`, owns `$Ctx` (including `$Ctx.Session`) and the
   resource channel of `docs/ebi-dance/spec/STEP-CONTRACT.md` section 3.4
-  point 7. `onError` policies, the ledger, resume and `once: "groupEnd"`
-  are P1-04 and are refused until then. `-Profile` is passed in as a
-  hashtable (loading `profiles/<name>/` is P2-01). `ebi.ps1 run|dryrun <workflow> -WorkDir <dir>` wraps it
+  point 7. P1-04 adds `Invoke-EbiStepWithPolicy` around every call:
+  ledger replay on `-Resume` (never for a `provides` / `releases` step,
+  which always runs again), the confirm gate before a `destructive` step
+  (unless `"confirm": false`), then attempts under the `onError` policy
+  (`retry` only for a transient failure, doubling backoff, exhausted ->
+  `ask`; `ask` r/s/q; `skip`; `fail`; `byFailure` and a per-call `onError`
+  override). Questions go through one `-AskHandler` scriptblock whose two
+  question shapes are documented on `Invoke-EbiDefaultAsk`; the default
+  is a console prompt that answers itself under DryRun or when stdin is
+  not a console. `once: "groupEnd"` runs after a group's last item. Every
+  completed or when-skipped `each` step is appended to the ledger with its
+  outputs; `run.json` holds `run.*` and the arguments. `-Profile` is passed
+  in as a hashtable (loading `profiles/<name>/` is P2-01).
+- `Ledger.ps1` -- P1-04, `run/<runId>/ledger.jsonl` (keys `item:<key>|<step>`
+  and `group:<group>|<step>`, last record per key wins, appended through
+  `Json.ps1`) and `run/<runId>/run.json` (the `run.*` scope, workflow
+  id/version, arguments, `finished`, the result), plus
+  `Find-EbiUnfinishedRuns` for `ebi run --resume` without a run id. `ebi.ps1 run|dryrun <workflow> -WorkDir <dir>` wraps it
   (the P1-10 seed); it can also be driven by hand:
 
   ```powershell

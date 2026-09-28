@@ -89,8 +89,19 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         to later items of the group, ends only the failing
                         item on a failure, turns operator_quit into
                         'cancelled'; keeps $Ctx.Session and the 3.4 point 7
-                        resource channel; onError / ledger / resume /
-                        groupEnd are P1-04. Tests\Test-Runner.ps1),
+                        resource channel. P1-04 on top: onError policies
+                        retry (transient only, backoff, exhausted -> ask) /
+                        ask / skip / fail with byFailure and per-call
+                        override, a confirm gate before every destructive
+                        step unless confirm:false, questions through one
+                        -AskHandler (self-answering under DryRun or with no
+                        console), once:groupEnd after a group's last item,
+                        the ledger (each only, with outputs) and -Resume
+                        replay (provides/releases steps always re-run),
+                        run.json, an end-of-run warnings summary.
+                        Tests\Test-Runner.ps1), Ledger.ps1 (P1-04: ledger
+                        keys/read/append, run.json, Find-EbiUnfinishedRuns;
+                        Tests\Test-Ledger.ps1),
                         Context.ps1 (P1-01: pure {{}} template evaluation --
                         scopes vars/profile/page/run/item/steps, whole-value
                         type preservation, \{\{ escape, one-pass evaluation
@@ -568,7 +579,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
-`Registry.ps1`, `Worklist.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

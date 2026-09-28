@@ -5,7 +5,7 @@
 #  The ebi-dance workflow runner. Dot-source only (no param() block,
 #  ASCII source, no class -- CLAUDE.md conventions).
 #
-#  P1-03: the main body. What runs:
+#  P1-03 main body + P1-04 fault tolerance and resume. What runs:
 #    - a workflow JSON (spec/WORKFLOW-SCHEMA.md 1-3), validated up front:
 #      schema, id, section shapes, unique ids per section, source.select
 #      forms, when forms, once forms; a bad workflow is refused as
@@ -26,19 +26,31 @@
 #      (5.1), and later steps can reference it
 #    - "once": "group": runs on the group's first item; its outputs are
 #      replayed into the steps scope of every later item of the group
-#      (6.3), no new record; "once": "groupEnd" is P1-04
-#    - a step failure inside "each" ends THAT item (its remaining steps
-#      are skipped) and the run continues with the next item; onError
-#      policies are P1-04. A human step's operator_quit becomes the
-#      reserved 'cancelled': no further items, teardown still runs (1.1)
+#      (6.3), no new record. "once": "groupEnd": runs once after the
+#      group's last item (7.2), even when that item was skipped by a
+#      policy -- a registered group resource must still be released
+#    - onError (6): retry (only a failure the manifest marks transient;
+#      backoff doubles; exhausted -> ask) / ask (r retry, s skip this
+#      item, q cancel) / skip / fail (abort the run); byFailure overrides
+#      per failure id; per-call onError overrides the top-level one;
+#      default ask. A human step's operator_quit bypasses all of it and
+#      becomes the reserved 'cancelled'. A destructive step gets a
+#      confirm gate first unless the call says "confirm": false (6.2).
+#      Asking goes through one handler (-AskHandler; kernel/Gate.ps1 is
+#      P1-05); a dry run answers itself and never blocks
+#    - the ledger (kernel/Ledger.ps1): every completed or when-skipped
+#      "each" step is appended to run/<runId>/ledger.jsonl WITH its
+#      outputs; -Resume replays those outputs instead of re-running the
+#      step, except for provides / releases steps, which always run
+#      again so Session resources come back (STEP-CONTRACT 6.2). setup
+#      and teardown re-run on every resume. run/<runId>/run.json holds
+#      the run.* scope and the arguments (P0-R16)
+#    - warnings ride in the trace and are summarised at the end of the
+#      run (3.1)
 #    - the resource channel of STEP-CONTRACT.md 3.4 point 7 and the 3.1
 #      return contract, through kernel/Registry.ps1
 #    - one trace event per step (kernel/Trace.ps1), phase = section,
 #      key = the item's key display
-#
-#  Not here yet, refused loudly rather than half-done:
-#    - "onError" (top-level or per step)   -> P1-04 (policies, ledger,
-#      resume, once:groupEnd)
 #
 #  JSON comes and goes through kernel/Json.ps1 only (R8).
 #
@@ -51,6 +63,7 @@
 . (Join-Path $PSScriptRoot 'Registry.ps1')
 . (Join-Path $PSScriptRoot 'Context.ps1')
 . (Join-Path $PSScriptRoot 'Worklist.ps1')
+. (Join-Path $PSScriptRoot 'Ledger.ps1')
 
 function Get-EbiWorkflowSchemaVersion { return 1 }
 
@@ -58,7 +71,7 @@ function Get-EbiWorkflowSchemaVersion { return 1 }
 function Get-EbiRunnerFailureIds {
     return @('internal_error', 'contract_violation', 'step_not_found', 'input_invalid',
              'session_missing', 'session_kind_mismatch', 'session_name_taken',
-             'cancelled', 'workflow_invalid', 'unsupported_in_spike')
+             'cancelled', 'workflow_invalid')
 }
 
 function New-EbiRunId {
@@ -125,7 +138,7 @@ function Get-EbiWorkflowProblems {
         [void]$problems.Add('top-level "id" is required')
     }
     if ($Workflow.Contains('onError') -and $null -ne $Workflow['onError']) {
-        [void]$problems.Add('top-level "onError" is not supported yet (P1-04); the runner stops the item at the first failure')
+        foreach ($pr in @(Test-EbiOnErrorShape -OnError $Workflow['onError'] -Where 'onError')) { [void]$problems.Add($pr) }
     }
     if ($Workflow.Contains('vars') -and $null -ne $Workflow['vars'] -and -not ($Workflow['vars'] -is [System.Collections.IDictionary])) {
         [void]$problems.Add('"vars" must be an object')
@@ -181,7 +194,10 @@ function Get-EbiWorkflowProblems {
             if ($id -ne '' -and $seen.Contains($id)) { [void]$problems.Add(('{0}: step id "{1}" is used twice' -f $section, $id)) }
             $seen[$id] = $true
             if ($call.Contains('onError') -and $null -ne $call['onError']) {
-                [void]$problems.Add(('{0}: "onError" is not supported yet (P1-04)' -f $where))
+                foreach ($pr in @(Test-EbiOnErrorShape -OnError $call['onError'] -Where ($where + '.onError'))) { [void]$problems.Add($pr) }
+            }
+            if ($call.Contains('confirm') -and $null -ne $call['confirm'] -and -not ($call['confirm'] -is [bool])) {
+                [void]$problems.Add(('{0}: "confirm" must be true or false' -f $where))
             }
             if ($call.Contains('with') -and $null -ne $call['with']) {
                 if (-not ($call['with'] -is [System.Collections.IDictionary])) {
@@ -202,13 +218,232 @@ function Get-EbiWorkflowProblems {
                     [void]$problems.Add(('{0}: "once" is only meaningful in "each"' -f $where))
                 } elseif ($groupBy -eq '') {
                     [void]$problems.Add(('{0}: "once": "{1}" needs source.groupBy' -f $where, $once))
-                } elseif ($once -eq 'groupEnd') {
-                    [void]$problems.Add(('{0}: "once": "groupEnd" is not supported yet (P1-04)' -f $where))
                 }
             }
         }
     }
     return $problems.ToArray()
+}
+
+function Get-EbiErrorPolicies { return @('retry', 'ask', 'skip', 'fail') }
+
+function Test-EbiOnErrorShape {
+    # PURE. Problems with an onError object (WORKFLOW-SCHEMA 6): policy in
+    # the four, times / backoffMs numbers, byFailure a map of the same.
+    param($OnError, [string]$Where)
+    $out = New-Object System.Collections.ArrayList
+    if (-not ($OnError -is [System.Collections.IDictionary])) { [void]$out.Add($Where + ' must be an object'); return $out.ToArray() }
+    if ($OnError.Contains('policy') -and $null -ne $OnError['policy'] -and (Get-EbiErrorPolicies) -notcontains [string]$OnError['policy']) {
+        [void]$out.Add(('{0}.policy "{1}" is not one of retry, ask, skip, fail' -f $Where, [string]$OnError['policy']))
+    }
+    foreach ($num in @('times', 'backoffMs')) {
+        if ($OnError.Contains($num) -and $null -ne $OnError[$num] -and -not (Test-EbiIsNumber $OnError[$num])) {
+            [void]$out.Add(('{0}.{1} must be a number' -f $Where, $num))
+        }
+    }
+    if ($OnError.Contains('byFailure') -and $null -ne $OnError['byFailure']) {
+        if (-not ($OnError['byFailure'] -is [System.Collections.IDictionary])) { [void]$out.Add($Where + '.byFailure must be an object keyed by failure id') }
+        else {
+            foreach ($fid in $OnError['byFailure'].Keys) {
+                foreach ($pr in @(Test-EbiOnErrorShape -OnError $OnError['byFailure'][$fid] -Where ($Where + '.byFailure.' + [string]$fid))) { [void]$out.Add($pr) }
+            }
+        }
+    }
+    return $out.ToArray()
+}
+
+function Test-EbiFailureTransient {
+    # Is this failure id marked transient in the manifest? Reserved
+    # runner ids are never transient (STEP-CONTRACT 3.1).
+    param($Manifest, [string]$FailureId)
+    if ((Get-EbiRunnerFailureIds) -contains $FailureId) { return $false }
+    if ($null -eq $Manifest -or -not $Manifest.Contains('failures') -or $null -eq $Manifest['failures']) { return $false }
+    foreach ($f in $Manifest['failures']) {
+        if ($f -is [System.Collections.IDictionary] -and $f.Contains('id') -and [string]$f['id'] -eq $FailureId) {
+            return ($f.Contains('transient') -and ($f['transient'] -is [bool]) -and $f['transient'])
+        }
+    }
+    return $false
+}
+
+function Resolve-EbiErrorPolicy {
+    <#
+      PURE. The policy for one failure of one call (WORKFLOW-SCHEMA 6, 6.0):
+      the call's onError wins over the workflow's; inside each, byFailure
+      for this id wins over policy. Default ask. retry on a non-transient
+      failure degrades to ask right away (P0-R5).
+      Returns @{ policy; times; backoffMs; transient; source }.
+    #>
+    param($Workflow, $Call, [string]$FailureId, $Manifest)
+    $picked = @{ policy = 'ask'; times = 3; backoffMs = 800; source = 'default' }
+    foreach ($level in @(@{ obj = $(if ($null -ne $Workflow -and $Workflow.Contains('onError')) { $Workflow['onError'] } else { $null }); name = 'onError' },
+                         @{ obj = $(if ($null -ne $Call -and $Call.Contains('onError')) { $Call['onError'] } else { $null }); name = 'step onError' })) {
+        $o = $level['obj']
+        if (-not ($o -is [System.Collections.IDictionary])) { continue }
+        $chosen = $o
+        $src = $level['name']
+        if ($o.Contains('byFailure') -and ($o['byFailure'] -is [System.Collections.IDictionary]) -and $o['byFailure'].Contains($FailureId) -and ($o['byFailure'][$FailureId] -is [System.Collections.IDictionary])) {
+            $chosen = $o['byFailure'][$FailureId]; $src = $level['name'] + '.byFailure.' + $FailureId
+        }
+        if ($chosen.Contains('policy') -and $null -ne $chosen['policy']) { $picked['policy'] = [string]$chosen['policy']; $picked['source'] = $src }
+        if ($chosen.Contains('times') -and $null -ne $chosen['times']) { $picked['times'] = [int]$chosen['times'] }
+        if ($chosen.Contains('backoffMs') -and $null -ne $chosen['backoffMs']) { $picked['backoffMs'] = [int]$chosen['backoffMs'] }
+    }
+    $picked['transient'] = Test-EbiFailureTransient -Manifest $Manifest -FailureId $FailureId
+    if ($picked['policy'] -eq 'retry' -and -not $picked['transient']) { $picked['policy'] = 'ask'; $picked['source'] = $picked['source'] + ' (retry refused: "' + $FailureId + '" is not transient)' }
+    return $picked
+}
+
+function Invoke-EbiDefaultAsk {
+    <#
+      The built-in answerer for -AskHandler when none is given: a plain
+      console prompt (kernel/Gate.ps1, P1-05, replaces the rendering).
+      It never blocks when nobody can answer: under DryRun, or when the
+      console's input is redirected (CI, a scheduled run), a confirm is
+      yes and an error is skip, and the line says so.
+      Question shapes -- the contract P1-05 renders:
+        @{ kind='error';   section; id; use; key; group; failure; message; attempt; transient; policy } -> 'r' | 's' | 'q'
+        @{ kind='confirm'; section; id; use; key; group; effects; with }                                -> 'y' | 'n' | 'q'
+    #>
+    param([hashtable]$Question, [bool]$DryRun)
+    $auto = $DryRun
+    $autoWhy = 'dry run'
+    if (-not $auto) {
+        try { if ([Console]::IsInputRedirected) { $auto = $true; $autoWhy = 'no console to ask' } } catch { }
+    }
+    $where = if ([string]$Question['key'] -ne '') { $Question['section'] + '[' + $Question['key'] + ']/' + $Question['id'] } else { $Question['section'] + '/' + $Question['id'] }
+    if ([string]$Question['kind'] -eq 'confirm') {
+        Write-Host ''
+        Write-Host ('  CONFIRM  {0}  ({1}) is destructive' -f $where, $Question['use']) -ForegroundColor Yellow
+        if ($auto) { Write-Host ('  (' + $autoWhy + ': yes)') -ForegroundColor DarkGray; return 'y' }
+        Write-Host '  y=do it / n=skip this item / q=cancel the run : ' -ForegroundColor Magenta -NoNewline
+        $a = ([string](Read-Host)).Trim().ToLowerInvariant()
+        if ($a -eq 'y') { return 'y' }; if ($a -eq 'q') { return 'q' }; return 'n'
+    }
+    Write-Host ''
+    Write-Host ('  FAILED   {0}  ({1}): {2}: {3}' -f $where, $Question['use'], $Question['failure'], $Question['message']) -ForegroundColor Yellow
+    if ($auto) { Write-Host ('  (' + $autoWhy + ': skip)') -ForegroundColor DarkGray; return 's' }
+    Write-Host '  r=retry / s=skip this item / q=cancel the run : ' -ForegroundColor Magenta -NoNewline
+    $a = ([string](Read-Host)).Trim().ToLowerInvariant()
+    if ($a -eq 'r') { return 'r' }; if ($a -eq 'q') { return 'q' }; return 's'
+}
+
+function Invoke-EbiStepWithPolicy {
+    <#
+      One call under fault tolerance: ledger replay, the destructive
+      confirm gate, then attempts under the resolved onError policy.
+      MUST be dot-sourced (it dot-sources Invoke-EbiStepCall).
+
+      Returns @{ outcome; records; last } where outcome is
+        ok        ran (or replayed from the ledger) and succeeded
+        skipped   when was false
+        skip      given up on this ITEM: policy skip, operator s, confirm n
+        fail      policy fail: abort the run
+        cancelled operator q, or the step's operator_quit
+      and records holds every attempt's record (plus a 'skip' record when
+      the item was given up), last the final one.
+    #>
+    param([hashtable]$State, [string]$Section, [hashtable]$Call, [hashtable]$Scope, [hashtable]$Steps, [string]$Key = '', [string]$Group = '', [string]$LedgerGroup = '')
+
+    $ebiPol = @{ records = (New-Object System.Collections.ArrayList); id = [string]$Call['id']; use = [string]$Call['use']; attempt = 0 }
+    $ebiPol['ctx'] = $State['ctx']
+
+    # -- ledger replay (STEP-CONTRACT 6.1 / 6.2) ----------------------------
+    if ($Section -eq 'each' -and $State['ledgerDone'].Count -gt 0) {
+        if ($null -eq (Get-EbiStep -Registry $State['registry'] -Use $ebiPol['use'])) { [void](. Import-EbiStep -Registry $State['registry'] -Use $ebiPol['use']) }
+        $ebiPol['entry'] = Get-EbiStep -Registry $State['registry'] -Use $ebiPol['use']
+        if ($null -ne $ebiPol['entry']) {
+            $ebiPol['ledgerKey'] = Get-EbiLedgerKey -Item $Key -Group $LedgerGroup -Step $ebiPol['id']
+            $ebiPol['resourceStep'] = ((@(Get-EbiManifestArray -Manifest $ebiPol['entry']['Manifest'] -Key 'provides')).Count -gt 0) -or ((@(Get-EbiManifestArray -Manifest $ebiPol['entry']['Manifest'] -Key 'releases')).Count -gt 0)
+            if ($State['ledgerDone'].Contains($ebiPol['ledgerKey']) -and -not $ebiPol['resourceStep']) {
+                $ebiPol['old'] = $State['ledgerDone'][$ebiPol['ledgerKey']]
+                $ebiPol['outputs'] = $(if ($ebiPol['old'].Contains('outputs') -and ($ebiPol['old']['outputs'] -is [hashtable])) { $ebiPol['old']['outputs'] } else { @{} })
+                $Steps[$ebiPol['id']] = $ebiPol['outputs']
+                $ebiPol['rec'] = @{ section = $Section; id = $ebiPol['id']; use = $ebiPol['use']; item = $Key; group = $Group; status = 'replayed'; failure = ''; message = ('replayed from the ledger (' + [string]$ebiPol['old']['status'] + ')'); outputs = $ebiPol['outputs']; warnings = @() }
+                [void]$ebiPol['records'].Add($ebiPol['rec'])
+                Write-EbiStepLine -Status 'skip' -Section $Section -Id $ebiPol['id'] -Use $ebiPol['use'] -Key $Key -Detail $ebiPol['rec']['message']
+                Write-TraceEvent -WorkDir $State['workDir'] -RunId $State['runId'] -Phase $Section -Key $Key -Tags @{ workflow = $State['workflowId']; step = $ebiPol['id']; use = $ebiPol['use'] } -Action 'step' -Status 'replayed' -Message $ebiPol['rec']['message'] -Data @{ outputs = $ebiPol['outputs'] }
+                return @{ outcome = 'ok'; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $true }
+            }
+        }
+    }
+
+    # -- destructive: confirm first (WORKFLOW-SCHEMA 6.2) --------------------
+    if ($null -eq (Get-EbiStep -Registry $State['registry'] -Use $ebiPol['use'])) { [void](. Import-EbiStep -Registry $State['registry'] -Use $ebiPol['use']) }
+    $ebiPol['entry'] = Get-EbiStep -Registry $State['registry'] -Use $ebiPol['use']
+    if ($null -ne $ebiPol['entry']) {
+        $ebiPol['effects'] = $(if ($ebiPol['entry']['Manifest'].Contains('effects')) { [string]$ebiPol['entry']['Manifest']['effects'] } else { '' })
+        $ebiPol['confirmOff'] = ($Call.Contains('confirm') -and ($Call['confirm'] -is [bool]) -and -not $Call['confirm'])
+        if ($ebiPol['effects'] -eq 'destructive' -and -not $ebiPol['confirmOff']) {
+            $ebiPol['shown'] = Expand-EbiTemplate -Value $(if ($Call.Contains('with') -and $null -ne $Call['with']) { $Call['with'] } else { @{} }) -Scope $Scope
+            $ebiPol['answer'] = [string](& $State['ask'] @{ kind = 'confirm'; section = $Section; id = $ebiPol['id']; use = $ebiPol['use']; key = $Key; group = $Group; effects = 'destructive'; with = $(if ($ebiPol['shown']['ok']) { $ebiPol['shown']['value'] } else { $Call['with'] }) })
+            Write-TraceEvent -WorkDir $State['workDir'] -RunId $State['runId'] -Phase $Section -Key $Key -Tags @{ workflow = $State['workflowId']; step = $ebiPol['id']; use = $ebiPol['use'] } -Action 'confirm' -Status $ebiPol['answer'] -Message 'destructive step: operator confirmation'
+            if ($ebiPol['answer'] -eq 'q') {
+                $ebiPol['rec'] = @{ section = $Section; id = $ebiPol['id']; use = $ebiPol['use']; item = $Key; group = $Group; status = 'fail'; failure = 'cancelled'; message = 'operator cancelled at the destructive confirm gate'; outputs = @{}; warnings = @() }
+                [void]$ebiPol['records'].Add($ebiPol['rec'])
+                Write-EbiStepLine -Status 'fail' -Section $Section -Id $ebiPol['id'] -Use $ebiPol['use'] -Key $Key -Detail 'cancelled: at the confirm gate'
+                return @{ outcome = 'cancelled'; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $false }
+            }
+            if ($ebiPol['answer'] -ne 'y') {
+                $ebiPol['rec'] = @{ section = $Section; id = $ebiPol['id']; use = $ebiPol['use']; item = $Key; group = $Group; status = 'skip'; failure = ''; message = 'operator declined the destructive step; item left pending'; outputs = @{}; warnings = @() }
+                [void]$ebiPol['records'].Add($ebiPol['rec'])
+                Write-EbiStepLine -Status 'skip' -Section $Section -Id $ebiPol['id'] -Use $ebiPol['use'] -Key $Key -Detail $ebiPol['rec']['message']
+                Write-TraceEvent -WorkDir $State['workDir'] -RunId $State['runId'] -Phase $Section -Key $Key -Tags @{ workflow = $State['workflowId']; step = $ebiPol['id']; use = $ebiPol['use'] } -Action 'step' -Status 'skip' -Message $ebiPol['rec']['message']
+                return @{ outcome = 'skip'; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $false }
+            }
+        }
+    }
+
+    # -- attempts -------------------------------------------------------------
+    while ($true) {
+        $ebiPol['attempt']++
+        $ebiPol['rec'] = . Invoke-EbiStepCall -State $State -Section $Section -Call $Call -Scope $Scope -Steps $Steps -Key $Key -Group $Group
+        $ebiPol['rec']['attempt'] = $ebiPol['attempt']
+        [void]$ebiPol['records'].Add($ebiPol['rec'])
+        if ($ebiPol['rec']['status'] -eq 'ok' -or $ebiPol['rec']['status'] -eq 'skipped') {
+            if ($Section -eq 'each') {
+                [void](Add-EbiLedgerRecord -Path $State['ledgerFile'] -Record (New-EbiLedgerRecord -RunId $State['runId'] -Item $Key -Group $LedgerGroup -Step $ebiPol['id'] -Status $ebiPol['rec']['status'] -Outputs $ebiPol['rec']['outputs']))
+            }
+            return @{ outcome = $ebiPol['rec']['status']; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $false }
+        }
+        if ($ebiPol['rec']['failure'] -eq 'cancelled') {
+            return @{ outcome = 'cancelled'; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $false }
+        }
+        $ebiPol['manifest'] = $(if ($null -ne (Get-EbiStep -Registry $State['registry'] -Use $ebiPol['use'])) { (Get-EbiStep -Registry $State['registry'] -Use $ebiPol['use'])['Manifest'] } else { $null })
+        $ebiPol['policy'] = Resolve-EbiErrorPolicy -Workflow $State['workflow'] -Call $Call -FailureId $ebiPol['rec']['failure'] -Manifest $ebiPol['manifest']
+        $ebiPol['rec']['policy'] = $ebiPol['policy']['policy']
+        Write-TraceEvent -WorkDir $State['workDir'] -RunId $State['runId'] -Phase $Section -Key $Key -Tags @{ workflow = $State['workflowId']; step = $ebiPol['id']; use = $ebiPol['use'] } -Action 'onError' -Status $ebiPol['policy']['policy'] -Message ('attempt ' + $ebiPol['attempt'] + ': ' + $ebiPol['rec']['failure'] + ' -> ' + $ebiPol['policy']['policy'] + ' (' + $ebiPol['policy']['source'] + ')') -Data @{ attempt = $ebiPol['attempt']; failure = $ebiPol['rec']['failure']; transient = $ebiPol['policy']['transient'] }
+
+        $ebiPol['decision'] = $ebiPol['policy']['policy']
+        if ($ebiPol['decision'] -eq 'retry') {
+            if ($ebiPol['attempt'] -le [int]$ebiPol['policy']['times']) {
+                $ebiPol['wait'] = [int]$ebiPol['policy']['backoffMs'] * [math]::Pow(2, $ebiPol['attempt'] - 1)
+                Write-Host ('  [retry] {0}: attempt {1} of {2} failed ({3}); waiting {4} ms' -f $ebiPol['id'], $ebiPol['attempt'], ([int]$ebiPol['policy']['times'] + 1), $ebiPol['rec']['failure'], [int]$ebiPol['wait']) -ForegroundColor DarkYellow
+                if ($ebiPol['wait'] -gt 0) { Start-Sleep -Milliseconds ([int]$ebiPol['wait']) }
+                continue
+            }
+            $ebiPol['decision'] = 'ask'    # exhausted (WORKFLOW-SCHEMA 6)
+        }
+        if ($ebiPol['decision'] -eq 'ask') {
+            $ebiPol['answer'] = [string](& $State['ask'] @{ kind = 'error'; section = $Section; id = $ebiPol['id']; use = $ebiPol['use']; key = $Key; group = $Group; failure = $ebiPol['rec']['failure']; message = $ebiPol['rec']['message']; attempt = $ebiPol['attempt']; transient = $ebiPol['policy']['transient']; policy = $ebiPol['policy']['policy']; evidence = $ebiPol['rec']['outputs'] })
+            Write-TraceEvent -WorkDir $State['workDir'] -RunId $State['runId'] -Phase $Section -Key $Key -Tags @{ workflow = $State['workflowId']; step = $ebiPol['id']; use = $ebiPol['use'] } -Action 'ask' -Status $ebiPol['answer'] -Message ('operator answered ' + $ebiPol['answer'])
+            if ($ebiPol['answer'] -eq 'r') { continue }
+            if ($ebiPol['answer'] -eq 'q') {
+                $ebiPol['rec']['failure'] = 'cancelled'; $ebiPol['rec']['message'] = ('operator cancelled after: ' + $ebiPol['rec']['message'])
+                return @{ outcome = 'cancelled'; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $false }
+            }
+            $ebiPol['decision'] = 'skip'
+        }
+        if ($ebiPol['decision'] -eq 'skip') {
+            $ebiPol['skipRec'] = @{ section = $Section; id = $ebiPol['id']; use = $ebiPol['use']; item = $Key; group = $Group; status = 'skip'; failure = ''; message = ('skipped after ' + $ebiPol['rec']['failure'] + ' (' + $ebiPol['policy']['source'] + '); item left pending'); outputs = @{}; warnings = @() }
+            [void]$ebiPol['records'].Add($ebiPol['skipRec'])
+            Write-EbiStepLine -Status 'skip' -Section $Section -Id $ebiPol['id'] -Use $ebiPol['use'] -Key $Key -Detail $ebiPol['skipRec']['message']
+            Write-TraceEvent -WorkDir $State['workDir'] -RunId $State['runId'] -Phase $Section -Key $Key -Tags @{ workflow = $State['workflowId']; step = $ebiPol['id']; use = $ebiPol['use'] } -Action 'step' -Status 'skip' -Message $ebiPol['skipRec']['message']
+            return @{ outcome = 'skip'; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $false }
+        }
+        # fail: abort the run
+        return @{ outcome = 'fail'; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $false }
+    }
 }
 
 function New-EbiLog {
@@ -427,23 +662,27 @@ function Invoke-EbiWorkflow {
         Operator    run.operator (default $env:USERNAME)
         Only        key display strings; only these rows are processed
         Limit       row cap (0 = the workflow's own source.limit)
+        Resume      continue run/<RunId>/: replay the ledger, restore
+                    run.* from run.json (RunId is required with it)
+        AskHandler  scriptblock answering the runner's questions (see
+                    Invoke-EbiDefaultAsk for the two shapes); default: a
+                    console prompt, or self-answering under DryRun
 
       Returns a hashtable:
-        ok          every step call returned ok (or was when-skipped)
-        runId       run/<runId>/trace.jsonl holds the events
-        workflowId
-        failure     '' or the first failure id ('workflow_invalid' when
-                    the workflow was refused; 'cancelled' when the
-                    operator quit)
+        ok          no item failed, nothing cancelled, no unrecovered
+                    setup / teardown failure (a retried-then-ok step is
+                    fine; a skipped item is reported, not a failure)
+        runId, workflowId
+        failure     '' or the first unrecovered failure id
+                    ('workflow_invalid' when refused; 'cancelled')
         message
-        steps       one record per step call, in execution order:
+        steps       one record per attempt, in execution order:
                     @{ section; id; use; item; group; status
-                       ('ok'|'fail'|'skip'|'skipped'); failure; message;
-                       outputs; warnings }
+                       ('ok'|'fail'|'skip'|'skipped'|'replayed');
+                       failure; message; outputs; warnings; attempt?; policy? }
         items       one record per selected row: @{ key; group; status
-                    ('ok'|'fail'|'cancelled'|'skip'); failure; message }
-        selected    how many rows were processed; total: rows in the table
-        session     the live $Ctx.Session (in-process only)
+                    ('ok'|'fail'|'skip'|'cancelled'); failure; message }
+        selected / total, warnings (count), resumed, session
     #>
     param(
         [string]$Path,
@@ -455,10 +694,13 @@ function Invoke-EbiWorkflow {
         [hashtable]$Vars = @{},
         [string]$Operator = '',
         $Only = $null,
-        [int]$Limit = 0
+        [int]$Limit = 0,
+        [switch]$Resume,
+        [scriptblock]$AskHandler = $null
     )
 
     $dryRunFlag = [bool]$DryRun.IsPresent
+    $resumeFlag = [bool]$Resume.IsPresent
     if ([string]::IsNullOrWhiteSpace($ModulesRoot)) { $ModulesRoot = Get-EbiDefaultModulesRoot }
     if ([string]::IsNullOrWhiteSpace($RunId))       { $RunId = New-EbiRunId }
     if ([string]::IsNullOrWhiteSpace($WorkDir))     { $WorkDir = (Get-Location).ProviderPath }
@@ -477,7 +719,7 @@ function Invoke-EbiWorkflow {
 
     $result = @{
         ok = $false; runId = $RunId; workflowId = ''; failure = ''; message = ''
-        steps = @(); items = @(); selected = 0; total = 0; session = @{}
+        steps = @(); items = @(); selected = 0; total = 0; warnings = 0; resumed = $resumeFlag; session = @{}
     }
     $records = New-Object System.Collections.ArrayList
     $itemRecords = New-Object System.Collections.ArrayList
@@ -506,15 +748,47 @@ function Invoke-EbiWorkflow {
         return $result
     }
 
+    # ---- run.json + ledger (resume) ------------------------------------------------
+    $wfId = [string]$workflow['id']
+    $run = @{ runId = $RunId; startedAt = (Get-Date).ToString('o'); operator = $Operator; workDir = $WorkDir; timeWindow = $null }
+    $ledgerDone = @{}
+    if ($resumeFlag) {
+        $prev = Read-EbiRunFile -WorkDir $WorkDir -RunId $RunId
+        if (-not $prev['ok']) {
+            $result['failure'] = 'workflow_invalid'; $result['message'] = ('cannot resume run {0}: {1}' -f $RunId, $prev['message'])
+            Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
+            return $result
+        }
+        $prevDoc = $prev['value']
+        $prevWf = if ($prevDoc.Contains('workflow') -and ($prevDoc['workflow'] -is [hashtable]) -and $prevDoc['workflow'].Contains('id')) { [string]$prevDoc['workflow']['id'] } else { '' }
+        if ($prevWf -ne $wfId) {
+            $result['failure'] = 'workflow_invalid'; $result['message'] = ('cannot resume run {0}: it ran workflow "{1}", not "{2}"' -f $RunId, $prevWf, $wfId)
+            Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
+            return $result
+        }
+        foreach ($k in @('startedAt', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k]) { $run[$k] = $prevDoc[$k] } }
+        $ledger = Read-EbiLedger -Path (Get-EbiLedgerFile -WorkDir $WorkDir -RunId $RunId)
+        if (-not $ledger['ok']) {
+            $result['failure'] = 'workflow_invalid'; $result['message'] = ('cannot resume run {0}: {1}' -f $RunId, $ledger['message'])
+            Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
+            return $result
+        }
+        $ledgerDone = $ledger['done']
+        if (@($ledger['badLines']).Count -gt 0) { Write-Host ('  [ledger WARN] {0}' -f $ledger['message']) -ForegroundColor DarkYellow }
+        Write-Host ('  resume {0}: {1} ledger record(s)' -f $RunId, $ledger['count']) -ForegroundColor Cyan
+    }
+    $workflow['_path'] = $Path
+    $runArgs = @{ path = $Path; workDir = $WorkDir; dryRun = $dryRunFlag; only = $(if ($null -eq $Only) { @() } else { @($Only) }); limit = $Limit; vars = $Vars; resume = $resumeFlag }
+    $wrote = Write-EbiRunFile -WorkDir $WorkDir -RunId $RunId -Run $run -Workflow $workflow -RunArgs $runArgs -Finished $false
+    if (-not $wrote['ok']) { Write-Host ('  [run.json WARN] {0}' -f $wrote['message']) -ForegroundColor DarkYellow }
+
     # ---- context, scope parts ---------------------------------------------------
     $ctx = New-EbiContext -WorkDir $WorkDir -RunId $RunId -DryRun $dryRunFlag -Profile $Profile
     $result['session'] = $ctx['Session']
-    $wfId = [string]$workflow['id']
     $wfVars = @{}
     if ($workflow.Contains('vars') -and $workflow['vars'] -is [System.Collections.IDictionary]) { foreach ($k in $workflow['vars'].Keys) { $wfVars[[string]$k] = $workflow['vars'][$k] } }
     foreach ($k in $Vars.Keys) { $wfVars[[string]$k] = $Vars[$k] }
     $pageName = if ($workflow.Contains('page') -and $null -ne $workflow['page']) { [string]$workflow['page'] } else { '' }
-    $run = @{ runId = $RunId; startedAt = (Get-Date).ToString('o'); operator = $Operator; workDir = $WorkDir; timeWindow = $null }
     $source = if ($workflow.Contains('source') -and $null -ne $workflow['source']) { [hashtable]$workflow['source'] } else { $null }
     $keyColumns = @(Get-EbiWorklistKeyColumns -Profile $Profile)
     if ($null -ne $source -and $source.Contains('keyColumns') -and $null -ne $source['keyColumns']) {
@@ -524,17 +798,22 @@ function Invoke-EbiWorkflow {
     $groupBy = if ($null -ne $source -and $source.Contains('groupBy') -and $null -ne $source['groupBy']) { [string]$source['groupBy'] } else { '' }
     if ($groupColumn -eq '' -and $groupBy -ne '') { $groupColumn = $groupBy }
 
+    $askDefault = { param($q) Invoke-EbiDefaultAsk -Question $q -DryRun $dryRunFlag }
     $state = @{
         ctx = $ctx; registry = (New-EbiRegistry -ModulesRoot $ModulesRoot)
-        workDir = $WorkDir; runId = $RunId; workflowId = $wfId
+        workDir = $WorkDir; runId = $RunId; workflowId = $wfId; workflow = $workflow
+        ledgerDone = $ledgerDone; ledgerFile = (Get-EbiLedgerFile -WorkDir $WorkDir -RunId $RunId)
+        ask = $(if ($null -ne $AskHandler) { $AskHandler } else { $askDefault })
     }
     $tagsBase = @{ workflow = $wfId }
 
-    Write-Host ('  run {0}  workflow {1}{2}' -f $RunId, $wfId, $(if ($dryRunFlag) { '  (dry run)' } else { '' })) -ForegroundColor Cyan
-    Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'run' -Tags $tagsBase -Action 'run' -Status 'start' -Message $Path
+    Write-Host ('  run {0}  workflow {1}{2}{3}' -f $RunId, $wfId, $(if ($dryRunFlag) { '  (dry run)' } else { '' }), $(if ($resumeFlag) { '  (resume)' } else { '' })) -ForegroundColor Cyan
+    Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'run' -Tags $tagsBase -Action 'run' -Status 'start' -Message $Path -Data @{ resume = $resumeFlag; dryRun = $dryRunFlag }
 
-    $stopped   = $false     # setup failed or the run was cancelled: no more each
+    $stopped   = $false     # setup failed, policy fail, or cancelled: no more each
     $cancelled = $false
+    $aborted   = $false     # policy fail
+    $unrecovered = New-Object System.Collections.ArrayList   # records that ended a section / item in failure
     try {
         # ---- setup ------------------------------------------------------------------
         if ($workflow.Contains('setup') -and $null -ne $workflow['setup']) {
@@ -542,9 +821,13 @@ function Invoke-EbiWorkflow {
             $scope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $null -Steps $setupSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
             foreach ($call in $workflow['setup']) {
                 if ($stopped) { [void]$records.Add((New-EbiSkipRecord -Section 'setup' -Call $call -Key '' -Group '' -Why 'earlier step failed' -State $state)); continue }
-                $rec = . Invoke-EbiStepCall -State $state -Section 'setup' -Call $call -Scope $scope -Steps $setupSteps
-                [void]$records.Add($rec)
-                if ($rec['status'] -eq 'fail') { $stopped = $true; if ($rec['failure'] -eq 'cancelled') { $cancelled = $true } }
+                $done = . Invoke-EbiStepWithPolicy -State $state -Section 'setup' -Call $call -Scope $scope -Steps $setupSteps
+                foreach ($r in $done['records']) { [void]$records.Add($r) }
+                switch ([string]$done['outcome']) {
+                    'cancelled' { $cancelled = $true; $stopped = $true; [void]$unrecovered.Add($done['last']) }
+                    'fail'      { $aborted = $true; $stopped = $true; [void]$unrecovered.Add($done['last']) }
+                    'skip'      { $stopped = $true; [void]$unrecovered.Add($done['last']) }   # a setup step given up on: nothing downstream is trustworthy
+                }
             }
         }
 
@@ -553,7 +836,8 @@ function Invoke-EbiWorkflow {
             $tableName = [string]$source['table']
             if (-not $ctx['Session'].Contains($tableName) -or [string]$ctx['Session'][$tableName]['kind'] -ne 'worklist') {
                 $why = if ($ctx['Session'].Contains($tableName)) { ('source.table "{0}" is a "{1}", not a worklist' -f $tableName, [string]$ctx['Session'][$tableName]['kind']) } else { ('source.table "{0}" is not registered; a setup step must load the worklist with "as": "{0}"' -f $tableName) }
-                [void]$records.Add(@{ section = 'each'; id = '(source)'; use = ''; item = ''; group = ''; status = 'fail'; failure = $(if ($ctx['Session'].Contains($tableName)) { 'session_kind_mismatch' } else { 'session_missing' }); message = $why; outputs = @{}; warnings = @() })
+                $srcRec = @{ section = 'each'; id = '(source)'; use = ''; item = ''; group = ''; status = 'fail'; failure = $(if ($ctx['Session'].Contains($tableName)) { 'session_kind_mismatch' } else { 'session_missing' }); message = $why; outputs = @{}; warnings = @() }
+                [void]$records.Add($srcRec); [void]$unrecovered.Add($srcRec)
                 Write-Host ('  [fail] each/(source)  ' + $why) -ForegroundColor Red
                 Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Tags $tagsBase -Action 'source' -Status 'fail' -Message $why
                 $stopped = $true
@@ -574,52 +858,88 @@ function Invoke-EbiWorkflow {
                 Write-Host ('  each: {0} of {1} row{2} selected' -f $ordered.Count, $selected['total'], $(if ($selected['total'] -eq 1) { '' } else { 's' })) -ForegroundColor Cyan
                 Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Tags $tagsBase -Action 'source' -Status 'ok' -Data @{ total = $selected['total']; selected = $ordered.Count; groupBy = $groupBy }
 
-                $groupOutputs = @{}    # group -> @{ stepId -> outputs } from once:group steps
+                $groupOutputs = @{}    # group -> @{ stepId -> outputs } from once:group steps (this process)
+                $groupEndCalls = @($workflow['each'] | Where-Object { $_.Contains('once') -and [string]$_['once'] -eq 'groupEnd' })
+                $currentGroup = $null
+                $lastRowOfGroup = $null
+
+                # once:groupEnd for the group just finished (7.2): runs on the
+                # group's last row, whatever happened to that row's own steps,
+                # so a resource registered at the group head is released.
+                function Invoke-EbiGroupEndFor {
+                    param([string]$G, $Row)
+                    if ($groupBy -eq '' -or $groupEndCalls.Count -eq 0 -or $null -eq $Row) { return }
+                    $gKey = Get-EbiKeyDisplay -Item $Row -KeyColumns $keyColumns
+                    $gSteps = @{}
+                    if ($groupOutputs.Contains($G)) { foreach ($k in $groupOutputs[$G].Keys) { $gSteps[$k] = $groupOutputs[$G][$k] } }
+                    $gScope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $Row -Steps $gSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
+                    foreach ($gCall in $groupEndCalls) {
+                        $gDone = . Invoke-EbiStepWithPolicy -State $state -Section 'each' -Call $gCall -Scope $gScope -Steps $gSteps -Key $gKey -Group $G -LedgerGroup $G
+                        foreach ($r in $gDone['records']) { [void]$records.Add($r) }
+                        if ($gDone['outcome'] -eq 'cancelled') { $script:ebiGroupEndOutcome = 'cancelled'; return }
+                        if ($gDone['outcome'] -eq 'fail') { $script:ebiGroupEndOutcome = 'fail'; return }
+                        if ($gDone['outcome'] -eq 'skip') { [void]$unrecovered.Add($gDone['last']) }
+                    }
+                }
+
                 foreach ($row in $ordered) {
                     if ($stopped) { break }
                     $key   = Get-EbiKeyDisplay -Item $row -KeyColumns $keyColumns
                     $group = Get-EbiWorklistGroupOf -Row $row -GroupBy $groupBy
+                    if ($groupBy -ne '' -and $null -ne $currentGroup -and $group -ne $currentGroup) {
+                        $script:ebiGroupEndOutcome = ''
+                        Invoke-EbiGroupEndFor -G $currentGroup -Row $lastRowOfGroup
+                        if ($script:ebiGroupEndOutcome -eq 'cancelled') { $cancelled = $true; $stopped = $true; break }
+                        if ($script:ebiGroupEndOutcome -eq 'fail') { $aborted = $true; $stopped = $true; break }
+                    }
+                    $currentGroup = $group; $lastRowOfGroup = $row
                     $steps = @{}
                     if ($groupBy -ne '' -and $groupOutputs.Contains($group)) { foreach ($k in $groupOutputs[$group].Keys) { $steps[$k] = $groupOutputs[$group][$k] } }
                     $scope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $row -Steps $steps -KeyColumns $keyColumns -GroupColumn $groupColumn
                     $itemRec = @{ key = $key; group = $group; status = 'ok'; failure = ''; message = '' }
                     Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Key $key -Tags $tagsBase -Action 'item' -Status 'start' -Data @{ group = $group }
-                    $itemFailed = $false
+                    $itemDone = $false
                     foreach ($call in $workflow['each']) {
                         $once = if ($call.Contains('once') -and $null -ne $call['once']) { [string]$call['once'] } else { '' }
-                        if ($itemFailed) {
-                            [void]$records.Add((New-EbiSkipRecord -Section 'each' -Call $call -Key $key -Group $group -Why 'earlier step of this item failed' -State $state)); continue
+                        if ($once -eq 'groupEnd') { continue }
+                        if ($itemDone) {
+                            [void]$records.Add((New-EbiSkipRecord -Section 'each' -Call $call -Key $key -Group $group -Why ('earlier step of this item ' + $itemRec['status']) -State $state)); continue
                         }
                         if ($once -eq 'group') {
                             if (-not $groupOutputs.Contains($group)) { $groupOutputs[$group] = @{} }
                             if ($groupOutputs[$group].Contains([string]$call['id'])) {
-                                # Already ran for this group: outputs are in $steps (replayed
-                                # above); no new record, one trace line (6.3).
+                                # Already ran for this group in this process: outputs are
+                                # in $steps (replayed above); no new record, one trace line (6.3).
                                 Write-EbiStepLine -Status 'skip' -Section 'each' -Id ([string]$call['id']) -Use ([string]$call['use']) -Key $key -Detail ('once: group -- replayed for group "' + $group + '"')
                                 Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Key $key -Tags @{ workflow = $wfId; step = [string]$call['id']; use = [string]$call['use']; group = $group } -Action 'step' -Status 'skip' -Message ('once: group -- replayed for group "' + $group + '"')
                                 continue
                             }
                         }
-                        $rec = . Invoke-EbiStepCall -State $state -Section 'each' -Call $call -Scope $scope -Steps $steps -Key $key -Group $group
-                        [void]$records.Add($rec)
-                        if ($rec['status'] -eq 'fail') {
-                            $itemFailed = $true
-                            $itemRec['status'] = 'fail'; $itemRec['failure'] = $rec['failure']; $itemRec['message'] = ($rec['id'] + ': ' + $rec['message'])
-                            if ($rec['failure'] -eq 'cancelled') { $itemRec['status'] = 'cancelled'; $cancelled = $true; $stopped = $true }
-                            continue
+                        $done = . Invoke-EbiStepWithPolicy -State $state -Section 'each' -Call $call -Scope $scope -Steps $steps -Key $key -Group $group -LedgerGroup $(if ($once -eq 'group') { $group } else { '' })
+                        foreach ($r in $done['records']) { [void]$records.Add($r) }
+                        switch ([string]$done['outcome']) {
+                            'cancelled' { $itemRec['status'] = 'cancelled'; $itemRec['failure'] = 'cancelled'; $itemRec['message'] = ([string]$call['id'] + ': ' + $done['last']['message']); $cancelled = $true; $stopped = $true; $itemDone = $true; [void]$unrecovered.Add($done['last']) }
+                            'fail'      { $itemRec['status'] = 'fail'; $itemRec['failure'] = $done['last']['failure']; $itemRec['message'] = ([string]$call['id'] + ': ' + $done['last']['message']); $aborted = $true; $stopped = $true; $itemDone = $true; [void]$unrecovered.Add($done['last']) }
+                            'skip'      { $itemRec['status'] = 'skip'; $itemRec['failure'] = $done['last']['failure']; $itemRec['message'] = ([string]$call['id'] + ': ' + $done['last']['message']); $itemDone = $true }
+                            default     { if ($once -eq 'group') { $groupOutputs[$group][[string]$call['id']] = $done['last']['outputs'] } }
                         }
-                        if ($once -eq 'group') { $groupOutputs[$group][[string]$call['id']] = $rec['outputs'] }
                     }
                     [void]$itemRecords.Add($itemRec)
                     Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Key $key -Tags $tagsBase -Action 'item' -Status $itemRec['status'] -Message $itemRec['message'] -Data @{ group = $group; failure = $itemRec['failure'] }
                 }
-                if ($cancelled) {
+                if (-not $stopped -and $groupBy -ne '' -and $null -ne $currentGroup) {
+                    $script:ebiGroupEndOutcome = ''
+                    Invoke-EbiGroupEndFor -G $currentGroup -Row $lastRowOfGroup
+                    if ($script:ebiGroupEndOutcome -eq 'cancelled') { $cancelled = $true; $stopped = $true }
+                    if ($script:ebiGroupEndOutcome -eq 'fail') { $aborted = $true; $stopped = $true }
+                }
+                if ($stopped) {
                     # The rows never reached are listed, so the summary says
-                    # what the cancel left undone.
+                    # what the cancel / abort left undone.
                     $done = $itemRecords.Count
                     foreach ($row in $ordered) {
                         if ($done -gt 0) { $done--; continue }
-                        [void]$itemRecords.Add(@{ key = (Get-EbiKeyDisplay -Item $row -KeyColumns $keyColumns); group = (Get-EbiWorklistGroupOf -Row $row -GroupBy $groupBy); status = 'skip'; failure = ''; message = 'run cancelled' })
+                        [void]$itemRecords.Add(@{ key = (Get-EbiKeyDisplay -Item $row -KeyColumns $keyColumns); group = (Get-EbiWorklistGroupOf -Row $row -GroupBy $groupBy); status = 'skip'; failure = ''; message = $(if ($cancelled) { 'run cancelled' } else { 'run aborted (onError: fail)' }) })
                     }
                 }
             }
@@ -633,25 +953,47 @@ function Invoke-EbiWorkflow {
             $teardownSteps = @{}
             $scope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $null -Steps $teardownSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
             foreach ($call in $workflow['teardown']) {
-                $rec = . Invoke-EbiStepCall -State $state -Section 'teardown' -Call $call -Scope $scope -Steps $teardownSteps
-                [void]$records.Add($rec)
+                $done = . Invoke-EbiStepWithPolicy -State $state -Section 'teardown' -Call $call -Scope $scope -Steps $teardownSteps
+                foreach ($r in $done['records']) { [void]$records.Add($r) }
+                if ($done['outcome'] -eq 'cancelled') { $cancelled = $true; [void]$unrecovered.Add($done['last']) }
+                elseif ($done['outcome'] -eq 'fail' -or $done['outcome'] -eq 'skip') { [void]$unrecovered.Add($done['last']) }
             }
         }
 
         $result['steps'] = $records.ToArray()
         $result['items'] = $itemRecords.ToArray()
-        $failed = @($records.ToArray() | Where-Object { $_['status'] -eq 'fail' })
-        $result['ok'] = ($failed.Count -eq 0)
-        if ($failed.Count -gt 0) {
-            $result['failure'] = [string]$failed[0]['failure']
-            $where = if ([string]$failed[0]['item'] -ne '') { $failed[0]['section'] + '[' + $failed[0]['item'] + ']/' + $failed[0]['id'] } else { $failed[0]['section'] + '/' + $failed[0]['id'] }
-            $result['message'] = ('{0}: {1}' -f $where, $failed[0]['message'])
+        $itemsFailed = @($itemRecords.ToArray() | Where-Object { $_['status'] -eq 'fail' -or $_['status'] -eq 'cancelled' }).Count
+        $itemsSkipped = @($itemRecords.ToArray() | Where-Object { $_['status'] -eq 'skip' }).Count
+        $result['ok'] = ($unrecovered.Count -eq 0 -and -not $cancelled -and -not $aborted -and $itemsFailed -eq 0)
+        if ($unrecovered.Count -gt 0) {
+            $first = $unrecovered[0]
+            $result['failure'] = [string]$first['failure']
+            $where = if ([string]$first['item'] -ne '') { $first['section'] + '[' + $first['item'] + ']/' + $first['id'] } else { $first['section'] + '/' + $first['id'] }
+            $result['message'] = ('{0}: {1}' -f $where, $first['message'])
         }
         if ($cancelled) { $result['failure'] = 'cancelled' }
+
+        # warnings: every one that rode in a record, said again at the end (3.1)
+        $warnLines = New-Object System.Collections.ArrayList
+        foreach ($r in $records) {
+            foreach ($w in @($r['warnings'])) {
+                $code = if ($w -is [System.Collections.IDictionary] -and $w.Contains('code')) { [string]$w['code'] } else { '' }
+                $msg  = if ($w -is [System.Collections.IDictionary] -and $w.Contains('message')) { [string]$w['message'] } else { [string]$w }
+                $where = if ([string]$r['item'] -ne '') { $r['section'] + '[' + $r['item'] + ']/' + $r['id'] } else { $r['section'] + '/' + $r['id'] }
+                [void]$warnLines.Add(('{0}: {1} {2}' -f $where, $code, $msg).Trim())
+            }
+        }
+        $result['warnings'] = $warnLines.Count
+        if ($warnLines.Count -gt 0) {
+            Write-Host ('  {0} warning{1}:' -f $warnLines.Count, $(if ($warnLines.Count -eq 1) { '' } else { 's' })) -ForegroundColor Yellow
+            foreach ($line in $warnLines) { Write-Host ('    [warn ] ' + $line) -ForegroundColor Yellow }
+        }
+
         $left = @($ctx['Session'].Keys)
-        $itemsFailed = @($itemRecords.ToArray() | Where-Object { $_['status'] -eq 'fail' }).Count
-        Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'run' -Tags $tagsBase -Action 'run' -Status $(if ($result['ok']) { 'ok' } else { 'fail' }) -Message $result['message'] -Data @{ steps = $records.Count; failed = $failed.Count; items = $itemRecords.Count; itemsFailed = $itemsFailed; cancelled = $cancelled; sessionLeft = $left }
-        Write-Host ('  run {0}  {1}  ({2} step{3}, {4} failed{5}{6})' -f $RunId, $(if ($result['ok']) { 'OK' } elseif ($cancelled) { 'CANCELLED' } else { 'FAIL' }), $records.Count, $(if ($records.Count -eq 1) { '' } else { 's' }), $failed.Count, $(if ($itemRecords.Count -gt 0) { ('; ' + $itemRecords.Count + ' item(s), ' + $itemsFailed + ' failed') } else { '' }), $(if ($left.Count -gt 0) { '; still registered: ' + ($left -join ', ') } else { '' })) -ForegroundColor $(if ($result['ok']) { 'Green' } else { 'Red' })
+        $finalStatus = if ($result['ok']) { 'ok' } else { 'fail' }
+        Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'run' -Tags $tagsBase -Action 'run' -Status $finalStatus -Message $result['message'] -Data @{ steps = $records.Count; items = $itemRecords.Count; itemsFailed = $itemsFailed; itemsSkipped = $itemsSkipped; warnings = $warnLines.Count; cancelled = $cancelled; aborted = $aborted; sessionLeft = $left }
+        [void](Write-EbiRunFile -WorkDir $WorkDir -RunId $RunId -Run $run -Workflow $workflow -RunArgs $runArgs -Finished ($result['ok']) -Result @{ ok = $result['ok']; failure = $result['failure']; message = $result['message']; items = $itemRecords.Count; itemsFailed = $itemsFailed; itemsSkipped = $itemsSkipped; warnings = $warnLines.Count })
+        Write-Host ('  run {0}  {1}  ({2} step record{3}{4}{5}{6})' -f $RunId, $(if ($result['ok']) { 'OK' } elseif ($cancelled) { 'CANCELLED' } else { 'FAIL' }), $records.Count, $(if ($records.Count -eq 1) { '' } else { 's' }), $(if ($itemRecords.Count -gt 0) { ('; ' + $itemRecords.Count + ' item(s), ' + $itemsFailed + ' failed, ' + $itemsSkipped + ' skipped') } else { '' }), $(if ($warnLines.Count -gt 0) { '; ' + $warnLines.Count + ' warning(s)' } else { '' }), $(if ($left.Count -gt 0) { '; still registered: ' + ($left -join ', ') } else { '' })) -ForegroundColor $(if ($result['ok']) { 'Green' } else { 'Red' })
     }
     return $result
 }
