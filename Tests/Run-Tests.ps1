@@ -58,6 +58,16 @@ foreach ($area in $areas.Keys) {
 }
 
 Write-Host ''
+Write-Host '===== Mask check (P2-08) =====' -ForegroundColor Green
+# Fixtures are real page text: a sensitive item that lands in git is a
+# history rewrite later, so the gate runs before the unit tests.
+. (Join-Path (Join-Path $repoRoot 'kernel') 'Mask.ps1')
+$maskRes = Invoke-EbiMaskCheck -RepoRoot $repoRoot
+foreach ($l in @(Format-EbiMaskReport -Result $maskRes -RepoRoot $repoRoot)) { Write-Host $l -ForegroundColor $(if ($maskRes['ok']) { 'Green' } else { 'Red' }) }
+$maskFail = if ($maskRes['ok']) { 0 } else { 1 }
+if ($maskFail) { [void]$Global:EbiTestFailures.Add('mask check: ' + $maskRes['message']) }
+
+Write-Host ''
 Write-Host '===== Unit tests =====' -ForegroundColor Green
 $totalFail = 0
 # Recursive: Tests/ gains subdirectories as the module tree grows, and a test
@@ -85,8 +95,9 @@ Write-Host ''
 Write-Host '===== Run-Tests summary =====' -ForegroundColor Green
 Write-Host ('  parse errors : {0}' -f $parseErrors) -ForegroundColor $(if ($parseErrors -gt 0) { 'Red' } else { 'Green' })
 Write-Host ('  test failures: {0}' -f $totalFail)   -ForegroundColor $(if ($totalFail   -gt 0) { 'Red' } else { 'Green' })
+Write-Host ('  mask hits    : {0}' -f @($maskRes['hits']).Count) -ForegroundColor $(if ($maskFail -gt 0) { 'Red' } else { 'Green' })
 
-$rcAll = $parseErrors + $totalFail
+$rcAll = $parseErrors + $totalFail + $maskFail
 if ($rcAll -gt 0) {
     Write-Host '===== RESULT: FAIL =====' -ForegroundColor Red
 } else {

@@ -71,6 +71,8 @@ function Show-EbiUsage {
     Write-Host '  ebi.ps1 profile check <name|dir>   schema check + every fixture through grammar -> rules'
     Write-Host '  ebi.ps1 profile new   <name>       write profiles/<name>/ with commented skeleton files'
     Write-Host '  ebi.ps1 profile diff  <a> <b>      what still differs between two profiles'
+    Write-Host '  ebi.ps1 mask check [<file|dir>]    sensitive-text gate over profiles/**/fixtures, profiles JSON, workflows'
+    Write-Host '  ebi.ps1 grammar tune <text.txt> -Profile <name> -Var page=<page>   interactive parser debugger; s saves grammar + fixture'
     Write-Host '  common: -WorkDir <dir> (default .)  -Profile <name|dir> (default: the workflow''s "profile")'
     Write-Host ''
 }
@@ -200,6 +202,39 @@ if ($cmd -eq 'catalog') {
     if (-not $w['ok']) { Write-Host ('[ERROR] ' + $w['message']) -ForegroundColor Red; exit 1 }
     Write-Host ('wrote {0} and {1} ({2} step(s), {3} broken)' -f $w['markdownPath'], $w['jsonPath'], $w['steps'], $w['broken'])
     exit $(if ($w['broken'] -gt 0) { 1 } else { 0 })
+}
+
+if ($cmd -eq 'grammar') {
+    . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'GrammarTune.ps1')
+    if ($Target.ToLowerInvariant() -ne 'tune') { Write-Host ('[ERROR] grammar ' + $Target + ': only "tune" exists') -ForegroundColor Red; exit 2 }
+    if ([string]::IsNullOrWhiteSpace($Target2) -or -not (Test-Path -LiteralPath $Target2 -PathType Leaf)) { Write-Host '[ERROR] grammar tune <text.txt> -Profile <name> -Var page=<page>' -ForegroundColor Red; exit 2 }
+    $pageName = ''
+    foreach ($v in @($Var)) { if ($v -match '^page=(.+)$') { $pageName = $Matches[1] } }
+    if ([string]::IsNullOrWhiteSpace($Profile) -or $pageName -eq '') { Write-Host '[ERROR] grammar tune needs -Profile <name> and -Var page=<page>' -ForegroundColor Red; exit 2 }
+    $dir = Resolve-EbiProfileDir -NameOrPath $Profile
+    if ($dir -eq '' -or -not (Test-Path -LiteralPath $dir -PathType Container)) { Write-Host ('[ERROR] profile directory not found: ' + $Profile) -ForegroundColor Red; exit 2 }
+    $pr = Read-EbiProfile -Dir $dir -WorkDir (Get-Location).ProviderPath
+    if (-not $pr['ok']) { Write-Host ('[ERROR] ' + $pr['message']) -ForegroundColor Red; exit 1 }
+    $g0 = $null
+    if ($pr['value'].Contains('grammar') -and ($pr['value']['grammar'] -is [System.Collections.IDictionary]) -and $pr['value']['grammar'].Contains($pageName)) { $g0 = $pr['value']['grammar'][$pageName] }
+    $text = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Target2).ProviderPath, (New-Object System.Text.UTF8Encoding($false)))
+    $r = Invoke-EbiGrammarTune -Text $text -ProfileDir $dir -Page $pageName -Grammar $g0
+    exit 0
+}
+
+if ($cmd -eq 'mask') {
+    . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Mask.ps1')
+    if ($Target.ToLowerInvariant() -ne 'check') { Write-Host ('[ERROR] mask ' + $Target + ': only "check" exists yet (scan / interactive decisions are P5)') -ForegroundColor Red; exit 2 }
+    $files = $null
+    if (-not [string]::IsNullOrWhiteSpace($Target2)) {
+        if (Test-Path -LiteralPath $Target2 -PathType Container) { $files = @(Get-ChildItem -LiteralPath $Target2 -Recurse -File | Where-Object { $_.Extension -in @('.txt', '.json', '.md', '.csv', '.jsonl') } | ForEach-Object { $_.FullName }) }
+        elseif (Test-Path -LiteralPath $Target2 -PathType Leaf) { $files = @((Resolve-Path -LiteralPath $Target2).ProviderPath) }
+        else { Write-Host ('[ERROR] not found: ' + $Target2) -ForegroundColor Red; exit 2 }
+    }
+    $res = Invoke-EbiMaskCheck -RepoRoot $PSScriptRoot -Files $files
+    foreach ($l in @(Format-EbiMaskReport -Result $res -RepoRoot $PSScriptRoot)) { Write-Host $l -ForegroundColor $(if ($l -like '*[[]MASK]*') { 'Red' } elseif ($res['ok']) { 'Green' } else { 'Red' }) }
+    if ($res['ok']) { exit 0 }
+    exit 1
 }
 
 if ($cmd -eq 'profile') {

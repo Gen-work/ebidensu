@@ -1,0 +1,7 @@
+{
+  "_doc": "mask-lite dictionary (P2-08): words = literal names that must never appear in tracked files (company names, project code names, people); allow = regexes for known-safe shapes the rules would otherwise flag",
+  "words": [],
+  "allow": [
+    "^https?://example\\.invalid"
+  ]
+}
