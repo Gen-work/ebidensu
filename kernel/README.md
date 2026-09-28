@@ -67,6 +67,16 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   completed or when-skipped `each` step is appended to the ledger with its
   outputs; `run.json` holds `run.*` and the arguments. `-Profile` is passed
   in as a hashtable (loading `profiles/<name>/` is P2-01).
+- `Gate.ps1` -- P1-05, the one ASCII gate panel: `Format-EbiGatePanel`
+  (pure; WHAT HAPPENED / NEXT / EVIDENCE / ACTIONS in an 80-column box),
+  `Read-EbiGateAnswer` (pure; r / s / q / `m <note>` / Enter = default /
+  numbered choices), `Show-EbiGate` (render + read until valid; reader
+  injectable; takes the `-Auto` action when nobody can answer) and
+  `Invoke-EbiGateAsk`, the runner's default `-AskHandler`.
+- `Docs.ps1` -- P1-06, manifests -> `docs/ebi-dance/CATALOG.md` (people)
+  and `catalog.json` (Agents). Both are committed; `Tests/Test-Catalog.ps1`
+  regenerates them and fails on drift. Regenerate after any manifest
+  change: `. .\kernel\Docs.ps1; Write-EbiCatalog`.
 - `Ledger.ps1` -- P1-04, `run/<runId>/ledger.jsonl` (keys `item:<key>|<step>`
   and `group:<group>|<step>`, last record per key wins, appended through
   `Json.ps1`) and `run/<runId>/run.json` (the `run.*` scope, workflow

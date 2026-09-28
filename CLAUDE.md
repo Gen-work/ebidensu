@@ -101,7 +101,15 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         run.json, an end-of-run warnings summary.
                         Tests\Test-Runner.ps1), Ledger.ps1 (P1-04: ledger
                         keys/read/append, run.json, Find-EbiUnfinishedRuns;
-                        Tests\Test-Ledger.ps1),
+                        Tests\Test-Ledger.ps1), Gate.ps1 (P1-05: the ONE
+                        ASCII gate panel -- WHAT HAPPENED / NEXT / EVIDENCE /
+                        ACTIONS, 80 columns, r/s/q/m answers, injectable
+                        reader, self-answering with no console; the runner's
+                        -AskHandler default; Tests\Test-Gate.ps1), Docs.ps1
+                        (P1-06: manifests -> docs/ebi-dance/CATALOG.md +
+                        catalog.json, committed and drift-checked by
+                        Tests\Test-Catalog.ps1; regenerate with
+                        `. kernel/Docs.ps1; Write-EbiCatalog`),
                         Context.ps1 (P1-01: pure {{}} template evaluation --
                         scopes vars/profile/page/run/item/steps, whole-value
                         type preservation, \{\{ escape, one-pass evaluation
@@ -579,7 +587,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
-`Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

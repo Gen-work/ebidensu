@@ -1,0 +1,170 @@
+{
+  "broken": {},
+  "generated": "kernel/Docs.ps1 (P1-06) -- do not edit; run Tests/Run-Tests.ps1 to see drift",
+  "groups": [
+    "browser",
+    "screen",
+    "file",
+    "excel",
+    "table",
+    "verify",
+    "human",
+    "progress",
+    "flow"
+  ],
+  "steps": {
+    "browser.ensure": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.ensure",
+        "with": {
+          "as": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "no_browser_window",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.ensure.ps1",
+      "group": "browser",
+      "id": "browser.ensure",
+      "idempotent": true,
+      "inputs": {
+        "process": {
+          "default": "msedge",
+          "desc": "process name (without .exe) whose main window to use",
+          "type": "string"
+        },
+        "settleMs": {
+          "default": 400,
+          "desc": "wait after bringing the window to front",
+          "type": "int"
+        },
+        "title": {
+          "default": "Microsoft Edge",
+          "desc": "window-title substring for the AppActivate fallback",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Registers the window handle under with.as; the handle itself never appears in outputs. Several windows of the process: the first with a main window wins, as before.",
+      "outputs": {
+        "processId": {
+          "desc": "PID that owns the window",
+          "type": "int"
+        },
+        "title": {
+          "desc": "window title at the time it was found",
+          "type": "string"
+        }
+      },
+      "provides": [
+        "window"
+      ],
+      "releases": [],
+      "summary": "Find the browser main window, bring it to front, register it",
+      "tier": "core"
+    },
+    "human.prepare": {
+      "effects": "ui",
+      "example": {
+        "use": "human.prepare",
+        "with": {
+          "message": "Open the page to capture, then press Enter",
+          "url": "https://example.invalid/list"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        }
+      ],
+      "file": "modules/human/human.prepare.ps1",
+      "group": "human",
+      "id": "human.prepare",
+      "idempotent": true,
+      "inputs": {
+        "message": {
+          "desc": "what the operator must have ready before continuing",
+          "required": true,
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "desc": "optional URL or location hint printed under the message",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "DryRun prints the prompt and answers Enter on the operator's behalf, so a dry run never blocks.",
+      "outputs": {
+        "action": {
+          "desc": "enter | quit",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Show a message and wait for Enter (ready) or q (quit)",
+      "tier": "core"
+    },
+    "screen.capture_window": {
+      "effects": "write",
+      "example": {
+        "use": "screen.capture_window",
+        "with": {
+          "saveAs": "capture/before_list/{{item.keySafe}}.png",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "window_gone",
+          "transient": true
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.capture_window.ps1",
+      "group": "screen",
+      "id": "screen.capture_window",
+      "idempotent": true,
+      "inputs": {
+        "saveAs": {
+          "desc": "PNG path; relative paths resolve under the work dir; parent dirs are created",
+          "required": true,
+          "type": "path"
+        },
+        "window": {
+          "desc": "name of a registered window resource",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "Captures the window rectangle from the screen (CopyFromScreen), so the window must be in front and unobscured -- run browser.ensure first.",
+      "outputs": {
+        "height": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "the file that was written (absolute)",
+          "type": "path"
+        },
+        "width": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Save a PNG screenshot of the window held in a session resource",
+      "tier": "core"
+    }
+  }
+}

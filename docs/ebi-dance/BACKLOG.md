@@ -1009,16 +1009,37 @@
   删除。**撞出一个 PS 坑**:函数参数不能叫 `$Args`(自动变量 `$args` 抢绑定,
   报「Object[] 转不成 Hashtable」),改 `$RunArgs`。
 
-### [ ] P1-05 kernel/Gate.ps1
+### [x] P1-05 kernel/Gate.ps1
 - **估** 75min | **依赖** P1-03 | **读** `Plan.md` §3.2 第 4 点(人工关卡)
 - **做**:统一的 ASCII 关卡面板 —— **发生了什么 / 下一步会做什么 / 证据在哪 / 可选动作**。
   替代现在 27 个文件、77 处各写各的 `Read-Host`。
 - **完成**:面板在 80 列终端下不折行;`r/s/q/m` 四个动作都通
+- **已执行(2026-09-28)**:`kernel/Gate.ps1`:`Format-EbiGatePanel`(纯,四段
+  WHAT HAPPENED / NEXT / EVIDENCE / ACTIONS,80 列封闭方框,超长词硬断)、
+  `Read-EbiGateAnswer`(纯,r/s/q/m `<note>`/Enter=默认/数字选项,「s 后面
+  带字」判为手误不当 skip)、`Show-EbiGate`(读入可注入;DryRun 或标准输入
+  重定向时直接取 `-Auto` 动作并打印原因,20 次无效回答后同样取 `-Auto`,不
+  死循环)、`Invoke-EbiGateAsk`(runner `-AskHandler` 的两种问题形状在面板上
+  的实现)。`Runner.ps1` 的 `Invoke-EbiDefaultAsk` 现在委托给它。
+  `Tests/Test-Gate.ps1` 37 例。**面板文案用英文 ASCII**(源码铁律 R2;日文
+  的段名如果要,走 `ProjectLabels`/profile,P1-34 接 `human.*` 时再定)。
+  旧工具 77 处 `Read-Host` 的替换随各 step 迁移逐条发生,不在本卡一次改。
 
-### [ ] P1-06 kernel/Docs.ps1
+### [x] P1-06 kernel/Docs.ps1
 - **估** 75min | **依赖** P1-02 | **读** `Plan.md` §5
 - **做**:扫 manifest → 生成 `docs/ebi-dance/CATALOG.md`(人读)+ `docs/ebi-dance/catalog.json`(Agent 读)。
 - **完成**:两份产物都生成;CATALOG.md 按 group 分节;catalog.json 能被 `ConvertFrom-Json` 读回
+- **已执行(2026-09-28)**:`kernel/Docs.ps1`(`Get-EbiCatalogEntries` →
+  `ConvertTo-EbiCatalogData` / `ConvertTo-EbiCatalogJsonText` +
+  `Format-EbiCatalogMarkdown`,`Write-EbiCatalog` 一次写两份),产物
+  `docs/ebi-dance/CATALOG.md` + `catalog.json` **已提交**,`Tests/Test-Catalog.ps1`
+  36 例,其中「已提交的两份 == 现场重新生成」是常驻断言——manifest 一改而
+  没重跑 `Write-EbiCatalog` 就红。决定:① 输出不带时间戳、所有字典键排序
+  (`ConvertTo-EbiSortedKeys`),同一份代码在任何进程里生成的字节一致;
+  ② 读不出的 step 文件进 `broken` 段而不是消失;不在九个组里的 step 也照
+  渲染(契约检查器负责报组名错);③ CATALOG.md 里每个 step 的 example 渲染成
+  带 `id` 的 JSON 调用,过 `Test-Docs.ps1` 的示例规则;④ `file` 字段给出
+  `modules/<group>/<use>.ps1` 相对路径。
 
 ## CLI(4 张)
 
