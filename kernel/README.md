@@ -141,7 +141,27 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   first call of any function whose body mentions `System.Drawing` throws
   `PlatformNotSupported` before a statement runs, so the dry-run and
   file-not-found branches must never share a function with GDI+ code.
-- `Key.ps1` -- key normalization shared by everything that renders an item's
-  key (`Context.ps1` today; `table.load` and `table.key` later): full-width
-  folding, the `" / "` display form, the `_`-joined file-safe form. The seed
-  of P1-27; the one place a key comparison rule may live.
+- `Key.ps1` -- P1-27, the ONE place keys are normalized and compared:
+  full-width folding, the `" / "` display form, the `_`-joined file-safe
+  form (`Context.ps1`), and the matching half -- `Get-EbiKeyRules` (the
+  profile's `confirmedRules`, or the default stamp-suffix / fullwidth /
+  case-insensitive three), `ConvertTo-EbiKeyForm` per tier (exact >
+  stripped > fullwidth > case; an undeclared rule's tier never yields a
+  new hit), `Get-EbiKeyMatchTier`, `Get-EbiKeyPartsTier` (composite keys
+  column by column), `Find-EbiKeyMatches` (the best tier that hit, every
+  record in it), `Find-EbiKeySafeCollisions` (table.load's refusal) and
+  `New-EbiCandidateList` (the P0-R4 shape every ambiguous step returns).
+  `file.find`, `table.key`, `table.set`, `flow.checkpoint` and
+  `verify.match_record` all call it; `Tests/Test-Steps.ps1` fails on a
+  step that compares a key with its own `-eq`.
+- `Table.ps1` -- P1-24, the worklist CSV: `Read-EbiCsv` (hashtable rows,
+  header order kept), `Write-EbiCsvAtomic` (UTF-8 WITH BOM for Excel, CRLF,
+  every field quoted, temp file + Move with retries -- the encoding is
+  fixed here because `Export-Csv -Encoding UTF8` means BOM on PS 5.1 and no
+  BOM on pwsh 7), `New-EbiWorklist`, `Save-EbiWorklist` (the flush every
+  writing table step does before returning).
+- `Parse.ps1` -- P1-30/P1-31, page text -> records: the four grammars of
+  PROFILE-SCHEMA section 4 (`ConvertFrom-EbiGrammar`: delimited / labeled /
+  columns / regex), every one returning the lines it did NOT recognise so
+  `verify.parse_text` can report them, plus `ConvertTo-EbiDateTime` with
+  the single-digit-hour formats (`H:mm:ss`) that the old parsers lacked.

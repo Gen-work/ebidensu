@@ -1304,7 +1304,7 @@
 
 ## table / progress 组(6 张)
 
-### [ ] P1-24 table.load + table.save
+### [x] P1-24 table.load + table.save
 - **估** 60min | **依赖** P0-R4 | **抄** `MappingStore.ps1 Import-Mapping` / `Export-MappingAtomic`
 - **注意**:CSV 是 UTF-8 **带 BOM**(Excel 需要);写入必须原子(临时文件 + 改名)。
   `table.load` 必须对全表算一遍 `keySafe`(`PROFILE-SCHEMA.md` §6.6),撞车的行
@@ -1314,19 +1314,37 @@
 - ⚠ (第六轮,P0-R11)`table.load` `provides=@('worklist')`,在 `setup` 里
   `with.as` 注册;outputs 只有 `path` / `rowCount` / `columns`,整张表不进
   outputs。`table.save` 通过 `sessionKind='worklist'` 输入拿表
+- **已执行(2026-09-28)**:`kernel/Table.ps1` 新增(`Read-EbiCsv` → 列表 +
+  hashtable 行;`Write-EbiCsvAtomic` 自己拼 CSV 文本、**UTF-8 带 BOM**、CRLF、
+  全字段加引号、临时文件 + Move 重试——不用 `Export-Csv -Encoding UTF8`,因为
+  PS 5.1 写 BOM 而 pwsh 7 不写;`Save-EbiWorklist` 是每个写表 step 返回前的
+  那次原子落盘)。`table.load`:`provides=@('worklist')`,outputs 只有
+  `path` / `rowCount` / `columns`;profile 声明而文件没有的列按 default 补齐
+  (warning `columns_added`);键列缺失 → `key_column_missing`;**全表算一遍
+  keySafe,撞车 → `key_collision` 并列出撞车的行**(`Find-EbiKeySafeCollisions`,
+  `Key.ps1`)。DryRun 也真读文件(只读);文件不在 → 空表 + warning。
+  `table.save`:`worklist` Session 输入 + 可选 `path`。
 
-### [ ] P1-25 table.ensure_columns
+### [x] P1-25 table.ensure_columns
 - **估** 45min | **抄** `MappingStore.ps1 Ensure-MappingColumns`;列 schema 来自 profile
+- **已执行(2026-09-28)**:`table.ensure_columns`:profile 的列 schema +
+  `columns` map(名 → 默认值)里缺的都补上,补了就原子落盘;幂等
+  (第二次 `added=@()`)。
 
-### [ ] P1-26 table.select
+### [x] P1-26 table.select
 - **估** 60min | **抄** `MappingStore.ps1 Get-PendingRows`
 - **注意**:`ng` **仍算 pending**(`spec/WORKFLOW-SCHEMA.md` §3.2)—— 旧的
   `Get-PendingRows` 把任何非 `0` 都当已完成,会把 NG 行藏起来。
   同一份筛选实现同时供 runner 的 `source.select` 用(P1-03),不写两份
 - ⚠ (第六轮,P0-R11)`source.table` 是 Session 实例名;pending 判断经 profile
   的 `verdict.values` 映射后再比较,混跑期的旧编码 `1` / `2` / `0` 才对得上
+- **已执行(2026-09-28)**:`table.select` 直接调 `kernel/Worklist.ps1` 的
+  `Select-EbiWorklistRows`(runner 的 `source.select` 用的同一个函数,没有第二份):
+  五种 `pendingWhen`,经 profile `verdict.values` 翻译后比较,`ng`(存储码 2)
+  仍是 pending;`only` / `limit`;返回的是行的**副本**(改副本不碰表)。
+  输出 `keyList` 不叫 `keys`(P1-12 的 `reserved_name` 规则)。
 
-### [ ] P1-27 [整块] kernel/Key.ps1 + table.key
+### [x] P1-27 [整块] kernel/Key.ps1 + table.key
 - **估** 120min | **依赖** P1-26, P0-R4 | **读** `spec/PROFILE-SCHEMA.md` §6 全节
 - **做**:核心是 **`kernel/Key.ps1` 纯库**(无 param(),可被任何 step dot-source):
   复合主键(`key.columns` 数组)规范化、`confirmedRules` 应用、候选排序 + 证据
@@ -1339,8 +1357,24 @@
   P0-R4 落 `<WorkDir>/ebi.local.json` 待回填。
 - **完成**:单测覆盖 —— 单列键、复合键、后缀变体、全角、大小写、
   「4 个候选无法确定」返回完整候选表;`grep -rn '\-eq' modules/` 里没有 key 比较
+- **已执行(2026-09-28)**:`kernel/Key.ps1` 的匹配半边:`Get-EbiKeyRules`
+  (profile `worklist.key.confirmedRules`,没有就默认三条:批次戳后缀 /
+  fullwidth / case-insensitive)、`ConvertTo-EbiKeyForm`(按层规范化:exact →
+  stripped(suffix/prefix 规则)→ fullwidth → case,**没声明的规则那一层不产生
+  新命中**)、`Get-EbiKeyMatchTier`、`Get-EbiKeyPartsTier`(复合键**逐列**比较,
+  行的层 = 最差的那列——`$` 锚定的后缀规则必须看到列尾而不是 `" / "` 拼接串)、
+  `Find-EbiKeyMatches`(取第一个有命中的层,返回该层全部命中)、
+  `Find-EbiKeySafeCollisions`、`New-EbiCandidateList`(P0-R4 标准形状的唯一
+  构造处)。`table.key` 只是包装:一个命中 → `match`/`index`/`matchedBy`;多个 →
+  `ambiguous` + candidates;没有 → `key_not_found`。**`file.find` / `table.set` /
+  `flow.checkpoint` / `verify.match_record` 全部改调它**,`file.find` 自己的分层
+  函数删掉。`Tests/Test-Steps.ps1` 加了守卫:`modules/` 下任何 step 源码里
+  `$key -eq <非空>` 一类的比较 = 失败(空值检查除外)。单测:单列 / 复合 /
+  后缀变体 / 全角 / 大小写 / 两个同层候选返回完整候选表。**没做**:歧义面板
+  答完后把新规则写进 `<WorkDir>/ebi.local.json`(`human.choose` 只输出
+  `learn=$true`),回填留给 P2。
 
-### [ ] P1-28 table.set + flow.checkpoint
+### [x] P1-28 table.set + flow.checkpoint
 - **估** 60min | **抄** `MappingStore.ps1 Update-MappingRows` / `Set-MappingBit`
 - **做**:位定义来自 profile 的 `bits`,不硬编码 1/2/4
 - **注意**:`pendingWhen` 的位掩码写法从 `"bit !3"`(数字)改成 **`"bit !<位名>"`**
@@ -1349,41 +1383,85 @@
 - ⚠ (第六轮,P0-R11 / P0-R13)写入前经 `verdict.values` 翻译成存储编码;
   `checkpoint` 的 `value` 来自 `steps.gate.out.code`,并用 `when` 跳过
   `action == skip` 的行(留 pending);每次写都原子落盘
+- **已执行(2026-09-28)**:`table.set`(`key` 空 = 当前行;`value` 经
+  `verdict.values` 翻译;`bit` 用**位名**,`Get-EbiWorklistBitValue` 查 profile
+  的 `bits`,没声明 → `bit_unknown`,绝不猜 1/2/4;`clear`;写完原子落盘,落盘
+  失败回滚内存)。`flow.checkpoint`(`value` 只收逻辑值 ok/ng/unknown/空,
+  写存储码 → `value_invalid`;`bit` 按名 OR 进去;行默认当前 item)。为此
+  runner 的 `$Ctx` 加了 **`Item`**(each 里当前行,setup/teardown 为 `$null`)和
+  `KeyColumns`,`STEP-CONTRACT.md` §3.2 表已加行;`WORKFLOW-SCHEMA.md` §3.1 的
+  `"bit !3"` 改成 **`"bit !<位名>"`**(纯数字只为迁移期保留)。
 
-### [ ] P1-29 progress.event + progress.status
+### [x] P1-29 progress.event + progress.status
 - **估** 60min | **抄** P0-03 的 Trace + `VerifyTool.ps1 Show-Status`
 - **做**:ASCII 进度表
+- **已执行(2026-09-28)**:`progress.event`(写 `run/<runId>/trace.jsonl`,
+  P0-03 的 `Write-TraceEvent`,`key` 默认当前 item;DryRun 不写)。
+  `progress.status`(ASCII 表:每个 verdict / bitmask 列的 total / done /
+  pending / ng,bitmask 列另列每个位的 done 数;判定用 runner 同一套
+  `Test-EbiRowPending` + `verdict.values`,所以这里的数就是 `ebi run` 会处理的
+  数;可选 `groupBy` 计数;outputs `lines` + `summary`)。
 
 ## verify 组(4 张)
 
-### [ ] P1-30 verify.parse_text —— delimited
+### [x] P1-30 verify.parse_text —— delimited
 - **估** 75min | **依赖** P0-R5 | **抄** `GfixJobList.ps1 ConvertFrom-GfixJobListText`;**读** `spec/PROFILE-SCHEMA.md` §4
 - **做**:分隔符表格,靠 `rowWhen` 正则识别数据行
 - **⚠ 必须**:未识别行走 P0-R5 的标准 **`warnings` 通道**(带行数和内容),
   不发明私有输出字段 —— runner 才会把它进 trace、进末尾汇总(静默丢行是旧工具
   最恶劣的 bug,光「返回了」不够,必须**有人看见**)
+- **已执行(2026-09-28)**:`kernel/Parse.ps1` 新增(四种 grammar 的纯实现 +
+  `ConvertTo-EbiDateTime`)。`delimited`:`delimiter`(`\t` / `ws`)、`rowWhen`
+  (`field` 可用序号或字段名 + `matches`)、`fields`;**没认出的非空行全部进
+  `unrecognized`(行号 + 原文)**,grammar 可声明 `ignore` 正则列表把预期噪音
+  (页脚之类)排除。`verify.parse_text` step:每条未识别行一条 warning
+  `unrecognized_line`(`data.line` / `data.text`),超过 `maxWarnings` 再加一条
+  `unrecognized_lines` 汇总——runner 会进 trace 和末尾汇总;outputs
+  `recordCount`(不叫 `count`)/ `unrecognized` / `names`;一条都没认出 →
+  `no_records`(transient,通常是页还没好)。
 
-### [ ] P1-31 verify.parse_text —— labeled + columns + regex
+### [x] P1-31 verify.parse_text —— labeled + columns + regex
 - **估** 90min | **抄** `SnapVerify.ps1 ConvertFrom-HmPageText` / `ConvertFrom-JenkinsListText`
 - **⚠ 必须**:时间格式用 `H:mm:ss` 单字符说明符,**不要 `HH`**
   (单位数小时的行曾被整批静默丢弃,导致"文件不在列表里"的误判)
 - **完成**:单位数小时的行有专门的回归单测
+- **已执行(2026-09-28)**:`labeled`(`pairs: name → { after, take: line|token }`,
+  永远一条记录,标签找不到 → 空值 + `missing` → step 的 warning
+  `label_missing`;值为空时取下一行);`columns`(`headerLine.contains` 定位表头,
+  `columns: name → [start, end]` 切列,没表头是错误不是零行);`regex`(命名捕获组
+  = 字段)。**时间**:`ConvertTo-EbiDateTime` 的格式表全部用 `H:mm:ss`
+  单字符说明符,`Tests/Test-VerifySteps.ps1` 有专门的回归:`9:50:03` 的行
+  必须被识别、`9:05` 比 `9:00` 新。
 
-### [ ] P1-32 verify.match_record
+### [x] P1-32 verify.match_record
 - **估** 75min | **依赖** P1-27 | **抄** `SnapVerify.ps1 Get-MatchedRowIndex` / `Select-JenkinsFileCandidate`
 - **做**:按 key 找行(dot-source `kernel/Key.ps1`,不自己写比较)、`tieBreak: newest`、
   多候选按 P0-R4 标准候选形状返回,走歧义流程
+- **已执行(2026-09-28)**:`verify.match_record`:`records` + `key` +
+  `field`(默认 `key`),比较走 `Find-EbiKeyMatches`(`Key.ps1`,无自写 `-eq`);
+  多个命中:`tieBreak=newest` 按 `timeField` 取最新(给了 `window` 时**窗口内
+  最新优先**,旧 `Get-MatchedRowIndex` 的规则)、`first`、`none` → `ambiguous` +
+  P0-R4 候选形状(证据:position / time / matchedBy);多命中但自动选了的
+  发 warning `several_matches`。`record_not_found` transient。
 
-### [ ] P1-33 verify.assert
+### [x] P1-33 verify.assert
 - **估** 90min | **读** `spec/PROFILE-SCHEMA.md` §5
 - **做**:规则表引擎,`op` 的 12 种(`equals`/`notEquals`/`in`/`notIn`/`matches`/
   `present`/`empty`/`within`/`gt`/`lt`/`gte`/`lte`);**`else` 只能是 `ng` 或
   `unknown`,校验时拒绝 `ok`**
 - **完成**:单测覆盖每种 op;`else: ok` 的规则表被拒绝并报错
+- **已执行(2026-09-28)**:`verify.assert`:12 种 op(`equals` / `notEquals` /
+  `in` / `notIn` / `matches` / `present` / `empty` / `within` / `gt` / `lt` /
+  `gte` / `lte`),按序第一条不满足的决定;数值 op 对读不成数字的值**永远不
+  通过**,`within` 对读不成时间的值同样(端点含);`VerifyAssert-Validate`
+  拒绝 `else: ok`(`rules_invalid`,消息引 §5.2)、第 13 种 op、缺 value、
+  坏 default。输出 **`reason`** 不叫 `message`——`message` 是返回值保留键
+  (§3.1),`WORKFLOW-SCHEMA.md` §8 示例和 `PROFILE-SCHEMA.md` §5.3 已改成
+  `{{steps.verdict.out.reason}}`。每种 op 各有单测,`else: ok` 被拒有单测。
 
 ## human 组(1 张)
 
-### [ ] P1-34 human.prepare + human.gate + human.choose
+### [x] P1-34 human.prepare + human.gate + human.choose
 - **估** 75min | **依赖** P1-05, P0-R4 | **做**:三个 step 接到 `kernel/Gate.ps1` 的面板
 - **注意**:`human.choose` 渲染 P0-R4 的**标准候选形状**(file.find / table.key /
   verify.match_record 返回的是同一个形状,渲染器只写一份);`human.gate` 的
@@ -1394,6 +1472,17 @@
   `action`(`pass` / `ok` / `ng` / `skip`);`q` 返回 `failure='operator_quit'`,
   runner 转成 `cancelled` 绕过 `onError`(`human.prepare` 已是这个写法)。
   三个 `human.*` step `effects='ui'`,返回后前台在控制台(P0-R12)
+- **已执行(2026-09-28)**:三个 step 都在 `kernel/Gate.ps1` 的 `Show-EbiGate`
+  上。`human.prepare` 改成面板(Enter=继续,q=`operator_quit`)。`human.gate`
+  **总是执行**:`code` 不在 `askWhen` → 直通 `action=pass`;在 → 面板
+  Enter/o=ok、n=ng、k=保持、s=skip(`code=''`)、`m <note>`、q=`operator_quit`;
+  outputs `code` / `action` / `note` 在 manifest 里声明,`flow.checkpoint` 的
+  `when: steps.gate.out.action != skip` 能引用;DryRun / 无控制台 → 保持原判定
+  (`keep`)。`human.choose`:P0-R4 形状的**唯一**渲染器(`#n 候选 [证据 k=v,…]`,
+  没证据写 `no evidence`;suggestion + doubts 放 NEXT 段),数字选一个 / n=都不是
+  / s=跳过 / q;人真选了之后问一次「存成规则?」→ `learn` 布尔输出(落盘
+  `ebi.local.json` 留给 P2);DryRun 取 suggestion,没有就 none。
+  `Tests/Test-VerifySteps.ps1` 用脚本化 Reader 驱动面板,不阻塞。
 
 ## kernel 补充(2 张,第六轮评审追加)
 

@@ -54,7 +54,22 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         -> ok + data=null + warning), find (exact > stamped >
                         base > full-width tiers; several hits -> 'ambiguous'
                         with the P0-R4 candidate shape), assert_exists
-                        (P1-21..P1-23). Steps share kernel/ libraries via
+                        (P1-21..P1-23); table/ load (provides 'worklist';
+                        keySafe collision check), save, ensure_columns,
+                        select (the runner's own Select-EbiWorklistRows),
+                        key (P1-27 face of kernel/Key.ps1), set (named
+                        bits, verdict.values translation, atomic flush);
+                        flow/ checkpoint ($Ctx.Item default row, logical
+                        values only); progress/ event (run trace), status
+                        (ASCII done/pending/ng table) (P1-24..P1-29);
+                        verify/ parse_text (kernel/Parse.ps1 grammars;
+                        unrecognised lines -> warnings), match_record
+                        (Key.ps1 tiers; newest / first / none), assert (12
+                        ops, else never ok, output 'reason') (P1-30..
+                        P1-33); human/ prepare, gate (always runs; pass
+                        outside askWhen), choose (the one P0-R4 candidate
+                        renderer) on kernel/Gate.ps1 (P1-34). Steps share
+                        kernel/ libraries via
                         `. (Join-Path $PSScriptRoot '..\..\kernel\X.ps1')`;
                         they never call each other. Tests\Test-Steps.ps1
                         dry-runs every step from its manifest example and
@@ -159,6 +174,13 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         *Core that names System.Drawing types, because on
                         Linux pwsh a function that mentions System.Drawing
                         throws on its first call before running a line).
+                        Table.ps1 (P1-24: worklist CSV read / atomic write,
+                        UTF-8 with BOM fixed in code) and Parse.ps1
+                        (P1-30/31: the four page-text grammars +
+                        ConvertTo-EbiDateTime with H:mm:ss single-digit
+                        hours). Key.ps1 grew its matching half in P1-27
+                        (rules, tiers, composite keys column by column,
+                        keySafe collisions, the P0-R4 candidate shape).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
@@ -629,7 +651,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
 `Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
 `Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
-`Native.ps1`, `Image.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

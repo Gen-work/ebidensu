@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-33 step(s) in 8 group(s).
+35 step(s) in 8 group(s).
 
 | group | steps |
 |-------|-------|
@@ -14,7 +14,7 @@
 | excel | (none yet) |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set` |
 | verify | `verify.assert`, `verify.match_record`, `verify.parse_text` |
-| human | `human.prepare` |
+| human | `human.choose`, `human.gate`, `human.prepare` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint` |
 
@@ -839,6 +839,66 @@ Notes: no_records is transient: the usual cause is a page still loading. A label
 
 ## human
 
+### `human.choose`
+
+Show every candidate with its evidence; the operator picks one, none, or skips
+
+- file: `modules/human/human.choose.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `candidates` | map | yes |  |  | the P0-R4 shape: { candidates: [ { id, candidate, evidence } ], suggestion?, doubts? } |
+| `key` | string |  | (empty) |  | which item; empty = the current item |
+| `question` | string |  | Which one is it? |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `action` | string | chosen \| none \| skip |
+| `candidate` | string | the chosen candidate text |
+| `id` | string | the chosen candidate id (c1, c2, ...) or empty |
+| `index` | int | 1-based position of the choice; 0 when none |
+| `learn` | bool | the operator wants this decision kept as a rule (persisting it is a later card) |
+
+failures: `operator_quit` (not transient), `input_invalid` (not transient)
+
+```json
+{"id":"choose","use":"human.choose","with":{"candidates":"{{steps.find.out.candidates}}","question":"Which file is this run's?"}}
+```
+
+Notes: Under DryRun or without a console the suggestion is taken when there is one, else none. n = none of them (the item becomes unknown), s = skip (leave pending), q = quit.
+
+### `human.gate`
+
+Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
+
+- file: `modules/human/human.gate.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `askWhen` | list |  | ["unknown"] |  | codes that need a person |
+| `code` | string | yes |  |  | the verdict so far: ok \| ng \| unknown \| empty |
+| `evidence` | any |  | (empty) |  | a path, or a list of paths / values, to look at |
+| `key` | string |  | (empty) |  | which item; empty = the current item |
+| `reason` | string |  | (empty) |  | why (verify.assert's reason), shown on the panel |
+
+| output | type | desc |
+|--------|------|------|
+| `action` | string | pass \| ok \| ng \| keep \| skip |
+| `code` | string | ok \| ng \| unknown \| empty -- what flow.checkpoint should write |
+| `note` | string | free text typed with m |
+
+failures: `operator_quit` (not transient)
+
+```json
+{"id":"gate","use":"human.gate","with":{"askWhen":["unknown"],"code":"{{steps.verdict.out.code}}","evidence":"{{steps.shot.out.path}}","reason":"{{steps.verdict.out.reason}}"}}
+```
+
+Notes: Under DryRun or without a console the panel is printed and the verdict is kept as is (action=keep). onError.policy=ask reuses this panel's rendering (kernel/Gate.ps1), so the two never drift.
+
 ### `human.prepare`
 
 Show a message and wait for Enter (ready) or q (quit)
@@ -862,7 +922,7 @@ failures: `operator_quit` (not transient)
 {"id":"prepare","use":"human.prepare","with":{"message":"Open the page to capture, then press Enter","url":"https://example.invalid/list"}}
 ```
 
-Notes: DryRun prints the prompt and answers Enter on the operator's behalf, so a dry run never blocks.
+Notes: DryRun (or no console) answers Enter on the operator's behalf, so a dry run never blocks. After this step the foreground is the console (P0-R12): the next browser step brings its window back.
 
 ## progress
 

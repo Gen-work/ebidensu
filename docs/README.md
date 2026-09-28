@@ -37,7 +37,11 @@ P1-35(`kernel/Json.ps1`,唯一的 JSON 入口 + 铁律 R8)`[x]`,P1-03(Runner
 P1-11..P1-17(browser 组 11 个 step + `kernel/Native.ps1`)`[x]`,P1-18..P1-21
 (screen 组 5 个 step + `kernel/Image.ps1`,四份 `Invoke-CropPng` 消掉,
 `file.write_json` / `file.read_json`)`[x]`,P1-22 / P1-23(`file.find` /
-`file.assert_exists`)`[x]`。下一张:P1-24(`table.load` + `table.save`)。
+`file.assert_exists`)`[x]`,P1-24..P1-29(table / flow / progress 组 9 个 step +
+`kernel/Table.ps1`,`kernel/Key.ps1` 的匹配半边 = P1-27)`[x]`,P1-30..P1-33
+(verify 组 3 个 step + `kernel/Parse.ps1`)`[x]`,P1-34(human 组 3 个 step 上
+`Gate.ps1`)`[x]`。下一张:P1-36(DryRun 契约测试收尾;每个 step 的 dryrun 已在
+`Tests/Test-Steps.ps1` 里跑)。
 
 ---
 

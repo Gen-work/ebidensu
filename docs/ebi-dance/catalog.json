@@ -1033,6 +1033,147 @@
       "summary": "Write the verdict (or a named bit) for the current item and flush",
       "tier": "core"
     },
+    "human.choose": {
+      "effects": "ui",
+      "example": {
+        "use": "human.choose",
+        "with": {
+          "candidates": "{{steps.find.out.candidates}}",
+          "question": "Which file is this run's?"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/human/human.choose.ps1",
+      "group": "human",
+      "id": "human.choose",
+      "idempotent": true,
+      "inputs": {
+        "candidates": {
+          "desc": "the P0-R4 shape: { candidates: [ { id, candidate, evidence } ], suggestion?, doubts? }",
+          "required": true,
+          "type": "map"
+        },
+        "key": {
+          "default": "",
+          "desc": "which item; empty = the current item",
+          "type": "string"
+        },
+        "question": {
+          "default": "Which one is it?",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Under DryRun or without a console the suggestion is taken when there is one, else none. n = none of them (the item becomes unknown), s = skip (leave pending), q = quit.",
+      "outputs": {
+        "action": {
+          "desc": "chosen | none | skip",
+          "type": "string"
+        },
+        "candidate": {
+          "desc": "the chosen candidate text",
+          "type": "string"
+        },
+        "id": {
+          "desc": "the chosen candidate id (c1, c2, ...) or empty",
+          "type": "string"
+        },
+        "index": {
+          "desc": "1-based position of the choice; 0 when none",
+          "type": "int"
+        },
+        "learn": {
+          "desc": "the operator wants this decision kept as a rule (persisting it is a later card)",
+          "type": "bool"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Show every candidate with its evidence; the operator picks one, none, or skips",
+      "tier": "core"
+    },
+    "human.gate": {
+      "effects": "ui",
+      "example": {
+        "use": "human.gate",
+        "with": {
+          "askWhen": [
+            "unknown"
+          ],
+          "code": "{{steps.verdict.out.code}}",
+          "evidence": "{{steps.shot.out.path}}",
+          "reason": "{{steps.verdict.out.reason}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        }
+      ],
+      "file": "modules/human/human.gate.ps1",
+      "group": "human",
+      "id": "human.gate",
+      "idempotent": true,
+      "inputs": {
+        "askWhen": {
+          "default": [
+            "unknown"
+          ],
+          "desc": "codes that need a person",
+          "type": "list"
+        },
+        "code": {
+          "desc": "the verdict so far: ok | ng | unknown | empty",
+          "required": true,
+          "type": "string"
+        },
+        "evidence": {
+          "default": "",
+          "desc": "a path, or a list of paths / values, to look at",
+          "type": "any"
+        },
+        "key": {
+          "default": "",
+          "desc": "which item; empty = the current item",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "desc": "why (verify.assert's reason), shown on the panel",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Under DryRun or without a console the panel is printed and the verdict is kept as is (action=keep). onError.policy=ask reuses this panel's rendering (kernel/Gate.ps1), so the two never drift.",
+      "outputs": {
+        "action": {
+          "desc": "pass | ok | ng | keep | skip",
+          "type": "string"
+        },
+        "code": {
+          "desc": "ok | ng | unknown | empty -- what flow.checkpoint should write",
+          "type": "string"
+        },
+        "note": {
+          "desc": "free text typed with m",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Ask the operator to confirm a verdict when it is in askWhen; pass otherwise",
+      "tier": "core"
+    },
     "human.prepare": {
       "effects": "ui",
       "example": {
@@ -1065,7 +1206,7 @@
         }
       },
       "needs": [],
-      "notes": "DryRun prints the prompt and answers Enter on the operator's behalf, so a dry run never blocks.",
+      "notes": "DryRun (or no console) answers Enter on the operator's behalf, so a dry run never blocks. After this step the foreground is the console (P0-R12): the next browser step brings its window back.",
       "outputs": {
         "action": {
           "desc": "enter | quit",
