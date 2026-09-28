@@ -1,66 +1,249 @@
 #Requires -Version 5.1
 # ============================================================
-#  ebi.ps1 - the ebi-dance command-line entry point.
+#  ebi.ps1 - the ebi-dance command-line entry point (P1-07..P1-10).
 #
-#  P0-07 / P0-08 surface only. P1-07..P1-10 add help / lint / explain /
-#  doctor and the real run options (--resume, --only, --operator, see
-#  docs/ebi-dance/Plan.md section 9).
+#    ebi.ps1 help [<step>]                     all steps by group / one manifest
+#    ebi.ps1 lint    <workflow.json>           static checks (WORKFLOW-SCHEMA 9)
+#    ebi.ps1 explain <workflow.json>           the execution plan, nothing runs
+#    ebi.ps1 dryrun  <workflow.json>           every step in DryRun
+#    ebi.ps1 run     <workflow.json>           the real thing
+#    ebi.ps1 doctor                            PS version, Excel COM, Edge, encoding
+#    ebi.ps1 catalog                           regenerate docs/ebi-dance/CATALOG.md + catalog.json
 #
-#    .\ebi.ps1 run    workflows\spike.capture_window.json -WorkDir C:\work\x
-#    .\ebi.ps1 dryrun workflows\spike.capture_window.json -WorkDir C:\work\x
+#  run / dryrun options:
+#    -WorkDir <dir>        default: the current directory
+#    -Profile <name|dir>   default: the workflow's "profile" field under profiles/
+#    -Resume [-RunId <id>] continue an unfinished run (no id: the newest one
+#                          of this workflow); an unfinished run WITHOUT -Resume
+#                          asks first instead of silently starting anew (P0-R16)
+#    -Only <key,key>       only these rows (by key display), on top of pendingWhen
+#    -Operator <name>      run.operator (default $env:USERNAME)
+#    -Limit <n>            row cap
+#    -Var k=v [-Var ...]   override workflow vars
 #
-#  Exit codes: 0 ok, 1 a step failed, 3 the operator quit, 2 usage.
+#  Exit codes: 0 ok, 1 a step / lint / doctor failed, 2 usage, 3 the
+#  operator cancelled. Has param(): call via -File or &, never dot-source.
 # ============================================================
 param(
-    [Parameter(Position = 0)] [string]$Command  = 'help',
-    [Parameter(Position = 1)] [string]$Workflow = '',
-    [string]$WorkDir = '',
-    [string]$RunId   = '',
+    [Parameter(Position = 0)] [string]$Command = 'help',
+    [Parameter(Position = 1)] [string]$Target  = '',
+    [string]$WorkDir  = '',
+    [string]$RunId    = '',
+    [string]$Profile  = '',
+    [string]$Only     = '',
+    [string]$Operator = '',
+    [int]$Limit       = 0,
+    [string[]]$Var    = @(),
+    [switch]$Resume,
     [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
 # Capture switches BEFORE dot-sourcing anything (CLAUDE.md switch pattern).
-$dryRunFlag  = [bool]$DryRun.IsPresent
+$dryRunFlag = [bool]$DryRun.IsPresent
+$resumeFlag = [bool]$Resume.IsPresent
+try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+} catch { }
 
 . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Runner.ps1')
+. (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Help.ps1')
+. (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Lint.ps1')
+. (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Explain.ps1')
+. (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Profile.ps1')
 
 function Show-EbiUsage {
     Write-Host ''
-    Write-Host 'ebi - declarative evidence workflows (P0 spike surface)' -ForegroundColor Cyan
-    Write-Host '  ebi.ps1 run    <workflow.json> [-WorkDir <dir>] [-RunId <id>]   run setup + teardown'
-    Write-Host '  ebi.ps1 dryrun <workflow.json> [-WorkDir <dir>]                 same, every step in DryRun'
-    Write-Host '  ebi.ps1 help'
+    Write-Host 'ebi - declarative evidence workflows' -ForegroundColor Cyan
+    Write-Host '  ebi.ps1 help [<step>]              steps by group, or one manifest in full'
+    Write-Host '  ebi.ps1 lint    <workflow.json>    static checks; exit 1 on errors'
+    Write-Host '  ebi.ps1 explain <workflow.json>    the execution plan (nothing runs)'
+    Write-Host '  ebi.ps1 dryrun  <workflow.json>    every step in DryRun'
+    Write-Host '  ebi.ps1 run     <workflow.json>    [-Resume [-RunId <id>]] [-Only k1,k2] [-Operator n] [-Limit n] [-Var k=v]'
+    Write-Host '  ebi.ps1 doctor                     PS version, Excel COM, Edge, encoding policy'
+    Write-Host '  ebi.ps1 catalog                    regenerate docs/ebi-dance/CATALOG.md + catalog.json'
+    Write-Host '  common: -WorkDir <dir> (default .)  -Profile <name|dir> (default: the workflow''s "profile")'
     Write-Host ''
-    Write-Host '  WorkDir defaults to the current directory. Outputs land in <WorkDir>\capture, trace in <WorkDir>\run\<runId>\trace.jsonl.'
+}
+
+function Resolve-EbiCliWorkflowPath {
+    param([string]$Given)
+    if ([string]::IsNullOrWhiteSpace($Given)) { return '' }
+    if ([System.IO.Path]::IsPathRooted($Given)) { return $Given }
+    $candidate = Join-Path (Get-Location).ProviderPath $Given
+    if (-not (Test-Path -LiteralPath $candidate)) { $candidate = Join-Path $PSScriptRoot $Given }
+    return $candidate
+}
+
+function Read-EbiCliWorkflow {
+    # -> @{ ok; value; path; message }
+    param([string]$Given)
+    $path = Resolve-EbiCliWorkflowPath -Given $Given
+    if ($path -eq '') { return @{ ok = $false; value = $null; path = ''; message = 'a workflow file is required' } }
+    $r = Read-EbiJson -Path $path
+    if (-not $r['ok']) { return @{ ok = $false; value = $null; path = $path; message = $r['message'] } }
+    if (-not ($r['value'] -is [hashtable])) { return @{ ok = $false; value = $null; path = $path; message = 'workflow JSON must be an object' } }
+    return @{ ok = $true; value = $r['value']; path = $path; message = '' }
+}
+
+function Read-EbiCliProfile {
+    # The -Profile option, else the workflow's "profile" field. -> @{ ok; value; message; name }
+    # value is $null when the workflow says none / nothing is configured.
+    param([hashtable]$Workflow, [string]$Option, [string]$WorkDirValue)
+    $spec = if (-not [string]::IsNullOrWhiteSpace($Option)) { $Option } elseif ($null -ne $Workflow -and $Workflow.Contains('profile') -and $null -ne $Workflow['profile']) { [string]$Workflow['profile'] } else { '' }
+    $dir = Resolve-EbiProfileDir -NameOrPath $spec
+    if ($dir -eq '') { return @{ ok = $true; value = $null; message = ''; name = '' } }
+    $r = Read-EbiProfile -Dir $dir -WorkDir $WorkDirValue
+    if (-not $r['ok']) { return @{ ok = $false; value = $null; message = $r['message']; name = $spec } }
+    return @{ ok = $true; value = $r['value']; message = ''; name = $r['name'] }
+}
+
+function ConvertFrom-EbiCliVars {
+    # -Var k=v [-Var k2=v2] -> hashtable
+    param([string[]]$Pairs)
+    $h = @{}
+    foreach ($p in @($Pairs)) {
+        if ([string]::IsNullOrWhiteSpace($p)) { continue }
+        $eq = $p.IndexOf('=')
+        if ($eq -le 0) { Write-Host ('[WARN] -Var "' + $p + '" is not k=v; ignored') -ForegroundColor Yellow; continue }
+        $h[$p.Substring(0, $eq)] = $p.Substring($eq + 1)
+    }
+    return $h
+}
+
+function Invoke-EbiDoctor {
+    # Environment self-check. Prints one line per check; returns the number of failures.
+    $fails = 0
+    function Report { param([string]$Status, [string]$What, [string]$Detail) $c = switch ($Status) { 'OK' { 'Green' } 'WARN' { 'Yellow' } default { 'Red' } }; Write-Host ('  [{0,-4}] {1,-18} {2}' -f $Status, $What, $Detail) -ForegroundColor $c }
+    Write-Host ''
+    Write-Host 'ebi doctor' -ForegroundColor Cyan
+    $v = $PSVersionTable.PSVersion
+    if ($v.Major -ge 5) { Report 'OK' 'PowerShell' ([string]$v + $(if ($v.Major -ge 6) { '  (pwsh; the office PC runs Windows PowerShell 5.1)' } else { '' })) } else { Report 'FAIL' 'PowerShell' ('{0} -- 5.1 or newer is required' -f $v); $fails++ }
+    $onWindows = ($env:OS -eq 'Windows_NT')
+    if (-not $onWindows) { Report 'WARN' 'Platform' 'not Windows: Excel COM and Edge checks skipped (CI / dev box)' }
+    else {
+        try {
+            $xl = New-Object -ComObject Excel.Application
+            $ver = [string]$xl.Version
+            $xl.Quit()
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($xl)
+            Report 'OK' 'Excel COM' ('Excel.Application version ' + $ver)
+        } catch { Report 'FAIL' 'Excel COM' ('cannot create Excel.Application: ' + $_.Exception.Message); $fails++ }
+        $edge = @(Get-Process -Name msedge -ErrorAction SilentlyContinue)
+        if ($edge.Count -gt 0) { Report 'OK' 'Edge' ('{0} process(es) running' -f $edge.Count) }
+        else {
+            $exe = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path -LiteralPath $_ }
+            if (@($exe).Count -gt 0) { Report 'WARN' 'Edge' 'installed but not running (browser.ensure needs an open window)' } else { Report 'FAIL' 'Edge' 'msedge.exe not found'; $fails++ }
+        }
+    }
+    $enc = Join-Path $PSScriptRoot 'Check-Encoding.ps1'
+    if (Test-Path -LiteralPath $enc) {
+        $out = & $enc -Root $PSScriptRoot 2>&1 | Out-String
+        $rc = $LASTEXITCODE
+        if ($rc -eq 0) { Report 'OK' 'Encoding policy' 'Check-Encoding.ps1 passed' } else { Report 'FAIL' 'Encoding policy' ('Check-Encoding.ps1 exit ' + $rc + ' -- run it for details'); $fails++ }
+    } else { Report 'WARN' 'Encoding policy' 'Check-Encoding.ps1 not found' }
+    $entries = @(Get-EbiCatalogEntries)
+    $broken = @($entries | Where-Object { -not $_['ok'] })
+    if ($broken.Count -eq 0) { Report 'OK' 'Step catalog' ('{0} step(s) load' -f $entries.Count) } else { Report 'FAIL' 'Step catalog' ('{0} of {1} step file(s) do not load: {2}' -f $broken.Count, $entries.Count, (($broken | ForEach-Object { $_['use'] }) -join ', ')); $fails++ }
+    $spec = Get-EbiMustReleaseKinds
+    if ($spec.Count -gt 0) { Report 'OK' 'Spec' ('STEP-CONTRACT.md readable; {0} resource kind(s)' -f $spec.Count) } else { Report 'WARN' 'Spec' 'docs/ebi-dance/spec/STEP-CONTRACT.md not readable; lint release checks off' }
+    $wd = if ([string]::IsNullOrWhiteSpace($WorkDir)) { (Get-Location).ProviderPath } else { $WorkDir }
+    $unfinished = @(Find-EbiUnfinishedRuns -WorkDir $wd)
+    if ($unfinished.Count -gt 0) { Report 'WARN' 'Unfinished runs' ('{0} in {1}: {2}' -f $unfinished.Count, $wd, (($unfinished | ForEach-Object { [string]$_['runId'] }) -join ', ')) } else { Report 'OK' 'Unfinished runs' ('none in ' + $wd) }
+    Write-Host ''
+    return $fails
 }
 
 $cmd = $Command.ToLowerInvariant()
-if ($cmd -eq 'help' -or $cmd -eq '-h' -or $cmd -eq '--help') { Show-EbiUsage; exit 0 }
-if ($cmd -ne 'run' -and $cmd -ne 'dryrun') {
+if ($cmd -eq 'help' -or $cmd -eq '-h' -or $cmd -eq '--help' -or $cmd -eq '') {
+    if ([string]::IsNullOrWhiteSpace($Target)) {
+        Show-EbiUsage
+        foreach ($line in @(Format-EbiHelpList -Entries @(Get-EbiCatalogEntries))) { Write-Host $line }
+        exit 0
+    }
+    $entry = Find-EbiHelpEntry -Entries @(Get-EbiCatalogEntries) -Use $Target
+    if ($null -eq $entry) { Write-Host ('[ERROR] no step "' + $Target + '"; `ebi.ps1 help` lists them') -ForegroundColor Red; exit 1 }
+    foreach ($line in @(Format-EbiHelpStep -Entry $entry)) { Write-Host $line }
+    exit 0
+}
+
+if ($cmd -eq 'doctor') {
+    $n = Invoke-EbiDoctor
+    if ($n -gt 0) { exit 1 }
+    exit 0
+}
+
+if ($cmd -eq 'catalog') {
+    . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Docs.ps1')
+    $w = Write-EbiCatalog
+    if (-not $w['ok']) { Write-Host ('[ERROR] ' + $w['message']) -ForegroundColor Red; exit 1 }
+    Write-Host ('wrote {0} and {1} ({2} step(s), {3} broken)' -f $w['markdownPath'], $w['jsonPath'], $w['steps'], $w['broken'])
+    exit $(if ($w['broken'] -gt 0) { 1 } else { 0 })
+}
+
+if ($cmd -ne 'lint' -and $cmd -ne 'explain' -and $cmd -ne 'run' -and $cmd -ne 'dryrun') {
     Write-Host ('[ERROR] unknown command: ' + $Command) -ForegroundColor Red
     Show-EbiUsage
     exit 2
 }
-if ([string]::IsNullOrWhiteSpace($Workflow)) {
-    Write-Host '[ERROR] a workflow file is required' -ForegroundColor Red
-    Show-EbiUsage
-    exit 2
-}
-if ($cmd -eq 'dryrun') { $dryRunFlag = $true }
 
-$wd = if ([string]::IsNullOrWhiteSpace($WorkDir)) { (Get-Location).Path } else { $WorkDir }
+$wf = Read-EbiCliWorkflow -Given $Target
+if (-not $wf['ok']) { Write-Host ('[ERROR] ' + $wf['message']) -ForegroundColor Red; if ($wf['path'] -eq '') { Show-EbiUsage }; exit 2 }
+
+$wd = if ([string]::IsNullOrWhiteSpace($WorkDir)) { (Get-Location).ProviderPath } else { $WorkDir }
 if (-not (Test-Path -LiteralPath $wd)) { New-Item -ItemType Directory -Path $wd -Force | Out-Null }
-$wd = (Resolve-Path -LiteralPath $wd).Path
+$wd = (Resolve-Path -LiteralPath $wd).ProviderPath
 
-$wfPath = $Workflow
-if (-not [System.IO.Path]::IsPathRooted($wfPath)) {
-    $candidate = Join-Path (Get-Location).Path $wfPath
-    if (-not (Test-Path -LiteralPath $candidate)) { $candidate = Join-Path $PSScriptRoot $wfPath }
-    $wfPath = $candidate
+$prof = Read-EbiCliProfile -Workflow $wf['value'] -Option $Profile -WorkDirValue $wd
+if (-not $prof['ok']) { Write-Host ('[ERROR] profile: ' + $prof['message']) -ForegroundColor Red; exit 2 }
+$profileData = if ($null -ne $prof['value']) { $prof['value'] } else { @{} }
+
+if ($cmd -eq 'lint') {
+    $catalog = ConvertTo-EbiLintCatalog -Entries @(Get-EbiCatalogEntries)
+    $res = Invoke-EbiLint -Workflow $wf['value'] -Catalog $catalog -Profile $(if ($null -ne $prof['value']) { $prof['value'] } else { $null }) -MustRelease (Get-EbiMustReleaseKinds)
+    foreach ($line in @(Format-EbiLintReport -Result $res -Path $wf['path'])) {
+        $color = if ($line -like '*[[]ERROR]*') { 'Red' } elseif ($line -like '*[[]WARN ]*') { 'Yellow' } elseif ($line -like '*-- OK*') { 'Green' } else { 'Gray' }
+        Write-Host $line -ForegroundColor $color
+    }
+    if ($res['ok']) { exit 0 }
+    exit 1
 }
 
-$summary = Invoke-EbiWorkflow -Path $wfPath -WorkDir $wd -RunId $RunId -DryRun:$dryRunFlag
+if ($cmd -eq 'explain') {
+    $catalog = ConvertTo-EbiLintCatalog -Entries @(Get-EbiCatalogEntries)
+    $plan = Format-EbiExplain -Workflow $wf['value'] -Catalog $catalog -Profile $(if ($null -ne $prof['value']) { $prof['value'] } else { $null })
+    Write-Host ''
+    foreach ($line in @($plan['lines'])) {
+        $color = if ($line -like '*[[]DESTR]*' -or $line -like '*confirm:false*' -or $line -like '*UNKNOWN STEPS*') { 'Red' } elseif ($line -like '*[[]human]*') { 'Yellow' } else { 'Gray' }
+        Write-Host ('  ' + $line) -ForegroundColor $color
+    }
+    Write-Host ''
+    exit 0
+}
+
+# ---- run / dryrun ------------------------------------------------------------------
+if ($cmd -eq 'dryrun') { $dryRunFlag = $true }
+$wfId = [string]$wf['value']['id']
+$unfinished = @(Find-EbiUnfinishedRuns -WorkDir $wd -WorkflowId $wfId)
+if ($resumeFlag) {
+    if ([string]::IsNullOrWhiteSpace($RunId)) {
+        if ($unfinished.Count -eq 0) { Write-Host ('[ERROR] -Resume: no unfinished run of "' + $wfId + '" under ' + $wd) -ForegroundColor Red; exit 2 }
+        $RunId = [string]$unfinished[0]['runId']
+        Write-Host ('resuming the newest unfinished run: ' + $RunId) -ForegroundColor Cyan
+    }
+} elseif ($unfinished.Count -gt 0 -and -not $dryRunFlag) {
+    # P0-R16: never silently start anew next to an unfinished run.
+    $r = Show-EbiGate -Title 'UNFINISHED RUN' `
+        -What @(('{0} unfinished run(s) of "{1}" under {2}:' -f $unfinished.Count, $wfId, $wd), (($unfinished | ForEach-Object { [string]$_['runId'] + ' (started ' + [string]$_['startedAt'] + ')' }) -join '; ')) `
+        -Next @('r: resume the newest one', 'n: start a new run anyway', 'q: quit') `
+        -Actions @(@{ key = 'r'; label = 'resume' }, @{ key = 'n'; label = 'new run' }, @{ key = 'q'; label = 'quit' }) -Auto 'n'
+    if ($r['action'] -eq 'q') { exit 3 }
+    if ($r['action'] -eq 'r') { $resumeFlag = $true; $RunId = [string]$unfinished[0]['runId'] }
+}
+$onlyList = $null
+if (-not [string]::IsNullOrWhiteSpace($Only)) { $onlyList = @($Only -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) }
+
+$summary = Invoke-EbiWorkflow -Path $wf['path'] -WorkDir $wd -RunId $RunId -DryRun:$dryRunFlag -Profile $profileData -Vars (ConvertFrom-EbiCliVars -Pairs $Var) -Operator $Operator -Only $onlyList -Limit $Limit -Resume:$resumeFlag
 if ([string]$summary['failure'] -eq 'cancelled') { exit 3 }
 if ([bool]$summary['ok']) { exit 0 }
 exit 1

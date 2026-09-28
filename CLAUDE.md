@@ -109,7 +109,15 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         (P1-06: manifests -> docs/ebi-dance/CATALOG.md +
                         catalog.json, committed and drift-checked by
                         Tests\Test-Catalog.ps1; regenerate with
-                        `. kernel/Docs.ps1; Write-EbiCatalog`),
+                        `. kernel/Docs.ps1; Write-EbiCatalog`), Help.ps1
+                        (P1-07: `ebi help` list / one manifest, 80 cols),
+                        Lint.ps1 (P1-08: Invoke-EbiLint, the WORKFLOW-SCHEMA
+                        9 static checks over workflow + catalog + profile;
+                        the mustRelease table is parsed out of the spec),
+                        Explain.ps1 (P1-09: Format-EbiExplain, the ASCII
+                        execution plan), Profile.ps1 (profiles/<name>/*.json
+                        + <WorkDir>/ebi.local.json overlay -> one hashtable;
+                        all four: Tests\Test-Cli.ps1),
                         Context.ps1 (P1-01: pure {{}} template evaluation --
                         scopes vars/profile/page/run/item/steps, whole-value
                         type preservation, \{\{ escape, one-pass evaluation
@@ -123,10 +131,11 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
-ebi.ps1                 ebi-dance CLI entry: run / dryrun / help so far
-                        (P1-07..P1-10 add lint / explain / doctor and the
-                        real run options). Has param(): call via -File or &,
-                        never dot-source.
+ebi.ps1                 ebi-dance CLI entry (P1-10): help [<step>] / lint /
+                        explain / dryrun / run (-Resume [-RunId], -Only,
+                        -Operator, -Limit, -Var k=v, -Profile) / doctor /
+                        catalog. Exit 0 ok, 1 failed, 2 usage, 3 cancelled.
+                        Has param(): call via -File or &, never dot-source.
 profiles/               per-project data: page bindings, decision rules, schemas
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
@@ -587,7 +596,8 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
-`Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
+`Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

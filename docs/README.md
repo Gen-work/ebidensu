@@ -32,8 +32,9 @@ P1-35(`kernel/Json.ps1`,唯一的 JSON 入口 + 铁律 R8)`[x]`,P1-03(Runner
 `[x]`,P1-04(onError 四策略 + `byFailure`、destructive 确认关卡、ledger +
 `-Resume` 重放、`once:"groupEnd"`、`run.json`)`[x]`,P1-05(`kernel/Gate.ps1`
 关卡面板)`[x]`,P1-06(`kernel/Docs.ps1` → `CATALOG.md` / `catalog.json`,已生成
-并提交)`[x]`;下一张从 CLI 四张(P1-07 help → P1-08 lint → P1-09 explain →
-P1-10 dryrun/run/doctor)开始。
+并提交)`[x]`,P1-07..P1-10(`ebi.ps1`:help / lint / explain / dryrun / run
+-Resume·-Only·-Operator / doctor / catalog)`[x]`——**kernel + CLI 全部关闭**;
+下一张从 step 卡开始:P1-11(`browser.ensure` + `browser.focus_body`)。
 
 ---
 

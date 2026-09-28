@@ -1043,11 +1043,16 @@
 
 ## CLI(4 张)
 
-### [ ] P1-07 ebi help
+### [x] P1-07 ebi help
 - **估** 45min | **依赖** P1-06 | **做**:`ebi help` 分组列全部 step;`ebi help <id>` 渲染单个 manifest
 - **完成**:输出纯 ASCII,80 列不折行
+- **已执行(2026-09-28)**:`kernel/Help.ps1`(`Format-EbiHelpList` 按组一行一
+  step,带 `[fallback]` / `[DESTRUCTIVE]` 标记;`Format-EbiHelpStep` 单个
+  manifest 全量渲染,长描述按 80 列折行;`Find-EbiHelpEntry`),`ebi.ps1 help
+  [<step>]` 接线。`Tests/Test-Cli.ps1` 覆盖(含对真实 `screen.capture_window`
+  manifest 的 80 列断言)。
 
-### [ ] P1-08 ebi lint
+### [x] P1-08 ebi lint
 - **估** 90min | **依赖** P1-01, P1-02, P0-R6 | **读** `spec/WORKFLOW-SCHEMA.md` §9
 - **做**:§9 的 9 项静态检查全实现,包括 fallback tier 警告和 `confirm:false` 警告。
   评审追加:`page` 绑定解析得到(P0-R6);`inputs` 的 `sessionKind`/`provides`
@@ -1061,18 +1066,66 @@
   已有工作流集体变红);`once:"groupEnd"` 只在 `source.groupBy` 有值时合法
   (P0-R10 第四轮)。
 - **完成**:对一份故意写错的 workflow,全部检查项都能报出来
+- **已执行(2026-09-28)**:`kernel/Lint.ps1`:`Invoke-EbiLint`(纯,输入
+  workflow + `use -> manifest` 表 + profile + mustRelease 表)→ `errors` /
+  `warnings` 各带 `where`。第一遍直接复用 runner 的 `Get-EbiWorkflowProblems`
+  (lint 和 runner 对形状问题永远一致),然后按执行顺序走三段:`use` 在
+  catalog 里;`with` 的未声明参数 / 缺 `required` / 字面量类型与 `enum`
+  (模板值静态无法定型,跳过);每个 `{{}}` 解析得到(`vars` 键、`run` 键、
+  `item` 只在 `each`、`page` 需要顶层绑定、`profile`/`page` 路径用
+  `Context.ps1` 的 `Resolve-EbiPath` 对已加载 profile 静态求值、`steps.<id>`
+  必须是同段更早的 step);Session 配平(`as` 只能出现在 `provides` 的 step
+  上、**且 `provides` 的调用必须写 `as`**(P0-R17)、活名不重复注册、每个
+  `type='session'` 输入是字面量且由更早的同种类 `as` 注册过、`source.table`
+  在 `setup` 里由 `provides worklist` 注册、`mustRelease=$true` 的种类必须在
+  后面被释放——种类表从 `spec/STEP-CONTRACT.md` §3.4 现场解析,读不到就
+  警告「释放检查跳过」而不是当没有);`setup` 与 `provides`/`releases` 的
+  step 必须幂等;`byFailure` 的 id 必须在 manifest 或保留表里、`retry` 只能
+  用在 transient 的 id 上(顶层按所有用到的 manifest 并集判)。警告:
+  `tier: fallback`、`destructive` + `confirm:false`、`needs excel/browser/
+  calibrated:*`、没加载 profile、`item.<列>` 不在 profile 的列声明里。
+  Profile 侧:`page` 存在、`key.columns` 与 `role: key` 互相一致。
+  `Tests/Test-Cli.ps1`:一份故意写错的 workflow 报出 23 类错误 + 4 类警告,
+  一份正确的零错误。**没做**:§9 最后一条「key 比较绕过 `table.key`」要等
+  P1-27 有了唯一的比较入口才有判据。
 
-### [ ] P1-09 ebi explain
+### [x] P1-09 ebi explain
 - **估** 90min | **依赖** P1-03 | **读** `Plan.md` §9(输出样例)
 - **做**:渲染成 ASCII 执行计划,标出每步的 effects、人工关卡数、破坏性操作数、是否用到降级层
 - **完成**:输出和 `Plan.md` §9 的样例形状一致;显示 `list(転送状態一覧)` 这种中性名+显示名
+- **已执行(2026-09-28)**:`kernel/Explain.ps1`(`Format-EbiExplain`,纯):
+  标题行(id -- title,版本,profile)、`page: <名> = <role>(<label>)`(role
+  和 label 来自 profile 的 `pages.json`;没有 profile 就只给名字,page 不在
+  profile 里则标出来)、`+ source:` 行、三段各一行一 step
+  (`[effects] id use summary   细节`,细节 = path 型输入 `-> …`、session
+  名、带模板的短文本、`as`、`when`、`once`、`confirm:false`),页脚
+  `onError / gates / destructive / fallback tier`(不在 catalog 里的 step 显示
+  `[?    ]` 并计数)。**框线用 ASCII**(`+`/`|`),不用 `Plan.md` 样例里的
+  制表符——源码铁律 R2,而且 cp932 控制台不一定显示得出来;形状一致即可。
+  `gates` 数的是 `human.*` 组的调用。
 
-### [ ] P1-10 ebi dryrun / run / doctor
+### [x] P1-10 ebi dryrun / run / doctor
 - **估** 75min | **依赖** P1-04 | **做**:三个子命令接线;`doctor` 检查 PS 版本、Excel COM、Edge、编码策略
 - ⚠ (第六轮,P0-R16)`run` 还要接 `--resume [<runId>]` / `--only <key,...>` /
   `--operator`,并在启动时写 `run/<runId>/run.json`;有未完成 run 而没写
   `--resume` 时提示,不静默新建
 - **完成**:`dryrun` 不碰真实系统就能走完全流程
+- **已执行(2026-09-28)**:`ebi.ps1` 重写:`help [<step>]` / `lint` / `explain` /
+  `dryrun` / `run` / `doctor` / `catalog`(重新生成 CATALOG),`run` 的
+  `-Resume [-RunId]`(不给 id 取该工作流最近一次未完成的 run)、`-Only k1,k2`、
+  `-Operator`、`-Limit`、`-Var k=v`、`-Profile <名|目录>`(默认取工作流的
+  `profile` 字段,`none` = 不加载);有未完成 run 而没写 `-Resume` 时用
+  Gate 面板问 r/n/q(无控制台时默认 n,新建并打印原因),不静默新建;
+  `run.json` 由 runner 落盘(P1-04)。`doctor`:PS 版本、Excel COM(真建
+  `Excel.Application` 再 Quit)、Edge(进程或安装路径)、编码策略(调
+  `Check-Encoding.ps1`)、step catalog 能否全部加载、spec 种类表可读、工作
+  目录下未完成的 run;非 Windows 上 COM/Edge 项标 WARN 跳过。顺带做了
+  **`kernel/Profile.ps1`**(`Read-EbiProfile`:`profiles/<name>/*.json` 每个
+  文件一个顶层键 + `<WorkDir>/ebi.local.json` 深合并覆盖,缺文件只列
+  `missing` 不报错;`Merge-EbiHashtable`;`Resolve-EbiProfileDir`)——加载
+  逻辑没有卡,P2-01 只做 profile 内容。退出码:0 / 1 失败 / 2 用法 / 3 取消。
+  `Tests/Test-Cli.ps1` 95 例,其中 `ebi.ps1` 本身在子进程里跑
+  help / lint / explain / dryrun / run / -Resume / doctor。
 
 ## browser 组(7 张,11 个 step)
 

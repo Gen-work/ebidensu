@@ -77,6 +77,23 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   and `catalog.json` (Agents). Both are committed; `Tests/Test-Catalog.ps1`
   regenerates them and fails on drift. Regenerate after any manifest
   change: `. .\kernel\Docs.ps1; Write-EbiCatalog`.
+- `Help.ps1` -- P1-07, `ebi help`: `Format-EbiHelpList` (every step by
+  group, one line each) and `Format-EbiHelpStep` (one manifest in full),
+  every line at most 80 characters.
+- `Lint.ps1` -- P1-08, `ebi lint`: `Invoke-EbiLint` runs the static checks
+  of `WORKFLOW-SCHEMA.md` section 9 over a workflow, the catalog and the
+  profile without running anything (the runner's shape checks first, then
+  use / with / templates / session resources / idempotency / byFailure /
+  mustRelease; warnings for fallback tier, confirm:false, needs, missing
+  profile). `Get-EbiMustReleaseKinds` parses the kind table out of the spec.
+- `Explain.ps1` -- P1-09, `ebi explain`: `Format-EbiExplain` renders the
+  execution plan in ASCII (Plan.md section 9's shape): page as
+  role(label), source, one line per step with its effects tag and what it
+  touches, a footer with onError / gates / destructive / fallback counts.
+- `Profile.ps1` -- `Read-EbiProfile`: `profiles/<name>/*.json`, one file
+  per top-level key, with `<WorkDir>/ebi.local.json` deep-merged on top
+  (`Merge-EbiHashtable`); `Resolve-EbiProfileDir` turns a name or a path
+  into the directory. The profile CONTENT is P2-01.
 - `Ledger.ps1` -- P1-04, `run/<runId>/ledger.jsonl` (keys `item:<key>|<step>`
   and `group:<group>|<step>`, last record per key wins, appended through
   `Json.ps1`) and `run/<runId>/run.json` (the `run.*` scope, workflow
