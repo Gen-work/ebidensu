@@ -13,6 +13,66 @@
     "flow"
   ],
   "steps": {
+    "browser.assert_page": {
+      "effects": "pure",
+      "example": {
+        "use": "browser.assert_page",
+        "with": {
+          "fingerprint": "{{page.fingerprint}}",
+          "text": "{{steps.wait.out.text}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "page_loading",
+          "transient": true
+        },
+        {
+          "id": "page_empty",
+          "transient": false
+        },
+        {
+          "id": "page_expired",
+          "transient": false
+        },
+        {
+          "id": "page_unknown",
+          "transient": false
+        }
+      ],
+      "file": "modules/browser/browser.assert_page.ps1",
+      "group": "browser",
+      "id": "browser.assert_page",
+      "idempotent": true,
+      "inputs": {
+        "fingerprint": {
+          "desc": "{ ok: [...all must appear], loading: [...], empty: [...], expired: [...] } (any one appears)",
+          "required": true,
+          "type": "map"
+        },
+        "text": {
+          "desc": "the page text (browser.wait_for / read_text output)",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Order of judgment: blank text is loading; then expired, then empty, then loading (any listed string), then ok (ALL listed strings); anything else is unknown. expired / empty / unknown are not transient: retrying the same page changes nothing, a person must look.",
+      "outputs": {
+        "kind": {
+          "desc": "ok | loading | empty | expired | unknown",
+          "type": "string"
+        },
+        "matched": {
+          "desc": "the fingerprint strings that were found",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Classify page text by fingerprint: ok, loading, empty, expired, unknown",
+      "tier": "core"
+    },
     "browser.ensure": {
       "effects": "ui",
       "example": {
@@ -24,6 +84,10 @@
       "failures": [
         {
           "id": "no_browser_window",
+          "transient": true
+        },
+        {
+          "id": "foreground_lost",
           "transient": true
         }
       ],
@@ -65,6 +129,584 @@
       ],
       "releases": [],
       "summary": "Find the browser main window, bring it to front, register it",
+      "tier": "core"
+    },
+    "browser.fill": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.fill",
+        "with": {
+          "text": "{{item.Correl_ID_S}}",
+          "verifyChange": true,
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "no_effect",
+          "transient": true
+        },
+        {
+          "id": "clipboard_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.fill.ps1",
+      "group": "browser",
+      "id": "browser.fill",
+      "idempotent": true,
+      "inputs": {
+        "text": {
+          "desc": "what to put in the field",
+          "required": true,
+          "type": "string"
+        },
+        "verifyChange": {
+          "default": false,
+          "desc": "read the page text before and after; unchanged -> no_effect",
+          "type": "bool"
+        },
+        "waitMs": {
+          "default": 300,
+          "desc": "wait after pasting",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window that receives the keys",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "Idempotent: pasting the same text twice leaves the same field content. Reading the page text for verifyChange sends Ctrl+A/Ctrl+C/Esc, which moves the selection; the field keeps its value.",
+      "outputs": {
+        "changed": {
+          "desc": "page text changed (only meaningful with verifyChange)",
+          "type": "bool"
+        },
+        "length": {
+          "desc": "characters pasted",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Paste a text over the focused input (Ctrl+A, Ctrl+V)",
+      "tier": "core"
+    },
+    "browser.find": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.find",
+        "with": {
+          "term": "{{steps.row.out.name}}",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "clipboard_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.find.ps1",
+      "group": "browser",
+      "id": "browser.find",
+      "idempotent": true,
+      "inputs": {
+        "closeAfter": {
+          "default": false,
+          "desc": "press Esc afterwards (the highlight goes away too)",
+          "type": "bool"
+        },
+        "term": {
+          "desc": "the exact string to search for",
+          "required": true,
+          "type": "string"
+        },
+        "waitMs": {
+          "default": 400,
+          "desc": "wait after the search",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the browser window",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "A miss is not a failure: hit=false is an answer the workflow decides about (verify.assert / human.gate). Leave closeAfter false when a screenshot of the highlighted row follows.",
+      "outputs": {
+        "hit": {
+          "desc": "the page text contains the term",
+          "type": "bool"
+        },
+        "rect": {
+          "desc": "pixel rect of the active match; null (P3: browser.find_active_row)",
+          "type": "rect"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Ctrl+F search for an exact string; report whether it hit",
+      "tier": "core"
+    },
+    "browser.focus_body": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.focus_body",
+        "with": {
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "window_gone",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.focus_body.ps1",
+      "group": "browser",
+      "id": "browser.focus_body",
+      "idempotent": true,
+      "inputs": {
+        "offsetX": {
+          "default": 150,
+          "desc": "click x, from the window left edge",
+          "type": "int"
+        },
+        "offsetY": {
+          "default": 150,
+          "desc": "click y, from the window top edge",
+          "type": "int"
+        },
+        "settleMs": {
+          "default": 400,
+          "desc": "wait after the click",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window to focus",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "The click lands offsetX/offsetY inside the window, which on a browser is the page body, never the toolbar; keep the offsets above the tab strip height.",
+      "outputs": {
+        "x": {
+          "desc": "screen x clicked",
+          "type": "int"
+        },
+        "y": {
+          "desc": "screen y clicked",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Bring a registered window to front and click inside its body",
+      "tier": "core"
+    },
+    "browser.navigate": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.navigate",
+        "with": {
+          "url": "{{page.url}}",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "no_effect",
+          "transient": true
+        },
+        {
+          "id": "clipboard_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.navigate.ps1",
+      "group": "browser",
+      "id": "browser.navigate",
+      "idempotent": true,
+      "inputs": {
+        "url": {
+          "default": "",
+          "desc": "where to go; empty = do nothing (warning no_url)",
+          "type": "string"
+        },
+        "verifyChange": {
+          "default": false,
+          "desc": "read the page text before and after; unchanged -> no_effect",
+          "type": "bool"
+        },
+        "waitMs": {
+          "default": 1500,
+          "desc": "wait after Enter",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the browser window",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "outputs": {
+        "navigated": {
+          "desc": "false when no URL was given",
+          "type": "bool"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Ctrl+L, paste a URL, Enter; no URL means leave it to a person",
+      "tier": "core"
+    },
+    "browser.read_text": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.read_text",
+        "with": {
+          "archiveTo": "capture/before_list/{{item.keySafe}}.txt",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "archive_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.read_text.ps1",
+      "group": "browser",
+      "id": "browser.read_text",
+      "idempotent": true,
+      "inputs": {
+        "archiveTo": {
+          "default": "",
+          "desc": "also write the text here (relative: under the work dir)",
+          "type": "path"
+        },
+        "copyWaitMs": {
+          "default": 400,
+          "desc": "wait after Ctrl+C",
+          "type": "int"
+        },
+        "selectWaitMs": {
+          "default": 400,
+          "desc": "wait after Ctrl+A",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window to read",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "An empty clipboard is reported as a warning (empty_text), not a failure: a page can legitimately have no text, and browser.wait_for is the step that waits for one.",
+      "outputs": {
+        "length": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "where it was archived, or empty",
+          "type": "path"
+        },
+        "text": {
+          "desc": "the page text",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Read the page text of a registered window via the clipboard",
+      "tier": "core"
+    },
+    "browser.send_keys": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.send_keys",
+        "with": {
+          "sequence": "{ESC}",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.send_keys.ps1",
+      "group": "browser",
+      "id": "browser.send_keys",
+      "idempotent": false,
+      "inputs": {
+        "sequence": {
+          "desc": "SendKeys syntax, e.g. ^{f} or {ESC}",
+          "required": true,
+          "type": "string"
+        },
+        "waitMs": {
+          "default": 300,
+          "desc": "wait after sending",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window that receives the keys",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "Not idempotent: keys sent twice are two actions. Prefer tab_to / fill / submit / find, which say what they mean; use this for the rest.",
+      "outputs": {
+        "sent": {
+          "desc": "the sequence that was sent",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Send a SendKeys sequence to a registered window",
+      "tier": "core"
+    },
+    "browser.submit": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.submit",
+        "with": {
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "no_effect",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.submit.ps1",
+      "group": "browser",
+      "id": "browser.submit",
+      "idempotent": false,
+      "inputs": {
+        "verifyChange": {
+          "default": false,
+          "desc": "read the page text before and after; unchanged -> no_effect",
+          "type": "bool"
+        },
+        "waitMs": {
+          "default": 800,
+          "desc": "wait after Enter (page load time)",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window that receives the keys",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "Not idempotent: Enter twice may submit twice. A form whose result takes longer than waitMs to render needs browser.wait_for next.",
+      "outputs": {
+        "changed": {
+          "desc": "page text changed (only meaningful with verifyChange)",
+          "type": "bool"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Press Enter in a registered window",
+      "tier": "core"
+    },
+    "browser.tab_to": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.tab_to",
+        "with": {
+          "times": 4,
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.tab_to.ps1",
+      "group": "browser",
+      "id": "browser.tab_to",
+      "idempotent": false,
+      "inputs": {
+        "shift": {
+          "default": false,
+          "desc": "Shift+Tab (backwards) instead of Tab",
+          "type": "bool"
+        },
+        "times": {
+          "desc": "how many presses",
+          "required": true,
+          "type": "int"
+        },
+        "waitMs": {
+          "default": 150,
+          "desc": "wait after each press",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window that receives the keys",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "outputs": {
+        "pressed": {
+          "desc": "presses sent",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Press Tab (or Shift+Tab) N times in a registered window",
+      "tier": "core"
+    },
+    "browser.wait_for": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.wait_for",
+        "with": {
+          "archiveTo": "capture/before_list/{{item.keySafe}}.txt",
+          "contains": "{{item.Correl_ID_S}}",
+          "timeoutSec": 12,
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "timeout",
+          "transient": true
+        },
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "archive_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.wait_for.ps1",
+      "group": "browser",
+      "id": "browser.wait_for",
+      "idempotent": true,
+      "inputs": {
+        "archiveTo": {
+          "default": "",
+          "desc": "write the last text read here (relative: under the work dir)",
+          "type": "path"
+        },
+        "contains": {
+          "desc": "the text that means the page is ready",
+          "required": true,
+          "type": "string"
+        },
+        "pollMs": {
+          "default": 800,
+          "desc": "wait between reads",
+          "type": "int"
+        },
+        "timeoutSec": {
+          "default": 12,
+          "desc": "give up after this many seconds",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window to read",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "outputs": {
+        "elapsedMs": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "where the text was archived, or empty",
+          "type": "path"
+        },
+        "polls": {
+          "type": "int"
+        },
+        "text": {
+          "desc": "the page text at the end (matched or not)",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Poll the page text until it contains a string, or time out",
       "tier": "core"
     },
     "human.prepare": {

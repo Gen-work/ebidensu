@@ -1,22 +1,21 @@
 # modules/browser/browser.ensure.ps1
 # Find the browser's main window, bring it to the foreground, and hand its
 # handle to the runner as a 'window' resource (STEP-CONTRACT.md 3.4 point 7).
-# Ported from Common.ps1 Activate-EdgeWindow (P0-08).
+# Ported from Common.ps1 Activate-EdgeWindow (P0-08); Win32 moved to
+# kernel/Native.ps1 (P1-11).
 #
 # Process handle first, title match as a fallback only: the old
 # AppActivate-by-title path silently "activated" whatever window was already
 # in front when the title text did not match (see the Common.ps1 comment
 # above Get-EdgeMainWindowHandle). Both paths failing is a real failure here,
-# not a warning.
+# not a warning; a window found but refused the foreground is one too
+# (foreground_lost), since every later step assumes it is in front.
 #
 # Nothing in this file knows what a page is. Which browser to look for is an
-# input with a default, so a profile can say 'chrome' without touching code.
-#
-# The Win32 declarations are compiled lazily inside a prefixed helper so the
-# file dot-sources cleanly anywhere (the contract checker loads it on Linux).
-# screen.capture_window carries its own three-line copy of the same
-# declarations; P1-11/P1-18 decide whether a shared native binding is worth
-# a file of its own.
+# input with a default, so a profile can say 'chrome' -- or 'EXCEL', or
+# 'df' -- without touching code (P0-R12).
+
+. (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')
 
 $Manifest = @{
   id         = 'browser.ensure'
@@ -39,25 +38,13 @@ $Manifest = @{
   }
   failures   = @(
     @{ id = 'no_browser_window'; transient = $true }
+    @{ id = 'foreground_lost';   transient = $true }
   )
   example    = @{
     use  = 'browser.ensure'
     with = @{ as = 'mainWindow' }
   }
   notes      = 'Registers the window handle under with.as; the handle itself never appears in outputs. Several windows of the process: the first with a main window wins, as before.'
-}
-
-function BrowserEnsure-EnsureNative {
-    if (-not ('EbiBrowserEnsureNative' -as [type])) {
-        Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class EbiBrowserEnsureNative {
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-}
-"@
-    }
 }
 
 function BrowserEnsure-FindProcess {
@@ -102,11 +89,9 @@ function Invoke-Step {
                   message = ('no {0} process with a main window (process lookup and "{1}" title match both failed)' -f $processName, $title) }
     }
 
-    BrowserEnsure-EnsureNative
     $hWnd = $proc.MainWindowHandle
-    [void][EbiBrowserEnsureNative]::ShowWindowAsync($hWnd, 9)   # SW_RESTORE
-    [void][EbiBrowserEnsureNative]::SetForegroundWindow($hWnd)
-    if ($settleMs -gt 0) { Start-Sleep -Milliseconds $settleMs }
+    $fg = Set-EbiForeground -HWnd $hWnd -SettleMs $settleMs
+    if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; processId = [int]$proc.Id; title = [string]$proc.MainWindowTitle } }
 
     return @{ ok = $true; resource = $hWnd; processId = [int]$proc.Id; title = [string]$proc.MainWindowTitle }
 }

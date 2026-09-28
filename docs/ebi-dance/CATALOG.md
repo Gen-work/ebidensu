@@ -4,11 +4,11 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-3 step(s) in 3 group(s).
+13 step(s) in 3 group(s).
 
 | group | steps |
 |-------|-------|
-| browser | `browser.ensure` |
+| browser | `browser.assert_page`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_window` |
 | file | (none yet) |
 | excel | (none yet) |
@@ -19,6 +19,32 @@
 | flow | (none yet) |
 
 ## browser
+
+### `browser.assert_page`
+
+Classify page text by fingerprint: ok, loading, empty, expired, unknown
+
+- file: `modules/browser/browser.assert_page.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `fingerprint` | map | yes |  |  | { ok: [...all must appear], loading: [...], empty: [...], expired: [...] } (any one appears) |
+| `text` | string | yes |  |  | the page text (browser.wait_for / read_text output) |
+
+| output | type | desc |
+|--------|------|------|
+| `kind` | string | ok \| loading \| empty \| expired \| unknown |
+| `matched` | list | the fingerprint strings that were found |
+
+failures: `page_loading` (transient), `page_empty` (not transient), `page_expired` (not transient), `page_unknown` (not transient)
+
+```json
+{"id":"assert_page","use":"browser.assert_page","with":{"fingerprint":"{{page.fingerprint}}","text":"{{steps.wait.out.text}}"}}
+```
+
+Notes: Order of judgment: blank text is loading; then expired, then empty, then loading (any listed string), then ok (ALL listed strings); anything else is unknown. expired / empty / unknown are not transient: retrying the same page changes nothing, a person must look.
 
 ### `browser.ensure`
 
@@ -39,13 +65,258 @@ Find the browser main window, bring it to front, register it
 | `processId` | int | PID that owns the window |
 | `title` | string | window title at the time it was found |
 
-failures: `no_browser_window` (transient)
+failures: `no_browser_window` (transient), `foreground_lost` (transient)
 
 ```json
 {"id":"ensure","use":"browser.ensure","with":{"as":"mainWindow"}}
 ```
 
 Notes: Registers the window handle under with.as; the handle itself never appears in outputs. Several windows of the process: the first with a main window wins, as before.
+
+### `browser.fill`
+
+Paste a text over the focused input (Ctrl+A, Ctrl+V)
+
+- file: `modules/browser/browser.fill.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `text` | string | yes |  |  | what to put in the field |
+| `verifyChange` | bool |  | false |  | read the page text before and after; unchanged -> no_effect |
+| `waitMs` | int |  | 300 |  | wait after pasting |
+| `window` | session:window | yes |  |  | the window that receives the keys |
+
+| output | type | desc |
+|--------|------|------|
+| `changed` | bool | page text changed (only meaningful with verifyChange) |
+| `length` | int | characters pasted |
+
+failures: `foreground_lost` (transient), `no_effect` (transient), `clipboard_error` (transient)
+
+```json
+{"id":"fill","use":"browser.fill","with":{"text":"{{item.Correl_ID_S}}","verifyChange":true,"window":"mainWindow"}}
+```
+
+Notes: Idempotent: pasting the same text twice leaves the same field content. Reading the page text for verifyChange sends Ctrl+A/Ctrl+C/Esc, which moves the selection; the field keeps its value.
+
+### `browser.find`
+
+Ctrl+F search for an exact string; report whether it hit
+
+- file: `modules/browser/browser.find.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `closeAfter` | bool |  | false |  | press Esc afterwards (the highlight goes away too) |
+| `term` | string | yes |  |  | the exact string to search for |
+| `waitMs` | int |  | 400 |  | wait after the search |
+| `window` | session:window | yes |  |  | the browser window |
+
+| output | type | desc |
+|--------|------|------|
+| `hit` | bool | the page text contains the term |
+| `rect` | rect | pixel rect of the active match; null (P3: browser.find_active_row) |
+
+failures: `foreground_lost` (transient), `clipboard_error` (transient)
+
+```json
+{"id":"find","use":"browser.find","with":{"term":"{{steps.row.out.name}}","window":"mainWindow"}}
+```
+
+Notes: A miss is not a failure: hit=false is an answer the workflow decides about (verify.assert / human.gate). Leave closeAfter false when a screenshot of the highlighted row follows.
+
+### `browser.focus_body`
+
+Bring a registered window to front and click inside its body
+
+- file: `modules/browser/browser.focus_body.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `offsetX` | int |  | 150 |  | click x, from the window left edge |
+| `offsetY` | int |  | 150 |  | click y, from the window top edge |
+| `settleMs` | int |  | 400 |  | wait after the click |
+| `window` | session:window | yes |  |  | the window to focus |
+
+| output | type | desc |
+|--------|------|------|
+| `x` | int | screen x clicked |
+| `y` | int | screen y clicked |
+
+failures: `foreground_lost` (transient), `window_gone` (transient)
+
+```json
+{"id":"focus_body","use":"browser.focus_body","with":{"window":"mainWindow"}}
+```
+
+Notes: The click lands offsetX/offsetY inside the window, which on a browser is the page body, never the toolbar; keep the offsets above the tab strip height.
+
+### `browser.navigate`
+
+Ctrl+L, paste a URL, Enter; no URL means leave it to a person
+
+- file: `modules/browser/browser.navigate.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `url` | string |  | (empty) |  | where to go; empty = do nothing (warning no_url) |
+| `verifyChange` | bool |  | false |  | read the page text before and after; unchanged -> no_effect |
+| `waitMs` | int |  | 1500 |  | wait after Enter |
+| `window` | session:window | yes |  |  | the browser window |
+
+| output | type | desc |
+|--------|------|------|
+| `navigated` | bool | false when no URL was given |
+| `url` | string |  |
+
+failures: `foreground_lost` (transient), `no_effect` (transient), `clipboard_error` (transient)
+
+```json
+{"id":"navigate","use":"browser.navigate","with":{"url":"{{page.url}}","window":"mainWindow"}}
+```
+
+### `browser.read_text`
+
+Read the page text of a registered window via the clipboard
+
+- file: `modules/browser/browser.read_text.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `archiveTo` | path |  | (empty) |  | also write the text here (relative: under the work dir) |
+| `copyWaitMs` | int |  | 400 |  | wait after Ctrl+C |
+| `selectWaitMs` | int |  | 400 |  | wait after Ctrl+A |
+| `window` | session:window | yes |  |  | the window to read |
+
+| output | type | desc |
+|--------|------|------|
+| `length` | int |  |
+| `path` | path | where it was archived, or empty |
+| `text` | string | the page text |
+
+failures: `foreground_lost` (transient), `archive_failed` (transient)
+
+```json
+{"id":"read_text","use":"browser.read_text","with":{"archiveTo":"capture/before_list/{{item.keySafe}}.txt","window":"mainWindow"}}
+```
+
+Notes: An empty clipboard is reported as a warning (empty_text), not a failure: a page can legitimately have no text, and browser.wait_for is the step that waits for one.
+
+### `browser.send_keys`
+
+Send a SendKeys sequence to a registered window
+
+- file: `modules/browser/browser.send_keys.ps1`
+- effects: `ui` / tier: `core` / idempotent: `false`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `sequence` | string | yes |  |  | SendKeys syntax, e.g. ^{f} or {ESC} |
+| `waitMs` | int |  | 300 |  | wait after sending |
+| `window` | session:window | yes |  |  | the window that receives the keys |
+
+| output | type | desc |
+|--------|------|------|
+| `sent` | string | the sequence that was sent |
+
+failures: `foreground_lost` (transient)
+
+```json
+{"id":"send_keys","use":"browser.send_keys","with":{"sequence":"{ESC}","window":"mainWindow"}}
+```
+
+Notes: Not idempotent: keys sent twice are two actions. Prefer tab_to / fill / submit / find, which say what they mean; use this for the rest.
+
+### `browser.submit`
+
+Press Enter in a registered window
+
+- file: `modules/browser/browser.submit.ps1`
+- effects: `ui` / tier: `core` / idempotent: `false`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `verifyChange` | bool |  | false |  | read the page text before and after; unchanged -> no_effect |
+| `waitMs` | int |  | 800 |  | wait after Enter (page load time) |
+| `window` | session:window | yes |  |  | the window that receives the keys |
+
+| output | type | desc |
+|--------|------|------|
+| `changed` | bool | page text changed (only meaningful with verifyChange) |
+
+failures: `foreground_lost` (transient), `no_effect` (transient)
+
+```json
+{"id":"submit","use":"browser.submit","with":{"window":"mainWindow"}}
+```
+
+Notes: Not idempotent: Enter twice may submit twice. A form whose result takes longer than waitMs to render needs browser.wait_for next.
+
+### `browser.tab_to`
+
+Press Tab (or Shift+Tab) N times in a registered window
+
+- file: `modules/browser/browser.tab_to.ps1`
+- effects: `ui` / tier: `core` / idempotent: `false`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `shift` | bool |  | false |  | Shift+Tab (backwards) instead of Tab |
+| `times` | int | yes |  |  | how many presses |
+| `waitMs` | int |  | 150 |  | wait after each press |
+| `window` | session:window | yes |  |  | the window that receives the keys |
+
+| output | type | desc |
+|--------|------|------|
+| `pressed` | int | presses sent |
+
+failures: `foreground_lost` (transient)
+
+```json
+{"id":"tab_to","use":"browser.tab_to","with":{"times":4,"window":"mainWindow"}}
+```
+
+### `browser.wait_for`
+
+Poll the page text until it contains a string, or time out
+
+- file: `modules/browser/browser.wait_for.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `archiveTo` | path |  | (empty) |  | write the last text read here (relative: under the work dir) |
+| `contains` | string | yes |  |  | the text that means the page is ready |
+| `pollMs` | int |  | 800 |  | wait between reads |
+| `timeoutSec` | int |  | 12 |  | give up after this many seconds |
+| `window` | session:window | yes |  |  | the window to read |
+
+| output | type | desc |
+|--------|------|------|
+| `elapsedMs` | int |  |
+| `path` | path | where the text was archived, or empty |
+| `polls` | int |  |
+| `text` | string | the page text at the end (matched or not) |
+
+failures: `timeout` (transient), `foreground_lost` (transient), `archive_failed` (transient)
+
+```json
+{"id":"wait_for","use":"browser.wait_for","with":{"archiveTo":"capture/before_list/{{item.keySafe}}.txt","contains":"{{item.Correl_ID_S}}","timeoutSec":12,"window":"mainWindow"}}
+```
 
 ## screen
 

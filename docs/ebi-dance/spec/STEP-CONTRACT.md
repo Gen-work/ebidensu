@@ -788,6 +788,13 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
   runspace 依次 dot-source:`Invoke-Step` 撞名是设计好的,由 runner 逐个
   捕获(P1-02);裸名辅助函数(`Get-Row` 一类)则会互相覆盖,而且没有任何
   地方会报错 —— 后加载的那个静默赢
+- `inputs` / `outputs` 的名字不能是 `[hashtable]` 的成员名(`count` / `keys` /
+  `values` / `item` / `comparer` / `syncRoot` / `isReadOnly` / `isFixedSize` /
+  `isSynchronized`,不分大小写)——起了这种名字,所有读
+  manifest 的地方(`Docs.ps1` / `Help.ps1` / `Registry.ps1` / 检查器自己)
+  的 `$inputs.Count` / `$with.Keys` 拿到的会是那个条目而不是成员,报错的
+  地方离 manifest 隔着三个文件(P1-12 `browser.send_keys` 的 `keys` 和
+  `browser.tab_to` 的 `count` 都撞过);规则 id `reserved_name`
 - 源码纯 ASCII
 - 不直接调用 `ConvertFrom-Json` / `ConvertTo-Json` / `Get-Content <x>.json`
   ——JSON 一律经 `kernel/Json.ps1`(§1.1,铁律 R8,P1-35)。注释行不算;

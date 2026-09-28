@@ -244,6 +244,24 @@ $m = New-CleanManifest; $m['outputs']['broken'] = 'not a hashtable'
 $f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
 Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'a non-hashtable output spec is reported, not skipped'
 
+# ---- reserved names ---------------------------------------------------------
+
+# An input or output called count / keys / values shadows the [hashtable]
+# member of the same name for every reader (Docs.ps1's `$inputs.Count`
+# became a hashtable and threw on the first catalog run after P1-12).
+$m = New-CleanManifest; $m['inputs']['count'] = @{ type = 'int'; default = 1 }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'reserved_name') 'an input named count is refused'
+$m = New-CleanManifest; $m['inputs']['Keys'] = @{ type = 'string'; default = '' }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'reserved_name') 'an input named Keys (any case) is refused'
+$m = New-CleanManifest; $m['outputs']['values'] = @{ type = 'list' }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'reserved_name') 'an output named values is refused'
+$m = New-CleanManifest; $m['inputs']['rowCount'] = @{ type = 'int'; default = 1 }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (-not (Test-HasRule -Findings $f -Rule 'reserved_name')) 'rowCount is fine: only the exact member names are reserved'
+
 # ---- no dictionary flavour may terminate the checker -----------------------
 
 # [ordered]@{} satisfies -is [IDictionary] but has Contains, NOT ContainsKey.

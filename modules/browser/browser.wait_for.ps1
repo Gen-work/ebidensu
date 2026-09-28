@@ -1,0 +1,72 @@
+# modules/browser/browser.wait_for.ps1
+# Poll a registered window's page text until it contains a string, or time
+# out. Ported from MqSnap.ps1 Wait-MqPageReady with the MQ specifics removed
+# (P1-14): what to wait for is an input, the page kind is browser.assert_page's
+# business. The last text read is archived whether or not it matched --
+# a timeout with the page text on disk is a diagnosable timeout.
+
+. (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')
+
+$Manifest = @{
+  id         = 'browser.wait_for'
+  group      = 'browser'
+  summary    = 'Poll the page text until it contains a string, or time out'
+  tier       = 'core'
+  effects    = 'ui'
+  needs      = @('foreground')
+  provides   = @()
+  releases   = @()
+  idempotent = $true
+  inputs     = @{
+    window     = @{ type='session'; sessionKind='window'; required=$true; desc='the window to read' }
+    contains   = @{ type='string'; required=$true; desc='the text that means the page is ready' }
+    timeoutSec = @{ type='int'; default=12; desc='give up after this many seconds' }
+    pollMs     = @{ type='int'; default=800; desc='wait between reads' }
+    archiveTo  = @{ type='path'; default=''; desc='write the last text read here (relative: under the work dir)' }
+  }
+  outputs    = @{
+    text      = @{ type='string'; desc='the page text at the end (matched or not)' }
+    elapsedMs = @{ type='int' }
+    polls     = @{ type='int' }
+    path      = @{ type='path'; desc='where the text was archived, or empty' }
+  }
+  failures   = @(
+    @{ id = 'timeout';         transient = $true }
+    @{ id = 'foreground_lost'; transient = $true }
+    @{ id = 'archive_failed';  transient = $true }
+  )
+  example    = @{ use = 'browser.wait_for'; with = @{ window = 'mainWindow'; contains = '{{item.Correl_ID_S}}'; timeoutSec = 12; archiveTo = 'capture/before_list/{{item.keySafe}}.txt' } }
+}
+
+function BrowserWaitFor-Matches {
+    # PURE. Ordinal, case-sensitive containment; an empty needle never matches.
+    param([string]$Text, [string]$Needle)
+    if ([string]::IsNullOrEmpty($Needle) -or [string]::IsNullOrEmpty($Text)) { return $false }
+    return ($Text.IndexOf($Needle, [System.StringComparison]::Ordinal) -ge 0)
+}
+
+function Invoke-Step {
+    param($In, $Ctx)
+    $needle = [string]$In['contains']
+    $archive = Resolve-EbiWorkPath -PathValue ([string]$In['archiveTo']) -WorkDir ([string]$Ctx['WorkDir'])
+    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would poll the page text for "{0}" up to {1}s' -f $needle, [int]$In['timeoutSec'])); return @{ ok = $true; text = ''; elapsedMs = 0; polls = 0; path = $archive } }
+    $hWnd = ConvertTo-EbiHandle $In['window']
+    $fg = Set-EbiForeground -HWnd $hWnd
+    if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message'] } }
+    $deadline = (Get-Date).AddSeconds([Math]::Max(1, [int]$In['timeoutSec']))
+    $started = Get-Date
+    $text = ''; $polls = 0; $hit = $false
+    do {
+        $polls++
+        $text = Read-EbiPageText
+        if (BrowserWaitFor-Matches -Text $text -Needle $needle) { $hit = $true; break }
+        Start-Sleep -Milliseconds ([Math]::Max(100, [int]$In['pollMs']))
+    } while ((Get-Date) -lt $deadline)
+    $elapsed = [int]((Get-Date) - $started).TotalMilliseconds
+    if ($archive -ne '') {
+        $w = Write-EbiTextFile -Path $archive -Text $text
+        if (-not $w['ok']) { return @{ ok = $false; failure = 'archive_failed'; message = $w['message']; text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive } }
+    }
+    if (-not $hit) { return @{ ok = $false; failure = 'timeout'; message = ('"' + $needle + '" not seen after ' + $polls + ' read(s) in ' + $elapsed + ' ms'); text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive } }
+    return @{ ok = $true; text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive }
+}

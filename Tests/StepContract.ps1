@@ -99,6 +99,24 @@ function Get-StepHelperPrefix {
     return ($sb.ToString() + '-')
 }
 
+function Get-StepReservedFieldNames {
+    <#
+      Input / output names a manifest may NOT use: the members every
+      [hashtable] exposes. A step with an input called `count` or `keys`
+      turns `$inputs.Count` / `$with.Keys` into the ENTRY for every reader
+      (Docs.ps1, Help.ps1, Registry.ps1, this checker), and the failure is a
+      type error three files away from the manifest. Found the hard way
+      with browser.send_keys `keys` and browser.tab_to `count` (P1-12).
+    #>
+    return @('count', 'keys', 'values', 'item', 'comparer', 'syncroot', 'isreadonly', 'isfixedsize', 'issynchronized')
+}
+
+function Test-StepReservedFieldName {
+    param([string]$Name)
+    if ([string]::IsNullOrEmpty($Name)) { return $false }
+    return ((Get-StepReservedFieldNames) -contains $Name.ToLowerInvariant())
+}
+
 function Get-StepNonAsciiLines {
     # Returns the 1-based line numbers holding a character outside 0x00-0x7F.
     param([string]$Text)
@@ -303,8 +321,14 @@ function Get-StepContractFindings {
         Add-Finding 'field_container_shape' ('inputs is ' + $inputs.GetType().Name + ', not a hashtable; no input can be checked')
     }
     if ($inputs -is [hashtable]) {
-        foreach ($key in $inputs.Keys) {
+        # GetEnumerator, not .Keys: an input named `keys` shadows the member
+        # and the loop would run over that entry's spec instead of the names.
+        foreach ($entry in $inputs.GetEnumerator()) {
+            $key = $entry.Key
             [void]$inputNames.Add([string]$key)
+            if (Test-StepReservedFieldName -Name ([string]$key)) {
+                Add-Finding 'reserved_name' ("input '" + $key + "' is a hashtable member name; every reader of the manifest would get the entry instead of .Count/.Keys/.Values -- rename it")
+            }
             $spec = $inputs[$key]
             if (-not ($spec -is [hashtable])) {
                 Add-Finding 'field_spec_shape' ("input '" + $key + "' is not a hashtable, so none of its rules can be checked")
@@ -340,7 +364,11 @@ function Get-StepContractFindings {
         Add-Finding 'field_container_shape' ('outputs is ' + $outputs.GetType().Name + ', not a hashtable; no output can be checked')
     }
     if ($outputs -is [hashtable]) {
-        foreach ($key in $outputs.Keys) {
+        foreach ($entry in $outputs.GetEnumerator()) {
+            $key = $entry.Key
+            if (Test-StepReservedFieldName -Name ([string]$key)) {
+                Add-Finding 'reserved_name' ("output '" + $key + "' is a hashtable member name; the step's return hashtable would shadow .Count/.Keys/.Values for every reader -- rename it")
+            }
             $spec = $outputs[$key]
             if (-not ($spec -is [hashtable])) {
                 Add-Finding 'field_spec_shape' ("output '" + $key + "' is not a hashtable, so none of its rules can be checked")
