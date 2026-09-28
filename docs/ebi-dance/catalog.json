@@ -1174,6 +1174,94 @@
       "summary": "Ask the operator to confirm a verdict when it is in askWhen; pass otherwise",
       "tier": "core"
     },
+    "human.input": {
+      "effects": "ui",
+      "example": {
+        "use": "human.input",
+        "with": {
+          "default": "",
+          "kind": "timeWindow",
+          "question": "Batch run window for today?"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/human/human.input.ps1",
+      "group": "human",
+      "id": "human.input",
+      "idempotent": true,
+      "inputs": {
+        "default": {
+          "default": "",
+          "desc": "what Enter means; for timeWindow \"from..to\", empty = the last hour",
+          "type": "string"
+        },
+        "format": {
+          "default": "yyyy/MM/dd H:mm:ss",
+          "desc": "how a time answer is stored in the column",
+          "type": "string"
+        },
+        "kind": {
+          "default": "text",
+          "enum": [
+            "text",
+            "time",
+            "timeWindow"
+          ],
+          "type": "string"
+        },
+        "persistTo": {
+          "default": "",
+          "desc": "worklist column to fill where blank (needs worklist)",
+          "type": "string"
+        },
+        "question": {
+          "required": true,
+          "type": "string"
+        },
+        "worklist": {
+          "desc": "only with persistTo",
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "Runs in setup, once per run (the ledger does not replay setup, but run.json carries the window, so a resumed run keeps it without asking). Under DryRun or without a console the default is taken and reported with auto=true.",
+      "outputs": {
+        "auto": {
+          "desc": "nobody could answer (dry run / no console): the default was taken",
+          "type": "bool"
+        },
+        "filled": {
+          "desc": "rows whose blank cell was filled",
+          "type": "int"
+        },
+        "timeWindow": {
+          "desc": "{ from; to } ISO when kind is timeWindow, else null",
+          "type": "map"
+        },
+        "value": {
+          "desc": "the answer as text (a time in `format`; a window as \"from..to\")",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Ask the operator for a value (text, time, or the run time window) with a default",
+      "tier": "core"
+    },
     "human.prepare": {
       "effects": "ui",
       "example": {
@@ -2136,6 +2224,81 @@
       "provides": [],
       "releases": [],
       "summary": "Run a rule table over a record: ok / ng / unknown plus the message",
+      "tier": "core"
+    },
+    "verify.crosscheck": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.crosscheck",
+        "with": {
+          "compare": "timeWithinSec",
+          "readings": [
+            {
+              "source": "page",
+              "value": "{{steps.row.out.record.endTime}}"
+            },
+            {
+              "source": "log",
+              "value": "{{steps.logrec.out.record.endTime}}"
+            }
+          ],
+          "toleranceSec": 60
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.crosscheck.ps1",
+      "group": "verify",
+      "id": "verify.crosscheck",
+      "idempotent": true,
+      "inputs": {
+        "compare": {
+          "default": "equal",
+          "enum": [
+            "equal",
+            "numericEqual",
+            "timeWithinSec"
+          ],
+          "type": "string"
+        },
+        "normalize": {
+          "default": [],
+          "desc": "any of trim, fullwidth, thousands (applied before equal / numericEqual)",
+          "type": "list"
+        },
+        "readings": {
+          "desc": "[ { source, value }, ... ]",
+          "required": true,
+          "type": "list"
+        },
+        "toleranceSec": {
+          "default": 0,
+          "desc": "with timeWithinSec: how far apart two times may be",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "unknown is a verdict for human.gate, never a failure. Values that cannot be read as a number / time under numericEqual / timeWithinSec count as a disagreement, not as a pass.",
+      "outputs": {
+        "code": {
+          "desc": "ok | unknown",
+          "type": "string"
+        },
+        "disagreements": {
+          "desc": "[ { a, aValue, b, bValue }, ... ] every pair that differs",
+          "type": "list"
+        },
+        "sources": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Compare the same fact from several sources; any disagreement is unknown",
       "tier": "core"
     },
     "verify.match_record": {

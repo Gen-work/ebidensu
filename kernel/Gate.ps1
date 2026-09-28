@@ -147,9 +147,11 @@ function Show-EbiGate {
                   redirected stdin); '' = still try to read
         Reader    scriptblock returning the typed line (tests); default
                   Read-Host
+        Raw       free-text mode: the typed line is the answer (note under
+                  the Default action); only a bare 'q' is an action
       Nothing here decides what an action MEANS -- the caller does.
     #>
-    param([string]$Title = '', $What = $null, $Next = $null, $Evidence = $null, $Actions = @(), [string]$Default = '', [string]$Auto = '', [scriptblock]$Reader = $null, [bool]$DryRun = $false)
+    param([string]$Title = '', $What = $null, $Next = $null, $Evidence = $null, $Actions = @(), [string]$Default = '', [string]$Auto = '', [scriptblock]$Reader = $null, [bool]$DryRun = $false, [switch]$Raw)
     foreach ($line in @(Format-EbiGatePanel -Title $Title -What $What -Next $Next -Evidence $Evidence -Actions $Actions)) {
         Write-Host ('  ' + $line) -ForegroundColor Yellow
     }
@@ -168,6 +170,12 @@ function Show-EbiGate {
         $tries++
         Write-Host '  > ' -ForegroundColor Magenta -NoNewline
         $typed = [string](& $read)
+        if ($Raw) {
+            # free text (human.input, P2-07): 'q' alone quits, anything else --
+            # including nothing -- comes back as the note under the Default action
+            if ($typed.Trim() -eq 'q') { return @{ action = 'q'; note = ''; auto = $false } }
+            return @{ action = $Default; note = $typed.Trim(); auto = $false }
+        }
         $ans = Read-EbiGateAnswer -Text $typed -Actions $Actions -Default $Default
         if ($ans['ok']) { return @{ action = $ans['action']; note = $ans['note']; auto = $false } }
         if ($tries -ge 20 -and $Auto -ne '') { Write-Host ('  (no valid answer after 20 tries: ' + $Auto + ')') -ForegroundColor DarkGray; return @{ action = $Auto; note = ''; auto = $true } }

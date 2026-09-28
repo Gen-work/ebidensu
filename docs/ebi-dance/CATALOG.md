@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-35 step(s) in 8 group(s).
+37 step(s) in 8 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,8 +13,8 @@
 | file | `file.assert_exists`, `file.find`, `file.read_json`, `file.write_json` |
 | excel | (none yet) |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set` |
-| verify | `verify.assert`, `verify.match_record`, `verify.parse_text` |
-| human | `human.choose`, `human.gate`, `human.prepare` |
+| verify | `verify.assert`, `verify.crosscheck`, `verify.match_record`, `verify.parse_text` |
+| human | `human.choose`, `human.gate`, `human.input`, `human.prepare` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint` |
 
@@ -775,6 +775,35 @@ failures: `rules_invalid` (not transient)
 
 Notes: A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails. A within rule whose value is null or an empty map (no run.timeWindow given) holds: an absent window is not a failed check.
 
+### `verify.crosscheck`
+
+Compare the same fact from several sources; any disagreement is unknown
+
+- file: `modules/verify/verify.crosscheck.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `compare` | string |  | equal | equal, numericEqual, timeWithinSec |  |
+| `normalize` | list |  | [] |  | any of trim, fullwidth, thousands (applied before equal / numericEqual) |
+| `readings` | list | yes |  |  | [ { source, value }, ... ] |
+| `toleranceSec` | int |  | 0 |  | with timeWithinSec: how far apart two times may be |
+
+| output | type | desc |
+|--------|------|------|
+| `code` | string | ok \| unknown |
+| `disagreements` | list | [ { a, aValue, b, bValue }, ... ] every pair that differs |
+| `sources` | int |  |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"crosscheck","use":"verify.crosscheck","with":{"compare":"timeWithinSec","readings":[{"source":"page","value":"{{steps.row.out.record.endTime}}"},{"source":"log","value":"{{steps.logrec.out.record.endTime}}"}],"toleranceSec":60}}
+```
+
+Notes: unknown is a verdict for human.gate, never a failure. Values that cannot be read as a number / time under numericEqual / timeWithinSec count as a disagreement, not as a pass.
+
 ### `verify.match_record`
 
 Find the record for a key; newest / first / ask on several
@@ -898,6 +927,38 @@ failures: `operator_quit` (not transient)
 ```
 
 Notes: Under DryRun or without a console the panel is printed and the verdict is kept as is (action=keep). onError.policy=ask reuses this panel's rendering (kernel/Gate.ps1), so the two never drift.
+
+### `human.input`
+
+Ask the operator for a value (text, time, or the run time window) with a default
+
+- file: `modules/human/human.input.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `default` | string |  | (empty) |  | what Enter means; for timeWindow "from..to", empty = the last hour |
+| `format` | string |  | yyyy/MM/dd H:mm:ss |  | how a time answer is stored in the column |
+| `kind` | string |  | text | text, time, timeWindow |  |
+| `persistTo` | string |  | (empty) |  | worklist column to fill where blank (needs worklist) |
+| `question` | string | yes |  |  |  |
+| `worklist` | session:worklist |  |  |  | only with persistTo |
+
+| output | type | desc |
+|--------|------|------|
+| `auto` | bool | nobody could answer (dry run / no console): the default was taken |
+| `filled` | int | rows whose blank cell was filled |
+| `timeWindow` | map | { from; to } ISO when kind is timeWindow, else null |
+| `value` | string | the answer as text (a time in `format`; a window as "from..to") |
+
+failures: `operator_quit` (not transient), `input_invalid` (not transient), `write_failed` (transient)
+
+```json
+{"id":"input","use":"human.input","with":{"default":"","kind":"timeWindow","question":"Batch run window for today?"}}
+```
+
+Notes: Runs in setup, once per run (the ledger does not replay setup, but run.json carries the window, so a resumed run keeps it without asking). Under DryRun or without a console the default is taken and reported with auto=true.
 
 ### `human.prepare`
 

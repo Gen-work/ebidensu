@@ -21,6 +21,8 @@
 #    -Operator <name>      run.operator (default $env:USERNAME)
 #    -Limit <n>            row cap
 #    -Var k=v [-Var ...]   override workflow vars
+#    -TimeWindow "<from>..<to>"  run.timeWindow for rules' within (P2-07), e.g.
+#                          "2026/06/12 09:00..2026/06/12 12:00" or "09:00..12:00" (today)
 #
 #  Exit codes: 0 ok, 1 a step / lint / doctor failed, 2 usage, 3 the
 #  operator cancelled. Has param(): call via -File or &, never dot-source.
@@ -36,6 +38,7 @@ param(
     [string]$Operator = '',
     [int]$Limit       = 0,
     [string[]]$Var    = @(),
+    [string]$TimeWindow = '',
     [switch]$Resume,
     [switch]$DryRun
 )
@@ -53,6 +56,7 @@ try {
 . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Lint.ps1')
 . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Explain.ps1')
 . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Profile.ps1')
+. (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Parse.ps1')     # ConvertTo-EbiDateTime for -TimeWindow
 
 function Show-EbiUsage {
     Write-Host ''
@@ -61,7 +65,7 @@ function Show-EbiUsage {
     Write-Host '  ebi.ps1 lint    <workflow.json>    static checks; exit 1 on errors'
     Write-Host '  ebi.ps1 explain <workflow.json>    the execution plan (nothing runs)'
     Write-Host '  ebi.ps1 dryrun  <workflow.json>    every step in DryRun'
-    Write-Host '  ebi.ps1 run     <workflow.json>    [-Resume [-RunId <id>]] [-Only k1,k2] [-Operator n] [-Limit n] [-Var k=v]'
+    Write-Host '  ebi.ps1 run     <workflow.json>    [-Resume [-RunId <id>]] [-Only k1,k2] [-Operator n] [-Limit n] [-Var k=v] [-TimeWindow "from..to"]'
     Write-Host '  ebi.ps1 doctor                     PS version, Excel COM, Edge, encoding policy'
     Write-Host '  ebi.ps1 catalog                    regenerate docs/ebi-dance/CATALOG.md + catalog.json'
     Write-Host '  ebi.ps1 profile check <name|dir>   schema check + every fixture through grammar -> rules'
@@ -101,6 +105,18 @@ function Read-EbiCliProfile {
     $r = Read-EbiProfile -Dir $dir -WorkDir $WorkDirValue
     if (-not $r['ok']) { return @{ ok = $false; value = $null; message = $r['message']; name = $spec } }
     return @{ ok = $true; value = $r['value']; message = ''; name = $r['name'] }
+}
+
+function ConvertFrom-EbiCliTimeWindow {
+    # "from..to" -> @{ from; to } (ISO text) or $null; a bad text is usage.
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @{ ok = $true; value = $null; message = '' } }
+    $parts = @($Text -split '\.\.')
+    if ($parts.Count -ne 2) { return @{ ok = $false; value = $null; message = ('-TimeWindow must be "<from>..<to>", got "' + $Text + '"') } }
+    $from = ConvertTo-EbiDateTime -Text $parts[0]; $to = ConvertTo-EbiDateTime -Text $parts[1]
+    if (-not $from['ok'] -or -not $to['ok']) { return @{ ok = $false; value = $null; message = ('-TimeWindow: cannot read "' + $(if (-not $from['ok']) { $parts[0] } else { $parts[1] }) + '" as a time (yyyy/MM/dd H:mm[:ss] or H:mm)') } }
+    if ($to['value'] -lt $from['value']) { return @{ ok = $false; value = $null; message = '-TimeWindow: "to" is before "from"' } }
+    return @{ ok = $true; value = @{ from = $from['value'].ToString('yyyy-MM-ddTHH:mm:ss'); to = $to['value'].ToString('yyyy-MM-ddTHH:mm:ss') }; message = '' }
 }
 
 function ConvertFrom-EbiCliVars {
@@ -296,7 +312,9 @@ if ($resumeFlag) {
 $onlyList = $null
 if (-not [string]::IsNullOrWhiteSpace($Only)) { $onlyList = @($Only -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) }
 
-$summary = Invoke-EbiWorkflow -Path $wf['path'] -WorkDir $wd -RunId $RunId -DryRun:$dryRunFlag -Profile $profileData -Vars (ConvertFrom-EbiCliVars -Pairs $Var) -Operator $Operator -Only $onlyList -Limit $Limit -Resume:$resumeFlag
+$tw = ConvertFrom-EbiCliTimeWindow -Text $TimeWindow
+if (-not $tw['ok']) { Write-Host ('[ERROR] ' + $tw['message']) -ForegroundColor Red; exit 2 }
+$summary = Invoke-EbiWorkflow -Path $wf['path'] -WorkDir $wd -RunId $RunId -DryRun:$dryRunFlag -Profile $profileData -Vars (ConvertFrom-EbiCliVars -Pairs $Var) -Operator $Operator -Only $onlyList -Limit $Limit -Resume:$resumeFlag -TimeWindow $tw['value']
 if ([string]$summary['failure'] -eq 'cancelled') { exit 3 }
 if ([bool]$summary['ok']) { exit 0 }
 exit 1

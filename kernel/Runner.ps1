@@ -473,6 +473,7 @@ function New-EbiContext {
         Session = @{}          # name -> @{ kind; value; registeredBy }
         Item    = $null        # the current worklist row inside "each" (P1-28), $null in setup / teardown
         KeyColumns = @()       # the key columns the run iterates by (profile or source.keyColumns)
+        Run     = @{}          # the run.* scope (P2-07): human.input may set Run['timeWindow']; the runner persists it
     }
 }
 
@@ -703,7 +704,8 @@ function Invoke-EbiWorkflow {
         $Only = $null,
         [int]$Limit = 0,
         [switch]$Resume,
-        [scriptblock]$AskHandler = $null
+        [scriptblock]$AskHandler = $null,
+        $TimeWindow = $null
     )
 
     $dryRunFlag = [bool]$DryRun.IsPresent
@@ -757,7 +759,8 @@ function Invoke-EbiWorkflow {
 
     # ---- run.json + ledger (resume) ------------------------------------------------
     $wfId = [string]$workflow['id']
-    $run = @{ runId = $RunId; startedAt = (Get-Date).ToString('o'); operator = $Operator; workDir = $WorkDir; timeWindow = $null }
+    $run = @{ runId = $RunId; startedAt = (Get-Date).ToString('o'); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
+    $timeWindowSeen = $run['timeWindow']
     $ledgerDone = @{}
     if ($resumeFlag) {
         $prev = Read-EbiRunFile -WorkDir $WorkDir -RunId $RunId
@@ -773,7 +776,8 @@ function Invoke-EbiWorkflow {
             Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
             return $result
         }
-        foreach ($k in @('startedAt', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k]) { $run[$k] = $prevDoc[$k] } }
+        foreach ($k in @('startedAt', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k] -and ($k -ne 'timeWindow' -or $null -eq $run['timeWindow'])) { $run[$k] = $prevDoc[$k] } }
+        $timeWindowSeen = $run['timeWindow']
         $ledger = Read-EbiLedger -Path (Get-EbiLedgerFile -WorkDir $WorkDir -RunId $RunId)
         if (-not $ledger['ok']) {
             $result['failure'] = 'workflow_invalid'; $result['message'] = ('cannot resume run {0}: {1}' -f $RunId, $ledger['message'])
@@ -785,12 +789,13 @@ function Invoke-EbiWorkflow {
         Write-Host ('  resume {0}: {1} ledger record(s)' -f $RunId, $ledger['count']) -ForegroundColor Cyan
     }
     $workflow['_path'] = $Path
-    $runArgs = @{ path = $Path; workDir = $WorkDir; dryRun = $dryRunFlag; only = $(if ($null -eq $Only) { @() } else { @($Only) }); limit = $Limit; vars = $Vars; resume = $resumeFlag }
+    $runArgs = @{ path = $Path; workDir = $WorkDir; dryRun = $dryRunFlag; only = $(if ($null -eq $Only) { @() } else { @($Only) }); limit = $Limit; vars = $Vars; resume = $resumeFlag; timeWindow = $run['timeWindow'] }
     $wrote = Write-EbiRunFile -WorkDir $WorkDir -RunId $RunId -Run $run -Workflow $workflow -RunArgs $runArgs -Finished $false
     if (-not $wrote['ok']) { Write-Host ('  [run.json WARN] {0}' -f $wrote['message']) -ForegroundColor DarkYellow }
 
     # ---- context, scope parts ---------------------------------------------------
     $ctx = New-EbiContext -WorkDir $WorkDir -RunId $RunId -DryRun $dryRunFlag -Profile $Profile
+    $ctx['Run'] = $run
     $result['session'] = $ctx['Session']
     $wfVars = @{}
     if ($workflow.Contains('vars') -and $workflow['vars'] -is [System.Collections.IDictionary]) { foreach ($k in $workflow['vars'].Keys) { $wfVars[[string]$k] = $workflow['vars'][$k] } }
@@ -830,6 +835,14 @@ function Invoke-EbiWorkflow {
                 if ($stopped) { [void]$records.Add((New-EbiSkipRecord -Section 'setup' -Call $call -Key '' -Group '' -Why 'earlier step failed' -State $state)); continue }
                 $done = . Invoke-EbiStepWithPolicy -State $state -Section 'setup' -Call $call -Scope $scope -Steps $setupSteps
                 foreach ($r in $done['records']) { [void]$records.Add($r) }
+                if ($null -ne $run['timeWindow'] -and -not [object]::ReferenceEquals($run['timeWindow'], $timeWindowSeen)) {
+                    # a setup step (human.input) set run.timeWindow: persist it now so
+                    # a resume never asks again (P0-R16), and rebuild the scope so later
+                    # setup steps and the each section see it
+                    $timeWindowSeen = $run['timeWindow']
+                    [void](Write-EbiRunFile -WorkDir $WorkDir -RunId $RunId -Run $run -Workflow $workflow -RunArgs $runArgs -Finished $false)
+                    $scope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $null -Steps $setupSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
+                }
                 switch ([string]$done['outcome']) {
                     'cancelled' { $cancelled = $true; $stopped = $true; [void]$unrecovered.Add($done['last']) }
                     'fail'      { $aborted = $true; $stopped = $true; [void]$unrecovered.Add($done['last']) }
