@@ -47,8 +47,11 @@ DryRun 真跑一遍,返回键 == manifest outputs;两条补漏的 manifest 规�
 (`workflows/before.transferStatus.capture.json`,lint / explain / dryrun 绿)、
 P2-07(`human.input` + `run.timeWindow` + CLI `-TimeWindow`)、P2-08(`ebi mask
 check`,挂进 `Run-Tests.ps1`)、P2-09(`ebi profile check / new / diff`,
-`kernel/ProfileCheck.ps1`)、P2-10(`verify.crosscheck`)`[x]`;**P2-03 和 P2-06
-要真实页面文本和办公 PC**,在家做不了。下一步:办公 PC 上 P2-03 → P2-06。
+`kernel/ProfileCheck.ps1`)、P2-10(`verify.crosscheck`)、P2-03(在仓库里的样本
+文本上跑过一次真的 tune 循环)、P2-06(`Tests/Test-Parity.ps1`:旧判定 vs 新引擎同
+文本对拍、新 CSV 被旧工具读、中断续跑不重复;四处故意的差异作为差异断言)`[x]`——
+**P2 关闭(2026-09-28)**。留给办公 PC 的两项在 P2-03 / P2-06 卡上:真实页面的
+grammar tune、PNG 尺寸对拍。P3 从 P3-01(操作员收集素材)开始。
 
 ---
 

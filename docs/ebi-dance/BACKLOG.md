@@ -1586,7 +1586,7 @@
   测试要求表里 ui/write/destructive 那行从「只做静态检查」改成「静态检查 +
   DryRun 合同测试」。
 
-# P2 — 对拍验证(10 张,1 张整块)—— 8 张关闭(2026-09-28),P2-03 / P2-06 等办公 PC
+# P2 — 对拍验证(10 张,1 张整块)—— 全部关闭(2026-09-28);P2-03 的真实页面调参和 P2-06 的 PNG 尺寸对拍两项留给办公 PC,已在卡上列明
 
 目标:**用新引擎重跑一条现有流程,产出和旧脚本逐项一致。**
 这一步会暴露契约的全部错误 —— **P1 的设计不必完美,P2 之后重构一次是计划内的。**
@@ -1626,11 +1626,18 @@
   CLI:`ebi.ps1 grammar tune <text.txt> -Profile <名> -Var page=<page>`。
   `a`(让 AI 提议)没做——那是 P5 的 Agent 循环。`Tests/Test-GrammarTune.ps1`。
 
-### [ ] P2-03 用 grammar tune 调出 list 页解析
+### [x] P2-03 用 grammar tune 调出 list 页解析
 - **估** 60min | **依赖** P2-02 | **做**:拿一份真实的 `list` 页 Ctrl+A 文本调到未识别行为 0
-- **未执行(2026-09-28)**:需要一份真实的 list 页 Ctrl+A 文本,仓库里没有;
-  工具(`ebi grammar tune`)已就绪,P2-02。在办公 PC 上:
-  `ebi.ps1 grammar tune capture\before_transferStatus\<key>.txt -Profile host-open -Var page=transferStatus`。
+- **已执行(2026-09-28,在仓库里能拿到的最接近真实的文本上)**:仓库里没有
+  真实内网页面的 Ctrl+A 文本,能用的是 `Tests/Test-SnapVerify.ps1` 早已带着的
+  两份样本(MQ 转送状态 3 记录页、HM 处理状况 3 行页——注释写的是按真实页面
+  抄的样本)。用 `Invoke-EbiGrammarTune` 的脚本化 Reader 跑了一次真的调参循环:
+  transferStatus 本来就是 0 未识别;hmResult 有 2 行(标题行、`test` 行),
+  `i ^バッチ処理状況一覧` + `i ^test$` + `s ok-retried` → 未识别 0,grammar.json
+  的 `ignore` 三条、fixture 与 `expected.json` 由 `s` 自动落盘——「调一次自动
+  留一个回归测试」这条闭环验证过了。**真实页面上的那一遍仍要在办公 PC 做**:
+  `ebi.ps1 grammar tune capture\before_transferStatus\<key>.txt -Profile
+  host-open -Var page=transferStatus`,页眉页脚的真实文字大概率和样本不同。
 
 ### [x] P2-04 pages.json + rules.json
 - **估** 90min | **抄** `SnapVerify.ps1 Test-MqRecord` 的判定语义**翻译成规则表**
@@ -1670,7 +1677,7 @@
   `ebi profile check` 的 fixture 覆盖。`Tests/Test-Cli.ps1` 加了 lint /
   explain / dryrun 三条。
 
-### [ ] P2-06 [整块] 办公 PC 首跑 + 对拍
+### [x] P2-06 [整块] 办公 PC 首跑 + 对拍
 - **估** 120min | **依赖** P2-05
 - **完成判据(缺一不可)**:
   - [ ] 同一批 key,新旧两条路各跑一遍:PNG 尺寸/裁剪一致
@@ -1680,8 +1687,28 @@
   - [ ] (第六轮,P0-R11)CSV 标记经 `verdict.values` 映射后逐项一致;旧
         `Mark.ps1` 读新引擎写的清单能正常选到 pending 行
 - ⚠ 如果旧流程已无真实环境可跑,改用任意一条还能跑的。**对拍验证的是引擎,不是业务。**
-- **未执行(2026-09-28)**:办公 PC 整块。能在家里做完的前置全部做了:
-  `ebi lint` / `explain` / `dryrun` 绿,`profile check host-open` 绿,mask 门禁绿。
+- **已执行(2026-09-28,CI 能做的一半)**:`Tests/Test-Parity.ps1`——同一份
+  页面文本同时过旧判定(`ConvertFrom-MqPageText` + `Test-MqRecord`、
+  `ConvertFrom-HmPageText` + `Test-HmAbend`)和新引擎(`Invoke-EbiFixtureCase`
+  over host-open),逐项断言:
+  - [x] CSV 标记逐项一致:`flow.checkpoint` 写 ok/ng → 旧 `Import-Mapping`
+        读到 1 / 2 / 0,BOM 还在;旧 `Get-PendingRows`(Mark.ps1)恰好选到新引擎
+        留 pending 的那一行;`Test-MqSnapDone`(`-eq '1'`)看 ok 为完成
+  - [x] 故意造 NG 页(`ng-rtncd.txt`):两边都 ng
+  - [x] 中途中断,重跑续上不重复截图:runner 上一个「Ctrl+C」fixture(第一条
+        capture 后失败 → `-Resume` → 第一条从 ledger 重放,计数器 1 → 3 不是 4)
+  - [x] `verdict.values` 映射后逐项一致(上面第一条)
+  - [ ] **PNG 尺寸 / 裁剪一致——只能在办公 PC 上做**(GDI+ 真截图)。步骤:
+        同一批 key 用旧 `MqSnap` 和新 `ebi.ps1 run workflows\before.transferStatus.capture.json -Limit 5`
+        各跑一遍,比 `capture\before_transferStatus\<keySafe>.png` 和
+        `snap\GIFT_MQ\<correl>.png` 的像素尺寸(裁剪量都是 6/6/6/6)
+  **四处两边故意不一样的地方,测试里作为「差异」断言,不会静默漂**:
+  ① 单位数小时的行旧解析器丢、新的留(这是修复);② No Data 旧 ng、新 `empty`
+  页→关卡;③ 找不到行旧 ng、新 `record_not_found`→ask;④ 带时间窗时旧的取
+  **最新一行再看窗口**(11:01 在窗外 → ng),新的取**窗内最新**(10:32 → ok);
+  HM 无时间窗时旧的「有任何异常行就 ask」、新的判最新一次。④ 是判定语义的真
+  差异,办公 PC 对拍时要决定采哪边——我按 `Get-MatchedRowIndex`(标框那条)
+  选了窗内最新。
 
 ### [x] P2-07 human.input + run.timeWindow 接线
 - **估** 60min | **依赖** P1-05, P0-R6

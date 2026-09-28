@@ -1,10 +1,4 @@
 {
-  "ok-retried.txt": {
-    "key": "JIDSK01S",
-    "verdict": "ok",
-    "matchedRow": 1,
-    "records": 3
-  },
   "ok-retried.txt#abend": {
     "file": "ok-retried.txt",
     "key": "JIDSK01S",
@@ -12,8 +6,14 @@
       "from": "2026/06/12 10:00:00",
       "to": "2026/06/12 10:50:00"
     },
-    "verdict": "ng",
-    "matchedRow": 2
+    "matchedRow": 2,
+    "verdict": "ng"
+  },
+  "ok-retried.txt": {
+    "key": "JIDSK01S",
+    "matchedRow": 1,
+    "records": 3,
+    "verdict": "ok"
   },
   "ok-retried.txt#old": {
     "file": "ok-retried.txt",
@@ -22,7 +22,7 @@
       "from": "2026/06/12 07:00:00",
       "to": "2026/06/12 08:00:00"
     },
-    "verdict": "ok",
-    "matchedRow": 3
+    "matchedRow": 3,
+    "verdict": "ok"
   }
 }
