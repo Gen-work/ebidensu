@@ -92,6 +92,23 @@ function Find-DocsTextHit {
     return $hits.ToArray()
 }
 
+function Find-DocsVersionTag {
+    # Line numbers of vMAJOR.MINOR.PATCH tags in a long-lived page (CLAUDE.md).
+    # Release history has one home, CHANGELOG.md; a version written anywhere
+    # else goes stale the next release. A line containing any -Allow text is
+    # skipped -- each allow entry in docs-checks.json carries its reason.
+    param([string]$Text, [string[]]$Allow = @())
+    $hits  = New-Object System.Collections.Generic.List[int]
+    $lines = $Text -split "`n"
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -notmatch 'v\d+\.\d+\.\d+') { continue }
+        $allowed = $false
+        foreach ($a in $Allow) { if ($lines[$i].Contains($a)) { $allowed = $true; break } }
+        if (-not $allowed) { [void]$hits.Add($i + 1) }
+    }
+    return $hits.ToArray()
+}
+
 function Get-DocsSectionId {
     # Section numbers a markdown file defines: '## 3. x' / '### 6.1 y' -> 3, 6.1
     param([string]$Text)
