@@ -64,6 +64,7 @@
 . (Join-Path $PSScriptRoot 'Context.ps1')
 . (Join-Path $PSScriptRoot 'Worklist.ps1')
 . (Join-Path $PSScriptRoot 'Ledger.ps1')
+. (Join-Path $PSScriptRoot 'Gate.ps1')
 
 function Get-EbiWorkflowSchemaVersion { return 1 }
 
@@ -306,6 +307,10 @@ function Invoke-EbiDefaultAsk {
         @{ kind='confirm'; section; id; use; key; group; effects; with }                                -> 'y' | 'n' | 'q'
     #>
     param([hashtable]$Question, [bool]$DryRun)
+    # kernel/Gate.ps1 (P1-05) renders the panel and applies the same
+    # never-block rule; the plain prompt below is only the fallback when
+    # Gate.ps1 is not loaded (it always is by this file).
+    if (Test-Path -LiteralPath 'function:Invoke-EbiGateAsk') { return (Invoke-EbiGateAsk -Question $Question -DryRun $DryRun) }
     $auto = $DryRun
     $autoWhy = 'dry run'
     if (-not $auto) {
