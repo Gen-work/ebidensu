@@ -1,0 +1,81 @@
+{
+  "transferStatus": {
+    "rules": [
+      {
+        "field": "rtncd",
+        "op": "equals",
+        "value": "0",
+        "else": "ng",
+        "message": "リターンコード(Rtncd)が0以外"
+      },
+      {
+        "field": "rsncd",
+        "op": "equals",
+        "value": "0",
+        "else": "ng",
+        "message": "理由コード(Rsncd)が0以外"
+      },
+      {
+        "field": "recvTime",
+        "op": "within",
+        "value": "{{run.timeWindow}}",
+        "else": "ng",
+        "message": "受信時刻が実行時間帯の外"
+      },
+      {
+        "field": "recvTime",
+        "op": "present",
+        "else": "unknown",
+        "message": "受信時刻が読み取れない"
+      }
+    ],
+    "default": "ok"
+  },
+  "hmResult": {
+    "rules": [
+      {
+        "field": "status",
+        "op": "equals",
+        "value": "正常終了",
+        "else": "ng",
+        "message": "最新の実行が正常終了ではない"
+      },
+      {
+        "field": "startTime",
+        "op": "within",
+        "value": "{{run.timeWindow}}",
+        "else": "ng",
+        "message": "開始時刻が実行時間帯の外"
+      },
+      {
+        "field": "recordCount",
+        "op": "present",
+        "else": "unknown",
+        "message": "処理件数が読み取れない"
+      }
+    ],
+    "default": "ok"
+  },
+  "fileList": {
+    "rules": [
+      {
+        "field": "time",
+        "op": "present",
+        "else": "unknown",
+        "message": "更新日時が読み取れない"
+      }
+    ],
+    "default": "ok"
+  },
+  "jobList": {
+    "rules": [
+      {
+        "field": "status",
+        "op": "present",
+        "else": "unknown",
+        "message": "状態が読み取れない"
+      }
+    ],
+    "default": "ok"
+  }
+}

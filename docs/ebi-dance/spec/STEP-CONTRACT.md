@@ -49,6 +49,14 @@ function Invoke-Step { param($In, $Ctx) ... }   # 见 §3
   `[pscustomobject]`
 - **禁止 `@($hashtable[$key])` 这个包装形状**。PS 5.1 的 binder 在
   `List[object]` 上会抛「参数类型不匹配」。旧仓库两次同类事故都是这个模式
+- **JSON 只走 `kernel/Json.ps1`**(BACKLOG 铁律 R8,P1-35):`modules/**`、
+  `kernel/**` 里不直接写 `ConvertFrom-Json` / `ConvertTo-Json` /
+  `Get-Content <x>.json`。理由是 PS 5.1 的四个坑——`ConvertFrom-Json` 给
+  PSCustomObject 不给 hashtable、`ConvertTo-Json` 默认 `-Depth 2` **静默**
+  截断、非 ASCII 全成 `\uXXXX`、不指定编码在 JP locale 上按 ANSI 解——每个
+  都在旧仓库出过事;`Read-EbiJson` / `Write-EbiJson` / `ConvertFrom-EbiJson`
+  / `ConvertTo-EbiJson` / `Add-EbiJsonLine` / `Read-EbiJsonLines` 一次绕过
+  全部四个。P0-06 的检查器 grep 源码(`direct_json`)
 
 ---
 
@@ -201,14 +209,15 @@ manifest 的 `outputs` 里不声明它。规则全文在 §3.4 第 7 点(P0-07 /
 | id | `transient` | 含义 |
 |----|-------------|------|
 | `internal_error` | `$false` | step 抛出了未预期异常(§3.1 上文) |
-| `contract_violation` | `$false` | 返回值不是含 `ok` 的 hashtable;`failure` 不在 manifest 的 `failures` 里;`provides` 为空却返回了 `resource`;写了 `as` 却没有 `resource`;`outputs` 无法 JSON 序列化(§3.4 第 7 点) |
+| `contract_violation` | `$false` | 返回值不是含 `ok` 的 hashtable;`failure` 不在 manifest 的 `failures` 里;`provides` 为空却返回了 `resource`;写了 `as` 却没有 `resource`;`outputs` 无法 JSON 序列化(§3.4 第 7 点);manifest 的 `inputs` 不是 hashtable,或某个输入声明了 §2.2 表以外的 `type`(P1-02:runner 校验不了它不认识的类型,这是 step 的错不是工作流的错) |
 | `step_not_found` | `$false` | `use` 指向的 step 文件不存在或加载失败 |
+| `input_invalid` | `$false` | 调用点的 `with` 不符合 manifest 的 `inputs`:缺 `required` 参数、类型对不上(§2.2)、不在 `enum` 里、或写了 `inputs` 没声明的参数(`as` 除外)。一次报出全部问题,每条带参数名;没进 `Invoke-Step`(P1-02,`kernel/Registry.ps1`)。`with` 里某个 `{{...}}` 在运行期解析不到(`each` 之外引用 `item`、列名不存在……)也是它,message 带 `template {{路径}}` 和解析不到的那一段(P1-03) |
+| `workflow_invalid` | `$false` | 工作流 JSON 读不出来或形状不对(`WORKFLOW-SCHEMA.md` §1/§2/§3/§5/§7:`schema` 缺失或过新、`id` 缺失、段不是数组、同段 id 重复、`source` 缺 `table`/`select`、`pendingWhen`/`when`/`once` 不在允许的枚举里、`as` 写成模板……);runner 在第一步跑之前拒绝整条工作流,一次列出全部问题(P1-03) |
 | `needs_unmet` | `$false` | §4 的前置条件不满足,没进 `Invoke-Step` |
 | `session_missing` | `$false` | 某个 `type='session'` 输入填的名字没在 `$Ctx.Session` 里注册过(或已释放) |
 | `session_kind_mismatch` | `$false` | 注册的种类和参数声明的 `sessionKind` 不一致 |
 | `session_name_taken` | `$false` | `with.as` 的名字已被一个还活着的资源占用(§3.4 第 3 点) |
 | `cancelled` | `$false` | 操作员在关卡上选了 `q`:step 返回通用词表的 `operator_quit`,runner 不走 `onError`,直接以 `cancelled` 结束 run,`teardown` 照 `WORKFLOW-SCHEMA.md` §1.1 保证跑 |
-| `unsupported_in_spike` | `$false` | **过渡**:P0-07 的 runner 在第一步跑之前拒绝它还不支持的 `source` / `each` / `{{}}` / `when` / `onError` / `once`;P1-03 / P1-04 落地后删除 |
 
 全部由 runner 产生,step 不返回它们;资源"还活着吗"由消费 step 用**自己
 声明的** id 报(§3.4 第 7 点),不是保留 id。
@@ -240,6 +249,8 @@ manifest 的 `outputs` 里不声明它。规则全文在 §3.4 第 7 点(P0-07 /
 | `$Ctx.Profile` | 已加载并合并好的 profile(hashtable) |
 | `$Ctx.Log` | `$Ctx.Log.Info('...')` / `.Warn(...)` / `.Debug(...)` |
 | `$Ctx.DryRun` | `$true` 时,有副作用的 step **必须**只打印不执行 |
+| `$Ctx.Item` | `each` 段里当前这一行(hashtable,列名 → 值);`setup` / `teardown` 里是 `$null`。给 `flow.checkpoint` / `progress.event` 这类"就是写当前这条"的 step 用,省得每个调用都写 `"key": "{{item.key}}"`(P1-28)。**只读**:改行内容一律经 `table.set` / `flow.checkpoint`,它们才做原子落盘 |
+| `$Ctx.KeyColumns` | 本次运行的键列(profile 的 `key.columns`,或 `source.keyColumns` 覆盖),和 `$Ctx.Item` 配套 |
 
 **`$Ctx` 里没有别的 step 的输出。** step 之间只通过 workflow JSON 的模板引用
 传值 —— 这是正交性的保证。
@@ -737,7 +748,7 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
 |----------------|------|
 | `pure` | **必须**有单测,放 `Tests/Test-<Group>.ps1` |
 | `read` | 应有单测(用临时目录 fixture) |
-| `ui` / `write` / `destructive` | 只做**静态检查**(parse check + manifest 校验)。COM/Edge 路径在当前开发环境无法验证,必须在办公 PC 上冒烟确认 |
+| `ui` / `write` / `destructive` | 静态检查(parse check + manifest 校验)**加 DryRun 合同测试**(`Tests/Test-StepDryRun.ps1`,P1-36:从 `example.with` 造输入,`$Ctx.DryRun=$true` 真调一次,返回值要 `ok`、含 manifest `outputs` 的每个键、可 JSON 序列化、说了自己会做什么、没写文件)。COM/Edge 的真路径在当前开发环境无法验证,必须在办公 PC 上冒烟确认 |
 
 `Tests/Run-Tests.ps1` 额外强制:
 
@@ -758,6 +769,12 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
   声明它泄漏了要不要紧)(§3.4 第 6 点,P0-R10 第四轮)
 - `provides` 或 `releases` 非空的 step,`idempotent` 必须是 `$true`
   (resume 时它们总是真执行,见 §6.2,P0-R10 第五轮)
+- `needs` 含 `foreground` 的 step,必须有一个 `type='session';
+  sessionKind='window'` 的输入(§4,P0-R12:发键 / 点击的 step 点名自己的
+  窗口,不对"前台是谁"下手);规则 id `foreground_needs_window`(P1-36)
+- `provides` 非空的 step,`example.with` 必须带 `as`(§3.4 第 7 点:注册资源
+  的调用必须写 `as`,示例不能示范违规写法);规则 id `provides_example_as`
+  (P1-36)
 - `$Manifest` 必须是 **`[hashtable]`**(就是 `@{}`),`inputs`/`outputs` 这两个
   容器本身、以及 `inputs`/`outputs`/`failures` 里的每一项,也都必须是。
   一个 step 文件可以给 `$Manifest` 赋任何值(`$Manifest = 'bad'`、
@@ -779,7 +796,17 @@ ledger + 重放规则,粒度默认 (item, step),`once: group` 时是 §6.3 的
   runspace 依次 dot-source:`Invoke-Step` 撞名是设计好的,由 runner 逐个
   捕获(P1-02);裸名辅助函数(`Get-Row` 一类)则会互相覆盖,而且没有任何
   地方会报错 —— 后加载的那个静默赢
+- `inputs` / `outputs` 的名字不能是 `[hashtable]` 的成员名(`count` / `keys` /
+  `values` / `item` / `comparer` / `syncRoot` / `isReadOnly` / `isFixedSize` /
+  `isSynchronized`,不分大小写)——起了这种名字,所有读
+  manifest 的地方(`Docs.ps1` / `Help.ps1` / `Registry.ps1` / 检查器自己)
+  的 `$inputs.Count` / `$with.Keys` 拿到的会是那个条目而不是成员,报错的
+  地方离 manifest 隔着三个文件(P1-12 `browser.send_keys` 的 `keys` 和
+  `browser.tab_to` 的 `count` 都撞过);规则 id `reserved_name`
 - 源码纯 ASCII
+- 不直接调用 `ConvertFrom-Json` / `ConvertTo-Json` / `Get-Content <x>.json`
+  ——JSON 一律经 `kernel/Json.ps1`(§1.1,铁律 R8,P1-35)。注释行不算;
+  `Test-StepContract.ps1` 对 `kernel/*.ps1`(`Json.ps1` 自身除外)也逐个查
 
 > 上面这份清单和 `WORKFLOW-SCHEMA.md` §9 的 `ebi lint` 清单是**同一类
 > 汇总处的两份**——前者管 manifest 本身写得对不对(P0-06 的契约检查器,

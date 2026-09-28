@@ -10,9 +10,8 @@
 #                            hidden ".cropped" sidecar; skips already-marked
 #                            unless -Force.
 #
-#  As library:
-#    . .\Crop-Snap.ps1
-#    Invoke-CropPng -path "x.png" -cropPx 15
+#  As library: dot-source kernel\Image.ps1 instead and call
+#    Invoke-EbiCropPng -Path "x.png" -CropPx 15        (P1-20)
 #
 #  Usage examples:
 #    .\Crop-Snap.ps1 -Path "snap\GIFT_HM\JIDSL48S.png"
@@ -44,64 +43,7 @@ Add-Type -AssemblyName System.Drawing
 # ============================================================
 # Core: crop one PNG file in-place
 # ============================================================
-function Invoke-CropPng {
-    param(
-        [Parameter(Mandatory=$true)][string]$path,
-        [int]$cropPx     = 15,
-        # -1 (default) = inherit cropPx for that side (uniform crop).
-        [int]$cropLeft   = -1,
-        [int]$cropTop    = -1,
-        [int]$cropRight  = -1,
-        [int]$cropBottom = -1
-    )
-
-    if ($cropLeft   -lt 0) { $cropLeft   = $cropPx }
-    if ($cropTop    -lt 0) { $cropTop    = $cropPx }
-    if ($cropRight  -lt 0) { $cropRight  = $cropPx }
-    if ($cropBottom -lt 0) { $cropBottom = $cropPx }
-
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "File not found: $path"
-    }
-
-    # Read bytes first so we don't hold a file lock on save
-    $bytes = [System.IO.File]::ReadAllBytes($path)
-    $ms    = New-Object System.IO.MemoryStream(, $bytes)
-    $tmpPath = "$path.crop.tmp"
-
-    try {
-        $orig = [System.Drawing.Image]::FromStream($ms)
-        try {
-            $newW = $orig.Width  - $cropLeft - $cropRight
-            $newH = $orig.Height - $cropTop  - $cropBottom
-            if ($newW -le 0 -or $newH -le 0) {
-                throw ("Image too small ({0}x{1}) to crop L{2}/T{3}/R{4}/B{5} px" -f $orig.Width, $orig.Height, $cropLeft, $cropTop, $cropRight, $cropBottom)
-            }
-
-            $bmp = New-Object System.Drawing.Bitmap($newW, $newH)
-            try {
-                $gfx = [System.Drawing.Graphics]::FromImage($bmp)
-                try {
-                    $srcRect = New-Object System.Drawing.Rectangle($cropLeft, $cropTop, $newW, $newH)
-                    $dstRect = New-Object System.Drawing.Rectangle(0, 0, $newW, $newH)
-                    $gfx.DrawImage($orig, $dstRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
-                } finally {
-                    $gfx.Dispose()
-                }
-                $bmp.Save($tmpPath, [System.Drawing.Imaging.ImageFormat]::Png)
-            } finally {
-                $bmp.Dispose()
-            }
-        } finally {
-            $orig.Dispose()
-        }
-    } finally {
-        $ms.Dispose()
-    }
-
-    # Replace original atomically-ish
-    Move-Item -LiteralPath $tmpPath -Destination $path -Force
-}
+. (Join-Path $PSScriptRoot 'kernel/Image.ps1')   # Invoke-EbiCropPng (P1-20)
 
 # ============================================================
 # Batch: walk a directory
@@ -137,8 +79,9 @@ function Invoke-CropDir {
             continue
         }
         try {
-            Invoke-CropPng -path $f.FullName -cropPx $cropPx `
-                -cropLeft $cropLeft -cropTop $cropTop -cropRight $cropRight -cropBottom $cropBottom
+            $cropResult = Invoke-EbiCropPng -Path $f.FullName -CropPx $cropPx `
+                -Left $cropLeft -Top $cropTop -Right $cropRight -Bottom $cropBottom
+            if (-not $cropResult.ok) { throw $cropResult.message }
             # Create hidden marker
             "" | Out-File -LiteralPath $marker -Encoding ASCII -NoNewline
             try {
@@ -161,8 +104,9 @@ function Invoke-CropDir {
 # ============================================================
 if (-not [string]::IsNullOrWhiteSpace($Path)) {
     Write-Host ("Cropping (single): {0}  [{1} px]" -f $Path, $CropPx)
-    Invoke-CropPng -path $Path -cropPx $CropPx `
-        -cropLeft $CropLeft -cropTop $CropTop -cropRight $CropRight -cropBottom $CropBottom
+    $cropResult = Invoke-EbiCropPng -Path $Path -CropPx $CropPx `
+        -Left $CropLeft -Top $CropTop -Right $CropRight -Bottom $CropBottom
+    if (-not $cropResult.ok) { throw $cropResult.message }
     Write-Host "[OK] done." -ForegroundColor Green
 } elseif (-not [string]::IsNullOrWhiteSpace($Dir)) {
     Write-Host ("Cropping (batch): {0}  [{1} px]" -f $Dir, $CropPx)

@@ -1,0 +1,18 @@
+{
+  "sides": {
+    "before": "移行前(GIFT)",
+    "after": "移行後(GFIX)"
+  },
+  "roles": {
+    "entry": "入口",
+    "form": "検索画面",
+    "record": "結果画面",
+    "list": "一覧",
+    "document": "帳票"
+  },
+  "columns": {
+    "group": "JOB_NAME",
+    "owner": "Owner",
+    "deliverable": "Excel_NAME"
+  }
+}

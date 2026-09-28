@@ -99,6 +99,24 @@ function Get-StepHelperPrefix {
     return ($sb.ToString() + '-')
 }
 
+function Get-StepReservedFieldNames {
+    <#
+      Input / output names a manifest may NOT use: the members every
+      [hashtable] exposes. A step with an input called `count` or `keys`
+      turns `$inputs.Count` / `$with.Keys` into the ENTRY for every reader
+      (Docs.ps1, Help.ps1, Registry.ps1, this checker), and the failure is a
+      type error three files away from the manifest. Found the hard way
+      with browser.send_keys `keys` and browser.tab_to `count` (P1-12).
+    #>
+    return @('count', 'keys', 'values', 'item', 'comparer', 'syncroot', 'isreadonly', 'isfixedsize', 'issynchronized')
+}
+
+function Test-StepReservedFieldName {
+    param([string]$Name)
+    if ([string]::IsNullOrEmpty($Name)) { return $false }
+    return ((Get-StepReservedFieldNames) -contains $Name.ToLowerInvariant())
+}
+
 function Get-StepNonAsciiLines {
     # Returns the 1-based line numbers holding a character outside 0x00-0x7F.
     param([string]$Text)
@@ -109,6 +127,27 @@ function Get-StepNonAsciiLines {
         foreach ($ch in $lines[$i].ToCharArray()) {
             if ([int]$ch -gt 127) { $hits += ($i + 1); break }
         }
+    }
+    return $hits
+}
+
+function Get-StepDirectJsonLines {
+    <#
+      Rule R8 (BACKLOG.md iron-rule table, STEP-CONTRACT.md 1.1): JSON is
+      read and written through kernel/Json.ps1 only. Returns the 1-based
+      line numbers that call ConvertFrom-Json / ConvertTo-Json directly, or
+      Get-Content on a .json/.jsonl file. Comment lines are skipped so a
+      file may still SAY what it avoids. Same family as the R4 @($h[$k])
+      ban: a source pattern that PS 5.1 punishes silently.
+    #>
+    param([string]$Text)
+    $hits = @()
+    if ([string]::IsNullOrEmpty($Text)) { return $hits }
+    $rx = [regex]'(?i)\b(ConvertFrom-Json|ConvertTo-Json)\b|\bGet-Content\b[^\r\n]*\.jsonl?\b'
+    $lines = $Text -split "`r?`n"
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i].TrimStart().StartsWith('#')) { continue }
+        if ($rx.IsMatch($lines[$i])) { $hits += ($i + 1) }
     }
     return $hits
 }
@@ -218,6 +257,11 @@ function Get-StepContractFindings {
         Add-Finding 'non_ascii' ('non-ASCII source on line(s) ' + ($nonAscii -join ', ') + '; build Japanese from [char]')
     }
 
+    $directJson = @(Get-StepDirectJsonLines -Text $Text)
+    if ($directJson.Count -gt 0) {
+        Add-Finding 'direct_json' ('direct JSON call on line(s) ' + ($directJson -join ', ') + '; read and write JSON through kernel/Json.ps1 only (R8)')
+    }
+
     # $null FunctionNames means "not known" -- the file could not be parsed, so
     # there is no AST to read them off. An EMPTY array means "parsed fine, and
     # it really defines nothing", which is a missing Invoke-Step. Collapsing the
@@ -277,8 +321,14 @@ function Get-StepContractFindings {
         Add-Finding 'field_container_shape' ('inputs is ' + $inputs.GetType().Name + ', not a hashtable; no input can be checked')
     }
     if ($inputs -is [hashtable]) {
-        foreach ($key in $inputs.Keys) {
+        # GetEnumerator, not .Keys: an input named `keys` shadows the member
+        # and the loop would run over that entry's spec instead of the names.
+        foreach ($entry in $inputs.GetEnumerator()) {
+            $key = $entry.Key
             [void]$inputNames.Add([string]$key)
+            if (Test-StepReservedFieldName -Name ([string]$key)) {
+                Add-Finding 'reserved_name' ("input '" + $key + "' is a hashtable member name; every reader of the manifest would get the entry instead of .Count/.Keys/.Values -- rename it")
+            }
             $spec = $inputs[$key]
             if (-not ($spec -is [hashtable])) {
                 Add-Finding 'field_spec_shape' ("input '" + $key + "' is not a hashtable, so none of its rules can be checked")
@@ -314,7 +364,11 @@ function Get-StepContractFindings {
         Add-Finding 'field_container_shape' ('outputs is ' + $outputs.GetType().Name + ', not a hashtable; no output can be checked')
     }
     if ($outputs -is [hashtable]) {
-        foreach ($key in $outputs.Keys) {
+        foreach ($entry in $outputs.GetEnumerator()) {
+            $key = $entry.Key
+            if (Test-StepReservedFieldName -Name ([string]$key)) {
+                Add-Finding 'reserved_name' ("output '" + $key + "' is a hashtable member name; the step's return hashtable would shadow .Count/.Keys/.Values for every reader -- rename it")
+            }
             $spec = $outputs[$key]
             if (-not ($spec -is [hashtable])) {
                 Add-Finding 'field_spec_shape' ("output '" + $key + "' is not a hashtable, so none of its rules can be checked")
@@ -370,6 +424,23 @@ function Get-StepContractFindings {
 
     $provides = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'provides')) { $Manifest['provides'] } else { $null }))
     $releases = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'releases')) { $Manifest['releases'] } else { $null }))
+    $needs    = @(ConvertTo-StepContractArray -Value $(if ((Test-StepDictHasKey -Dict $Manifest -Key 'needs')) { $Manifest['needs'] } else { $null }))
+
+    # P0-R12 (section 4): a step that needs the foreground sends keys or
+    # clicks, so it must name the window it means -- a 'window' session
+    # input -- instead of acting on whatever is in front.
+    if (($needs | ForEach-Object { [string]$_ }) -contains 'foreground' -and -not ($sessionKinds -contains 'window')) {
+        Add-Finding 'foreground_needs_window' "needs 'foreground' but no input is type='session' sessionKind='window'; a foreground step names the window it sends to (section 4, P0-R12)"
+    }
+
+    # P0-R17 (section 3.4 point 7): a call to a provides step must carry
+    # 'as'; the example must not demonstrate the one way to call it wrong.
+    if ($provides.Count -gt 0) {
+        $exWith = if ($example -is [hashtable] -and (Test-StepDictHasKey -Dict $example -Key 'with') -and ($example['with'] -is [hashtable])) { $example['with'] } else { $null }
+        if ($null -eq $exWith -or -not (Test-StepDictHasKey -Dict $exWith -Key 'as')) {
+            Add-Finding 'provides_example_as' "provides is non-empty but example.with has no 'as'; a call that registers a resource must name it (section 3.4 point 7)"
+        }
+    }
 
     if ($provides.Count -gt 1) {
         Add-Finding 'provides_multiple' ('provides has ' + $provides.Count + ' kinds; one call registers at most one resource, so split the step')

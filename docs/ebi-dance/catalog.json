@@ -1,0 +1,2458 @@
+{
+  "broken": {},
+  "generated": "kernel/Docs.ps1 (P1-06) -- do not edit; run Tests/Run-Tests.ps1 to see drift",
+  "groups": [
+    "browser",
+    "screen",
+    "file",
+    "excel",
+    "table",
+    "verify",
+    "human",
+    "progress",
+    "flow"
+  ],
+  "steps": {
+    "browser.assert_page": {
+      "effects": "pure",
+      "example": {
+        "use": "browser.assert_page",
+        "with": {
+          "fingerprint": "{{page.fingerprint}}",
+          "text": "{{steps.wait.out.text}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "page_loading",
+          "transient": true
+        },
+        {
+          "id": "page_empty",
+          "transient": false
+        },
+        {
+          "id": "page_expired",
+          "transient": false
+        },
+        {
+          "id": "page_unknown",
+          "transient": false
+        }
+      ],
+      "file": "modules/browser/browser.assert_page.ps1",
+      "group": "browser",
+      "id": "browser.assert_page",
+      "idempotent": true,
+      "inputs": {
+        "fingerprint": {
+          "desc": "{ ok: [...all must appear], loading: [...], empty: [...], expired: [...] } (any one appears)",
+          "required": true,
+          "type": "map"
+        },
+        "text": {
+          "desc": "the page text (browser.wait_for / read_text output)",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Order of judgment: blank text is loading; then expired, then empty, then loading (any listed string), then ok (ALL listed strings); anything else is unknown. expired / empty / unknown are not transient: retrying the same page changes nothing, a person must look.",
+      "outputs": {
+        "kind": {
+          "desc": "ok | loading | empty | expired | unknown",
+          "type": "string"
+        },
+        "matched": {
+          "desc": "the fingerprint strings that were found",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Classify page text by fingerprint: ok, loading, empty, expired, unknown",
+      "tier": "core"
+    },
+    "browser.ensure": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.ensure",
+        "with": {
+          "as": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "no_browser_window",
+          "transient": true
+        },
+        {
+          "id": "foreground_lost",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.ensure.ps1",
+      "group": "browser",
+      "id": "browser.ensure",
+      "idempotent": true,
+      "inputs": {
+        "process": {
+          "default": "msedge",
+          "desc": "process name (without .exe) whose main window to use",
+          "type": "string"
+        },
+        "settleMs": {
+          "default": 400,
+          "desc": "wait after bringing the window to front",
+          "type": "int"
+        },
+        "title": {
+          "default": "Microsoft Edge",
+          "desc": "window-title substring for the AppActivate fallback",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Registers the window handle under with.as; the handle itself never appears in outputs. Several windows of the process: the first with a main window wins, as before.",
+      "outputs": {
+        "processId": {
+          "desc": "PID that owns the window",
+          "type": "int"
+        },
+        "title": {
+          "desc": "window title at the time it was found",
+          "type": "string"
+        }
+      },
+      "provides": [
+        "window"
+      ],
+      "releases": [],
+      "summary": "Find the browser main window, bring it to front, register it",
+      "tier": "core"
+    },
+    "browser.fill": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.fill",
+        "with": {
+          "text": "{{item.Correl_ID_S}}",
+          "verifyChange": true,
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "no_effect",
+          "transient": true
+        },
+        {
+          "id": "clipboard_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.fill.ps1",
+      "group": "browser",
+      "id": "browser.fill",
+      "idempotent": true,
+      "inputs": {
+        "text": {
+          "desc": "what to put in the field",
+          "required": true,
+          "type": "string"
+        },
+        "verifyChange": {
+          "default": false,
+          "desc": "read the page text before and after; unchanged -> no_effect",
+          "type": "bool"
+        },
+        "waitMs": {
+          "default": 300,
+          "desc": "wait after pasting",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window that receives the keys",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "Idempotent: pasting the same text twice leaves the same field content. Reading the page text for verifyChange sends Ctrl+A/Ctrl+C/Esc, which moves the selection; the field keeps its value.",
+      "outputs": {
+        "changed": {
+          "desc": "page text changed (only meaningful with verifyChange)",
+          "type": "bool"
+        },
+        "length": {
+          "desc": "characters pasted",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Paste a text over the focused input (Ctrl+A, Ctrl+V)",
+      "tier": "core"
+    },
+    "browser.find": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.find",
+        "with": {
+          "term": "{{steps.row.out.name}}",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "clipboard_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.find.ps1",
+      "group": "browser",
+      "id": "browser.find",
+      "idempotent": true,
+      "inputs": {
+        "closeAfter": {
+          "default": false,
+          "desc": "press Esc afterwards (the highlight goes away too)",
+          "type": "bool"
+        },
+        "term": {
+          "desc": "the exact string to search for",
+          "required": true,
+          "type": "string"
+        },
+        "waitMs": {
+          "default": 400,
+          "desc": "wait after the search",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the browser window",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "A miss is not a failure: hit=false is an answer the workflow decides about (verify.assert / human.gate). Leave closeAfter false when a screenshot of the highlighted row follows.",
+      "outputs": {
+        "hit": {
+          "desc": "the page text contains the term",
+          "type": "bool"
+        },
+        "rect": {
+          "desc": "pixel rect of the active match; null (P3: browser.find_active_row)",
+          "type": "rect"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Ctrl+F search for an exact string; report whether it hit",
+      "tier": "core"
+    },
+    "browser.focus_body": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.focus_body",
+        "with": {
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "window_gone",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.focus_body.ps1",
+      "group": "browser",
+      "id": "browser.focus_body",
+      "idempotent": true,
+      "inputs": {
+        "offsetX": {
+          "default": 150,
+          "desc": "click x, from the window left edge",
+          "type": "int"
+        },
+        "offsetY": {
+          "default": 150,
+          "desc": "click y, from the window top edge",
+          "type": "int"
+        },
+        "settleMs": {
+          "default": 400,
+          "desc": "wait after the click",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window to focus",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "The click lands offsetX/offsetY inside the window, which on a browser is the page body, never the toolbar; keep the offsets above the tab strip height.",
+      "outputs": {
+        "x": {
+          "desc": "screen x clicked",
+          "type": "int"
+        },
+        "y": {
+          "desc": "screen y clicked",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Bring a registered window to front and click inside its body",
+      "tier": "core"
+    },
+    "browser.navigate": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.navigate",
+        "with": {
+          "url": "{{page.url}}",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "no_effect",
+          "transient": true
+        },
+        {
+          "id": "clipboard_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.navigate.ps1",
+      "group": "browser",
+      "id": "browser.navigate",
+      "idempotent": true,
+      "inputs": {
+        "url": {
+          "default": "",
+          "desc": "where to go; empty = do nothing (warning no_url)",
+          "type": "string"
+        },
+        "verifyChange": {
+          "default": false,
+          "desc": "read the page text before and after; unchanged -> no_effect",
+          "type": "bool"
+        },
+        "waitMs": {
+          "default": 1500,
+          "desc": "wait after Enter",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the browser window",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "outputs": {
+        "navigated": {
+          "desc": "false when no URL was given",
+          "type": "bool"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Ctrl+L, paste a URL, Enter; no URL means leave it to a person",
+      "tier": "core"
+    },
+    "browser.read_text": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.read_text",
+        "with": {
+          "archiveTo": "capture/before_list/{{item.keySafe}}.txt",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "archive_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.read_text.ps1",
+      "group": "browser",
+      "id": "browser.read_text",
+      "idempotent": true,
+      "inputs": {
+        "archiveTo": {
+          "default": "",
+          "desc": "also write the text here (relative: under the work dir)",
+          "type": "path"
+        },
+        "copyWaitMs": {
+          "default": 400,
+          "desc": "wait after Ctrl+C",
+          "type": "int"
+        },
+        "selectWaitMs": {
+          "default": 400,
+          "desc": "wait after Ctrl+A",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window to read",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "An empty clipboard is reported as a warning (empty_text), not a failure: a page can legitimately have no text, and browser.wait_for is the step that waits for one.",
+      "outputs": {
+        "length": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "where it was archived, or empty",
+          "type": "path"
+        },
+        "text": {
+          "desc": "the page text",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Read the page text of a registered window via the clipboard",
+      "tier": "core"
+    },
+    "browser.send_keys": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.send_keys",
+        "with": {
+          "sequence": "{ESC}",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.send_keys.ps1",
+      "group": "browser",
+      "id": "browser.send_keys",
+      "idempotent": false,
+      "inputs": {
+        "sequence": {
+          "desc": "SendKeys syntax, e.g. ^{f} or {ESC}",
+          "required": true,
+          "type": "string"
+        },
+        "waitMs": {
+          "default": 300,
+          "desc": "wait after sending",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window that receives the keys",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "Not idempotent: keys sent twice are two actions. Prefer tab_to / fill / submit / find, which say what they mean; use this for the rest.",
+      "outputs": {
+        "sent": {
+          "desc": "the sequence that was sent",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Send a SendKeys sequence to a registered window",
+      "tier": "core"
+    },
+    "browser.submit": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.submit",
+        "with": {
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "no_effect",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.submit.ps1",
+      "group": "browser",
+      "id": "browser.submit",
+      "idempotent": false,
+      "inputs": {
+        "verifyChange": {
+          "default": false,
+          "desc": "read the page text before and after; unchanged -> no_effect",
+          "type": "bool"
+        },
+        "waitMs": {
+          "default": 800,
+          "desc": "wait after Enter (page load time)",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window that receives the keys",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "Not idempotent: Enter twice may submit twice. A form whose result takes longer than waitMs to render needs browser.wait_for next.",
+      "outputs": {
+        "changed": {
+          "desc": "page text changed (only meaningful with verifyChange)",
+          "type": "bool"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Press Enter in a registered window",
+      "tier": "core"
+    },
+    "browser.tab_to": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.tab_to",
+        "with": {
+          "times": 4,
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.tab_to.ps1",
+      "group": "browser",
+      "id": "browser.tab_to",
+      "idempotent": false,
+      "inputs": {
+        "shift": {
+          "default": false,
+          "desc": "Shift+Tab (backwards) instead of Tab",
+          "type": "bool"
+        },
+        "times": {
+          "desc": "how many presses",
+          "required": true,
+          "type": "int"
+        },
+        "waitMs": {
+          "default": 150,
+          "desc": "wait after each press",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window that receives the keys",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "outputs": {
+        "pressed": {
+          "desc": "presses sent",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Press Tab (or Shift+Tab) N times in a registered window",
+      "tier": "core"
+    },
+    "browser.wait_for": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.wait_for",
+        "with": {
+          "archiveTo": "capture/before_list/{{item.keySafe}}.txt",
+          "contains": "{{item.Correl_ID_S}}",
+          "timeoutSec": 12,
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "timeout",
+          "transient": true
+        },
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "archive_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/browser/browser.wait_for.ps1",
+      "group": "browser",
+      "id": "browser.wait_for",
+      "idempotent": true,
+      "inputs": {
+        "archiveTo": {
+          "default": "",
+          "desc": "write the last text read here (relative: under the work dir)",
+          "type": "path"
+        },
+        "contains": {
+          "desc": "the text that means the page is ready",
+          "required": true,
+          "type": "string"
+        },
+        "pollMs": {
+          "default": 800,
+          "desc": "wait between reads",
+          "type": "int"
+        },
+        "timeoutSec": {
+          "default": 12,
+          "desc": "give up after this many seconds",
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window to read",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "outputs": {
+        "elapsedMs": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "where the text was archived, or empty",
+          "type": "path"
+        },
+        "polls": {
+          "type": "int"
+        },
+        "text": {
+          "desc": "the page text at the end (matched or not)",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Poll the page text until it contains a string, or time out",
+      "tier": "core"
+    },
+    "file.assert_exists": {
+      "effects": "pure",
+      "example": {
+        "use": "file.assert_exists",
+        "with": {
+          "kind": "file",
+          "path": "{{steps.find.out.path}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.assert_exists.ps1",
+      "group": "file",
+      "id": "file.assert_exists",
+      "idempotent": true,
+      "inputs": {
+        "kind": {
+          "default": "any",
+          "desc": "what it must be",
+          "enum": [
+            "any",
+            "file",
+            "dir"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "desc": "relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "notes": "file_not_found is transient here for the same reason as in file.find: the file is usually on its way.",
+      "outputs": {
+        "exists": {
+          "type": "bool"
+        },
+        "path": {
+          "desc": "the resolved path that was checked",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Fail with file_not_found unless the path exists",
+      "tier": "core"
+    },
+    "file.find": {
+      "effects": "pure",
+      "example": {
+        "use": "file.find",
+        "with": {
+          "dir": "{{profile.paths.downloads}}",
+          "ext": "dat",
+          "key": "{{item.keySafe}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "dir_not_found",
+          "transient": false
+        },
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.find.ps1",
+      "group": "file",
+      "id": "file.find",
+      "idempotent": true,
+      "inputs": {
+        "dir": {
+          "desc": "folder to look in; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "expect": {
+          "default": "one",
+          "desc": "one: several hits are ambiguous; any: return them all",
+          "enum": [
+            "one",
+            "any"
+          ],
+          "type": "string"
+        },
+        "ext": {
+          "default": "",
+          "desc": "extension the file must have (e.g. dat, .png); empty = any",
+          "type": "string"
+        },
+        "glob": {
+          "default": "*",
+          "desc": "wildcard filter applied first",
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "desc": "the item key the file is named after (stem); empty = glob only",
+          "type": "string"
+        },
+        "recurse": {
+          "default": false,
+          "type": "bool"
+        }
+      },
+      "needs": [],
+      "notes": "file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order is kernel/Key.ps1's: exact stem, suffix/prefix rules stripped (the batch stamp), full-width folded, case folded; the first tier with hits wins.",
+      "outputs": {
+        "candidates": {
+          "desc": "P0-R4 candidate shape when ambiguous, else null",
+          "type": "map"
+        },
+        "files": {
+          "desc": "every hit, newest first",
+          "type": "list"
+        },
+        "found": {
+          "desc": "how many files matched",
+          "type": "int"
+        },
+        "matchedBy": {
+          "desc": "exact | stripped | fullwidth | case | glob (kernel/Key.ps1 tiers)",
+          "type": "string"
+        },
+        "path": {
+          "desc": "the hit (the only one, or the newest with expect=any)",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Find the file(s) for a key or glob; full-width and stamped names tolerated",
+      "tier": "core"
+    },
+    "file.read_json": {
+      "effects": "pure",
+      "example": {
+        "use": "file.read_json",
+        "with": {
+          "path": "capture/before_transferStatus/{{item.keySafe}}.meta.json"
+        }
+      },
+      "failures": [
+        {
+          "id": "json_invalid",
+          "transient": false
+        },
+        {
+          "id": "read_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.read_json.ps1",
+      "group": "file",
+      "id": "file.read_json",
+      "idempotent": true,
+      "inputs": {
+        "path": {
+          "desc": "the file; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "data": {
+          "desc": "the parsed value (hashtables, not objects); null when the file is missing",
+          "type": "any"
+        },
+        "exists": {
+          "type": "bool"
+        },
+        "path": {
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Read a JSON file; a missing file gives data=null and a warning",
+      "tier": "core"
+    },
+    "file.write_json": {
+      "effects": "write",
+      "example": {
+        "use": "file.write_json",
+        "with": {
+          "data": {
+            "capturedAt": "{{run.startedAt}}",
+            "key": "{{item.key}}"
+          },
+          "path": "capture/before_transferStatus/{{item.keySafe}}.meta.json"
+        }
+      },
+      "failures": [
+        {
+          "id": "write_failed",
+          "transient": true
+        },
+        {
+          "id": "not_serializable",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.write_json.ps1",
+      "group": "file",
+      "id": "file.write_json",
+      "idempotent": true,
+      "inputs": {
+        "data": {
+          "desc": "the value (map, list, string, number, bool)",
+          "required": true,
+          "type": "any"
+        },
+        "path": {
+          "desc": "where to write; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "path": {
+          "desc": "the file that was written",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write a value to a JSON file (atomic, UTF-8 without BOM)",
+      "tier": "core"
+    },
+    "flow.checkpoint": {
+      "effects": "write",
+      "example": {
+        "use": "flow.checkpoint",
+        "with": {
+          "field": "before_transferStatus",
+          "value": "{{steps.gate.out.code}}",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "row_not_found",
+          "transient": false
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        },
+        {
+          "id": "column_missing",
+          "transient": false
+        },
+        {
+          "id": "bit_unknown",
+          "transient": false
+        },
+        {
+          "id": "value_invalid",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/flow/flow.checkpoint.ps1",
+      "group": "flow",
+      "id": "flow.checkpoint",
+      "idempotent": true,
+      "inputs": {
+        "bit": {
+          "default": "",
+          "desc": "instead of value: the bit NAME (profile bits map) to set",
+          "type": "string"
+        },
+        "field": {
+          "required": true,
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "desc": "which row; empty = the current item",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "desc": "logical value: ok | ng | unknown | empty",
+          "type": "string"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "value must be a logical verdict (ok / ng / unknown / empty); a stored code is refused (value_invalid) so a workflow cannot hard-wire the profile's encoding.",
+      "outputs": {
+        "key": {
+          "desc": "the row that was written",
+          "type": "string"
+        },
+        "stored": {
+          "desc": "the code the cell holds now",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write the verdict (or a named bit) for the current item and flush",
+      "tier": "core"
+    },
+    "human.choose": {
+      "effects": "ui",
+      "example": {
+        "use": "human.choose",
+        "with": {
+          "candidates": "{{steps.find.out.candidates}}",
+          "question": "Which file is this run's?"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/human/human.choose.ps1",
+      "group": "human",
+      "id": "human.choose",
+      "idempotent": true,
+      "inputs": {
+        "candidates": {
+          "desc": "the P0-R4 shape: { candidates: [ { id, candidate, evidence } ], suggestion?, doubts? }",
+          "required": true,
+          "type": "map"
+        },
+        "key": {
+          "default": "",
+          "desc": "which item; empty = the current item",
+          "type": "string"
+        },
+        "question": {
+          "default": "Which one is it?",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Under DryRun or without a console the suggestion is taken when there is one, else none. n = none of them (the item becomes unknown), s = skip (leave pending), q = quit.",
+      "outputs": {
+        "action": {
+          "desc": "chosen | none | skip",
+          "type": "string"
+        },
+        "candidate": {
+          "desc": "the chosen candidate text",
+          "type": "string"
+        },
+        "id": {
+          "desc": "the chosen candidate id (c1, c2, ...) or empty",
+          "type": "string"
+        },
+        "index": {
+          "desc": "1-based position of the choice; 0 when none",
+          "type": "int"
+        },
+        "learn": {
+          "desc": "the operator wants this decision kept as a rule (persisting it is a later card)",
+          "type": "bool"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Show every candidate with its evidence; the operator picks one, none, or skips",
+      "tier": "core"
+    },
+    "human.gate": {
+      "effects": "ui",
+      "example": {
+        "use": "human.gate",
+        "with": {
+          "askWhen": [
+            "unknown"
+          ],
+          "code": "{{steps.verdict.out.code}}",
+          "evidence": "{{steps.shot.out.path}}",
+          "reason": "{{steps.verdict.out.reason}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        }
+      ],
+      "file": "modules/human/human.gate.ps1",
+      "group": "human",
+      "id": "human.gate",
+      "idempotent": true,
+      "inputs": {
+        "askWhen": {
+          "default": [
+            "unknown"
+          ],
+          "desc": "codes that need a person",
+          "type": "list"
+        },
+        "code": {
+          "desc": "the verdict so far: ok | ng | unknown | empty",
+          "required": true,
+          "type": "string"
+        },
+        "evidence": {
+          "default": "",
+          "desc": "a path, or a list of paths / values, to look at",
+          "type": "any"
+        },
+        "key": {
+          "default": "",
+          "desc": "which item; empty = the current item",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "desc": "why (verify.assert's reason), shown on the panel",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Under DryRun or without a console the panel is printed and the verdict is kept as is (action=keep). onError.policy=ask reuses this panel's rendering (kernel/Gate.ps1), so the two never drift.",
+      "outputs": {
+        "action": {
+          "desc": "pass | ok | ng | keep | skip",
+          "type": "string"
+        },
+        "code": {
+          "desc": "ok | ng | unknown | empty -- what flow.checkpoint should write",
+          "type": "string"
+        },
+        "note": {
+          "desc": "free text typed with m",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Ask the operator to confirm a verdict when it is in askWhen; pass otherwise",
+      "tier": "core"
+    },
+    "human.input": {
+      "effects": "ui",
+      "example": {
+        "use": "human.input",
+        "with": {
+          "default": "",
+          "kind": "timeWindow",
+          "question": "Batch run window for today?"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/human/human.input.ps1",
+      "group": "human",
+      "id": "human.input",
+      "idempotent": true,
+      "inputs": {
+        "default": {
+          "default": "",
+          "desc": "what Enter means; for timeWindow \"from..to\", empty = the last hour",
+          "type": "string"
+        },
+        "format": {
+          "default": "yyyy/MM/dd H:mm:ss",
+          "desc": "how a time answer is stored in the column",
+          "type": "string"
+        },
+        "kind": {
+          "default": "text",
+          "enum": [
+            "text",
+            "time",
+            "timeWindow"
+          ],
+          "type": "string"
+        },
+        "persistTo": {
+          "default": "",
+          "desc": "worklist column to fill where blank (needs worklist)",
+          "type": "string"
+        },
+        "question": {
+          "required": true,
+          "type": "string"
+        },
+        "worklist": {
+          "desc": "only with persistTo",
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "Runs in setup, once per run (the ledger does not replay setup, but run.json carries the window, so a resumed run keeps it without asking). Under DryRun or without a console the default is taken and reported with auto=true.",
+      "outputs": {
+        "auto": {
+          "desc": "nobody could answer (dry run / no console): the default was taken",
+          "type": "bool"
+        },
+        "filled": {
+          "desc": "rows whose blank cell was filled",
+          "type": "int"
+        },
+        "timeWindow": {
+          "desc": "{ from; to } ISO when kind is timeWindow, else null",
+          "type": "map"
+        },
+        "value": {
+          "desc": "the answer as text (a time in `format`; a window as \"from..to\")",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Ask the operator for a value (text, time, or the run time window) with a default",
+      "tier": "core"
+    },
+    "human.prepare": {
+      "effects": "ui",
+      "example": {
+        "use": "human.prepare",
+        "with": {
+          "message": "Open the page to capture, then press Enter",
+          "url": "https://example.invalid/list"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        }
+      ],
+      "file": "modules/human/human.prepare.ps1",
+      "group": "human",
+      "id": "human.prepare",
+      "idempotent": true,
+      "inputs": {
+        "message": {
+          "desc": "what the operator must have ready before continuing",
+          "required": true,
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "desc": "optional URL or location hint printed under the message",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "DryRun (or no console) answers Enter on the operator's behalf, so a dry run never blocks. After this step the foreground is the console (P0-R12): the next browser step brings its window back.",
+      "outputs": {
+        "action": {
+          "desc": "enter | quit",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Show a message and wait for Enter (ready) or q (quit)",
+      "tier": "core"
+    },
+    "progress.event": {
+      "effects": "write",
+      "example": {
+        "use": "progress.event",
+        "with": {
+          "action": "verdict",
+          "message": "{{steps.verdict.out.message}}",
+          "status": "ok"
+        }
+      },
+      "failures": [
+        {
+          "id": "internal_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/progress/progress.event.ps1",
+      "group": "progress",
+      "id": "progress.event",
+      "idempotent": false,
+      "inputs": {
+        "action": {
+          "desc": "short verb, e.g. captured, verdict, delivered",
+          "required": true,
+          "type": "string"
+        },
+        "data": {
+          "default": {},
+          "desc": "payload, JSON-serializable",
+          "type": "map"
+        },
+        "key": {
+          "default": "",
+          "desc": "the item; empty = the current item, if any",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "type": "string"
+        },
+        "status": {
+          "default": "info",
+          "desc": "same words the runner uses",
+          "enum": [
+            "ok",
+            "fail",
+            "skip",
+            "info",
+            "start"
+          ],
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Not idempotent by declaration (two calls are two events), though a replayed step on resume is not re-run, so the trace holds one event per item per run.",
+      "outputs": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Append a workflow-authored event to run/<runId>/trace.jsonl",
+      "tier": "core"
+    },
+    "progress.status": {
+      "effects": "read",
+      "example": {
+        "use": "progress.status",
+        "with": {
+          "field": "before_transferStatus",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "column_missing",
+          "transient": false
+        }
+      ],
+      "file": "modules/progress/progress.status.ps1",
+      "group": "progress",
+      "id": "progress.status",
+      "idempotent": true,
+      "inputs": {
+        "field": {
+          "default": "",
+          "desc": "one field; empty = every verdict / bitmask column the profile declares",
+          "type": "string"
+        },
+        "groupBy": {
+          "default": "",
+          "desc": "also count per value of this column",
+          "type": "string"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "lines": {
+          "desc": "the rendered table",
+          "type": "list"
+        },
+        "summary": {
+          "desc": "field -> { total; done; pending; ng }",
+          "type": "map"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Print done / pending / ng counts per field as an ASCII table",
+      "tier": "core"
+    },
+    "screen.capture_region": {
+      "effects": "write",
+      "example": {
+        "use": "screen.capture_region",
+        "with": {
+          "height": 300,
+          "saveAs": "capture/df/{{item.keySafe}}__result.png",
+          "width": 800,
+          "x": 100,
+          "y": 200
+        }
+      },
+      "failures": [
+        {
+          "id": "region_empty",
+          "transient": false
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.capture_region.ps1",
+      "group": "screen",
+      "id": "screen.capture_region",
+      "idempotent": true,
+      "inputs": {
+        "height": {
+          "required": true,
+          "type": "int"
+        },
+        "saveAs": {
+          "desc": "PNG path; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "width": {
+          "required": true,
+          "type": "int"
+        },
+        "x": {
+          "desc": "left edge, screen pixels",
+          "required": true,
+          "type": "int"
+        },
+        "y": {
+          "desc": "top edge, screen pixels",
+          "required": true,
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "A clamp is also a warning (region_clamped) so it shows in the run log; a rectangle entirely off screen is region_empty.",
+      "outputs": {
+        "clamped": {
+          "desc": "the rectangle was cut down to the screen",
+          "type": "bool"
+        },
+        "clampedEdges": {
+          "desc": "which of x,y,width,height moved; empty when none",
+          "type": "string"
+        },
+        "height": {
+          "type": "int"
+        },
+        "path": {
+          "type": "path"
+        },
+        "width": {
+          "desc": "pixels actually captured (after the clamp)",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Save a PNG of a screen rectangle, clamped to the screen",
+      "tier": "core"
+    },
+    "screen.capture_window": {
+      "effects": "write",
+      "example": {
+        "use": "screen.capture_window",
+        "with": {
+          "saveAs": "capture/before_list/{{item.keySafe}}.png",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "window_gone",
+          "transient": true
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.capture_window.ps1",
+      "group": "screen",
+      "id": "screen.capture_window",
+      "idempotent": true,
+      "inputs": {
+        "saveAs": {
+          "desc": "PNG path; relative paths resolve under the work dir; parent dirs are created",
+          "required": true,
+          "type": "path"
+        },
+        "window": {
+          "desc": "name of a registered window resource",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "Captures the window rectangle from the screen (CopyFromScreen), so the window must be in front and unobscured -- run browser.ensure first.",
+      "outputs": {
+        "height": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "the file that was written (absolute)",
+          "type": "path"
+        },
+        "width": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Save a PNG screenshot of the window held in a session resource",
+      "tier": "core"
+    },
+    "screen.crop": {
+      "effects": "write",
+      "example": {
+        "use": "screen.crop",
+        "with": {
+          "bottom": 6,
+          "left": 6,
+          "path": "{{steps.shot.out.path}}",
+          "right": 6,
+          "top": 6
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "crop_exceeds_image",
+          "transient": false
+        },
+        {
+          "id": "image_read_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.crop.ps1",
+      "group": "screen",
+      "id": "screen.crop",
+      "idempotent": true,
+      "inputs": {
+        "bottom": {
+          "default": 0,
+          "type": "int"
+        },
+        "left": {
+          "default": 0,
+          "type": "int"
+        },
+        "out": {
+          "default": "",
+          "desc": "write here instead of overwriting path",
+          "type": "path"
+        },
+        "path": {
+          "desc": "PNG to crop, modified in place unless out is given",
+          "required": true,
+          "type": "path"
+        },
+        "right": {
+          "default": 0,
+          "type": "int"
+        },
+        "top": {
+          "default": 0,
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "Idempotent only in the \"out\" form: cropping in place twice takes the border off twice. Zero on all four sides copies (or leaves) the file untouched.",
+      "outputs": {
+        "height": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "the file that was written",
+          "type": "path"
+        },
+        "width": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Crop a PNG by per-side pixel amounts and write the result",
+      "tier": "core"
+    },
+    "screen.fit_window": {
+      "effects": "ui",
+      "example": {
+        "use": "screen.fit_window",
+        "with": {
+          "height": "{{profile.window.height}}",
+          "width": "{{profile.window.width}}",
+          "window": "mainWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "window_gone",
+          "transient": true
+        },
+        {
+          "id": "move_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.fit_window.ps1",
+      "group": "screen",
+      "id": "screen.fit_window",
+      "idempotent": true,
+      "inputs": {
+        "height": {
+          "required": true,
+          "type": "int"
+        },
+        "settleMs": {
+          "default": 300,
+          "desc": "wait after the move",
+          "type": "int"
+        },
+        "width": {
+          "required": true,
+          "type": "int"
+        },
+        "window": {
+          "desc": "the window to move",
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        },
+        "x": {
+          "default": 40,
+          "desc": "left edge, screen pixels",
+          "type": "int"
+        },
+        "y": {
+          "default": 40,
+          "desc": "top edge, screen pixels",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "The outputs are read back with GetWindowRect: a window with a minimum size larger than asked reports what it settled on, and a workflow that cares compares them (verify.assert).",
+      "outputs": {
+        "height": {
+          "type": "int"
+        },
+        "width": {
+          "type": "int"
+        },
+        "x": {
+          "desc": "where the window actually is afterwards",
+          "type": "int"
+        },
+        "y": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Move and size a registered window to x,y width x height",
+      "tier": "core"
+    },
+    "screen.save": {
+      "effects": "write",
+      "example": {
+        "use": "screen.save",
+        "with": {
+          "dir": "capture/before_transferStatus",
+          "key": "{{item.keySafe}}",
+          "source": "{{steps.shot.out.path}}",
+          "tag": "row"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.save.ps1",
+      "group": "screen",
+      "id": "screen.save",
+      "idempotent": true,
+      "inputs": {
+        "copy": {
+          "default": false,
+          "desc": "copy instead of move (the source stays)",
+          "type": "bool"
+        },
+        "dir": {
+          "desc": "destination folder, e.g. capture/before_transferStatus",
+          "required": true,
+          "type": "path"
+        },
+        "ext": {
+          "default": "png",
+          "type": "string"
+        },
+        "key": {
+          "desc": "the item key (keySafe form; a raw key is folded)",
+          "required": true,
+          "type": "string"
+        },
+        "source": {
+          "desc": "the image to place",
+          "required": true,
+          "type": "path"
+        },
+        "tag": {
+          "default": "",
+          "desc": "distinguishes several images of one key: <key>__<tag>",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "An existing file of the same name is replaced: re-running a key re-captures it. A key that had to be folded is reported as a warning (key_folded).",
+      "outputs": {
+        "name": {
+          "desc": "the file name that was chosen",
+          "type": "string"
+        },
+        "path": {
+          "desc": "where the image is now",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Move or copy an image to <dir>/<keySafe>[__<tag>].<ext>",
+      "tier": "core"
+    },
+    "table.ensure_columns": {
+      "effects": "write",
+      "example": {
+        "use": "table.ensure_columns",
+        "with": {
+          "columns": {
+            "note": ""
+          },
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/table/table.ensure_columns.ps1",
+      "group": "table",
+      "id": "table.ensure_columns",
+      "idempotent": true,
+      "inputs": {
+        "columns": {
+          "default": {},
+          "desc": "extra columns: name -> default value; profile columns are always included",
+          "type": "map"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "added": {
+          "desc": "names that were missing and got added",
+          "type": "list"
+        },
+        "columns": {
+          "desc": "all column names afterwards",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Add missing columns (profile schema plus extras) with defaults",
+      "tier": "core"
+    },
+    "table.key": {
+      "effects": "pure",
+      "example": {
+        "use": "table.key",
+        "with": {
+          "among": "{{steps.rec.out.names}}",
+          "key": "{{item.key}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "key_not_found",
+          "transient": false
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.key.ps1",
+      "group": "table",
+      "id": "table.key",
+      "idempotent": true,
+      "inputs": {
+        "among": {
+          "desc": "candidate texts, or records (maps) whose key columns are compared",
+          "required": true,
+          "type": "list"
+        },
+        "key": {
+          "desc": "the key to find (display form for a composite key)",
+          "required": true,
+          "type": "string"
+        },
+        "rules": {
+          "default": [],
+          "desc": "override of profile.worklist.key.confirmedRules",
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "candidates": {
+          "desc": "P0-R4 candidate shape when ambiguous, else null",
+          "type": "map"
+        },
+        "found": {
+          "desc": "how many entries matched at that tier",
+          "type": "int"
+        },
+        "index": {
+          "desc": "its 0-based position in among; -1 otherwise",
+          "type": "int"
+        },
+        "match": {
+          "desc": "the one matching entry (text or record); null otherwise",
+          "type": "any"
+        },
+        "matchedBy": {
+          "desc": "exact | stripped | fullwidth | case | empty",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Match a key against candidate texts through the one rule set",
+      "tier": "core"
+    },
+    "table.load": {
+      "effects": "read",
+      "example": {
+        "use": "table.load",
+        "with": {
+          "as": "wl",
+          "path": "{{profile.worklist.file}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "csv_invalid",
+          "transient": false
+        },
+        {
+          "id": "key_column_missing",
+          "transient": false
+        },
+        {
+          "id": "key_collision",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.load.ps1",
+      "group": "table",
+      "id": "table.load",
+      "idempotent": true,
+      "inputs": {
+        "keyColumns": {
+          "default": [],
+          "desc": "override of profile.worklist.key.columns",
+          "type": "list"
+        },
+        "mustExist": {
+          "default": true,
+          "desc": "false: a missing file loads as an empty table with the profile columns",
+          "type": "bool"
+        },
+        "path": {
+          "desc": "the CSV (UTF-8 with BOM); relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "notes": "provides is non-empty, so a resumed run loads the table again and sees the disk. A dry run reads the file too (read-only); a file that is not there dry-runs as an empty table with a warning.",
+      "outputs": {
+        "columns": {
+          "desc": "column names in file order, profile columns appended",
+          "type": "list"
+        },
+        "path": {
+          "type": "path"
+        },
+        "rowCount": {
+          "type": "int"
+        }
+      },
+      "provides": [
+        "worklist"
+      ],
+      "releases": [],
+      "summary": "Load the worklist CSV and register it as a worklist resource",
+      "tier": "core"
+    },
+    "table.save": {
+      "effects": "write",
+      "example": {
+        "use": "table.save",
+        "with": {
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "write_failed",
+          "transient": true
+        },
+        {
+          "id": "no_path",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.save.ps1",
+      "group": "table",
+      "id": "table.save",
+      "idempotent": true,
+      "inputs": {
+        "path": {
+          "default": "",
+          "desc": "write here instead of the path it was loaded from",
+          "type": "path"
+        },
+        "worklist": {
+          "desc": "the loaded table",
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "path": {
+          "type": "path"
+        },
+        "rowCount": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write the worklist to CSV (UTF-8 with BOM, atomic)",
+      "tier": "core"
+    },
+    "table.select": {
+      "effects": "pure",
+      "example": {
+        "use": "table.select",
+        "with": {
+          "field": "before_transferStatus",
+          "pendingWhen": "!= ok",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.select.ps1",
+      "group": "table",
+      "id": "table.select",
+      "idempotent": true,
+      "inputs": {
+        "field": {
+          "default": "",
+          "desc": "the column to test (not needed for always)",
+          "type": "string"
+        },
+        "limit": {
+          "default": 0,
+          "type": "int"
+        },
+        "only": {
+          "default": [],
+          "desc": "key display strings; keep only these rows",
+          "type": "list"
+        },
+        "pendingWhen": {
+          "default": "!= ok",
+          "desc": "empty | != ok | == ng | bit !<name> | always (WORKFLOW-SCHEMA 3.1)",
+          "type": "string"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "The five forms are checked by kernel/Worklist.ps1 (the same parser the runner uses); anything else is input_invalid naming the form list.",
+      "outputs": {
+        "keyList": {
+          "desc": "their key display strings",
+          "type": "list"
+        },
+        "rows": {
+          "desc": "the selected rows (copies of the hashtables)",
+          "type": "list"
+        },
+        "selected": {
+          "type": "int"
+        },
+        "total": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Rows whose field is pending under one of the five pendingWhen forms",
+      "tier": "core"
+    },
+    "table.set": {
+      "effects": "write",
+      "example": {
+        "use": "table.set",
+        "with": {
+          "field": "note",
+          "value": "checked by hand",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "row_not_found",
+          "transient": false
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        },
+        {
+          "id": "column_missing",
+          "transient": false
+        },
+        {
+          "id": "bit_unknown",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/table/table.set.ps1",
+      "group": "table",
+      "id": "table.set",
+      "idempotent": true,
+      "inputs": {
+        "bit": {
+          "default": "",
+          "desc": "instead of value: the bit NAME to set in a bitmask column",
+          "type": "string"
+        },
+        "clear": {
+          "default": false,
+          "desc": "with bit: clear it instead of setting it",
+          "type": "bool"
+        },
+        "field": {
+          "required": true,
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "desc": "which row (key display form); empty = the current item",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "desc": "logical value to store (translated through verdict.values)",
+          "type": "string"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "stored": {
+          "desc": "what the cell holds now",
+          "type": "string"
+        },
+        "updated": {
+          "desc": "rows changed (0 or 1)",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Set a cell (value or named bit) of the row for a key, then flush",
+      "tier": "core"
+    },
+    "verify.assert": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.assert",
+        "with": {
+          "record": "{{steps.row.out.record}}",
+          "rules": "{{page.rules}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "rules_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.assert.ps1",
+      "group": "verify",
+      "id": "verify.assert",
+      "idempotent": true,
+      "inputs": {
+        "record": {
+          "desc": "the record to judge (field -> text)",
+          "required": true,
+          "type": "map"
+        },
+        "rules": {
+          "desc": "{ rules: [ { field, op, value?, else, message } ], default: ok }",
+          "required": true,
+          "type": "map"
+        }
+      },
+      "needs": [],
+      "notes": "A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails. A within rule whose value is null or an empty map (no run.timeWindow given) holds: an absent window is not a failed check.",
+      "outputs": {
+        "code": {
+          "desc": "ok | ng | unknown",
+          "type": "string"
+        },
+        "field": {
+          "desc": "that rule's field",
+          "type": "string"
+        },
+        "reason": {
+          "desc": "the failing rule's message, for people (named reason: message is a reserved return key)",
+          "type": "string"
+        },
+        "rule": {
+          "desc": "1-based index of the rule that decided; 0 when every rule passed",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Run a rule table over a record: ok / ng / unknown plus the message",
+      "tier": "core"
+    },
+    "verify.crosscheck": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.crosscheck",
+        "with": {
+          "compare": "timeWithinSec",
+          "readings": [
+            {
+              "source": "page",
+              "value": "{{steps.row.out.record.endTime}}"
+            },
+            {
+              "source": "log",
+              "value": "{{steps.logrec.out.record.endTime}}"
+            }
+          ],
+          "toleranceSec": 60
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.crosscheck.ps1",
+      "group": "verify",
+      "id": "verify.crosscheck",
+      "idempotent": true,
+      "inputs": {
+        "compare": {
+          "default": "equal",
+          "enum": [
+            "equal",
+            "numericEqual",
+            "timeWithinSec"
+          ],
+          "type": "string"
+        },
+        "normalize": {
+          "default": [],
+          "desc": "any of trim, fullwidth, thousands (applied before equal / numericEqual)",
+          "type": "list"
+        },
+        "readings": {
+          "desc": "[ { source, value }, ... ]",
+          "required": true,
+          "type": "list"
+        },
+        "toleranceSec": {
+          "default": 0,
+          "desc": "with timeWithinSec: how far apart two times may be",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "unknown is a verdict for human.gate, never a failure. Values that cannot be read as a number / time under numericEqual / timeWithinSec count as a disagreement, not as a pass.",
+      "outputs": {
+        "code": {
+          "desc": "ok | unknown",
+          "type": "string"
+        },
+        "disagreements": {
+          "desc": "[ { a, aValue, b, bValue }, ... ] every pair that differs",
+          "type": "list"
+        },
+        "sources": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Compare the same fact from several sources; any disagreement is unknown",
+      "tier": "core"
+    },
+    "verify.match_record": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.match_record",
+        "with": {
+          "key": "{{item.Correl_ID_S}}",
+          "records": "{{steps.rec.out.records}}",
+          "tieBreak": "newest"
+        }
+      },
+      "failures": [
+        {
+          "id": "record_not_found",
+          "transient": true
+        },
+        {
+          "id": "ambiguous",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.match_record.ps1",
+      "group": "verify",
+      "id": "verify.match_record",
+      "idempotent": true,
+      "inputs": {
+        "field": {
+          "default": "key",
+          "desc": "the record field that holds the key",
+          "type": "string"
+        },
+        "key": {
+          "desc": "what to find (a column value, or the key display form)",
+          "required": true,
+          "type": "string"
+        },
+        "records": {
+          "desc": "verify.parse_text output",
+          "required": true,
+          "type": "list"
+        },
+        "tieBreak": {
+          "default": "newest",
+          "enum": [
+            "newest",
+            "first",
+            "none"
+          ],
+          "type": "string"
+        },
+        "timeField": {
+          "default": "time",
+          "desc": "the record field with the time, for newest",
+          "type": "string"
+        },
+        "window": {
+          "default": {},
+          "desc": "{ from, to } ISO; with newest, a hit inside the window beats one outside",
+          "type": "map"
+        }
+      },
+      "needs": [],
+      "notes": "record_not_found is transient: the row is usually still arriving. The key input is a raw column value ({{item.<col>}}), not {{item.key}}, unless the records carry the composite key in one field.",
+      "outputs": {
+        "candidates": {
+          "desc": "P0-R4 candidate shape when ambiguous with tieBreak none",
+          "type": "map"
+        },
+        "found": {
+          "desc": "how many records matched the key",
+          "type": "int"
+        },
+        "index": {
+          "desc": "1-based position among the records; 0 when none",
+          "type": "int"
+        },
+        "matchedBy": {
+          "desc": "exact | stripped | fullwidth | case",
+          "type": "string"
+        },
+        "record": {
+          "desc": "the chosen record (null when none)",
+          "type": "map"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Find the record for a key; newest / first / ask on several",
+      "tier": "core"
+    },
+    "verify.parse_text": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.parse_text",
+        "with": {
+          "grammar": "{{page.grammar}}",
+          "text": "{{steps.wait.out.text}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "grammar_invalid",
+          "transient": false
+        },
+        {
+          "id": "no_records",
+          "transient": true
+        }
+      ],
+      "file": "modules/verify/verify.parse_text.ps1",
+      "group": "verify",
+      "id": "verify.parse_text",
+      "idempotent": true,
+      "inputs": {
+        "grammar": {
+          "desc": "{ parser: delimited|labeled|columns|regex, ... } (PROFILE-SCHEMA 4)",
+          "required": true,
+          "type": "map"
+        },
+        "maxWarnings": {
+          "default": 20,
+          "desc": "unrecognised lines reported one by one up to this many, then one summary",
+          "type": "int"
+        },
+        "text": {
+          "desc": "the page text (browser.wait_for / read_text output)",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "no_records is transient: the usual cause is a page still loading. A labeled grammar always yields one record; a label it could not find is a warning (label_missing) with the field blank, and verify.assert's present/empty rules decide what that means.",
+      "outputs": {
+        "names": {
+          "desc": "the \"key\" field of every record when the grammar has one (for table.key)",
+          "type": "list"
+        },
+        "recordCount": {
+          "type": "int"
+        },
+        "records": {
+          "desc": "hashtables field -> text, plus _line",
+          "type": "list"
+        },
+        "unrecognized": {
+          "desc": "non-blank lines the grammar did not recognise",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Parse page text into records with a delimited / labeled / columns / regex grammar",
+      "tier": "core"
+    }
+  }
+}

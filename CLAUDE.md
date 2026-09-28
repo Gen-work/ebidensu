@@ -40,42 +40,165 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         (browser/screen/file/excel/table/verify/human/progress/
                         flow). Files here that are NOT steps are pre-conversion
                         libraries, listed and exempted on every test run.
-                        First three real steps (P0-08, ported from Common.ps1):
-                        human/human.prepare.ps1, browser/browser.ensure.ps1
-                        (provides 'window'), screen/screen.capture_window.ps1
-                        (consumes it via a type='session' input).
+                        The P1 catalog (38 steps, docs/ebi-dance/CATALOG.md
+                        is the list): browser/ ensure (provides 'window'),
+                        focus_body, send_keys, tab_to, fill, submit,
+                        read_text, wait_for, assert_page, navigate, find
+                        (every key-sending step takes a 'window' session
+                        input and VERIFIES the foreground, else
+                        foreground_lost); screen/ capture_window,
+                        capture_region, fit_window, crop, save; file/
+                        write_json, read_json, find (Key.ps1 tiers; several
+                        hits -> 'ambiguous' + P0-R4 candidate shape),
+                        assert_exists; table/ load (provides 'worklist',
+                        keySafe collision check), save, ensure_columns,
+                        select, key, set; flow/ checkpoint; progress/
+                        event, status; verify/ parse_text, match_record,
+                        assert (12 ops, else never ok, output 'reason'),
+                        crosscheck (P2-10: any disagreement is unknown);
+                        human/ prepare, gate (always runs), choose (the one
+                        P0-R4 renderer), input (P2-07: sets
+                        $Ctx.Run.timeWindow). Steps share kernel/ libraries via
+                        `. (Join-Path $PSScriptRoot '..\..\kernel\X.ps1')`;
+                        they never call each other. Tests\Test-StepDryRun.ps1
+                        (P1-36, harness Tests\StepDryRun.ps1) dry-runs EVERY
+                        catalog step from its manifest example and checks
+                        the return holds every declared output, is JSON-
+                        serializable and wrote nothing; Test-Steps.ps1 /
+                        Test-TableSteps.ps1 / Test-VerifySteps.ps1 run the
+                        pure helpers and the file / table / verify / human
+                        steps for real on temp fixtures.
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
-kernel/                 runner internals. Trace.ps1 (append-only run trace,
-                        unit-tested via Tests\Test-Trace.ps1) and Runner.ps1
-                        (P0-07 spike of the workflow runner: Invoke-EbiWorkflow
-                        reads a workflow JSON, loads each step by dot-sourcing
-                        it in the runner's own scope and capturing Invoke-Step
-                        at once, runs setup then teardown in a finally, keeps
-                        $Ctx.Session and the STEP-CONTRACT 3.4 point 7 resource
-                        channel -- reserved return key 'resource', 'with.as'
-                        registration, session-input name -> instance
-                        replacement -- enforces the 3.1 return contract and
-                        traces every step; refuses source/each/templates/
-                        when/onError up front with 'unsupported_in_spike'.
-                        Unit-tested via Tests\Test-Runner.ps1). Context.ps1
-                        (P1-01: pure {{}} template evaluation -- scopes
-                        vars/profile/page/run/item/steps, whole-value type
-                        preservation, \{\{ escape, one-pass evaluation of
-                        profile/page subtrees, failures as records naming
-                        the unresolved segment; not yet wired into Runner,
-                        P1-03 does that; Tests\Test-Context.ps1) and Key.ps1
+kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
+                        entry point -- Read/Write-EbiJson (atomic write),
+                        ConvertFrom/To-EbiJson, Add-EbiJsonLine /
+                        Read-EbiJsonLines for JSONL, ConvertTo-EbiHashtable;
+                        hashtables not PSCustomObjects, depth 20 and LOUD
+                        beyond it instead of silent truncation, Japanese
+                        written as characters, UTF-8 no BOM. Iron rule R8:
+                        nothing else under modules/ or kernel/ calls
+                        ConvertFrom-Json / ConvertTo-Json / Get-Content on
+                        a .json -- the contract checker greps for it.
+                        Tests\Test-Json.ps1), Trace.ps1 (append-only run
+                        trace over Json.ps1; events read back as
+                        hashtables; unit-tested via Tests\Test-Trace.ps1),
+                        Registry.ps1
+                        (P1-02: step discovery under modules/ -- Find-EbiStep
+                        Files / Get-EbiStepCatalog, a manifest-only scan for
+                        lint/help/docs -- and loading for running: Import-
+                        EbiStep MUST be dot-sourced (`. Import-EbiStep ...`)
+                        so the step's helpers land in the caller's scope; it
+                        captures Invoke-Step into the registry table at once
+                        and removes the bare name. Also the "with" -> $In
+                        pipeline: 'as' lifted out, Test-EbiStepInputs checks
+                        required / type / enum / default / unknown parameters
+                        against the manifest (every problem names the
+                        parameter; failure 'input_invalid', or 'contract_
+                        violation' when the manifest is wrong), then session
+                        names -> instances; and Test-EbiStepReturn (3.1).
+                        Unit-tested via Tests\Test-Registry.ps1), Worklist.ps1
+                        (P1-03: the in-memory worklist resource shape
+                        @{ path; columns; rows } and the ONE row filter,
+                        Select-EbiWorklistRows -- runner source.select and
+                        table.select share it; five pendingWhen forms,
+                        verdict values translation, bitmask by name/number,
+                        stable groupBy/orderBy sort; Tests\Test-Worklist.ps1),
+                        Runner.ps1 (P1-03 main body: Invoke-EbiWorkflow
+                        validates the workflow shape ('workflow_invalid',
+                        schema 1 required), runs setup / each per selected
+                        row / teardown in a finally, expands {{}} templates
+                        per call, evaluates when (skipped steps = null
+                        fields + skipped=true), replays once:group outputs
+                        to later items of the group, ends only the failing
+                        item on a failure, turns operator_quit into
+                        'cancelled'; keeps $Ctx.Session and the 3.4 point 7
+                        resource channel. P1-04 on top: onError policies
+                        retry (transient only, backoff, exhausted -> ask) /
+                        ask / skip / fail with byFailure and per-call
+                        override, a confirm gate before every destructive
+                        step unless confirm:false, questions through one
+                        -AskHandler (self-answering under DryRun or with no
+                        console), once:groupEnd after a group's last item,
+                        the ledger (each only, with outputs) and -Resume
+                        replay (provides/releases steps always re-run),
+                        run.json, an end-of-run warnings summary.
+                        Tests\Test-Runner.ps1), Ledger.ps1 (P1-04: ledger
+                        keys/read/append, run.json, Find-EbiUnfinishedRuns;
+                        Tests\Test-Ledger.ps1), Gate.ps1 (P1-05: the ONE
+                        ASCII gate panel -- WHAT HAPPENED / NEXT / EVIDENCE /
+                        ACTIONS, 80 columns, r/s/q/m answers, injectable
+                        reader, self-answering with no console; the runner's
+                        -AskHandler default; Tests\Test-Gate.ps1), Docs.ps1
+                        (P1-06: manifests -> docs/ebi-dance/CATALOG.md +
+                        catalog.json, committed and drift-checked by
+                        Tests\Test-Catalog.ps1; regenerate with
+                        `. kernel/Docs.ps1; Write-EbiCatalog`), Help.ps1
+                        (P1-07: `ebi help` list / one manifest, 80 cols),
+                        Lint.ps1 (P1-08: Invoke-EbiLint, the WORKFLOW-SCHEMA
+                        9 static checks over workflow + catalog + profile;
+                        the mustRelease table is parsed out of the spec),
+                        Explain.ps1 (P1-09: Format-EbiExplain, the ASCII
+                        execution plan), Profile.ps1 (profiles/<name>/*.json
+                        + <WorkDir>/ebi.local.json overlay -> one hashtable;
+                        all four: Tests\Test-Cli.ps1),
+                        Context.ps1 (P1-01: pure {{}} template evaluation --
+                        scopes vars/profile/page/run/item/steps, whole-value
+                        type preservation, \{\{ escape, one-pass evaluation
+                        of profile/page subtrees, failures as records naming
+                        the unresolved segment; plus the four when forms,
+                        ConvertFrom-EbiWhen / Test-EbiWhen, P1-03;
+                        Tests\Test-Context.ps1) and Key.ps1
                         (P1-27 seed: full-width folding, item.key display
                         form, item.keySafe file-safe form -- the ONE place
-                        key normalization lives).
+                        key normalization lives). Native.ps1 (P1-11: the ONE
+                        Win32 / SendKeys / clipboard binding -- Get-EbiNative
+                        lazy Add-Type, Set-EbiForeground bring-to-front WITH
+                        GetForegroundWindow check, Get-EbiWindowRect,
+                        Send-EbiKeys, Read-EbiPageText Ctrl+A/C/Esc,
+                        Invoke-EbiClick, clipboard, Resolve-EbiWorkPath
+                        relative-under-WorkDir, Write-EbiTextFile) and
+                        Image.ps1 (P1-18/P1-20: the ONE GDI+ binding --
+                        Save-EbiScreenRegionPng, Invoke-EbiCropPng (also
+                        what HmSnap/MqSnap/JenkinsSnap/Crop-Snap call now;
+                        the four Invoke-CropPng copies are gone),
+                        Get-EbiPngSize, pure Get-EbiCropGeometry /
+                        Resolve-EbiCropSides / Resolve-EbiScreenRegion.
+                        Every entry point is split into a pure check plus a
+                        *Core that names System.Drawing types, because on
+                        Linux pwsh a function that mentions System.Drawing
+                        throws on its first call before running a line).
+                        Table.ps1 (P1-24: worklist CSV read / atomic write,
+                        UTF-8 with BOM fixed in code) and Parse.ps1
+                        (P1-30/31: the four page-text grammars +
+                        ConvertTo-EbiDateTime with H:mm:ss single-digit
+                        hours; P2-09 added Get-EbiPageKind and
+                        Select-EbiNewestRecord). Key.ps1 grew its matching
+                        half in P1-27 (rules, tiers, composite keys column
+                        by column, keySafe collisions, the P0-R4 candidate
+                        shape). P2 libraries: Rules.ps1 (the rule-table
+                        engine behind verify.assert), ProfileCheck.ps1
+                        (schema check + fixture runner + diff + skeleton
+                        for `ebi profile check/new/diff`), GrammarTune.ps1
+                        (`ebi grammar tune`), Mask.ps1 (mask-lite rules;
+                        `ebi mask check`, run first by Tests\Run-Tests.ps1).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
-ebi.ps1                 ebi-dance CLI entry: run / dryrun / help so far
-                        (P1-07..P1-10 add lint / explain / doctor and the
-                        real run options). Has param(): call via -File or &,
-                        never dot-source.
-profiles/               per-project data: page bindings, decision rules, schemas
+ebi.ps1                 ebi-dance CLI entry (P1-10, P2): help [<step>] / lint /
+                        explain / dryrun / run (-Resume [-RunId], -Only,
+                        -Operator, -Limit, -Var k=v, -Profile, -TimeWindow
+                        "from..to") / doctor / catalog / profile check|new|
+                        diff / mask check / grammar tune. Exit 0 ok, 1
+                        failed, 2 usage, 3 cancelled.
+                        Has param(): call via -File or &, never dot-source.
+profiles/               per-project data: page bindings, decision rules, schemas.
+                        host-open/ (P2-01/P2-04): the current work as data --
+                        vocabulary / pages (5 pages by page name) / grammar +
+                        rules for transferStatus and hmResult / worklist
+                        (legacy column names + verdict.values codes) / window /
+                        fixtures with expected.json. mask-dictionary.json holds
+                        the mask-lite words and allow patterns (P2-08).
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
 MappingStore.ps1        single source of truth for mapping_<Owner>.csv: read/filter/
@@ -534,10 +657,13 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. In `modules/verify/`:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
-`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Trace.ps1`,
-`Runner.ps1`, `Context.ps1`, `Key.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
+`Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
+`Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
+`Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`, `Rules.ps1`, `ProfileCheck.ps1`,
+`GrammarTune.ps1`, `Mask.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
-In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`.
+In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`, `StepDryRun.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.
 
 The dot-source **path** moved with the file -- `. (Join-Path $PSScriptRoot

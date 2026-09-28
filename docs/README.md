@@ -26,7 +26,32 @@
 机制)。**P0 已全部关闭**(2026-09-22):冻结标签在办公 PC 的 GitLab 镜像上
 (P0-01),runner spike(P0-07)和三个 step + `workflows/spike.capture_window.json`
 (P0-08)在办公 PC 上真截到了 PNG。**P1 已开**:P1-01(`kernel/Context.ps1`,
-模板求值)`[x]`;下一张从 P1-02(Registry)或 P1-35(Json 入口)挑。
+模板求值)`[x]`,P1-02(`kernel/Registry.ps1`,step 加载 + 参数校验)`[x]`,
+P1-35(`kernel/Json.ps1`,唯一的 JSON 入口 + 铁律 R8)`[x]`,P1-03(Runner
+主体:setup/each/teardown、模板接线、`source.select`、`when`、`once:group`)
+`[x]`,P1-04(onError 四策略 + `byFailure`、destructive 确认关卡、ledger +
+`-Resume` 重放、`once:"groupEnd"`、`run.json`)`[x]`,P1-05(`kernel/Gate.ps1`
+关卡面板)`[x]`,P1-06(`kernel/Docs.ps1` → `CATALOG.md` / `catalog.json`,已生成
+并提交)`[x]`,P1-07..P1-10(`ebi.ps1`:help / lint / explain / dryrun / run
+-Resume·-Only·-Operator / doctor / catalog)`[x]`——**kernel + CLI 全部关闭**;
+P1-11..P1-17(browser 组 11 个 step + `kernel/Native.ps1`)`[x]`,P1-18..P1-21
+(screen 组 5 个 step + `kernel/Image.ps1`,四份 `Invoke-CropPng` 消掉,
+`file.write_json` / `file.read_json`)`[x]`,P1-22 / P1-23(`file.find` /
+`file.assert_exists`)`[x]`,P1-24..P1-29(table / flow / progress 组 9 个 step +
+`kernel/Table.ps1`,`kernel/Key.ps1` 的匹配半边 = P1-27)`[x]`,P1-30..P1-33
+(verify 组 3 个 step + `kernel/Parse.ps1`)`[x]`,P1-34(human 组 3 个 step 上
+`Gate.ps1`)`[x]`,P1-36(`Tests/Test-StepDryRun.ps1`:36 个 step 全部在 CI 里
+DryRun 真跑一遍,返回键 == manifest outputs;两条补漏的 manifest 规则)`[x]`——
+**P1 全部关闭(2026-09-28)**。**P2**:P2-01(`profiles/host-open`)、P2-02
+(`ebi grammar tune`)、P2-04(MQ / HM 的 grammar + rules + fixture)、P2-05
+(`workflows/before.transferStatus.capture.json`,lint / explain / dryrun 绿)、
+P2-07(`human.input` + `run.timeWindow` + CLI `-TimeWindow`)、P2-08(`ebi mask
+check`,挂进 `Run-Tests.ps1`)、P2-09(`ebi profile check / new / diff`,
+`kernel/ProfileCheck.ps1`)、P2-10(`verify.crosscheck`)、P2-03(在仓库里的样本
+文本上跑过一次真的 tune 循环)、P2-06(`Tests/Test-Parity.ps1`:旧判定 vs 新引擎同
+文本对拍、新 CSV 被旧工具读、中断续跑不重复;四处故意的差异作为差异断言)`[x]`——
+**P2 关闭(2026-09-28)**。留给办公 PC 的两项在 P2-03 / P2-06 卡上:真实页面的
+grammar tune、PNG 尺寸对拍。P3 从 P3-01(操作员收集素材)开始。
 
 ---
 

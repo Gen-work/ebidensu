@@ -114,6 +114,7 @@ if ([string]::IsNullOrWhiteSpace($CommonScript)) {
 . (Join-Path $scriptDir 'MappingStore.ps1')
 . (Join-Path $scriptDir 'ProgressLog.ps1')
 . (Join-Path $scriptDir 'modules/verify/SnapVerify.ps1')
+. (Join-Path $scriptDir 'kernel/Image.ps1')            # Invoke-EbiCropPng (P1-20)
 $jkFindHighlight = Join-Path $scriptDir 'Find-ActiveHighlightRow.ps1'
 if (Test-Path -LiteralPath $jkFindHighlight) { . $jkFindHighlight }
 $jkSnapLocalize = Join-Path $scriptDir 'SnapLocalize.ps1'
@@ -233,32 +234,8 @@ if (Test-Path $urlCacheFile) {
 $urlDirty = $false
 
 # -- inline helpers ------------------------------------------------------------
-function Invoke-CropPng(
-    [string]$path, [int]$crop,
-    # -1 (default) = inherit crop for that side (uniform crop).
-    [int]$cropLeft = -1, [int]$cropTop = -1, [int]$cropRight = -1, [int]$cropBottom = -1
-) {
-    if ($cropLeft   -lt 0) { $cropLeft   = $crop }
-    if ($cropTop    -lt 0) { $cropTop    = $crop }
-    if ($cropRight  -lt 0) { $cropRight  = $crop }
-    if ($cropBottom -lt 0) { $cropBottom = $crop }
-    if (($cropLeft -le 0 -and $cropTop -le 0 -and $cropRight -le 0 -and $cropBottom -le 0) -or -not (Test-Path -LiteralPath $path)) { return }
-    try {
-        $orig = [System.Drawing.Image]::FromFile($path)
-        $w = $orig.Width  - $cropLeft - $cropRight
-        $h = $orig.Height - $cropTop  - $cropBottom
-        if ($w -le 0 -or $h -le 0) { $orig.Dispose(); return }
-        $bmp = New-Object System.Drawing.Bitmap($w, $h)
-        $g   = [System.Drawing.Graphics]::FromImage($bmp)
-        $g.DrawImage($orig, -$cropLeft, -$cropTop)
-        $g.Dispose()
-        $orig.Dispose()
-        $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-        $bmp.Dispose()
-    } catch {
-        Write-Host ("  [WARN] crop failed: {0}" -f $_) -ForegroundColor Yellow
-    }
-}
+# Invoke-CropPng used to live here; the crop is Invoke-EbiCropPng in
+# kernel/Image.ps1 now (P1-20), dot-sourced next to Common.ps1 above.
 
 # Get-EdgeMainWindowHandle / Activate-EdgeWindow (process-handle-first,
 # AppActivate-by-title fallback) now live in Common.ps1 -- this used to be a
@@ -599,7 +576,8 @@ foreach ($toCode in $groupOrder) {
 
             try {
                 Take-WindowScreenshot $edgeHwnd $snapPath
-                Invoke-CropPng $snapPath $CropPx -cropLeft $CropLeft -cropTop $CropTop -cropRight $CropRight -cropBottom $CropBottom
+                $cropResult = Invoke-EbiCropPng -Path $snapPath -CropPx $CropPx -Left $CropLeft -Top $CropTop -Right $CropRight -Bottom $CropBottom
+                if (-not $cropResult.ok) { Write-Host ('  [WARN] crop failed: {0}' -f $cropResult.message) -ForegroundColor Yellow }
                 # Dismiss find bar now that the screenshot is captured.
                 Send-Key '{ESC}' 200
                 Write-Host ("    Saved: snap\{0}\{1}.png" -f $snapFolder, $correl) -ForegroundColor Green

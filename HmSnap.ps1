@@ -27,7 +27,7 @@
 #  Conventions:
 #    - All mapping I/O goes through MappingStore (atomic writes); progress
 #      events go to status\progress.jsonl via ProgressLog.
-#    - Crop-Snap.ps1 is NOT dot-sourced; Invoke-CropPng is inline.
+#    - Crop-Snap.ps1 is NOT dot-sourced; the crop is kernel/Image.ps1 (P1-20).
 #    - Switch params are copied to plain bools before any dot-source.
 #    - Screenshot targets the Edge main hwnd, not the foreground window.
 #    - Pure parse/verdict logic lives in SnapVerify.ps1 (unit-tested);
@@ -170,6 +170,7 @@ $ErrorActionPreference = $savedEAP
 . (Join-Path $scriptDir "MappingStore.ps1")
 . (Join-Path $scriptDir "ProgressLog.ps1")
 . (Join-Path $scriptDir "modules/verify/SnapVerify.ps1")
+. (Join-Path $scriptDir "kernel/Image.ps1")            # Invoke-EbiCropPng (P1-20)
 $snapLocalizeScript = Join-Path $scriptDir "SnapLocalize.ps1"
 if (Test-Path -LiteralPath $snapLocalizeScript) { . $snapLocalizeScript }
 $pageTextScript = Join-Path $scriptDir "Read-PageText.ps1"
@@ -201,60 +202,8 @@ Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
 # ============================================================
 # Inline helpers (do not dot-source Crop-Snap.ps1)
 # ============================================================
-function Invoke-CropPng {
-    param(
-        [Parameter(Mandatory=$true)][string]$path,
-        [int]$cropPx     = 6,
-        # -1 (default) = inherit cropPx for that side (uniform crop).
-        [int]$cropLeft   = -1,
-        [int]$cropTop    = -1,
-        [int]$cropRight  = -1,
-        [int]$cropBottom = -1
-    )
-
-    if ($cropLeft   -lt 0) { $cropLeft   = $cropPx }
-    if ($cropTop    -lt 0) { $cropTop    = $cropPx }
-    if ($cropRight  -lt 0) { $cropRight  = $cropPx }
-    if ($cropBottom -lt 0) { $cropBottom = $cropPx }
-    if ($cropLeft -le 0 -and $cropTop -le 0 -and $cropRight -le 0 -and $cropBottom -le 0) { return }
-    if (-not (Test-Path -LiteralPath $path)) { throw "File not found: $path" }
-
-    $bytes   = [System.IO.File]::ReadAllBytes($path)
-    $ms      = New-Object System.IO.MemoryStream(, $bytes)
-    $tmpPath = "$path.crop.tmp"
-
-    try {
-        $orig = [System.Drawing.Image]::FromStream($ms)
-        try {
-            $newW = $orig.Width  - $cropLeft - $cropRight
-            $newH = $orig.Height - $cropTop  - $cropBottom
-            if ($newW -le 0 -or $newH -le 0) {
-                throw ("Image too small ({0}x{1}) to crop L{2}/T{3}/R{4}/B{5} px" -f $orig.Width, $orig.Height, $cropLeft, $cropTop, $cropRight, $cropBottom)
-            }
-
-            $bmp = New-Object System.Drawing.Bitmap($newW, $newH)
-            try {
-                $gfx = [System.Drawing.Graphics]::FromImage($bmp)
-                try {
-                    $srcRect = New-Object System.Drawing.Rectangle($cropLeft, $cropTop, $newW, $newH)
-                    $dstRect = New-Object System.Drawing.Rectangle(0, 0, $newW, $newH)
-                    $gfx.DrawImage($orig, $dstRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
-                } finally {
-                    $gfx.Dispose()
-                }
-                $bmp.Save($tmpPath, [System.Drawing.Imaging.ImageFormat]::Png)
-            } finally {
-                $bmp.Dispose()
-            }
-        } finally {
-            $orig.Dispose()
-        }
-    } finally {
-        $ms.Dispose()
-    }
-
-    Move-Item -LiteralPath $tmpPath -Destination $path -Force
-}
+# Invoke-CropPng used to live here; the crop is Invoke-EbiCropPng in
+# kernel/Image.ps1 now (P1-20), dot-sourced next to Common.ps1 above.
 
 function Bring-ShellToFront {
     try {
@@ -532,8 +481,9 @@ foreach ($g in $grouped) {
             if ($snapVerifyOn) { Click-PageBody }
             Save-EdgeMainScreenshot $outPath
             try {
-                Invoke-CropPng -path $outPath -cropPx $CropPx `
-                    -cropLeft $CropLeft -cropTop $CropTop -cropRight $CropRight -cropBottom $CropBottom
+                $cropResult = Invoke-EbiCropPng -Path $outPath -CropPx $CropPx `
+                    -Left $CropLeft -Top $CropTop -Right $CropRight -Bottom $CropBottom
+                if (-not $cropResult.ok) { throw $cropResult.message }
             } catch {
                 Write-Host ("    [WARN] Crop failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
             }

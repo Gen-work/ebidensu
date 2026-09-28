@@ -154,7 +154,7 @@ CLI `--only <key>[,<key>...]`(P0-R16)按 `{{item.key}}` 的显示形在
 | `"empty"` | 空 或 `0` |
 | `"!= ok"` | 值不是 `ok` |
 | `"== ng"` | 值等于 `ng` |
-| `"bit !3"` | 位掩码:3 号位组合未全置(位定义在 profile) |
+| `"bit !<位名>"` | 位掩码:名为 `<位名>` 的位未置(位名 → 位值在 profile 该列的 `bits` 里声明,如 `bit !before`;和 `flow.checkpoint` 的 `bit` 同一套名字,P1-28)。纯数字(`bit !3`)仍接受,只为迁移期 |
 | `"always"` | 全部,不管状态 |
 
 **这不是表达式语言,是五个固定枚举。** 需要更复杂的筛选 → 用
@@ -660,10 +660,10 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
     { "id": "focus", "use": "browser.focus_body", "with": { "window": "mainWindow" } },
 
     { "id": "tabToForm", "use": "browser.tab_to",
-      "with": { "window": "mainWindow", "count": "{{page.tabsToForm}}" } },
+      "with": { "window": "mainWindow", "times": "{{page.tabsToForm}}" } },
     { "id": "submitForm", "use": "browser.submit", "with": { "window": "mainWindow" } },
     { "id": "tabToInput", "use": "browser.tab_to",
-      "with": { "window": "mainWindow", "count": "{{page.tabsToInput}}" } },
+      "with": { "window": "mainWindow", "times": "{{page.tabsToInput}}" } },
     { "id": "fill", "use": "browser.fill",
       "with": { "window": "mainWindow", "text": "{{item.Correl_ID_S}}", "verifyChange": true } },
     { "id": "submitQuery", "use": "browser.submit", "with": { "window": "mainWindow" } },
@@ -710,7 +710,7 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
     { "id": "gate", "use": "human.gate",
       "with": { "code":     "{{steps.verdict.out.code}}",
                 "askWhen":  ["unknown"],
-                "reason":   "{{steps.verdict.out.message}}",
+                "reason":   "{{steps.verdict.out.reason}}",
                 "evidence": "{{steps.shot.out.path}}" } },
 
     { "id": "checkpoint", "use": "flow.checkpoint",

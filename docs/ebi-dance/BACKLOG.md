@@ -28,6 +28,7 @@
 | R5 | 不用 PowerShell `class` | PS 5.1 的 class 跨 dot-source 有作用域坑 |
 | R6 | 失败用**返回值**表达,不抛异常 | 见 `spec/STEP-CONTRACT.md` §3.1 |
 | R7 | `effects` 为 `write`/`destructive`/`ui` 的 step **必须**处理 `$Ctx.DryRun` | 见 `spec/STEP-CONTRACT.md` §3.3 |
+| R8 | `modules/**`、`kernel/**` 里**不许直接出现** `ConvertFrom-Json` / `ConvertTo-Json` / `Get-Content <x>.json`,一律走 `kernel/Json.ps1` | PS 5.1 的 JSON 有四个坑(PSCustomObject、`-Depth 2` 静默截断、`\uXXXX`、ANSI 解码),见 P1-35;P0-06 的检查器 grep 源码(`direct_json`) |
 
 ## 状态
 
@@ -839,7 +840,7 @@
 
 ---
 
-# P1 — 内核 + 32 个 MVP step + 文档生成(36 张,4 张整块)
+# P1 — 内核 + 32 个 MVP step + 文档生成(36 张,4 张整块)—— **全部关闭(2026-09-28)**
 
 ## kernel(6 张)
 
@@ -867,7 +868,7 @@
   两侧空白;对象 / 数组只能整值引用,拼进字符串是 `not_scalar`。**没接进
   runner**(P1-03 的事),spike 仍在第一步前拒绝 `{{`。
 
-### [ ] P1-02 kernel/Registry.ps1
+### [x] P1-02 kernel/Registry.ps1
 - **估** 75min | **依赖** P0-06 | **读** `spec/STEP-CONTRACT.md` §2
 - **做**:扫描 `modules/**`、加载 `$Manifest`、按 `inputs` schema 校验一次调用的参数
   (类型、required、enum、default 填充)。纯函数,单测。
@@ -884,8 +885,32 @@
   `kernel/Registry.ps1` 并补上缺的一半**——type / required / enum / default
   校验(Runner 现在注明 "required-ness is P1-02's check")——不是重写。
   `Tests/Test-Runner.ps1` 的 128 例要照样绿。
+- **已执行(2026-09-28)**:`kernel/Registry.ps1`,`Tests/Test-Registry.ps1`
+  140 例;`Test-Runner.ps1` 128 例原样绿 + 12 例新增(`with` 校验走完整条
+  runner 路径)。抽出来的:`Get-EbiStepPath` / `Get-EbiManifestArray` /
+  `Get-EbiSessionInputs` / `Resolve-EbiStepInputs` / `Test-EbiStepReturn`;
+  补上的另一半:`Test-EbiStepInputs`(required / type / enum / default /
+  未声明参数,**一次报全部,每条带参数名**,`problems = @(@{ input; kind;
+  message })`)、`ConvertTo-EbiInputValue`(§2.2 逐类型检查)、
+  `Find-EbiStepFiles` + `Get-EbiStepCatalog`(扫 `modules/<group>/<group>.
+  <verb>.ps1`,只读 manifest,给 P1-06 / P1-08 用)。决定了几条卡面没写死的
+  细节:① 调用点写错是新增保留 id **`input_invalid`**(已加进 §3.1 的表),
+  manifest 自己写错(`inputs` 不是 hashtable、输入类型不在 §2.2 表里)是
+  `contract_violation`——分开是因为要改的人不同;② `Import-EbiStep` **必须
+  用 `.` 调用**(`. Import-EbiStep -Registry $r -Use 'x.y'`):step 的辅助
+  函数落在谁 dot-source 它的作用域里,在 Registry 函数自己的作用域里加载
+  会在函数返回时一起消失,运行期报「not recognized」——实测只有 dot-source
+  函数调用这一条路能让辅助函数活到调用时;非 `.` 调用直接拒绝(`internal_
+  error` + 怎么调),不静默加载一个残废的 step;③ 捕获之后**删掉裸名
+  `Invoke-Step`**,表是唯一入口;④ 宽容只有两处:`int` 收数字字符串
+  (worklist 单元格是字符串)、`bool` 收 `"true"/"false"`,其余不转(4.5 不是
+  int,裸标量不是单元素 list);`null` 一律当没给;`enum` 区分大小写;
+  ⑤ `path` 只校验是字符串,**没做**§2.2 说的「路径规范化」——相对路径落在
+  哪里现在由 step 自己定(P0-08 的 `screen.capture_window` 已在办公 PC 上
+  验过),P1-18 / P1-20 决定要不要收回 runner;`Test-Runner.ps1` 里
+  「plain with-values pass through」这条断言就是这个决定的守卫。
 
-### [ ] P1-03 [整块] kernel/Runner.ps1 主体
+### [x] P1-03 [整块] kernel/Runner.ps1 主体
 - **估** 120min | **依赖** P1-01, P1-02 | **读** `spec/WORKFLOW-SCHEMA.md` §1,3,7
 - **做**:`setup` / `each` / `teardown` 三段;`source.select` 的五种 `pendingWhen`;
   `flow.foreach`(隐式)、`flow.if`(`when` 的四种形式)、`once: group`
@@ -898,7 +923,39 @@
   **排除 `provides`/`releases` 非空的 step 的历史记录**(`STEP-CONTRACT.md`
   §6.2,P0-R10 决定 7)——跨进程不继承,进程内 `once` 语义照旧。这条写错的
   后果是 compose 类工作流被 Ctrl+C 之后永久跑不完。
-### [ ] P1-04 [整块] Runner 的 onError + ledger
+- **已执行(2026-09-28)**:`kernel/Runner.ps1` 重写为主体(`Get-EbiWorkflow
+  Problems` 形状校验 → `setup` → `each` → `finally { teardown }`),
+  `kernel/Worklist.ps1`(新,纯:`Select-EbiWorklistRows` 就是 runner 的
+  `source.select` **和** P1-26 `table.select` 共用的那一个函数;五种
+  `pendingWhen` 解析、`verdict.values` 正反翻译、位掩码按名/按数、
+  `Sort-EbiWorklistRows` 稳定排序),`kernel/Context.ps1` 追加 `when` 的四种
+  形式(`ConvertFrom-EbiWhen` / `Test-EbiWhen`)。`Tests/Test-Runner.ps1` 211 例
+  (原 P0-07 用例全保留)、`Tests/Test-Worklist.ps1` 60 例、`Test-Context.ps1`
+  +24 例。卡面两条完成判据都在 `Test-Runner.ps1` 里:4 行 fixture 的
+  setup+each 跑通(模板 vars / page / item / item.key / item.keySafe / run /
+  steps 全部命中),`once:"group"` 下 JOB_A 的第 2 条 item 引用到第 1 条跑出的
+  输出。决定了几条卡面没写死的细节:① worklist 资源的内存形状定为
+  `@{ path; columns; rows = @(hashtable...) }`(P1-24 `table.load` 照此产出);
+  ② 工作流形状问题是新增保留 id **`workflow_invalid`**(进 §3.1 的表),
+  第一步之前一次列全;`{{}}` 运行期解析失败归 `input_invalid`(message 带
+  `template {{路径}}`);③ `schema: 1` 从现在起必填(P0-R15),
+  `workflows/spike.capture_window.json` 补上;④ `each` 里一步失败只终止**那条
+  item**(余步记 `skip`),run 继续下一条——P1-04 的 onError 策略落地前的默认
+  行为;`operator_quit` 已转成保留 id `cancelled`(不再跑后续 item,未到的
+  item 记 `skip`,`teardown` 照 §1.1 跑,`ebi.ps1` 退出码 3 改看 `cancelled`);
+  ⑤ `once:"group"` 的组内跳过在本卡先用进程内的 `groupOutputs` 表,不写 ledger
+  ——P1-04 落 ledger 时把它换成 (group, step) 记录;`once:"groupEnd"` 本卡
+  只校验形状,执行是 P1-04;⑥ `empty` = 空 / `0` / 逻辑值 `pending`,空单元格
+  永远读作空(即便 `values` 里 `unknown: ""`);⑦ `bit !<名>` 和 `bit !<数>`
+  都收(P1-28 改 spec 时二选一或保留两种);⑧ `when` 的字面量只能是单个
+  token 或引号串——`a == 3 && b == 4` 被拒,不会被读成字面量 `3 && b == 4`;
+  ⑨ `-Profile` 由调用方传 hashtable(P2-01 才从 `profiles/<name>/` 加载),
+  `-Vars` / `-Operator` / `-Only` / `-Limit` 先做成参数,P1-10 接 CLI。
+  **撞出两处 PS 坑**,都记在代码里:`$vars` 和参数 `$Vars` 是同一个变量
+  (大小写不敏感),改名 `$wfVars`;`Invoke-EbiStepCall` 因为要 dot-source
+  `Import-EbiStep`,自己也必须被 dot-source 调用,局部状态全部收进一个
+  `$ebiCall` hashtable 以免污染 `Invoke-EbiWorkflow` 的变量。
+### [x] P1-04 [整块] Runner 的 onError + ledger
 - **估** 120min | **依赖** P1-03, P0-R3, P0-R5 | **读** `spec/WORKFLOW-SCHEMA.md` §6;`STEP-CONTRACT.md` §6
 - **做**:四种 policy(`retry` 退避 / `ask` / `skip` / `fail`)+ **`byFailure` 按失败
   id 覆盖;`retry` 只重试 manifest 标了 `transient` 的失败**(P0-R5);
@@ -922,25 +979,80 @@
   **中途 Ctrl+C 后 resume,`each` 里 `once:"group"` 注册的工作簿会被重新
   注册,后续 item 不报"名字未注册"**(P0-R10 决定 7,推演见
   `WORKFLOW-SCHEMA.md` §7.6)
+- **已执行(2026-09-28)**:`kernel/Ledger.ps1`(新:`run/<runId>/ledger.jsonl`
+  的键 `item:<key>|<step>` / `group:<组>|<step>`、读(同键后写者胜)、追加、
+  `run.json` 读写、`Find-EbiUnfinishedRuns`),`kernel/Runner.ps1` 加
+  `Invoke-EbiStepWithPolicy`(ledger 重放 → destructive 确认关卡 → 按策略
+  尝试)。`Tests/Test-Runner.ps1` 305 例、`Tests/Test-Ledger.ps1` 31 例。
+  卡面完成判据逐条:中断后 `-Resume` 同一 runId,已完成的 (item, step) 记
+  `replayed` 不再执行(`fake.count` 的计数文件证明),重放的输出被后续步引用
+  到;`timeout` 退避重试而 `not_found` 直接降到 `ask`;`confirm:false` 跳过
+  自动关卡;`once:"groupEnd"` 在组尾触发一次且仅一次,最后一条 item 被
+  `skip` 策略跳过时照跑;`with.as` 撞活名 → `session_name_taken`(P0-07 的
+  用例原样);resume 时 `once:"group"` 注册的资源在两个组里都真执行了
+  `open`/`close`,中间的 item 全部重放,新 item 不报 `session_missing`。决定了
+  几条卡面没写死的细节:① 问人走一个 `-AskHandler` scriptblock(两种问题
+  形状 `error` → r/s/q、`confirm` → y/n/q,写在 `Invoke-EbiDefaultAsk` 的注释
+  里,P1-05 的面板只替换渲染);默认实现是控制台提示,**DryRun 或标准输入被
+  重定向(CI、计划任务)时自答**——error 答 s、confirm 答 y,并打印原因,
+  绝不挂在 `Read-Host` 上(第一版就是这么挂死的);② `retry` 用尽 → `ask`;
+  `retry` 对非 transient 的失败在解析策略时就降成 `ask`,`source` 字段记下
+  「retry refused」;③ `ask` 答 s / 策略 `skip` / confirm 答 n 都是「放弃**这条
+  item**」(余步记 `skip`,item 状态 `skip`,worklist 不动,run 仍算 ok);
+  `setup`/`teardown` 里的放弃算未恢复的失败(下游没法信);④ `fail` 中止
+  时未到的 item 记 `skip` + 「run aborted」,`teardown` 照跑,`groupEnd`
+  **不**跑(§7.2:走 §1.1 的 teardown 保证);⑤ 只有 `each` 进 ledger,失败
+  的尝试永不进 ledger,`when` 跳过的进(`skipped` + 全 null 输出);⑥ `run.json`
+  开始时 `finished=false`、结束时按结果写 `finished`,`--resume` 校验工作流 id
+  一致;⑦ `warnings` 在 run 末尾按 `段[item]/step: code message` 逐条重印,
+  `result.warnings` 计数;⑧ `unsupported_in_spike` 已从 §3.1 的表和 runner
+  删除。**撞出一个 PS 坑**:函数参数不能叫 `$Args`(自动变量 `$args` 抢绑定,
+  报「Object[] 转不成 Hashtable」),改 `$RunArgs`。
 
-### [ ] P1-05 kernel/Gate.ps1
+### [x] P1-05 kernel/Gate.ps1
 - **估** 75min | **依赖** P1-03 | **读** `Plan.md` §3.2 第 4 点(人工关卡)
 - **做**:统一的 ASCII 关卡面板 —— **发生了什么 / 下一步会做什么 / 证据在哪 / 可选动作**。
   替代现在 27 个文件、77 处各写各的 `Read-Host`。
 - **完成**:面板在 80 列终端下不折行;`r/s/q/m` 四个动作都通
+- **已执行(2026-09-28)**:`kernel/Gate.ps1`:`Format-EbiGatePanel`(纯,四段
+  WHAT HAPPENED / NEXT / EVIDENCE / ACTIONS,80 列封闭方框,超长词硬断)、
+  `Read-EbiGateAnswer`(纯,r/s/q/m `<note>`/Enter=默认/数字选项,「s 后面
+  带字」判为手误不当 skip)、`Show-EbiGate`(读入可注入;DryRun 或标准输入
+  重定向时直接取 `-Auto` 动作并打印原因,20 次无效回答后同样取 `-Auto`,不
+  死循环)、`Invoke-EbiGateAsk`(runner `-AskHandler` 的两种问题形状在面板上
+  的实现)。`Runner.ps1` 的 `Invoke-EbiDefaultAsk` 现在委托给它。
+  `Tests/Test-Gate.ps1` 37 例。**面板文案用英文 ASCII**(源码铁律 R2;日文
+  的段名如果要,走 `ProjectLabels`/profile,P1-34 接 `human.*` 时再定)。
+  旧工具 77 处 `Read-Host` 的替换随各 step 迁移逐条发生,不在本卡一次改。
 
-### [ ] P1-06 kernel/Docs.ps1
+### [x] P1-06 kernel/Docs.ps1
 - **估** 75min | **依赖** P1-02 | **读** `Plan.md` §5
 - **做**:扫 manifest → 生成 `docs/ebi-dance/CATALOG.md`(人读)+ `docs/ebi-dance/catalog.json`(Agent 读)。
 - **完成**:两份产物都生成;CATALOG.md 按 group 分节;catalog.json 能被 `ConvertFrom-Json` 读回
+- **已执行(2026-09-28)**:`kernel/Docs.ps1`(`Get-EbiCatalogEntries` →
+  `ConvertTo-EbiCatalogData` / `ConvertTo-EbiCatalogJsonText` +
+  `Format-EbiCatalogMarkdown`,`Write-EbiCatalog` 一次写两份),产物
+  `docs/ebi-dance/CATALOG.md` + `catalog.json` **已提交**,`Tests/Test-Catalog.ps1`
+  36 例,其中「已提交的两份 == 现场重新生成」是常驻断言——manifest 一改而
+  没重跑 `Write-EbiCatalog` 就红。决定:① 输出不带时间戳、所有字典键排序
+  (`ConvertTo-EbiSortedKeys`),同一份代码在任何进程里生成的字节一致;
+  ② 读不出的 step 文件进 `broken` 段而不是消失;不在九个组里的 step 也照
+  渲染(契约检查器负责报组名错);③ CATALOG.md 里每个 step 的 example 渲染成
+  带 `id` 的 JSON 调用,过 `Test-Docs.ps1` 的示例规则;④ `file` 字段给出
+  `modules/<group>/<use>.ps1` 相对路径。
 
 ## CLI(4 张)
 
-### [ ] P1-07 ebi help
+### [x] P1-07 ebi help
 - **估** 45min | **依赖** P1-06 | **做**:`ebi help` 分组列全部 step;`ebi help <id>` 渲染单个 manifest
 - **完成**:输出纯 ASCII,80 列不折行
+- **已执行(2026-09-28)**:`kernel/Help.ps1`(`Format-EbiHelpList` 按组一行一
+  step,带 `[fallback]` / `[DESTRUCTIVE]` 标记;`Format-EbiHelpStep` 单个
+  manifest 全量渲染,长描述按 80 列折行;`Find-EbiHelpEntry`),`ebi.ps1 help
+  [<step>]` 接线。`Tests/Test-Cli.ps1` 覆盖(含对真实 `screen.capture_window`
+  manifest 的 80 列断言)。
 
-### [ ] P1-08 ebi lint
+### [x] P1-08 ebi lint
 - **估** 90min | **依赖** P1-01, P1-02, P0-R6 | **读** `spec/WORKFLOW-SCHEMA.md` §9
 - **做**:§9 的 9 项静态检查全实现,包括 fallback tier 警告和 `confirm:false` 警告。
   评审追加:`page` 绑定解析得到(P0-R6);`inputs` 的 `sessionKind`/`provides`
@@ -954,30 +1066,92 @@
   已有工作流集体变红);`once:"groupEnd"` 只在 `source.groupBy` 有值时合法
   (P0-R10 第四轮)。
 - **完成**:对一份故意写错的 workflow,全部检查项都能报出来
+- **已执行(2026-09-28)**:`kernel/Lint.ps1`:`Invoke-EbiLint`(纯,输入
+  workflow + `use -> manifest` 表 + profile + mustRelease 表)→ `errors` /
+  `warnings` 各带 `where`。第一遍直接复用 runner 的 `Get-EbiWorkflowProblems`
+  (lint 和 runner 对形状问题永远一致),然后按执行顺序走三段:`use` 在
+  catalog 里;`with` 的未声明参数 / 缺 `required` / 字面量类型与 `enum`
+  (模板值静态无法定型,跳过);每个 `{{}}` 解析得到(`vars` 键、`run` 键、
+  `item` 只在 `each`、`page` 需要顶层绑定、`profile`/`page` 路径用
+  `Context.ps1` 的 `Resolve-EbiPath` 对已加载 profile 静态求值、`steps.<id>`
+  必须是同段更早的 step);Session 配平(`as` 只能出现在 `provides` 的 step
+  上、**且 `provides` 的调用必须写 `as`**(P0-R17)、活名不重复注册、每个
+  `type='session'` 输入是字面量且由更早的同种类 `as` 注册过、`source.table`
+  在 `setup` 里由 `provides worklist` 注册、`mustRelease=$true` 的种类必须在
+  后面被释放——种类表从 `spec/STEP-CONTRACT.md` §3.4 现场解析,读不到就
+  警告「释放检查跳过」而不是当没有);`setup` 与 `provides`/`releases` 的
+  step 必须幂等;`byFailure` 的 id 必须在 manifest 或保留表里、`retry` 只能
+  用在 transient 的 id 上(顶层按所有用到的 manifest 并集判)。警告:
+  `tier: fallback`、`destructive` + `confirm:false`、`needs excel/browser/
+  calibrated:*`、没加载 profile、`item.<列>` 不在 profile 的列声明里。
+  Profile 侧:`page` 存在、`key.columns` 与 `role: key` 互相一致。
+  `Tests/Test-Cli.ps1`:一份故意写错的 workflow 报出 23 类错误 + 4 类警告,
+  一份正确的零错误。**没做**:§9 最后一条「key 比较绕过 `table.key`」要等
+  P1-27 有了唯一的比较入口才有判据。
 
-### [ ] P1-09 ebi explain
+### [x] P1-09 ebi explain
 - **估** 90min | **依赖** P1-03 | **读** `Plan.md` §9(输出样例)
 - **做**:渲染成 ASCII 执行计划,标出每步的 effects、人工关卡数、破坏性操作数、是否用到降级层
 - **完成**:输出和 `Plan.md` §9 的样例形状一致;显示 `list(転送状態一覧)` 这种中性名+显示名
+- **已执行(2026-09-28)**:`kernel/Explain.ps1`(`Format-EbiExplain`,纯):
+  标题行(id -- title,版本,profile)、`page: <名> = <role>(<label>)`(role
+  和 label 来自 profile 的 `pages.json`;没有 profile 就只给名字,page 不在
+  profile 里则标出来)、`+ source:` 行、三段各一行一 step
+  (`[effects] id use summary   细节`,细节 = path 型输入 `-> …`、session
+  名、带模板的短文本、`as`、`when`、`once`、`confirm:false`),页脚
+  `onError / gates / destructive / fallback tier`(不在 catalog 里的 step 显示
+  `[?    ]` 并计数)。**框线用 ASCII**(`+`/`|`),不用 `Plan.md` 样例里的
+  制表符——源码铁律 R2,而且 cp932 控制台不一定显示得出来;形状一致即可。
+  `gates` 数的是 `human.*` 组的调用。
 
-### [ ] P1-10 ebi dryrun / run / doctor
+### [x] P1-10 ebi dryrun / run / doctor
 - **估** 75min | **依赖** P1-04 | **做**:三个子命令接线;`doctor` 检查 PS 版本、Excel COM、Edge、编码策略
 - ⚠ (第六轮,P0-R16)`run` 还要接 `--resume [<runId>]` / `--only <key,...>` /
   `--operator`,并在启动时写 `run/<runId>/run.json`;有未完成 run 而没写
   `--resume` 时提示,不静默新建
 - **完成**:`dryrun` 不碰真实系统就能走完全流程
+- **已执行(2026-09-28)**:`ebi.ps1` 重写:`help [<step>]` / `lint` / `explain` /
+  `dryrun` / `run` / `doctor` / `catalog`(重新生成 CATALOG),`run` 的
+  `-Resume [-RunId]`(不给 id 取该工作流最近一次未完成的 run)、`-Only k1,k2`、
+  `-Operator`、`-Limit`、`-Var k=v`、`-Profile <名|目录>`(默认取工作流的
+  `profile` 字段,`none` = 不加载);有未完成 run 而没写 `-Resume` 时用
+  Gate 面板问 r/n/q(无控制台时默认 n,新建并打印原因),不静默新建;
+  `run.json` 由 runner 落盘(P1-04)。`doctor`:PS 版本、Excel COM(真建
+  `Excel.Application` 再 Quit)、Edge(进程或安装路径)、编码策略(调
+  `Check-Encoding.ps1`)、step catalog 能否全部加载、spec 种类表可读、工作
+  目录下未完成的 run;非 Windows 上 COM/Edge 项标 WARN 跳过。顺带做了
+  **`kernel/Profile.ps1`**(`Read-EbiProfile`:`profiles/<name>/*.json` 每个
+  文件一个顶层键 + `<WorkDir>/ebi.local.json` 深合并覆盖,缺文件只列
+  `missing` 不报错;`Merge-EbiHashtable`;`Resolve-EbiProfileDir`)——加载
+  逻辑没有卡,P2-01 只做 profile 内容。退出码:0 / 1 失败 / 2 用法 / 3 取消。
+  `Tests/Test-Cli.ps1` 95 例,其中 `ebi.ps1` 本身在子进程里跑
+  help / lint / explain / dryrun / run / -Resume / doctor。
 
 ## browser 组(7 张,11 个 step)
 
-### [ ] P1-11 browser.ensure + browser.focus_body
+### [x] P1-11 browser.ensure + browser.focus_body
 - **估** 60min | **抄** `Common.ps1` `Activate-EdgeWindow` / `Click-PageBody`
 - **注意**:进程句柄优先、标题匹配只做回退、两条路都失败要 `[WARN]`(旧版静默"激活"了随便哪个前台窗口)
 - ⚠ (第六轮,P0-R12)`browser.ensure` 带 `process` 输入(默认 `msedge`),
   df.exe / Excel 窗口迁移时复用;`browser.focus_body` 带 `window` Session 输入
   并在点击前核对前台
 - **完成**:manifest 过 lint;dryrun 打印正确
+- **已执行(2026-09-28)**:`kernel/Native.ps1` 新增——Win32 / SendKeys /
+  剪贴板**唯一**的绑定处(`Get-EbiNative` 惰性 Add-Type;`Set-EbiForeground`
+  = 还原窗口 + `SetForegroundWindow` + **`GetForegroundWindow` 核对**,一次重试,
+  不等则 `@{ok=$false}`;`Get-EbiWindowRect` / `Send-EbiKeys` / `Read-EbiPageText`
+  (Ctrl+A/C/Esc → 剪贴板)/ `Invoke-EbiClick` / `Set-EbiClipboardText` /
+  `Resolve-EbiWorkPath`(相对路径落 WorkDir,P0-08 的规则)/
+  `Write-EbiTextFile`)。step 用 `. (Join-Path $PSScriptRoot
+  '..\..\kernel\Native.ps1')` 共享——step 不许调 step,但可以共用 kernel 库
+  (和 P1-27 的 `Key.ps1` 同一条规则)。`browser.ensure` 改用它,窗口找到但
+  前台核对失败新增 `foreground_lost`(旧版只 SetForeground 不核对)。
+  `browser.focus_body`:`window` Session 输入,先 `Set-EbiForeground` 再按
+  `offsetX/offsetY` 点窗口内(默认 150/150),`BrowserFocusBody-Point` 纯。
+  DryRun 一行说明,不碰 Win32(Linux CI 上每个 step 都 dryrun 过,
+  `Tests/Test-Steps.ps1`)。
 
-### [ ] P1-12 browser.send_keys + tab_to + fill + submit
+### [x] P1-12 browser.send_keys + tab_to + fill + submit
 - **估** 75min | **抄** `Common.ps1` `Send-Key` / `Send-Tab` / `Send-ShiftTab` / `Paste-Replace` / `Send-Enter`
   ⚠ 少不了 `Send-ShiftTab`(`Common.ps1:174`):`spec/PROFILE-SCHEMA.md` §3.0
   写明 HM 的按键序列是 `Tab n → 粘贴 → Shift+Tab m → 回车`,没有它这条序列
@@ -987,68 +1161,150 @@
   `window` 输入,发键前 `SetForegroundWindow` + 核对,不等则 `foreground_lost`;
   `fill` / `submit` 带可选 `verifyChange`(替代原 P4-19 的 `verify_action`)
 - **完成**:4 个 manifest 过 lint;全局变量依赖为 0
+- **已执行(2026-09-28)**:四个 step 都带 `window` Session 输入,发键前
+  `Set-EbiForeground` 核对,不等 → `foreground_lost`(transient);时序全部是
+  `waitMs` 输入,`$Global:Timing` 引用 0。`browser.send_keys`(输入叫
+  **`sequence`** 不叫 `keys`,见下)、`browser.tab_to`(`times` + `shift`,一个
+  step 两个方向,`+{TAB}`)、`browser.fill`(剪贴板 + `^{a}` + `^v`;`verifyChange`
+  = 动作前后 `Read-EbiPageText` 比较,没变 → `no_effect`)、`browser.submit`
+  (`{ENTER}` + `verifyChange`)。**顺带一条契约规则 `reserved_name`**:
+  inputs/outputs 不许叫 `count` / `keys` / `values` / `item` 等 `[hashtable]`
+  成员名——`keys` 让所有读 manifest 的 `$with.Keys` 拿到条目而不是键集合,
+  `count` 让 `Docs.ps1` 的 `$inputs.Count` 变成 hashtable 直接抛;检查器自己
+  改成 `GetEnumerator()` 遍历,`STEP-CONTRACT.md` §7 加了这条。
 
-### [ ] P1-13 browser.read_text
+### [x] P1-13 browser.read_text
 - **估** 45min | **抄** `Read-PageText.ps1`
 - **完成**:能把 Ctrl+A 文本返回,并可选归档到指定路径
+- **已执行(2026-09-28)**:`browser.read_text`:`Read-EbiPageText`
+  (Ctrl+A → Ctrl+C → Esc → 剪贴板),`selectWaitMs` / `copyWaitMs` 输入,
+  `archiveTo`(相对路径落 WorkDir,UTF-8 无 BOM)。空剪贴板是 warning
+  `empty_text` 不是失败——等文本是 `browser.wait_for` 的事。
 
-### [ ] P1-14 browser.wait_for
+### [x] P1-14 browser.wait_for
 - **估** 75min | **抄** `MqSnap.ps1 Wait-MqPageReady`(**去掉 MQ 特有的硬编码**)
 - **做**:轮询页面文本直到 `contains` 匹配或超时;可选 `archiveTo` 同时留档
 - **注意**:归档是**强制的最佳实践** —— 有文本就永远不用 OCR(`Plan.md` §6.1)
 - **完成**:超时返回 `failure='timeout'` 而不是抛异常
+- **已执行(2026-09-28)**:`browser.wait_for`:轮询 `Read-EbiPageText` 直到
+  `contains`(序数、区分大小写,`BrowserWaitFor-Matches` 纯)或 `timeoutSec`,
+  超时返回 `failure='timeout'`(transient)不抛;**无论命中与否**最后一次文本都
+  写到 `archiveTo`——超时也留下可诊断的页面文本。MQ 特有的页面种类判断不在
+  这里(是 `browser.assert_page`)。
 
-### [ ] P1-15 browser.assert_page
+### [x] P1-15 browser.assert_page
 - **估** 60min | **抄** `SnapVerify.ps1 Get-SnapPageKind`;**读** `spec/PROFILE-SCHEMA.md` §3.1
 - **做**:按 fingerprint 判 `ok` / `loading` / `empty` / `expired` / 未知
 - **注意**:**未知页面必须失败,绝不允许继续截图** —— 这是最坏的一类失败(看起来成功)
 - **完成**:5 种页面状态各有一个 fixture 单测
+- **已执行(2026-09-28)**:`browser.assert_page`(`effects='pure'`,吃
+  `text` + `fingerprint` map):`BrowserAssertPage-Classify` 纯——空白 →
+  loading;`expired` / `empty` / `loading` 任一串命中 → 该类;`ok` 列表**全部**
+  命中 → ok;否则 unknown。**除 ok 外一律失败**(`page_loading` transient,
+  `page_empty` / `page_expired` / `page_unknown` 不 transient——重试同一页不会
+  变,得有人看)。`Tests/Test-Steps.ps1` 五种状态 + 空白 + 单串 fingerprint +
+  「没有 ok 列表永不 ok」各一例。
 
-### [ ] P1-16 browser.navigate
+### [x] P1-16 browser.navigate
 - **估** 45min | **做**:Ctrl+L 粘贴 URL 回车;URL 为空时降级为提示人工打开
+- **已执行(2026-09-28)**:`browser.navigate`:剪贴板放 URL → `^{l}` →
+  `^v` → `{ENTER}`,可选 `verifyChange`。URL 为空 → `ok` + `navigated=false` +
+  warning `no_url`,不发任何键(页面由 `human.prepare` 关卡让人打开)。
 
-### [ ] P1-17 browser.find
+### [x] P1-17 browser.find
 - **估** 60min | **做**:Ctrl+F 查找**精确串**,返回是否命中;可选 Esc 关闭
 - **注意**:Ctrl+F 是**子串搜索,会停在页面列出的第一行** —— 所以调用方必须传完整的、
   已经由 `verify.match_record` 选定的那一行的标识,不能传裸 key(旧工具在这栽过)
+- **已执行(2026-09-28)**:`browser.find`:先读页面文本判 `hit`(SendKeys
+  读不到查找条,所以命中与否**从页面文本判**),再剪贴板 + `^{f}` + `^v` +
+  `{ENTER}`,可选 `closeAfter`(Esc)。未命中不是失败:`hit=false` 交给
+  `verify.assert` / `human.gate` 决定。manifest notes 明写:传 `verify.match_record`
+  选定那一行的完整标识,不传裸 key。
 
 ## screen 组(4 张,5 个 step)
 
-### [ ] P1-18 screen.capture_window + capture_region
+### [x] P1-18 screen.capture_window + capture_region
 - **估** 60min | **抄** `Common.ps1 Take-WindowScreenshot` + `ScreenRegion.ps1 Resolve-ScreenRegion`
 - **完成**:region 越界时自动 clamp 并在返回值里报告 clamped
+- **已执行(2026-09-28)**:`kernel/Image.ps1` 新增——GDI+ **唯一**的落点
+  (`Save-EbiScreenRegionPng` / `Invoke-EbiCropPng` / `Get-EbiPngSize`;纯几何
+  `Get-EbiCropGeometry` / `Resolve-EbiCropSides` / `Resolve-EbiScreenRegion`)。
+  踩坑记录:Linux pwsh 上**任何函数体里出现 `[System.Drawing.*]` 字面量,函数
+  第一次被调用就抛 PlatformNotSupported**(编译期绑定静态成员),哪怕那行不
+  执行——所以每个入口拆成「纯检查」+ `*Core`(只在真路径调),DryRun 和文件
+  不存在的分支永远不进 Core。`screen.capture_window` 改走 `Native.ps1` +
+  `Image.ps1`(自带的 Add-Type 删掉);`screen.capture_region`:`x/y/width/
+  height` 按虚拟屏幕 `Resolve-EbiScreenRegion` 夹紧,输出 `clamped` +
+  `clampedEdges` 并发 warning `region_clamped`,整块在屏外 → `region_empty`。
+  Registry 的「相对路径落哪里由 step 决定,等 P1-18/P1-20」到此收口:
+  `Resolve-EbiWorkPath`,所有写文件的 step 共用。
 
-### [ ] P1-19 screen.fit_window
+### [x] P1-19 screen.fit_window
 - **估** 45min | **抄** `MqSnap.ps1 Move-EdgeAwayFromBorder` + `WinAPI MoveWindow`
+- **已执行(2026-09-28)**:`screen.fit_window`:`window` Session 输入,
+  `x/y` 默认 40,`width/height` 必填;先 `SW_RESTORE`(最大化窗口无视
+  MoveWindow)再 `MoveWindow`,输出用 `GetWindowRect` **读回**的实际位置——
+  有最小尺寸的窗口报它自己停在哪。
 
-### [ ] P1-20 screen.crop —— **消掉 4 份重复**
+### [x] P1-20 screen.crop —— **消掉 4 份重复**
 - **估** 60min | **抄** `ScreenRegion.ps1 Resolve-DirectionalCrop` + 任一份 `Invoke-CropPng`
 - **做**:四边裁剪;per-role 覆盖走 profile
 - **完成**:`grep -c "function Invoke-CropPng" *.ps1` 在迁移完成后为 0(现在是 4)
 - **参考**:`spec/STEP-CONTRACT.md` §8 就是这张卡的完整答案
+- **已执行(2026-09-28)**:`screen.crop` 按 §8 的 manifest 落地(`out`
+  默认空 = 原地),实际裁剪是 `Invoke-EbiCropPng`(临时文件 + Move,四边全 0
+  时原样复制/不动)。**四份 `Invoke-CropPng` 全部删除**:`HmSnap.ps1` /
+  `MqSnap.ps1` / `JenkinsSnap.ps1` / `Crop-Snap.ps1` 改 dot-source
+  `kernel/Image.ps1`,调用点改 `$cropResult = Invoke-EbiCropPng ...; if
+  (-not $cropResult.ok) { throw $cropResult.message }`(旧的 try/catch 不动);
+  `-CropPx` + `-1` 继承的旧约定由 `Resolve-EbiCropSides` 保留。
+  `grep -c "function Invoke-CropPng" *.ps1` = 0,`Tests/Test-Steps.ps1` 守着。
+  per-page 裁剪量走 profile → 输入。
 
-### [ ] P1-21 screen.save
+### [x] P1-21 screen.save
 - **估** 45min | **做**:按命名模板定位保存;支持 `<keySafe>__<tag>.png` 的多张形式
   (文件名一律用 P0-R4 的 `keySafe`,不用裸 key)
 - **读** `spec/VOCABULARY.md` §2.5
 - ⚠ (第六轮,P0-R14)同一张卡顺带做 `file.write_json` / `file.read_json` 两个
   薄 step(侧车 `<keySafe>.meta.json` 的写和读,走 P1-35 的 `kernel/Json.ps1`);
   `read_json` 对不存在的文件返回 `ok` + `data=$null` + warning,不算失败
+- **已执行(2026-09-28)**:`screen.save`:`source` 移/复制到
+  `<dir>/<keySafe>[__<tag>].<ext>`,key 经 `ConvertTo-EbiKeySafeSegment` 折叠
+  (传了裸 key 也落到同一个名字,折叠过发 warning `key_folded`),`tag` 同样折叠。
+  `file.write_json`(`Write-EbiJson`,原子;先 `Test-EbiJsonSerializable`,
+  句柄/COM → `not_serializable`)和 `file.read_json`(不存在 → `ok` +
+  `data=$null` + warning `not_found`;存在但不是 JSON → `json_invalid`,那是
+  损坏不是缺席)都走 `kernel/Json.ps1`(R8)。
 
 ## file 组(2 张)
 
-### [ ] P1-22 file.find
+### [x] P1-22 file.find
 - **估** 75min | **依赖** P0-R4 | **抄** `WorkbookResolver.ps1 FullWidthFilenameResolver` + `MappingStore.ps1 Resolve-CorrelFilePath`
 - **做**:glob/key 查找,全角回退 + key 变体容忍(规范化调 `kernel/Key.ps1`,见 P1-27,
   自己不写比较)。**匹配到多个时按 P0-R4 的标准候选形状返回全部候选 + 证据**,不自己挑
 - **完成**:同名多文件时返回标准候选数组而不是单个
+- **已执行(2026-09-28)**:`file.find`(`effects='pure'`):`dir` + `key` +
+  `ext` + `glob` + `recurse` + `expect`(`one`|`any`)。匹配分层
+  `FileFind-Tier`:exact(词干相等)> stamped(文件带 `.yymmdd.hhmmssff`
+  戳而 key 不带,`MappingStore.Resolve-CorrelFilePath` 的规则)> base(反过来)>
+  fullWidth(`kernel/Key.ps1` 的 `ConvertTo-EbiHalfWidth` 折叠后相等,
+  `WorkbookResolver` 的规则)> glob(没有 key)——**取第一个有命中的层**,
+  比较规则只从 `Key.ps1` 拿,自己不写 `-eq`。多个命中且 `expect=one` →
+  `ambiguous` + `candidates` 按 P0-R4 标准形状(`id`/`candidate`/`evidence{source,
+  modifiedAt,size,matchedBy}` + `suggestion`(最新)+ `doubts`),**step 不挑**。
+  `file_not_found` 定为 transient(下载还没落地是常态)。全角命中发 warning
+  `full_width_name`。DryRun 目录不存在 → warning 不失败。
 
-### [ ] P1-23 file.assert_exists
+### [x] P1-23 file.assert_exists
 - **估** 30min | **做**:存在性断言,不存在按策略走 gate
+- **已执行(2026-09-28)**:`file.assert_exists`:`path` + `kind`
+  (`any`|`file`|`dir`),不存在 → `file_not_found`(transient),由工作流的
+  onError 策略决定 retry / skip / ask——step 只陈述事实。DryRun 下不存在是
+  warning `would_fail`,`ebi dryrun` 在没有任何文件的机器上也能走完全流程。
 
 ## table / progress 组(6 张)
 
-### [ ] P1-24 table.load + table.save
+### [x] P1-24 table.load + table.save
 - **估** 60min | **依赖** P0-R4 | **抄** `MappingStore.ps1 Import-Mapping` / `Export-MappingAtomic`
 - **注意**:CSV 是 UTF-8 **带 BOM**(Excel 需要);写入必须原子(临时文件 + 改名)。
   `table.load` 必须对全表算一遍 `keySafe`(`PROFILE-SCHEMA.md` §6.6),撞车的行
@@ -1058,19 +1314,37 @@
 - ⚠ (第六轮,P0-R11)`table.load` `provides=@('worklist')`,在 `setup` 里
   `with.as` 注册;outputs 只有 `path` / `rowCount` / `columns`,整张表不进
   outputs。`table.save` 通过 `sessionKind='worklist'` 输入拿表
+- **已执行(2026-09-28)**:`kernel/Table.ps1` 新增(`Read-EbiCsv` → 列表 +
+  hashtable 行;`Write-EbiCsvAtomic` 自己拼 CSV 文本、**UTF-8 带 BOM**、CRLF、
+  全字段加引号、临时文件 + Move 重试——不用 `Export-Csv -Encoding UTF8`,因为
+  PS 5.1 写 BOM 而 pwsh 7 不写;`Save-EbiWorklist` 是每个写表 step 返回前的
+  那次原子落盘)。`table.load`:`provides=@('worklist')`,outputs 只有
+  `path` / `rowCount` / `columns`;profile 声明而文件没有的列按 default 补齐
+  (warning `columns_added`);键列缺失 → `key_column_missing`;**全表算一遍
+  keySafe,撞车 → `key_collision` 并列出撞车的行**(`Find-EbiKeySafeCollisions`,
+  `Key.ps1`)。DryRun 也真读文件(只读);文件不在 → 空表 + warning。
+  `table.save`:`worklist` Session 输入 + 可选 `path`。
 
-### [ ] P1-25 table.ensure_columns
+### [x] P1-25 table.ensure_columns
 - **估** 45min | **抄** `MappingStore.ps1 Ensure-MappingColumns`;列 schema 来自 profile
+- **已执行(2026-09-28)**:`table.ensure_columns`:profile 的列 schema +
+  `columns` map(名 → 默认值)里缺的都补上,补了就原子落盘;幂等
+  (第二次 `added=@()`)。
 
-### [ ] P1-26 table.select
+### [x] P1-26 table.select
 - **估** 60min | **抄** `MappingStore.ps1 Get-PendingRows`
 - **注意**:`ng` **仍算 pending**(`spec/WORKFLOW-SCHEMA.md` §3.2)—— 旧的
   `Get-PendingRows` 把任何非 `0` 都当已完成,会把 NG 行藏起来。
   同一份筛选实现同时供 runner 的 `source.select` 用(P1-03),不写两份
 - ⚠ (第六轮,P0-R11)`source.table` 是 Session 实例名;pending 判断经 profile
   的 `verdict.values` 映射后再比较,混跑期的旧编码 `1` / `2` / `0` 才对得上
+- **已执行(2026-09-28)**:`table.select` 直接调 `kernel/Worklist.ps1` 的
+  `Select-EbiWorklistRows`(runner 的 `source.select` 用的同一个函数,没有第二份):
+  五种 `pendingWhen`,经 profile `verdict.values` 翻译后比较,`ng`(存储码 2)
+  仍是 pending;`only` / `limit`;返回的是行的**副本**(改副本不碰表)。
+  输出 `keyList` 不叫 `keys`(P1-12 的 `reserved_name` 规则)。
 
-### [ ] P1-27 [整块] kernel/Key.ps1 + table.key
+### [x] P1-27 [整块] kernel/Key.ps1 + table.key
 - **估** 120min | **依赖** P1-26, P0-R4 | **读** `spec/PROFILE-SCHEMA.md` §6 全节
 - **做**:核心是 **`kernel/Key.ps1` 纯库**(无 param(),可被任何 step dot-source):
   复合主键(`key.columns` 数组)规范化、`confirmedRules` 应用、候选排序 + 证据
@@ -1083,8 +1357,24 @@
   P0-R4 落 `<WorkDir>/ebi.local.json` 待回填。
 - **完成**:单测覆盖 —— 单列键、复合键、后缀变体、全角、大小写、
   「4 个候选无法确定」返回完整候选表;`grep -rn '\-eq' modules/` 里没有 key 比较
+- **已执行(2026-09-28)**:`kernel/Key.ps1` 的匹配半边:`Get-EbiKeyRules`
+  (profile `worklist.key.confirmedRules`,没有就默认三条:批次戳后缀 /
+  fullwidth / case-insensitive)、`ConvertTo-EbiKeyForm`(按层规范化:exact →
+  stripped(suffix/prefix 规则)→ fullwidth → case,**没声明的规则那一层不产生
+  新命中**)、`Get-EbiKeyMatchTier`、`Get-EbiKeyPartsTier`(复合键**逐列**比较,
+  行的层 = 最差的那列——`$` 锚定的后缀规则必须看到列尾而不是 `" / "` 拼接串)、
+  `Find-EbiKeyMatches`(取第一个有命中的层,返回该层全部命中)、
+  `Find-EbiKeySafeCollisions`、`New-EbiCandidateList`(P0-R4 标准形状的唯一
+  构造处)。`table.key` 只是包装:一个命中 → `match`/`index`/`matchedBy`;多个 →
+  `ambiguous` + candidates;没有 → `key_not_found`。**`file.find` / `table.set` /
+  `flow.checkpoint` / `verify.match_record` 全部改调它**,`file.find` 自己的分层
+  函数删掉。`Tests/Test-Steps.ps1` 加了守卫:`modules/` 下任何 step 源码里
+  `$key -eq <非空>` 一类的比较 = 失败(空值检查除外)。单测:单列 / 复合 /
+  后缀变体 / 全角 / 大小写 / 两个同层候选返回完整候选表。**没做**:歧义面板
+  答完后把新规则写进 `<WorkDir>/ebi.local.json`(`human.choose` 只输出
+  `learn=$true`),回填留给 P2。
 
-### [ ] P1-28 table.set + flow.checkpoint
+### [x] P1-28 table.set + flow.checkpoint
 - **估** 60min | **抄** `MappingStore.ps1 Update-MappingRows` / `Set-MappingBit`
 - **做**:位定义来自 profile 的 `bits`,不硬编码 1/2/4
 - **注意**:`pendingWhen` 的位掩码写法从 `"bit !3"`(数字)改成 **`"bit !<位名>"`**
@@ -1093,41 +1383,85 @@
 - ⚠ (第六轮,P0-R11 / P0-R13)写入前经 `verdict.values` 翻译成存储编码;
   `checkpoint` 的 `value` 来自 `steps.gate.out.code`,并用 `when` 跳过
   `action == skip` 的行(留 pending);每次写都原子落盘
+- **已执行(2026-09-28)**:`table.set`(`key` 空 = 当前行;`value` 经
+  `verdict.values` 翻译;`bit` 用**位名**,`Get-EbiWorklistBitValue` 查 profile
+  的 `bits`,没声明 → `bit_unknown`,绝不猜 1/2/4;`clear`;写完原子落盘,落盘
+  失败回滚内存)。`flow.checkpoint`(`value` 只收逻辑值 ok/ng/unknown/空,
+  写存储码 → `value_invalid`;`bit` 按名 OR 进去;行默认当前 item)。为此
+  runner 的 `$Ctx` 加了 **`Item`**(each 里当前行,setup/teardown 为 `$null`)和
+  `KeyColumns`,`STEP-CONTRACT.md` §3.2 表已加行;`WORKFLOW-SCHEMA.md` §3.1 的
+  `"bit !3"` 改成 **`"bit !<位名>"`**(纯数字只为迁移期保留)。
 
-### [ ] P1-29 progress.event + progress.status
+### [x] P1-29 progress.event + progress.status
 - **估** 60min | **抄** P0-03 的 Trace + `VerifyTool.ps1 Show-Status`
 - **做**:ASCII 进度表
+- **已执行(2026-09-28)**:`progress.event`(写 `run/<runId>/trace.jsonl`,
+  P0-03 的 `Write-TraceEvent`,`key` 默认当前 item;DryRun 不写)。
+  `progress.status`(ASCII 表:每个 verdict / bitmask 列的 total / done /
+  pending / ng,bitmask 列另列每个位的 done 数;判定用 runner 同一套
+  `Test-EbiRowPending` + `verdict.values`,所以这里的数就是 `ebi run` 会处理的
+  数;可选 `groupBy` 计数;outputs `lines` + `summary`)。
 
 ## verify 组(4 张)
 
-### [ ] P1-30 verify.parse_text —— delimited
+### [x] P1-30 verify.parse_text —— delimited
 - **估** 75min | **依赖** P0-R5 | **抄** `GfixJobList.ps1 ConvertFrom-GfixJobListText`;**读** `spec/PROFILE-SCHEMA.md` §4
 - **做**:分隔符表格,靠 `rowWhen` 正则识别数据行
 - **⚠ 必须**:未识别行走 P0-R5 的标准 **`warnings` 通道**(带行数和内容),
   不发明私有输出字段 —— runner 才会把它进 trace、进末尾汇总(静默丢行是旧工具
   最恶劣的 bug,光「返回了」不够,必须**有人看见**)
+- **已执行(2026-09-28)**:`kernel/Parse.ps1` 新增(四种 grammar 的纯实现 +
+  `ConvertTo-EbiDateTime`)。`delimited`:`delimiter`(`\t` / `ws`)、`rowWhen`
+  (`field` 可用序号或字段名 + `matches`)、`fields`;**没认出的非空行全部进
+  `unrecognized`(行号 + 原文)**,grammar 可声明 `ignore` 正则列表把预期噪音
+  (页脚之类)排除。`verify.parse_text` step:每条未识别行一条 warning
+  `unrecognized_line`(`data.line` / `data.text`),超过 `maxWarnings` 再加一条
+  `unrecognized_lines` 汇总——runner 会进 trace 和末尾汇总;outputs
+  `recordCount`(不叫 `count`)/ `unrecognized` / `names`;一条都没认出 →
+  `no_records`(transient,通常是页还没好)。
 
-### [ ] P1-31 verify.parse_text —— labeled + columns + regex
+### [x] P1-31 verify.parse_text —— labeled + columns + regex
 - **估** 90min | **抄** `SnapVerify.ps1 ConvertFrom-HmPageText` / `ConvertFrom-JenkinsListText`
 - **⚠ 必须**:时间格式用 `H:mm:ss` 单字符说明符,**不要 `HH`**
   (单位数小时的行曾被整批静默丢弃,导致"文件不在列表里"的误判)
 - **完成**:单位数小时的行有专门的回归单测
+- **已执行(2026-09-28)**:`labeled`(`pairs: name → { after, take: line|token }`,
+  永远一条记录,标签找不到 → 空值 + `missing` → step 的 warning
+  `label_missing`;值为空时取下一行);`columns`(`headerLine.contains` 定位表头,
+  `columns: name → [start, end]` 切列,没表头是错误不是零行);`regex`(命名捕获组
+  = 字段)。**时间**:`ConvertTo-EbiDateTime` 的格式表全部用 `H:mm:ss`
+  单字符说明符,`Tests/Test-VerifySteps.ps1` 有专门的回归:`9:50:03` 的行
+  必须被识别、`9:05` 比 `9:00` 新。
 
-### [ ] P1-32 verify.match_record
+### [x] P1-32 verify.match_record
 - **估** 75min | **依赖** P1-27 | **抄** `SnapVerify.ps1 Get-MatchedRowIndex` / `Select-JenkinsFileCandidate`
 - **做**:按 key 找行(dot-source `kernel/Key.ps1`,不自己写比较)、`tieBreak: newest`、
   多候选按 P0-R4 标准候选形状返回,走歧义流程
+- **已执行(2026-09-28)**:`verify.match_record`:`records` + `key` +
+  `field`(默认 `key`),比较走 `Find-EbiKeyMatches`(`Key.ps1`,无自写 `-eq`);
+  多个命中:`tieBreak=newest` 按 `timeField` 取最新(给了 `window` 时**窗口内
+  最新优先**,旧 `Get-MatchedRowIndex` 的规则)、`first`、`none` → `ambiguous` +
+  P0-R4 候选形状(证据:position / time / matchedBy);多命中但自动选了的
+  发 warning `several_matches`。`record_not_found` transient。
 
-### [ ] P1-33 verify.assert
+### [x] P1-33 verify.assert
 - **估** 90min | **读** `spec/PROFILE-SCHEMA.md` §5
 - **做**:规则表引擎,`op` 的 12 种(`equals`/`notEquals`/`in`/`notIn`/`matches`/
   `present`/`empty`/`within`/`gt`/`lt`/`gte`/`lte`);**`else` 只能是 `ng` 或
   `unknown`,校验时拒绝 `ok`**
 - **完成**:单测覆盖每种 op;`else: ok` 的规则表被拒绝并报错
+- **已执行(2026-09-28)**:`verify.assert`:12 种 op(`equals` / `notEquals` /
+  `in` / `notIn` / `matches` / `present` / `empty` / `within` / `gt` / `lt` /
+  `gte` / `lte`),按序第一条不满足的决定;数值 op 对读不成数字的值**永远不
+  通过**,`within` 对读不成时间的值同样(端点含);`VerifyAssert-Validate`
+  拒绝 `else: ok`(`rules_invalid`,消息引 §5.2)、第 13 种 op、缺 value、
+  坏 default。输出 **`reason`** 不叫 `message`——`message` 是返回值保留键
+  (§3.1),`WORKFLOW-SCHEMA.md` §8 示例和 `PROFILE-SCHEMA.md` §5.3 已改成
+  `{{steps.verdict.out.reason}}`。每种 op 各有单测,`else: ok` 被拒有单测。
 
 ## human 组(1 张)
 
-### [ ] P1-34 human.prepare + human.gate + human.choose
+### [x] P1-34 human.prepare + human.gate + human.choose
 - **估** 75min | **依赖** P1-05, P0-R4 | **做**:三个 step 接到 `kernel/Gate.ps1` 的面板
 - **注意**:`human.choose` 渲染 P0-R4 的**标准候选形状**(file.find / table.key /
   verify.match_record 返回的是同一个形状,渲染器只写一份);`human.gate` 的
@@ -1138,10 +1472,21 @@
   `action`(`pass` / `ok` / `ng` / `skip`);`q` 返回 `failure='operator_quit'`,
   runner 转成 `cancelled` 绕过 `onError`(`human.prepare` 已是这个写法)。
   三个 `human.*` step `effects='ui'`,返回后前台在控制台(P0-R12)
+- **已执行(2026-09-28)**:三个 step 都在 `kernel/Gate.ps1` 的 `Show-EbiGate`
+  上。`human.prepare` 改成面板(Enter=继续,q=`operator_quit`)。`human.gate`
+  **总是执行**:`code` 不在 `askWhen` → 直通 `action=pass`;在 → 面板
+  Enter/o=ok、n=ng、k=保持、s=skip(`code=''`)、`m <note>`、q=`operator_quit`;
+  outputs `code` / `action` / `note` 在 manifest 里声明,`flow.checkpoint` 的
+  `when: steps.gate.out.action != skip` 能引用;DryRun / 无控制台 → 保持原判定
+  (`keep`)。`human.choose`:P0-R4 形状的**唯一**渲染器(`#n 候选 [证据 k=v,…]`,
+  没证据写 `no evidence`;suggestion + doubts 放 NEXT 段),数字选一个 / n=都不是
+  / s=跳过 / q;人真选了之后问一次「存成规则?」→ `learn` 布尔输出(落盘
+  `ebi.local.json` 留给 P2);DryRun 取 suggestion,没有就 none。
+  `Tests/Test-VerifySteps.ps1` 用脚本化 Reader 驱动面板,不阻塞。
 
 ## kernel 补充(2 张,第六轮评审追加)
 
-### [ ] P1-35 kernel/Json.ps1 —— 唯一的 JSON 读写入口
+### [x] P1-35 kernel/Json.ps1 —— 唯一的 JSON 读写入口
 - **估** 60min | **依赖** P0-06 | **读** `ConfigOverlay.ps1` 的 `ConvertFrom-ConfigJson` /
   `ConvertTo-ConfigHashtable` / `ConvertFrom-JsonUnicodeEscape`
 - **问题**:PS 5.1 的 JSON 有四个坑,每个都在本仓库出过事或有专门的绕法:
@@ -1166,8 +1511,34 @@
   不截断、写出的文件无 BOM 且日文不是 `\uXXXX`;
   `grep -rn 'ConvertFrom-Json\|ConvertTo-Json' modules/ kernel/` 只命中
   `kernel/Json.ps1`
+- **已执行(2026-09-28)**:`kernel/Json.ps1`(`Read-EbiJson` / `Write-EbiJson`
+  / `ConvertFrom-EbiJson` / `ConvertTo-EbiJson` / `Add-EbiJsonLine` /
+  `Read-EbiJsonLines` / `ConvertTo-EbiHashtable`(从 Runner 搬来)/
+  `Test-EbiJsonSerializable`(从 Registry 搬来)/ `Get-EbiJsonDepth`),
+  `Tests/Test-Json.ps1` 87 例;`Trace.ps1` / `Runner.ps1` / `Registry.ps1`
+  全部改走它;铁律表新增 **R8**,`Tests/StepContract.ps1` 加 `direct_json`
+  规则(step 文件)+ `Test-StepContract.ps1` 对 `kernel/*.ps1` 逐个 grep。
+  决定了几条卡面没写死的细节:① 深度上限 20,**超过就抛**(`ConvertTo-
+  EbiJson` 是唯一抛异常的入口——静默截断正是这张卡要消灭的东西,字符串
+  返回值没地方放失败;`Write-EbiJson` / `Add-EbiJsonLine` 把它接成返回值,
+  trace 接成 `[trace WARN]`);② 解析时把文本包成 `{"v":<text>}` 再解,顶层
+  数组在 5.1 / 7 上都不会被管道拆开(`[[1,2]]` 和 `[1,2]` 拆开后分不清);
+  ③ 原子写 = 同目录临时文件 + `File.Replace`(目标已存在)/ `File.Move`;
+  备份路径要传 `[NullString]::Value`,传 `$null` 会被 PowerShell 变成 `''`
+  而被拒;④ `Read-EbiJsonLines` 把**中间**的坏行按行号报出来(`badLines`),
+  只把**最后一行**坏的当成「正在写」(`partial`)——不再有静默跳过;
+  `Read-TraceEvents` 因此改为返回 **hashtable**(不再是 PSCustomObject),
+  `Test-Trace.ps1` / `Test-Runner.ps1` 的读法同步改成索引;⑤ 改读法时撞出
+  runner 一个潜伏 bug:`Test-EbiStepReturn` 里 `$w = if (...) { $Return
+  ['warnings'] }` 会把**单元素数组拆成那个元素**,恰好一条 warning 时 trace
+  里写的是对象不是数组——旧测试没发现是因为 PSCustomObject 上 `[0]` 对非
+  数组返回自身。已修(显式 ArrayList),补断言。**偏离卡面一处**:
+  `modules/verify/SnapVerify.ps1`(P0-04 停在 `modules/` 的旧库,不是
+  step)还有一处 `ConvertTo-Json`,按「库文件豁免、列名可见」的既有规则处理
+  (和契约检查的豁免一致),没改它——它在办公 PC 上的 HmSnap/MqSnap 路径
+  在用,这张卡不碰生产路径;它改写成 step 时自然消掉。
 
-### [ ] P1-36 DryRun 合同测试(每个 step 在 CI 里至少真的跑一次)
+### [x] P1-36 DryRun 合同测试(每个 step 在 CI 里至少真的跑一次)
 - **估** 75min | **依赖** P1-01, P1-02 | **读** `spec/STEP-CONTRACT.md` §3.3,§7
 - **问题**:`spec/STEP-CONTRACT.md` §7 把 `ui`/`write`/`destructive` 的 step 定为
   "只做静态检查",于是 catalog 里过半的 step 在 CI 里**一行都不会被执行**——
@@ -1193,19 +1564,51 @@
   违规写法)。§7 的元规则说新增 manifest 侧规则要进清单,这两条漏了。
 
 ---
+- **已执行(2026-09-28)**:`Tests/StepDryRun.ps1`(dot-source 的 harness):
+  `ConvertTo-StepDryRunWith`(`example.with` 里的 `{{...}}` 按类型换成占位值——
+  `int` 100 / `bool` `$false` / `path` `fixture/<名>` / enum 取第一项 / 按输入名的
+  形状占位:`candidates` 给 P0-R4 形状、`grammar` 给一条 regex、`rules` 给一条
+  规则、`value` 给 `ok`、`code` 给 `unknown`——`type='session'` 的输入在假
+  `$Ctx.Session` 里按 `sessionKind` 注册假资源;示例带 `as` 的 provides step
+  Session 从空开始)+ `Invoke-StepDryRunCheck`(在函数自己的作用域里
+  `. Import-EbiStep`,过 P1-02 的 schema 校验,`$Ctx.DryRun=$true` 真调一次;
+  断言:返回 hashtable、`ok=$true`、过 `Test-EbiStepReturn`、**manifest
+  `outputs` 的每个键都在返回值里**、`Test-EbiJsonSerializable`、
+  ui/write/destructive 至少 `$Ctx.Log` 一句、工作目录没多出文件;抛异常也收成
+  一条 problem)。`Tests/Test-StepDryRun.ps1`:九个故意写坏的 fixture step
+  (漏 `path` → 报 `lacks output 'path'`;不说话;返回超过 20 层;`ok=$false`;
+  写了文件;抛异常;返回标量;pure step 不用说话)各报出对应问题,然后对
+  catalog 里全部 36 个 step 跑一遍——**全部通过**。`Tests/Test-Steps.ps1` 的
+  dryrun 段改调同一个 harness。顺手补的两条 manifest 规则进了
+  `Tests/StepContract.ps1` + `STEP-CONTRACT.md` §7:`foreground_needs_window`
+  (`needs` 含 `foreground` ⇒ 有 `sessionKind='window'` 输入)和
+  `provides_example_as`(`provides` 非空 ⇒ `example.with` 带 `as`);§7 的
+  测试要求表里 ui/write/destructive 那行从「只做静态检查」改成「静态检查 +
+  DryRun 合同测试」。
 
-# P2 — 对拍验证(10 张,1 张整块)
+# P2 — 对拍验证(10 张,1 张整块)—— 全部关闭(2026-09-28);P2-03 的真实页面调参和 P2-06 的 PNG 尺寸对拍两项留给办公 PC,已在卡上列明
 
 目标:**用新引擎重跑一条现有流程,产出和旧脚本逐项一致。**
 这一步会暴露契约的全部错误 —— **P1 的设计不必完美,P2 之后重构一次是计划内的。**
 
-### [ ] P2-01 profiles/host-open 骨架
+### [x] P2-01 profiles/host-open 骨架
 - **估** 60min | **依赖** P0-R1, P0-R4 | **读** `spec/PROFILE-SCHEMA.md` §1,2,6
 - **做**:`vocabulary.json`(side/列名映射)+ `worklist.json`(列 schema、复合键、
   位定义;key 只声明在这里)+ `pages.json` 骨架 —— **按 page 名建条目**
   (如 `transferStatus`(role list)、`fileList`(role list)),不按 role 建
+- **已执行(2026-09-28)**:`profiles/host-open/`:`vocabulary.json`(sides
+  GIFT/GFIX、五个 role 泛称、`columns.group/owner/deliverable`,没有 key)、
+  `pages.json`(§3.0 的五个 page 按 page 名建条目:`hmResult` record、
+  `transferStatus` / `fileList` / `jobList` list、`reportPreview` document;
+  fingerprint / tab 计数 / crop / `timeField`)、`worklist.json`(复合键
+  `Correl_ID_S` + `JOB_NAME`,三条 confirmedRules,**列名用旧 mapping CSV 的名字**
+  `GIFT_MQ_snap` 等,`verdict.values` = ok 1 / ng 2 / pending 0 / unknown 空,
+  P0-R11 混跑规则;bitmask 位名 gift/gfix/df)、`layout.json` 骨架、
+  `window.json`(浏览器尺寸,新加进 `PROFILE-SCHEMA.md` §1 的文件表,机器差异
+  走 `ebi.local.json`)。已知的洞写在 `profiles/host-open/README.md`:URL 空、
+  `expired` 指纹空(仓库里没有会话超时页文本)、三个 page 没 fixture。
 
-### [ ] P2-02 ebi grammar tune
+### [x] P2-02 ebi grammar tune
 - **估** 120min | **依赖** P2-08 | **读** `spec/PROFILE-SCHEMA.md` §4.1
 - **做**:交互式解析器调试器 —— 喂真实页面文本 → 渲染解析结果表格 →
   改参数即时重解析 → `s` 存进 profile **同时存成 fixture**
@@ -1213,23 +1616,68 @@
   脱敏门禁**(fixture 的原料是真实内网页面文本 —— 这一步会自动积累敏感文件,
   掩码不能等到 P5)
 - **完成**:调一次 grammar 自动留下一个回归测试
+- **已执行(2026-09-28)**:`kernel/GrammarTune.ps1`:`Format-EbiTuneView`
+  (grammar 摘要 + 前 N 行 ASCII 表 + **未识别行全部列出**)、`Edit-EbiTuneGrammar`
+  (d 分隔符 / r 行规则 / c 字段 / p 换 parser / i ignore / x regex / l lastNonEmpty
+  / h 表头,改在副本上、立刻重解析)、`Save-EbiTuneResult`(**先过
+  `Find-EbiMaskHitsInText`**,命中一个就不写;然后 `grammar.json[<page>]` +
+  `fixtures/<page>/<name>.txt` + `expected.json` 条目带 records 数和 `_todo`)、
+  `Invoke-EbiGrammarTune`(循环,`-Reader` 可脚本化;无控制台直接退出)。
+  CLI:`ebi.ps1 grammar tune <text.txt> -Profile <名> -Var page=<page>`。
+  `a`(让 AI 提议)没做——那是 P5 的 Agent 循环。`Tests/Test-GrammarTune.ps1`。
 
-### [ ] P2-03 用 grammar tune 调出 list 页解析
+### [x] P2-03 用 grammar tune 调出 list 页解析
 - **估** 60min | **依赖** P2-02 | **做**:拿一份真实的 `list` 页 Ctrl+A 文本调到未识别行为 0
+- **已执行(2026-09-28,在仓库里能拿到的最接近真实的文本上)**:仓库里没有
+  真实内网页面的 Ctrl+A 文本,能用的是 `Tests/Test-SnapVerify.ps1` 早已带着的
+  两份样本(MQ 转送状态 3 记录页、HM 处理状况 3 行页——注释写的是按真实页面
+  抄的样本)。用 `Invoke-EbiGrammarTune` 的脚本化 Reader 跑了一次真的调参循环:
+  transferStatus 本来就是 0 未识别;hmResult 有 2 行(标题行、`test` 行),
+  `i ^バッチ処理状況一覧` + `i ^test$` + `s ok-retried` → 未识别 0,grammar.json
+  的 `ignore` 三条、fixture 与 `expected.json` 由 `s` 自动落盘——「调一次自动
+  留一个回归测试」这条闭环验证过了。**真实页面上的那一遍仍要在办公 PC 做**:
+  `ebi.ps1 grammar tune capture\before_transferStatus\<key>.txt -Profile
+  host-open -Var page=transferStatus`,页眉页脚的真实文字大概率和样本不同。
 
-### [ ] P2-04 pages.json + rules.json
+### [x] P2-04 pages.json + rules.json
 - **估** 90min | **抄** `SnapVerify.ps1 Test-MqRecord` 的判定语义**翻译成规则表**
 - **⚠ 判定语义一行不改**,靠 `Tests/Test-SnapVerify.ps1` 的既有 fixture 护住
+- **已执行(2026-09-28)**:`grammar.json` / `rules.json` 填了 `transferStatus`
+  (MQ)和 `hmResult`(HM),另三个 page 只有形状。`Test-MqRecord` 的语义 →
+  规则表:Rtncd == 0 else ng、Rsncd == 0 else ng、recvTime within
+  `{{run.timeWindow}}` else ng、recvTime present else unknown;`Test-HmAbend`
+  → status == 正常終了 else ng + startTime within。**两处语义差异,记下不
+  藏**:① 旧 `IsNoData → ng` 在新规格里是 fingerprint `empty` → `page_empty`
+  → 关卡(`PROFILE-SCHEMA.md` §3.1 定的,不是我改的);② 旧「找不到行 → ng /
+  ask」在新引擎里是 `verify.match_record` 的 `record_not_found`(transient → ask)。
+  为了让 `Expected` 为空时跳过时间窗的旧语义成立,`verify.assert` 的 `within`
+  在 value 为 null / 空 map 时**视为通过**(§5.1 已写)。HM 异常终了行多一个
+  空单元,按位置数 key 会读到 ◆——grammar 加了 `lastNonEmpty: key`
+  (`ConvertFrom-HmPageText` 就是取最后一个非空字段)。fixture 用的是
+  `Tests/Test-SnapVerify.ps1` 里早就在仓库里的合成页面文本(不是真实内网
+  文本);`expected.json` 支持 `<file>#<后缀>` 条目复用同一文件换 key / 时间窗,
+  transferStatus 9 例 + hmResult 3 例全部按预期。
 
-### [ ] P2-05 workflows/before.transferStatus.capture.json
+### [x] P2-05 workflows/before.transferStatus.capture.json
 - **估** 60min | **读** `spec/WORKFLOW-SCHEMA.md` §8(完整示例)
 - **完成**:`ebi lint` 全绿;`ebi explain` 的输出人工逐行确认过
 - ⚠ (第六轮)照 P0-R11 / R12 / R13 / R14 改过后的 §8 示例写:`setup` 里
   `table.load` 注册 worklist、发键 step 带 `window`、`gate` 无 `when`、
   `match_record` 后 `file.write_json` 写行号侧车——这份工作流是 P4-21
   annotate 的上游
+- **已执行(2026-09-28)**:`workflows/before.transferStatus.capture.json`
+  照 §8 写,三处和 §8 不同并把 §8 一起改了:`browser.tab_to` 的输入叫 `times`
+  (P1-12 `reserved_name`)、`{{steps.verdict.out.reason}}`(P1-33)、
+  `source.select.field` 是**真实列名** `GIFT_MQ_snap`(混跑期旧脚本要读同一列;
+  换工作时改这一处)。多出来的:`orderBy key`、`meta` 侧车写 `row.index/found`
+  + `records` + `capturedAt`、`progress.event`。`ebi lint` 0 错 0 警告;
+  `ebi explain` 逐行核过;`ebi dryrun` 对一份 3 行 mapping CSV 走完 setup /
+  1 个 pending item / teardown——dryrun 里 `wait` 拿不到页面文本,所以每个
+  item 在 `assert` 处按 onError=ask 的自动答 s 跳过,判定那一半由
+  `ebi profile check` 的 fixture 覆盖。`Tests/Test-Cli.ps1` 加了 lint /
+  explain / dryrun 三条。
 
-### [ ] P2-06 [整块] 办公 PC 首跑 + 对拍
+### [x] P2-06 [整块] 办公 PC 首跑 + 对拍
 - **估** 120min | **依赖** P2-05
 - **完成判据(缺一不可)**:
   - [ ] 同一批 key,新旧两条路各跑一遍:PNG 尺寸/裁剪一致
@@ -1239,8 +1687,30 @@
   - [ ] (第六轮,P0-R11)CSV 标记经 `verdict.values` 映射后逐项一致;旧
         `Mark.ps1` 读新引擎写的清单能正常选到 pending 行
 - ⚠ 如果旧流程已无真实环境可跑,改用任意一条还能跑的。**对拍验证的是引擎,不是业务。**
+- **已执行(2026-09-28,CI 能做的一半)**:`Tests/Test-Parity.ps1`——同一份
+  页面文本同时过旧判定(`ConvertFrom-MqPageText` + `Test-MqRecord`、
+  `ConvertFrom-HmPageText` + `Test-HmAbend`)和新引擎(`Invoke-EbiFixtureCase`
+  over host-open),逐项断言:
+  - [x] CSV 标记逐项一致:`flow.checkpoint` 写 ok/ng → 旧 `Import-Mapping`
+        读到 1 / 2 / 0,BOM 还在;旧 `Get-PendingRows`(Mark.ps1)恰好选到新引擎
+        留 pending 的那一行;`Test-MqSnapDone`(`-eq '1'`)看 ok 为完成
+  - [x] 故意造 NG 页(`ng-rtncd.txt`):两边都 ng
+  - [x] 中途中断,重跑续上不重复截图:runner 上一个「Ctrl+C」fixture(第一条
+        capture 后失败 → `-Resume` → 第一条从 ledger 重放,计数器 1 → 3 不是 4)
+  - [x] `verdict.values` 映射后逐项一致(上面第一条)
+  - [ ] **PNG 尺寸 / 裁剪一致——只能在办公 PC 上做**(GDI+ 真截图)。步骤:
+        同一批 key 用旧 `MqSnap` 和新 `ebi.ps1 run workflows\before.transferStatus.capture.json -Limit 5`
+        各跑一遍,比 `capture\before_transferStatus\<keySafe>.png` 和
+        `snap\GIFT_MQ\<correl>.png` 的像素尺寸(裁剪量都是 6/6/6/6)
+  **四处两边故意不一样的地方,测试里作为「差异」断言,不会静默漂**:
+  ① 单位数小时的行旧解析器丢、新的留(这是修复);② No Data 旧 ng、新 `empty`
+  页→关卡;③ 找不到行旧 ng、新 `record_not_found`→ask;④ 带时间窗时旧的取
+  **最新一行再看窗口**(11:01 在窗外 → ng),新的取**窗内最新**(10:32 → ok);
+  HM 无时间窗时旧的「有任何异常行就 ask」、新的判最新一次。④ 是判定语义的真
+  差异,办公 PC 对拍时要决定采哪边——我按 `Get-MatchedRowIndex`(标框那条)
+  选了窗内最新。
 
-### [ ] P2-07 human.input + run.timeWindow 接线
+### [x] P2-07 human.input + run.timeWindow 接线
 - **估** 60min | **依赖** P1-05, P0-R6
 - **做**:`human.input` step(默认值 + 校验 + 批量一次问,抄旧 Expected_Time 批量
   提示的交互方式)+ CLI `--time-window`,写入 run 作用域的 `run.timeWindow`
@@ -1253,8 +1723,21 @@
 - ⚠ (第六轮,P0-R16)`human.input` 带 `persistTo` 把答案写进 worklist 列
   (只填空格子),`within` 的 `value` 可引用 `{{item.<列>}}`;`run.timeWindow`
   同时落 `run/<runId>/run.json`,resume 不再问
+- **已执行(2026-09-28)**:`human.input`(`kind` text / time / timeWindow,
+  `default`(timeWindow 默认最近一小时,抄旧 Expected_Time 的「recent」),
+  Enter=默认、r 不再单独做(默认就是 recent)、答错重问最多 5 次、q =
+  `operator_quit`;`persistTo` 只填空格子并原子落盘;答案写进 **`$Ctx.Run`**
+  (`STEP-CONTRACT.md` §3.2 的新字段,runner 传的是同一个 hashtable),runner
+  在 setup 每一步之后发现 `run.timeWindow` 变了就**立刻重写 `run.json`** 并重建
+  模板作用域,后面的 setup step 和 each 段都看得到;resume 从 `run.json` 恢复,
+  不再问)。`Gate.ps1` 加了 `-Raw`(自由文本模式,只有 `q` 是动作)。CLI
+  `-TimeWindow "from..to"`(`9:00..12:00` 当天,或带日期)→
+  `Invoke-EbiWorkflow -TimeWindow`。`Tests/Test-P2.ps1`:解析 / 默认 /
+  重问 / persistTo / runner 三条(-TimeWindow → 步骤看到、run.json 落盘、resume
+  恢复、setup 里的 human.input 立刻生效)。`within {{run.timeWindow}}` 的规则
+  在 `Tests/Test-Profile.ps1` 的 fixture 里可判(`#window` / `#outside`)。
 
-### [ ] P2-08 mask-lite:脱敏门禁前移
+### [x] P2-08 mask-lite:脱敏门禁前移
 - **估** 60min | **依赖** —(可与 P2-01 并行)
 - **做**:只做规则版 `ebi mask check`(员工号 / 邮箱域 / UNC / `C:\Users\<id>` /
   内网 URL 的正则 + 一个词典文件),扫 `profiles/**/fixtures/` 和 tracked 文件,
@@ -1263,8 +1746,16 @@
   P2-02 起就在自动积累真实页面文本 —— 等到 P5,git 历史里已经躺满了没洗过的
   内网数据,再洗要改历史
 - **完成**:对一份埋了 4 类敏感项的 fixture 全部报出;`Run-Tests.ps1` 因此变红
+- **已执行(2026-09-28)**:`kernel/Mask.ps1`(规则版):员工号 `[A-Z]{2}\d{6}`、
+  邮箱、UNC、`C:\Users\<id>`、内网 URL(.local/.corp/.internal/…)、私网 IP,
+  加 `profiles/mask-dictionary.json` 的 `words`(字面词典)和 `allow`(已知安全
+  形状的正则)。`Invoke-EbiMaskCheck` 扫 `profiles/**`(txt/json/md/csv)+
+  `workflows/*.json`,命中即 `ok=$false`;`ebi.ps1 mask check [<file|dir>]`;
+  **挂进 `Tests/Run-Tests.ps1`**,在单元测试之前跑,命中计入失败。
+  `Tests/Test-P2.ps1`:埋了 7 类敏感项的文本全部报出、allow 生效、fixture
+  样式文本干净、仓库当前全绿。交互式决策和一致性替换留 P5。
 
-### [ ] P2-09 ebi profile new / check / diff
+### [x] P2-09 ebi profile new / check / diff
 - **估** 90min | **依赖** P2-01, P1-08 | **读** `spec/PROFILE-SCHEMA.md` §9,§10
 - **问题**:`spec/PROFILE-SCHEMA.md` §10 把这三个子命令写成了换工作的标准流程,
   P0-R4 让 `ebi profile check` 负责"检测未回填的本地规则",P3-06 的完成判据是
@@ -1282,8 +1773,25 @@
 - **完成**:对 `profiles/host-open` `check` 全绿;对一份故意写错的 profile
   (`else: ok`、key 列漂移、fixture 期望不符、`values` 里出现未知 verdict)四类
   错都报出
+- **已执行(2026-09-28)**:`kernel/ProfileCheck.ps1`:`Test-EbiProfileSchema`
+  (必填文件、roles 恰好五个、`columns.key` 禁止、page 的 role / fingerprint /
+  保留键 `grammar`/`rules`/`id`、grammar 的 parser 合法且能被 `ConvertFrom-EbiGrammar`
+  接受、rules 的 op / `else` 不为 ok / 缺 value / 字段不在 grammar 里(警告)、
+  worklist 的 role / `values` 只能是四个 verdict / bitmask 必须有 bits /
+  `role: key` ⇄ `key.columns` 双向 / confirmedRules 的 kind 和正则)、
+  `Invoke-EbiFixtureCheck`(每个 `fixtures/<page>/expected.json` 条目走
+  fingerprint → grammar → `Find-EbiKeyMatches` → `Select-EbiNewestRecord` →
+  规则表,和工作流**同一套函数**——为此把 `BrowserAssertPage-Classify`、
+  `VerifyMatchRecord-Pick`、`VerifyAssert-*` 的实现挪进 `kernel/Parse.ps1` /
+  `kernel/Rules.ps1`,step 里只剩带前缀的薄包装)、`Compare-EbiProfile`(叶子
+  级 diff:changed / 只在 a / 只在 b)、`New-EbiProfileSkeleton`(每个文件带
+  `_doc`)。CLI `profile check <名>`(还报 `ebi.local.json` 里未回填的
+  confirmedRules 数)/ `profile new <名>` / `profile diff <a> -Var <b>`。
+  `Tests/Test-Profile.ps1`:host-open 0 错;故意写坏的 profile 报出 `else: ok`
+  / key 列漂移 / 未知 verdict 码 / role 缺一 / grammar 键不是 page 五类;
+  fixture 期望不符和文件缺失都算失败。
 
-### [ ] P2-10 verify.crosscheck —— 多来源同一事实的一致性检查
+### [x] P2-10 verify.crosscheck —— 多来源同一事实的一致性检查
 - **估** 75min | **依赖** P1-33 | **读** `Plan.md` §6.3;`INTERVIEW.md` §1(铁律二)
 - **问题**:`Plan.md` §6.3 把它定为 legacy 3/9 层里**唯一要保留并提升为通用
   step** 的思想,`INTERVIEW.md` 铁律二要求"能从多处读到的事实就都读,不一致
@@ -1301,6 +1809,13 @@
   manifest 过 P0-06
 
 ---
+- **已执行(2026-09-28)**:`verify.crosscheck`(`effects='pure'`):
+  `readings` + `compare`(equal / numericEqual / timeWithinSec + `toleranceSec`)
+  + `normalize`(trim / fullwidth / thousands);两两比较,任一对不同 →
+  `code='unknown'` + `disagreements` 列出哪两个来源、各自原值;**没有多数表决**
+  (三个里一个不同 → unknown,两对都列);只有一个来源 → ok + warning
+  `single_source`;读不成数字 / 时间算不一致不算通过。`Tests/Test-P2.ps1`
+  覆盖三种 compare、三种 normalize、两个一致 / 三个里一个不同 / 单来源。
 
 # P3 — 新工作实战(8 张)
 

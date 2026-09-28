@@ -189,6 +189,7 @@ Assert-True (Test-HasRule -Findings $f -Rule 'resource_not_idempotent') 'a resou
 $m = New-CleanManifest
 $m['provides']   = @('window')
 $m['idempotent'] = $true
+$m['example']['with']['as'] = 'mainWindow'   # P1-36: a provides example names its resource
 $f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
 Assert-Equal 0 $f.Count ('a well-formed resource step is clean (got: ' + (Test-RuleList -Findings $f) + ')')
 
@@ -243,6 +244,39 @@ Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'a non-hashtabl
 $m = New-CleanManifest; $m['outputs']['broken'] = 'not a hashtable'
 $f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
 Assert-True (Test-HasRule -Findings $f -Rule 'field_spec_shape') 'a non-hashtable output spec is reported, not skipped'
+
+# ---- P1-36: the two manifest-side rules P0-R12 / P0-R17 left out ---------
+
+$m = New-CleanManifest; $m['needs'] = @('foreground')
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'foreground_needs_window') 'needs foreground without a window session input is refused'
+$m = New-CleanManifest; $m['needs'] = @('foreground'); $m['inputs']['window'] = @{ type = 'session'; sessionKind = 'window'; required = $true }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (-not (Test-HasRule -Findings $f -Rule 'foreground_needs_window')) 'needs foreground with a window input is fine'
+$m = New-CleanManifest; $m['provides'] = @('window'); $m['idempotent'] = $true
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'provides_example_as') 'a provides step whose example lacks as is refused'
+$m = New-CleanManifest; $m['provides'] = @('window'); $m['idempotent'] = $true; $m['example']['with']['as'] = 'mainWindow'
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (-not (Test-HasRule -Findings $f -Rule 'provides_example_as')) 'a provides step whose example carries as is fine'
+
+# ---- reserved names ---------------------------------------------------------
+
+# An input or output called count / keys / values shadows the [hashtable]
+# member of the same name for every reader (Docs.ps1's `$inputs.Count`
+# became a hashtable and threw on the first catalog run after P1-12).
+$m = New-CleanManifest; $m['inputs']['count'] = @{ type = 'int'; default = 1 }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'reserved_name') 'an input named count is refused'
+$m = New-CleanManifest; $m['inputs']['Keys'] = @{ type = 'string'; default = '' }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'reserved_name') 'an input named Keys (any case) is refused'
+$m = New-CleanManifest; $m['outputs']['values'] = @{ type = 'list' }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (Test-HasRule -Findings $f -Rule 'reserved_name') 'an output named values is refused'
+$m = New-CleanManifest; $m['inputs']['rowCount'] = @{ type = 'int'; default = 1 }
+$f = @(Get-CleanFindings -Manifest $m -MustRelease $mustRelease)
+Assert-True (-not (Test-HasRule -Findings $f -Rule 'reserved_name')) 'rowCount is fine: only the exact member names are reserved'
 
 # ---- no dictionary flavour may terminate the checker -----------------------
 
@@ -355,6 +389,7 @@ try {
         '}'
         '# non-ASCII marker: ' + [string][char]0x65E5
         'function Get-Unprefixed { return 1 }'
+        'function Get-Unprefixed2 { return (Get-Content -LiteralPath x.json -Raw | ConvertFrom-Json) }'
     ) -join [Environment]::NewLine
     [System.IO.File]::WriteAllText($badPath, $bad)
 
@@ -362,6 +397,7 @@ try {
 
     Assert-True (Test-HasRule -Findings $f -Rule 'param_block')             'fixture: file-level param() is reported'
     Assert-True (Test-HasRule -Findings $f -Rule 'non_ascii')               'fixture: non-ASCII source is reported'
+    Assert-True (Test-HasRule -Findings $f -Rule 'direct_json')             'fixture: a direct ConvertFrom-Json / Get-Content x.json call is reported (R8)'
     Assert-True (Test-HasRule -Findings $f -Rule 'invoke_step_missing')     'fixture: missing Invoke-Step is reported'
     Assert-True (Test-HasRule -Findings $f -Rule 'helper_prefix')           'fixture: unprefixed helper is reported'
     Assert-True (Test-HasRule -Findings $f -Rule 'id_mismatch')             'fixture: id/file-name mismatch is reported'
@@ -495,6 +531,19 @@ Assert-True (Test-IsStepFile -FileName 'helpers.ps1' -GroupName 'verify' -Manife
     'defining $Manifest opts a misnamed file in, so it cannot hide from the checker'
 Assert-True (Test-IsStepFile -FileName 'helpers.ps1' -GroupName 'verify' -Manifest $null -FunctionNames @('Invoke-Step')) `
     'defining Invoke-Step opts a misnamed file in too'
+
+# ---- R8: JSON goes through kernel/Json.ps1 only ------------------------------
+
+Assert-Equal '2,3' ((Get-StepDirectJsonLines -Text ("ok`nConvertTo-Json -Depth 2`n`$x | ConvertFrom-Json`n# ConvertTo-Json in a comment is fine")) -join ',') 'R8: both cmdlets are found by line, comments are skipped'
+Assert-Equal '1' ((Get-StepDirectJsonLines -Text 'Get-Content -LiteralPath a\b.jsonl -Encoding UTF8') -join ',') 'R8: Get-Content on a .jsonl file is found'
+Assert-Equal 0 @(Get-StepDirectJsonLines -Text 'Get-Content -LiteralPath notes.txt').Count 'R8: Get-Content on a non-JSON file is fine'
+Assert-Equal 0 @(Get-StepDirectJsonLines -Text 'Read-EbiJson -Path x.json').Count 'R8: the kernel entry point is not a hit'
+$kernelRoot = Join-Path $repoRoot 'kernel'
+foreach ($kf in @(Get-ChildItem -LiteralPath $kernelRoot -Filter '*.ps1' -File | Sort-Object Name)) {
+    if ($kf.Name -eq 'Json.ps1') { continue }
+    $hits = @(Get-StepDirectJsonLines -Text ([System.IO.File]::ReadAllText($kf.FullName)))
+    Assert-Equal 0 $hits.Count ('R8: kernel/' + $kf.Name + ' has no direct JSON call' + $(if ($hits.Count -gt 0) { ' (line(s) ' + ($hits -join ', ') + ')' } else { '' }))
+}
 
 # ---- and finally the real tree --------------------------------------------
 

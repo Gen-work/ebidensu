@@ -1,0 +1,52 @@
+{
+  "ok.txt": {
+    "key": "JIDSK05S",
+    "verdict": "ok",
+    "matchedRow": 3
+  },
+  "ng-rtncd.txt": {
+    "key": "JIDSK05S",
+    "verdict": "ng",
+    "message": "リターンコード(Rtncd)が0以外",
+    "matchedRow": 3
+  },
+  "single-digit-hour.txt": {
+    "key": "JIDSK05S",
+    "verdict": "ok",
+    "records": 3
+  },
+  "no-data.txt": {
+    "page": "empty"
+  },
+  "loading.txt": {
+    "page": "loading"
+  },
+  "unknown-page.txt": {
+    "page": "unknown"
+  },
+  "ok.txt#window": {
+    "file": "ok.txt",
+    "key": "JIDSK05S",
+    "timeWindow": {
+      "from": "2026/06/12 10:00:00",
+      "to": "2026/06/12 10:45:00"
+    },
+    "verdict": "ok",
+    "matchedRow": 2
+  },
+  "ok.txt#outside": {
+    "file": "ok.txt",
+    "key": "JIDSK05S",
+    "timeWindow": {
+      "from": "2026/06/12 12:00:00",
+      "to": "2026/06/12 13:00:00"
+    },
+    "verdict": "ng",
+    "message": "受信時刻が実行時間帯の外"
+  },
+  "ok.txt#other-key": {
+    "file": "ok.txt",
+    "key": "ZZZZZZZZ",
+    "verdict": "not_found"
+  }
+}

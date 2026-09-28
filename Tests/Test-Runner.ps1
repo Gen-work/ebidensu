@@ -1,5 +1,8 @@
 #Requires -Version 5.1
-# Test-Runner.ps1 -- the P0-07 minimal runner spike (kernel/Runner.ps1).
+# Test-Runner.ps1 -- kernel/Runner.ps1: the P0-07 spike cases (setup /
+# teardown, the Session resource channel) kept as-is, plus the P1-03 main
+# body: templates, source + each over a worklist, when, once: group,
+# cancelled. Steps load through the P1-02 registry.
 #
 # The card's completion criterion: a workflow JSON with only a three-step
 # "setup" runs, and the window handle travels ensure -> capture through
@@ -28,8 +31,11 @@ function Write-Fixture {
 }
 
 function Write-Workflow {
+    # Fixtures written before P1-03 carry no "schema"; it is required now,
+    # so the helper adds it unless the fixture is about that very field.
     param([string]$Name, [string]$Json)
     $path = Join-Path $tmpRoot $Name
+    if ($Json -notmatch '"schema"' -and $Json.TrimStart().StartsWith('{')) { $i = $Json.IndexOf('{'); $Json = $Json.Substring(0, $i + 1) + ' "schema": 1,' + $Json.Substring($i + 1) }
     [System.IO.File]::WriteAllText($path, $Json, (New-Object System.Text.UTF8Encoding($false)))
     return $path
 }
@@ -43,7 +49,7 @@ $Manifest = @{
   inputs  = @{ title = @{ type='string'; required=$true } }
   outputs = @{ title = @{ type='string' }; sawAs = @{ type='bool' } }
   failures = @( @{ id = 'no_window'; transient = $true } )
-  example = @{ use='fake.ensure'; with=@{ title='x' } }
+  example = @{ use='fake.ensure'; with=@{ title='x'; as='win' } }
 }
 function FakeEnsure-Handle { return 4242 }
 function Invoke-Step {
@@ -98,6 +104,106 @@ $Manifest = @{
 function Invoke-Step { param($In, $Ctx) return @{ ok = $true; released = [int]$In['window'] } }
 '@
 
+# fake.load: registers a worklist built from inline rows (what table.load
+# will do from a CSV, P1-24). The resource shape is kernel/Worklist.ps1's.
+Write-Fixture 'fake.load.ps1' @'
+$Manifest = @{
+  id = 'fake.load'; group = 'fake'; summary = 'fixture: register a worklist from rows'; tier = 'core'
+  effects = 'read'; needs = @(); provides = @('worklist'); releases = @(); idempotent = $true
+  inputs  = @{ rows = @{ type='list'; required=$true } }
+  outputs = @{ rowCount = @{ type='int' } }
+  failures = @( @{ id = 'bad_rows'; transient = $false } )
+  example = @{ use='fake.load'; with=@{ rows=@(); as='wl' } }
+}
+function Invoke-Step {
+    param($In, $Ctx)
+    $rows = New-Object System.Collections.ArrayList
+    foreach ($r in $In['rows']) { $h = @{}; foreach ($k in $r.Keys) { $h[[string]$k] = $r[$k] }; [void]$rows.Add($h) }
+    $table = @{ path = ''; columns = @('Correl_ID_S', 'JOB_NAME', 'status', 'mask'); rows = $rows.ToArray() }
+    return @{ ok = $true; resource = $table; rowCount = $rows.Count }
+}
+'@
+
+# fake.item: echoes what it was given -- the probe for item / steps scopes.
+Write-Fixture 'fake.item.ps1' @'
+$Manifest = @{
+  id = 'fake.item'; group = 'fake'; summary = 'fixture: echo inputs'; tier = 'core'
+  effects = 'pure'; needs = @(); provides = @(); releases = @(); idempotent = $true
+  inputs  = @{ a = @{ type='any'; default='' }; b = @{ type='any'; default='' }; n = @{ type='int'; default=0 } }
+  outputs = @{ a = @{ type='any' }; b = @{ type='any' }; n = @{ type='int' }; seen = @{ type='string' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='fake.item'; with=@{ a='x' } }
+}
+function Invoke-Step {
+    param($In, $Ctx)
+    return @{ ok = $true; a = $In['a']; b = $In['b']; n = [int]$In['n']; seen = ([string]$In['a'] + '|' + [string]$In['b']) }
+}
+'@
+
+# fake.flaky: fails 'timeout' (transient) or 'not_found' (not) until it has
+# been called failUntil times for this name; the count lives in a file so
+# it survives across Invoke-EbiWorkflow calls.
+Write-Fixture 'fake.flaky.ps1' @'
+$Manifest = @{
+  id = 'fake.flaky'; group = 'fake'; summary = 'fixture: fail N times then succeed'; tier = 'core'
+  effects = 'pure'; needs = @(); provides = @(); releases = @(); idempotent = $true
+  inputs  = @{ name = @{ type='string'; required=$true }; failUntil = @{ type='int'; default=1 }; mode = @{ type='string'; default='timeout'; enum=@('timeout','not_found') } }
+  outputs = @{ calls = @{ type='int' } }
+  failures = @( @{ id = 'timeout'; transient = $true }, @{ id = 'not_found'; transient = $false } )
+  example = @{ use='fake.flaky'; with=@{ name='x' } }
+}
+function FakeFlaky-Count {
+    param($Ctx, [string]$Name)
+    $f = Join-Path $Ctx['WorkDir'] ('flaky-' + $Name + '.txt')
+    $n = 0
+    if (Test-Path -LiteralPath $f) { $n = [int]([System.IO.File]::ReadAllText($f).Trim()) }
+    $n++
+    [System.IO.File]::WriteAllText($f, [string]$n)
+    return $n
+}
+function Invoke-Step {
+    param($In, $Ctx)
+    $n = FakeFlaky-Count -Ctx $Ctx -Name $In['name']
+    if ($n -le [int]$In['failUntil']) { return @{ ok = $false; failure = [string]$In['mode']; message = ('attempt ' + $n + ' failed'); calls = $n } }
+    return @{ ok = $true; calls = $n }
+}
+'@
+
+# fake.count: counts its real invocations per name in a file (for resume
+# tests: a replayed step must NOT bump the count).
+Write-Fixture 'fake.count.ps1' @'
+$Manifest = @{
+  id = 'fake.count'; group = 'fake'; summary = 'fixture: count real invocations'; tier = 'core'
+  effects = 'pure'; needs = @(); provides = @(); releases = @(); idempotent = $true
+  inputs  = @{ name = @{ type='string'; required=$true } }
+  outputs = @{ n = @{ type='int' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='fake.count'; with=@{ name='x' } }
+}
+function Invoke-Step {
+    param($In, $Ctx)
+    $f = Join-Path $Ctx['WorkDir'] ('count-' + $In['name'] + '.txt')
+    $n = 0
+    if (Test-Path -LiteralPath $f) { $n = [int]([System.IO.File]::ReadAllText($f).Trim()) }
+    $n++
+    [System.IO.File]::WriteAllText($f, [string]$n)
+    return @{ ok = $true; n = $n }
+}
+'@
+
+# fake.destroy: a destructive step (gets the confirm gate).
+Write-Fixture 'fake.destroy.ps1' @'
+$Manifest = @{
+  id = 'fake.destroy'; group = 'fake'; summary = 'fixture: destructive'; tier = 'core'
+  effects = 'destructive'; needs = @(); provides = @(); releases = @(); idempotent = $false
+  inputs  = @{ what = @{ type='string'; default='it' } }
+  outputs = @{ done = @{ type='bool' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='fake.destroy'; with=@{ what='x' } }
+}
+function Invoke-Step { param($In, $Ctx) if ($Ctx['DryRun']) { return @{ ok = $true; done = $false } }; return @{ ok = $true; done = $true } }
+'@
+
 # fake.pure: echoes; also the probe for $Ctx shape.
 Write-Fixture 'fake.pure.ps1' @'
 $Manifest = @{
@@ -122,7 +228,7 @@ $Manifest = @{
   effects = 'pure'; needs = @(); provides = @(); releases = @(); idempotent = $true
   inputs  = @{ mode = @{ type='string'; required=$true } }
   outputs = @{ partial = @{ type='int' } }
-  failures = @( @{ id = 'boom'; transient = $false } )
+  failures = @( @{ id = 'boom'; transient = $false }, @{ id = 'operator_quit'; transient = $false } )
   example = @{ use='fake.fail'; with=@{ mode='declared' } }
 }
 function Invoke-Step {
@@ -135,6 +241,7 @@ function Invoke-Step {
         'nook'       { return @{ partial = 1 } }
         'resource'   { return @{ ok = $true; resource = 1 } }
         'warn'       { return @{ ok = $true; partial = 2; warnings = @( @{ code = 'odd'; message = 'one odd line'; data = @{ lines = @(3) } } ) } }
+        'quit'       { return @{ ok = $false; failure = 'operator_quit'; message = 'q pressed' } }
     }
     return @{ ok = $true; partial = 0 }
 }
@@ -148,7 +255,7 @@ $Manifest = @{
   inputs  = @{}
   outputs = @{}
   failures = @( @{ id = 'no_window'; transient = $true } )
-  example = @{ use='fake.noresource'; with=@{} }
+  example = @{ use='fake.noresource'; with=@{ as='win' } }
 }
 function Invoke-Step { param($In, $Ctx) return @{ ok = $true } }
 '@
@@ -168,7 +275,7 @@ function Get-StepEvents {
     param([string]$RunId, [string]$Id)
     $out = New-Object System.Collections.ArrayList
     foreach ($e in @(Read-TraceEvents -WorkDir $work -RunId $RunId)) {
-        if ($e.action -eq 'step' -and $e.tags.step -eq $Id) { [void]$out.Add($e) }
+        if ($e['action'] -eq 'step' -and $e['tags']['step'] -eq $Id) { [void]$out.Add($e) }
     }
     return $out.ToArray()
 }
@@ -182,14 +289,13 @@ try {
     Assert-True ((Get-EbiDefaultModulesRoot).EndsWith('modules')) 'default modules root is the repo modules/ dir'
     Assert-True (Test-Path -LiteralPath (Get-EbiDefaultModulesRoot)) 'default modules root exists'
 
-    $obj = '{"a":1,"b":{"c":[1,2,{"d":"x"}]},"e":null}' | ConvertFrom-Json
-    $h = ConvertTo-EbiHashtable $obj
+    $h = (ConvertFrom-EbiJson -Text '{"a":1,"b":{"c":[1,2,{"d":"x"}]},"e":null}')['value']
     Assert-True ($h -is [hashtable]) 'JSON object becomes a hashtable'
     Assert-True ($h['b'] -is [hashtable]) 'nested object becomes a hashtable'
     Assert-True ($h['b']['c'] -is [array]) 'array stays an array'
     Assert-Equal 'x' $h['b']['c'][2]['d'] 'object inside array becomes a hashtable'
     Assert-True ($h.Contains('e') -and $null -eq $h['e']) 'null is kept as a null key'
-    $h = ConvertTo-EbiHashtable ('{"one":[{"id":"a"}],"none":[]}' | ConvertFrom-Json)
+    $h = (ConvertFrom-EbiJson -Text '{"one":[{"id":"a"}],"none":[]}')['value']
     Assert-True ($h['one'] -is [array] -and $h['one'].Count -eq 1) 'a one-element array is still an array (not unrolled)'
     Assert-True ($h['one'][0] -is [hashtable]) 'the one element is a hashtable'
     Assert-True ($h['none'] -is [array] -and $h['none'].Count -eq 0) 'an empty array is an empty array'
@@ -197,18 +303,38 @@ try {
     Assert-True (Test-EbiValueHasTemplate @{ a = @{ b = @('x', '{{item.key}}') } }) 'a template nested in with is found'
     Assert-True (-not (Test-EbiValueHasTemplate @{ a = 'plain'; n = 3 })) 'plain values are not templates'
 
-    $probs = @(Get-EbiWorkflowSpikeProblems -Workflow @{ id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure' }, @{ id = 'a'; use = 'fake.pure' } ) })
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure' }, @{ id = 'a'; use = 'fake.pure' } ) })
     Assert-True (($probs -join ' ') -like '*used twice*') 'duplicate step id within a section is a problem'
-    $probs = @(Get-EbiWorkflowSpikeProblems -Workflow @{ id = 'w'; setup = @( @{ use = 'fake.pure' } ) })
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; setup = @( @{ use = 'fake.pure' } ) })
     Assert-True (($probs -join ' ') -like '*"id" is required*') 'a step call without id is a problem'
-    $probs = @(Get-EbiWorkflowSpikeProblems -Workflow @{ id = 'w'; each = @(); source = @{ table = 'x' } })
-    Assert-Equal 2 $probs.Count 'source and each are each refused'
-    $probs = @(Get-EbiWorkflowSpikeProblems -Workflow @{ id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure'; with = @{ text = '{{vars.x}}' } } ) })
-    Assert-True (($probs -join ' ') -like '*template*') 'a template in with is refused'
-    $probs = @(Get-EbiWorkflowSpikeProblems -Workflow @{ id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure'; onError = @{ policy = 'retry' } } ) })
-    Assert-True (($probs -join ' ') -like '*onError*') 'a per-step onError is refused'
-    $probs = @(Get-EbiWorkflowSpikeProblems -Workflow @{ id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure'; with = @{ text = 'hi' } } ); teardown = @( @{ id = 'z'; use = 'fake.pure' } ) })
-    Assert-Equal 0 $probs.Count 'a plain setup+teardown workflow has no problems'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ id = 'w' })
+    Assert-True (($probs -join ' ') -like '*"schema" is required*') 'schema is required (P0-R15)'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 2; id = 'w' })
+    Assert-True (($probs -join ' ') -like '*newer than this runner*') 'a newer schema is refused'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; each = @() })
+    Assert-True (($probs -join ' ') -like '*needs a "source"*') 'each without source is a problem'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; source = @{ table = 'wl'; select = @{ field = 'f'; pendingWhen = '!= done' } }; each = @() })
+    Assert-True (($probs -join ' ') -like '*not one of the five*') 'an unknown pendingWhen form is a problem'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; source = @{ select = @{ field = 'f'; pendingWhen = 'empty' } }; each = @() })
+    Assert-True (($probs -join ' ') -like '*source.table is required*') 'source without table is a problem'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure'; when = 'steps.x.out.y > 3' } ) })
+    Assert-True (($probs -join ' ') -like '*when "steps.x.out.y > 3" is not one of*') 'an unknown when form is a problem'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; source = @{ table = 'wl'; select = @{ pendingWhen = 'always' } }; each = @( @{ id = 'a'; use = 'fake.pure'; once = 'group' } ) })
+    Assert-True (($probs -join ' ') -like '*needs source.groupBy*') 'once: group without groupBy is a problem'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; source = @{ table = 'wl'; select = @{ pendingWhen = 'always' }; groupBy = 'g' }; each = @( @{ id = 'a'; use = 'fake.pure'; once = 'groupEnd' } ) })
+    Assert-Equal 0 $probs.Count 'once: groupEnd with groupBy is fine'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; setup = @( @{ id = 'a'; use = 'fake.ensure'; with = @{ as = '{{vars.n}}' } } ) })
+    Assert-True (($probs -join ' ') -like '*"as" is a literal session name*') 'a templated as is a problem'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure'; onError = @{ policy = 'retry' } } ) })
+    Assert-Equal 0 $probs.Count 'a per-step onError with a known policy is fine'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; onError = @{ policy = 'ignore' } })
+    Assert-True (($probs -join ' ') -like '*onError.policy "ignore" is not one of*') 'an unknown onError policy is a problem'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; onError = @{ policy = 'retry'; times = 'many'; byFailure = @{ timeout = @{ policy = 'later' } } } })
+    Assert-True (($probs -join ' ') -like '*onError.times must be a number*' -and ($probs -join ' ') -like '*byFailure.timeout.policy "later"*') 'times and byFailure policies are checked too'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure'; confirm = 'no' } ) })
+    Assert-True (($probs -join ' ') -like '*"confirm" must be true or false*') 'confirm must be a bool'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure'; with = @{ text = '{{vars.x}}' } } ); teardown = @( @{ id = 'z'; use = 'fake.pure' } ) })
+    Assert-Equal 0 $probs.Count 'a plain setup+teardown workflow with a template has no problems'
 
     # Resolve-EbiStepInputs on its own
     $m = @{ id = 'x'; provides = @('window'); inputs = @{ title = @{ type = 'string' } } }
@@ -260,14 +386,14 @@ try {
 
     $events = @(Read-TraceEvents -WorkDir $work -RunId 'r-happy')
     Assert-True ($events.Count -ge 8) 'happy: trace has run start/end plus start+ok per step'
-    Assert-Equal 'run' $events[0].action 'happy: first trace event is the run start'
-    Assert-Equal 'ok' $events[$events.Count - 1].status 'happy: last trace event is the run result'
-    $ensEv = @(Get-StepEvents -RunId 'r-happy' -Id 'ensure' | Where-Object { $_.status -eq 'ok' })
+    Assert-Equal 'run' $events[0]['action'] 'happy: first trace event is the run start'
+    Assert-Equal 'ok' $events[$events.Count - 1]['status'] 'happy: last trace event is the run result'
+    $ensEv = @(Get-StepEvents -RunId 'r-happy' -Id 'ensure' | Where-Object { $_['status'] -eq 'ok' })
     Assert-Equal 1 $ensEv.Count 'happy: ensure has one ok event'
-    Assert-Equal 'Edge' $ensEv[0].data.outputs.title 'happy: outputs land in trace data'
-    Assert-True (-not ($ensEv[0].data.outputs.PSObject.Properties.Name -contains 'resource')) 'happy: the handle never appears in the trace'
-    Assert-Equal 'spike.happy' $ensEv[0].tags.workflow 'happy: trace tags carry the workflow id'
-    Assert-Equal 'setup' $ensEv[0].phase 'happy: trace phase is the section'
+    Assert-Equal 'Edge' $ensEv[0]['data']['outputs']['title'] 'happy: outputs land in trace data'
+    Assert-True (-not $ensEv[0]['data']['outputs'].Contains('resource')) 'happy: the handle never appears in the trace'
+    Assert-Equal 'spike.happy' $ensEv[0]['tags']['workflow'] 'happy: trace tags carry the workflow id'
+    Assert-Equal 'setup' $ensEv[0]['phase'] 'happy: trace phase is the section'
 
     # ------------------------------------------------ 2. captured Invoke-Step survives later loads
     $wf = Write-Workflow 'twice.json' @'
@@ -298,7 +424,7 @@ try {
     Assert-Equal 'skip' (Get-Rec $res 'c')['status'] 'dup: later setup steps are skipped, not run'
     Assert-Equal 'session_name_taken' $res['failure'] 'dup: the first failure is the run failure'
     $skipEv = @(Get-StepEvents -RunId 'r-dup' -Id 'c')
-    Assert-Equal 'skip' $skipEv[0].status 'dup: the skip is traced'
+    Assert-Equal 'skip' $skipEv[0]['status'] 'dup: the skip is traced'
 
     # ------------------------------------------------ 4/5. missing name, wrong kind
     $wf = Write-Workflow 'missing.json' @'
@@ -374,9 +500,36 @@ try {
     $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-warn'
     Assert-True ($res['ok']) 'warn: warnings do not fail the step'
     Assert-Equal 1 @((Get-Rec $res 'w')['warnings']).Count 'warn: the warning is on the record'
-    $wEv = @(Get-StepEvents -RunId 'r-warn' -Id 'w' | Where-Object { $_.status -eq 'ok' })
-    Assert-Equal 'odd' $wEv[0].data.warnings[0].code 'warn: the warning reached the trace as structured data'
-    Assert-Equal 3 $wEv[0].data.warnings[0].data.lines[0] 'warn: nested warning data survives the trace round trip'
+    $wEv = @(Get-StepEvents -RunId 'r-warn' -Id 'w' | Where-Object { $_['status'] -eq 'ok' })
+    Assert-True ($wEv[0]['data']['warnings'] -is [array]) 'warn: ONE warning is still an array in the trace (a one-element array must not unroll into its element)'
+    Assert-Equal 'odd' $wEv[0]['data']['warnings'][0]['code'] 'warn: the warning reached the trace as structured data'
+    Assert-Equal 3 $wEv[0]['data']['warnings'][0]['data']['lines'][0] 'warn: nested warning data survives the trace round trip'
+
+    # ------------------------------------------------ 13b. "with" is checked against the inputs schema (P1-02)
+    Assert-True ((Get-EbiRunnerFailureIds) -contains 'input_invalid') 'schema: input_invalid is a runner-reserved failure id'
+    $wf = Write-Workflow 'unknownwith.json' '{ "id": "spike.unknownwith", "setup": [ { "id": "f", "use": "fake.fail", "with": { "mode": "declared", "colour": "red" } } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-unknownwith'
+    Assert-Equal 'input_invalid' (Get-Rec $res 'f')['failure'] 'schema: an undeclared parameter fails the call before Invoke-Step'
+    Assert-True ((Get-Rec $res 'f')['message'] -like "*unknown input 'colour'*") 'schema: ... naming the parameter'
+    Assert-True (-not (Get-Rec $res 'f')['outputs'].Contains('partial')) 'schema: the step did not run (no outputs)'
+    $ev = @(Get-StepEvents -RunId 'r-unknownwith' -Id 'f' | Where-Object { $_['status'] -eq 'fail' })
+    Assert-Equal 'input_invalid' $ev[0]['data']['failure'] 'schema: the failure id reaches the trace'
+
+    $wf = Write-Workflow 'missingwith.json' '{ "id": "spike.missingwith", "setup": [ { "id": "f", "use": "fake.fail" } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-missingwith'
+    Assert-Equal 'input_invalid' (Get-Rec $res 'f')['failure'] 'schema: a missing required parameter is input_invalid'
+    Assert-True ((Get-Rec $res 'f')['message'] -like "*missing required input 'mode'*") 'schema: ... naming it'
+
+    $wf = Write-Workflow 'typewith.json' '{ "id": "spike.typewith", "setup": [ { "id": "e", "use": "fake.ensure", "with": { "title": { "x": 1 }, "as": "w" } } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-typewith'
+    Assert-Equal 'input_invalid' (Get-Rec $res 'e')['failure'] 'schema: a type mismatch is input_invalid'
+    Assert-True ((Get-Rec $res 'e')['message'] -like "*input 'title' expects string, got map*") 'schema: ... saying what was expected and what came'
+    Assert-Equal 0 $res['session'].Count 'schema: nothing was registered for a call that failed the check'
+
+    $wf = Write-Workflow 'defaultwith.json' '{ "id": "spike.defaultwith", "setup": [ { "id": "d", "use": "fake.pure" } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-defaultwith'
+    Assert-True ($res['ok']) 'schema: a call without with is fine when every input has a default'
+    Assert-Equal '' (Get-Rec $res 'd')['outputs']['echo'] 'schema: the default reached the step'
 
     # ------------------------------------------------ 14. missing step / no Invoke-Step
     $wf = Write-Workflow 'nostep.json' '{ "id": "spike.nostep", "setup": [ { "id": "x", "use": "fake.absent" } ] }'
@@ -390,20 +543,26 @@ try {
     # ------------------------------------------------ 15. refusals happen before anything runs
     $wf = Write-Workflow 'each.json' '{ "id": "spike.each", "setup": [ { "id": "p", "use": "fake.pure" } ], "each": [ { "id": "q", "use": "fake.pure" } ] }'
     $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-each'
-    Assert-Equal 'unsupported_in_spike' $res['failure'] 'each: refused'
-    Assert-Equal 0 @($res['steps']).Count 'each: no step ran'
-    Assert-Equal 0 @(Read-TraceEvents -WorkDir $work -RunId 'r-each').Count 'each: nothing was traced'
+    Assert-Equal 'workflow_invalid' $res['failure'] 'each without source: refused'
+    Assert-Equal 0 @($res['steps']).Count 'each without source: no step ran'
+    Assert-Equal 0 @(Read-TraceEvents -WorkDir $work -RunId 'r-each').Count 'each without source: nothing was traced'
+
+    $wf = Write-Workflow 'noschema.json' '{ "schema": null, "id": "spike.noschema", "setup": [ { "id": "p", "use": "fake.pure" } ] }'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-noschema'
+    Assert-Equal 'workflow_invalid' $res['failure'] 'a workflow without schema is refused'
+    Assert-True ($res['message'] -like '*"schema" is required*') 'a workflow without schema says so'
 
     $wf = Write-Workflow 'tmpl.json' '{ "id": "spike.tmpl", "setup": [ { "id": "p", "use": "fake.pure", "with": { "text": "{{item.key}}" } } ] }'
     $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-tmpl'
-    Assert-Equal 'unsupported_in_spike' $res['failure'] 'template: refused rather than passed literally'
+    Assert-Equal 'input_invalid' (Get-Rec $res 'p')['failure'] 'template: an item reference outside each fails the call as input_invalid'
+    Assert-True ((Get-Rec $res 'p')['message'] -like 'template {{item.key}}:*') 'template: ... naming the reference'
 
     $res = Invoke-EbiWorkflow -Path (Join-Path $tmpRoot 'does-not-exist.json') -WorkDir $work -ModulesRoot $modules -RunId 'r-nofile'
-    Assert-Equal 'unsupported_in_spike' $res['failure'] 'a missing workflow file is reported, not thrown'
+    Assert-Equal 'workflow_invalid' $res['failure'] 'a missing workflow file is reported, not thrown'
 
     $wf = Write-Workflow 'bad.json' '{ not json'
     $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-bad'
-    Assert-Equal 'unsupported_in_spike' $res['failure'] 'malformed JSON is reported, not thrown'
+    Assert-Equal 'workflow_invalid' $res['failure'] 'malformed JSON is reported, not thrown'
 
     # ------------------------------------------------ 16. DryRun reaches the step and a null resource is allowed
     $res = Invoke-EbiWorkflow -Path (Join-Path $tmpRoot 'happy.json') -WorkDir $work -ModulesRoot $modules -RunId 'r-dry' -DryRun
@@ -453,21 +612,391 @@ try {
         Assert-True ($names -contains $n) ('P0-08: ' + $n + ' is in modules/')
     }
 
-    # the step's own pure helper
+    # the path / handle helpers the step uses come from kernel/Native.ps1
+    # since P1-18 (the step dot-sources it); the rules are the P0-08 ones
     . (Join-Path (Join-Path (Join-Path $repoRoot 'modules') 'screen') 'screen.capture_window.ps1')
     $wd = [System.IO.Path]::GetTempPath().TrimEnd([System.IO.Path]::DirectorySeparatorChar)   # rooted on whichever OS runs the test
-    Assert-Equal ([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($wd, 'capture/a.png'))) (ScreenCaptureWindow-ResolvePath -SaveAs 'capture/a.png' -WorkDir $wd) 'capture_window: relative saveAs joins the work dir (separators normalized)'
+    Assert-Equal ([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($wd, 'capture/a.png'))) (Resolve-EbiWorkPath -PathValue 'capture/a.png' -WorkDir $wd) 'capture_window: relative saveAs joins the work dir (separators normalized)'
     $rooted = Join-Path ([System.IO.Path]::GetTempPath()) 'a.png'   # rooted on whichever OS runs the test
-    Assert-Equal $rooted (ScreenCaptureWindow-ResolvePath -SaveAs $rooted -WorkDir 'C:\w') 'capture_window: a rooted saveAs is kept'
-    Assert-Equal '' (ScreenCaptureWindow-ResolvePath -SaveAs '' -WorkDir 'C:\w') 'capture_window: an empty saveAs stays empty'
-    Assert-True ((ScreenCaptureWindow-ToHandle 4242) -eq [IntPtr]4242) 'capture_window: an int resource becomes an IntPtr'
-    Assert-True ((ScreenCaptureWindow-ToHandle $null) -eq [IntPtr]::Zero) 'capture_window: a null resource is IntPtr.Zero'
+    Assert-Equal $rooted (Resolve-EbiWorkPath -PathValue $rooted -WorkDir 'C:\w') 'capture_window: a rooted saveAs is kept'
+    Assert-Equal '' (Resolve-EbiWorkPath -PathValue '' -WorkDir 'C:\w') 'capture_window: an empty saveAs stays empty'
+    Assert-True ((ConvertTo-EbiHandle 4242) -eq [IntPtr]4242) 'capture_window: an int resource becomes an IntPtr'
+    Assert-True ((ConvertTo-EbiHandle $null) -eq [IntPtr]::Zero) 'capture_window: a null resource is IntPtr.Zero'
+
+    # ================================================ P1-03: templates, source + each, when, once: group
+    $profile = @{
+        worklist = @{ key = @{ columns = @('Correl_ID_S', 'JOB_NAME') }
+                      columns = @( @{ name = 'Correl_ID_S'; role = 'key' }, @{ name = 'JOB_NAME'; role = 'key' },
+                                   @{ name = 'status'; role = 'verdict'; values = @{ ok = '1'; ng = '2'; unknown = ''; pending = '0' } },
+                                   @{ name = 'mask'; role = 'bitmask'; bits = @{ before = 1; after = 2 } } ) }
+        vocabulary = @{ columns = @{ group = 'JOB_NAME' } }
+        pages = @{ ts = @{ url = 'https://h/ts'; tabs = 3 } }
+    }
+    $rowsJson = '[ { "Correl_ID_S": "A1", "JOB_NAME": "JOB_B", "status": "0", "mask": "1" },
+                  { "Correl_ID_S": "A2", "JOB_NAME": "JOB_A", "status": "2", "mask": "3" },
+                  { "Correl_ID_S": "A3", "JOB_NAME": "JOB_B", "status": "1", "mask": "0" },
+                  { "Correl_ID_S": "A4", "JOB_NAME": "JOB_A", "status": "",  "mask": "2" } ]'
+    function New-EachWorkflow {
+        param([string]$Name, [string]$Source, [string]$Each, [string]$Extra = '')
+        return (Write-Workflow $Name ('{ "schema": 1, "id": "p103.' + $Name + '", "page": "ts", "vars": { "side": "before" }, ' +
+            '"source": ' + $Source + ', ' + $Extra +
+            '"setup": [ { "id": "load", "use": "fake.load", "with": { "rows": ' + $rowsJson + ', "as": "wl" } } ], ' +
+            '"each": ' + $Each + ', ' +
+            '"teardown": [ { "id": "bye", "use": "fake.pure", "with": { "text": "{{vars.side}}-done" } } ] }'))
+    }
+    function Get-ItemRecs { param($Result, [string]$Id) $found = @($Result['steps'] | Where-Object { $_['id'] -eq $Id -and $_['section'] -eq 'each' }); return ,$found }
+
+    # -- the card's first criterion: setup + each over fixture rows, with templates
+    $wf = New-EachWorkflow -Name 'basic' -Source '{ "table": "wl", "select": { "field": "status", "pendingWhen": "!= ok" } }' `
+        -Each '[ { "id": "echo", "use": "fake.item", "with": { "a": "{{item.key}}", "b": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.png", "n": "{{page.tabs}}" } },
+                 { "id": "next", "use": "fake.item", "with": { "a": "{{steps.echo.out.seen}}", "b": "{{run.operator}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-basic' -Profile $profile -Operator 'misaki'
+    Assert-True ($res['ok']) 'each: a setup + each workflow over 4 rows runs ok'
+    Assert-Equal 4 $res['total'] 'each: the worklist had 4 rows'
+    Assert-Equal 3 $res['selected'] 'each: "!= ok" selects the 0 / 2 / blank rows and drops the 1 (values map: 1 = ok)'
+    Assert-Equal 3 @($res['items']).Count 'each: one item record per selected row'
+    $echoes = (Get-ItemRecs $res 'echo')
+    Assert-Equal 3 $echoes.Count 'each: the echo step ran once per item'
+    Assert-Equal 'A1 / JOB_B' $echoes[0]['outputs']['a'] 'each: {{item.key}} is the composite display form'
+    Assert-Equal 'capture/before_ts/A1_JOB_B.png' $echoes[0]['outputs']['b'] 'each: vars, page.id and item.keySafe interpolate'
+    Assert-Equal 3 $echoes[0]['outputs']['n'] 'each: {{page.tabs}} keeps its int type as a whole-value template'
+    Assert-Equal 'A1 / JOB_B' $echoes[0]['item'] 'each: the record carries the item key'
+    $nexts = (Get-ItemRecs $res 'next')
+    Assert-Equal 'A1 / JOB_B|capture/before_ts/A1_JOB_B.png' $nexts[0]['outputs']['a'] 'each: {{steps.echo.out.seen}} reaches the next step of the same item'
+    Assert-Equal 'misaki' $nexts[0]['outputs']['b'] 'each: {{run.operator}} is the -Operator'
+    Assert-Equal 'A4 / JOB_A' $echoes[2]['outputs']['a'] 'each: rows are processed in table order when there is no groupBy / orderBy'
+    Assert-Equal 'before-done' (Get-Rec $res 'bye')['outputs']['echo'] 'each: teardown ran after the items with vars in scope'
+    $ev = @(Read-TraceEvents -WorkDir $work -RunId 'r-p103-basic' | Where-Object { $_['action'] -eq 'item' -and $_['status'] -eq 'ok' })
+    Assert-Equal 3 $ev.Count 'each: one item-ok trace event per item'
+    Assert-Equal 'A1 / JOB_B' $ev[0]['key'] 'each: the trace key is the item key'
+    $stepEv = @(Get-StepEvents -RunId 'r-p103-basic' -Id 'echo' | Where-Object { $_['status'] -eq 'ok' })
+    Assert-Equal 'A2 / JOB_A' $stepEv[1]['key'] 'each: step events carry the item key too'
+
+    # -- pendingWhen forms against the same table
+    foreach ($case in @(
+        @{ pw = 'empty';        want = 'A1 / JOB_B,A4 / JOB_A'; msg = 'empty selects 0 (the pending code) and blank' },
+        @{ pw = '== ng';        want = 'A2 / JOB_A';            msg = '== ng selects the 2 (values map: 2 = ng)' },
+        @{ pw = 'always';       want = 'A1 / JOB_B,A2 / JOB_A,A3 / JOB_B,A4 / JOB_A'; msg = 'always selects everything' },
+        @{ pw = 'bit !before';  want = 'A3 / JOB_B,A4 / JOB_A'; msg = 'bit !before selects rows without bit 1 (by name from the profile)' },
+        @{ pw = 'bit !2';       want = 'A1 / JOB_B,A3 / JOB_B'; msg = 'bit !2 selects rows without bit 2 (by number)' }
+    )) {
+        $fieldName = if ($case['pw'] -like 'bit*') { 'mask' } else { 'status' }
+        $wf = New-EachWorkflow -Name ('pw' + ($case['pw'] -replace '[^a-z0-9]', '')) -Source ('{ "table": "wl", "select": { "field": "' + $fieldName + '", "pendingWhen": "' + $case['pw'] + '" } }') `
+            -Each '[ { "id": "echo", "use": "fake.item", "with": { "a": "{{item.key}}" } } ]'
+        $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId ('r-p103-' + ($case['pw'] -replace '[^a-z0-9]', '')) -Profile $profile
+        Assert-Equal $case['want'] (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') ('pendingWhen: ' + $case['msg'])
+    }
+
+    # -- groupBy + orderBy + once: group (the card's second criterion)
+    $wf = New-EachWorkflow -Name 'group' -Source '{ "table": "wl", "select": { "field": "status", "pendingWhen": "always" }, "groupBy": "JOB_NAME", "orderBy": "key" }' `
+        -Each '[ { "id": "nav", "use": "fake.item", "once": "group", "with": { "a": "page-of-{{item.group}}", "b": "{{item.key}}" } },
+                 { "id": "use", "use": "fake.item", "with": { "a": "{{steps.nav.out.a}}", "b": "{{steps.nav.out.b}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-group' -Profile $profile
+    Assert-True ($res['ok']) 'group: runs ok'
+    Assert-Equal 'A2 / JOB_A,A4 / JOB_A,A1 / JOB_B,A3 / JOB_B' (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') 'group: rows are ordered by group, then by key'
+    $navs = (Get-ItemRecs $res 'nav')
+    Assert-Equal 2 $navs.Count 'group: the once: group step ran once per group (2 groups), not once per item'
+    Assert-Equal 'page-of-JOB_A' $navs[0]['outputs']['a'] 'group: {{item.group}} is the group value'
+    $uses = (Get-ItemRecs $res 'use')
+    Assert-Equal 4 $uses.Count 'group: the ordinary step ran for every item'
+    Assert-Equal 'A2 / JOB_A' $uses[1]['outputs']['b'] 'group: the 2nd item of JOB_A sees the once: group output produced on the 1st item (replayed)'
+    Assert-Equal 'page-of-JOB_B' $uses[2]['outputs']['a'] 'group: the next group got its own once: group run'
+    Assert-Equal 'JOB_B' $uses[3]['group'] 'group: records carry the group'
+    $navEv = @(Get-StepEvents -RunId 'r-p103-group' -Id 'nav')
+    Assert-Equal 2 @($navEv | Where-Object { $_['status'] -eq 'skip' }).Count 'group: the two replays are traced as skip'
+
+    # -- when: the four forms, and a skipped step''s outputs
+    $wf = New-EachWorkflow -Name 'when' -Source '{ "table": "wl", "select": { "field": "status", "pendingWhen": "== ng" } }' `
+        -Each '[ { "id": "first",  "use": "fake.item", "with": { "a": "x", "b": "" } },
+                 { "id": "eqYes",  "use": "fake.item", "when": "steps.first.out.a == x",  "with": { "a": "ran" } },
+                 { "id": "eqNo",   "use": "fake.item", "when": "steps.first.out.a == y",  "with": { "a": "ran" } },
+                 { "id": "neYes",  "use": "fake.item", "when": "item.JOB_NAME != JOB_B",  "with": { "a": "ran" } },
+                 { "id": "exNo",   "use": "fake.item", "when": "steps.eqNo.out.a exists", "with": { "a": "ran" } },
+                 { "id": "emYes",  "use": "fake.item", "when": "steps.first.out.b empty", "with": { "a": "ran" } },
+                 { "id": "after",  "use": "fake.item", "with": { "a": "{{steps.eqNo.out.a}}", "b": "{{steps.eqNo.out.skipped}}" } },
+                 { "id": "chain",  "use": "fake.item", "when": "steps.eqNo.out.skipped != true", "with": { "a": "ran" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-when' -Profile $profile
+    Assert-True ($res['ok']) 'when: a skipped step does not fail the run'
+    Assert-Equal 'ok'      (Get-ItemRecs $res 'eqYes')[0]['status'] 'when: == true runs'
+    Assert-Equal 'skipped' (Get-ItemRecs $res 'eqNo')[0]['status']  'when: == false skips'
+    Assert-Equal 'ok'      (Get-ItemRecs $res 'neYes')[0]['status'] 'when: != on an item column'
+    Assert-Equal 'skipped' (Get-ItemRecs $res 'exNo')[0]['status']  'when: exists is false on a skipped step''s null field'
+    Assert-Equal 'ok'      (Get-ItemRecs $res 'emYes')[0]['status'] 'when: empty is true on an empty string'
+    $skippedOut = (Get-ItemRecs $res 'eqNo')[0]['outputs']
+    Assert-True ($skippedOut.Contains('a') -and $null -eq $skippedOut['a'] -and $skippedOut['skipped'] -eq $true) 'when: the skipped step''s outputs are every manifest field = null plus skipped = true'
+    Assert-Equal '' ([string](Get-ItemRecs $res 'after')[0]['outputs']['a']) 'when: a later step referencing the skipped step gets null, not an error'
+    Assert-Equal 'True' ([string](Get-ItemRecs $res 'after')[0]['outputs']['b']) 'when: ... and its skipped flag'
+    Assert-Equal 'skipped' (Get-ItemRecs $res 'chain')[0]['status'] 'when: "skipped != true" chains a skip'
+    $skEv = @(Get-StepEvents -RunId 'r-p103-when' -Id 'eqNo')
+    Assert-Equal 'skipped' $skEv[$skEv.Count - 1]['status'] 'when: the skip is traced as skipped'
+
+    # -- a failing item does not stop the others; cancelled does, teardown still runs
+    $wf = New-EachWorkflow -Name 'fail' -Source '{ "table": "wl", "select": { "field": "status", "pendingWhen": "always" } }' `
+        -Each '[ { "id": "maybe", "use": "fake.fail", "with": { "mode": "{{item.Correl_ID_S}}" } }, { "id": "after", "use": "fake.item" } ]'
+    # mode is the correl id: A1..A4 are unknown modes -> ok; make A2 fail by rewriting the fixture rows on the fly
+    $wf = Write-Workflow 'fail2.json' ([System.IO.File]::ReadAllText($wf).Replace('"Correl_ID_S": "A2"', '"Correl_ID_S": "declared"'))
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-fail' -Profile $profile
+    # (no handler, no console: the default policy ask answers itself with s, P1-04)
+    Assert-True ($res['ok']) 'item fail: with nobody to ask, the failing item is skipped and the run is ok'
+    Assert-Equal 'boom' $res['items'][1]['failure'] 'item fail: the item record keeps the failure id'
+    Assert-Equal 'ok,skip,ok,ok' (@($res['items'] | ForEach-Object { $_['status'] }) -join ',') 'item fail: only that item was skipped; the rest still ran'
+    $afters = (Get-ItemRecs $res 'after')
+    Assert-Equal 'ok,skip,ok,ok' (@($afters | ForEach-Object { $_['status'] }) -join ',') 'item fail: the skipped item remaining steps were skipped'
+    Assert-Equal 'ok' (Get-Rec $res 'bye')['status'] 'item fail: teardown ran'
+    Assert-True ($res['items'][1]['message'] -like 'maybe:*') 'item fail: the item message names the step'
+
+    $wf = Write-Workflow 'cancel.json' ([System.IO.File]::ReadAllText($wf).Replace('"Correl_ID_S": "declared"', '"Correl_ID_S": "quit"'))
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-cancel' -Profile $profile
+    Assert-Equal 'cancelled' $res['failure'] 'cancel: operator_quit becomes the reserved id cancelled'
+    Assert-Equal 'ok,cancelled,skip,skip' (@($res['items'] | ForEach-Object { $_['status'] }) -join ',') 'cancel: no further item runs; the rest are listed as skip'
+    Assert-Equal 'ok' (Get-Rec $res 'bye')['status'] 'cancel: teardown still ran (1.1)'
+
+    # -- source names something that is not there / not a worklist; limit; Only
+    $wf = Write-Workflow 'nosrc.json' ('{ "schema": 1, "id": "p103.nosrc", "source": { "table": "nope", "select": { "pendingWhen": "always" } }, ' +
+        '"setup": [ { "id": "load", "use": "fake.load", "with": { "rows": ' + $rowsJson + ', "as": "wl" } } ], "each": [ { "id": "e", "use": "fake.item" } ] }')
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-nosrc' -Profile $profile
+    Assert-Equal 'session_missing' $res['failure'] 'source: an unregistered table name is session_missing'
+    Assert-Equal 0 @($res['items']).Count 'source: ... and no item ran'
+    $wf = Write-Workflow 'kindsrc.json' ('{ "schema": 1, "id": "p103.kindsrc", "source": { "table": "w", "select": { "pendingWhen": "always" } }, ' +
+        '"setup": [ { "id": "e", "use": "fake.ensure", "with": { "title": "x", "as": "w" } } ], "each": [ { "id": "e", "use": "fake.item" } ] }')
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-kindsrc' -Profile $profile
+    Assert-Equal 'session_kind_mismatch' $res['failure'] 'source: a window named as the table is session_kind_mismatch'
+
+    $wf = New-EachWorkflow -Name 'limit' -Source '{ "table": "wl", "select": { "field": "status", "pendingWhen": "always" }, "limit": 2 }' -Each '[ { "id": "e", "use": "fake.item" } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-limit' -Profile $profile
+    Assert-Equal 2 @($res['items']).Count 'limit: source.limit caps the rows'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-limit2' -Profile $profile -Limit 1
+    Assert-Equal 1 @($res['items']).Count 'limit: -Limit overrides source.limit'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-only' -Profile $profile -Only @('A3 / JOB_B', 'A1 / JOB_B')
+    Assert-Equal 'A1 / JOB_B,A3 / JOB_B' (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') 'only: -Only keeps just the named keys (in table order)'
+
+    # -- keyColumns override on source; a template that cannot resolve; vars override
+    $wf = New-EachWorkflow -Name 'keycols' -Source '{ "table": "wl", "select": { "pendingWhen": "always" }, "keyColumns": ["Correl_ID_S"], "limit": 1 }' `
+        -Each '[ { "id": "e", "use": "fake.item", "with": { "a": "{{item.key}}", "b": "{{vars.side}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-keycols' -Profile $profile -Vars @{ side = 'after' }
+    Assert-Equal 'A1' (Get-ItemRecs $res 'e')[0]['outputs']['a'] 'keyColumns: source.keyColumns overrides the profile key'
+    Assert-Equal 'after' (Get-ItemRecs $res 'e')[0]['outputs']['b'] 'vars: -Vars overrides the workflow vars'
+    $wf = New-EachWorkflow -Name 'badref' -Source '{ "table": "wl", "select": { "pendingWhen": "always" }, "limit": 1 }' `
+        -Each '[ { "id": "e", "use": "fake.item", "with": { "a": "{{item.NoSuchColumn}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-badref' -Profile $profile
+    Assert-Equal 'input_invalid' (Get-ItemRecs $res 'e')[0]['failure'] 'template: an unresolvable reference is input_invalid'
+    Assert-True ((Get-ItemRecs $res 'e')[0]['message'] -like 'template {{item.NoSuchColumn}}:*NoSuchColumn*') 'template: ... naming the missing segment'
+
+    # ================================================ P1-04: onError, ledger + resume, groupEnd, confirm
+    function Get-Count { param([string]$Name) $f = Join-Path $work ('count-' + $Name + '.txt'); if (Test-Path -LiteralPath $f) { return [int]([System.IO.File]::ReadAllText($f).Trim()) }; return 0 }
+    function Reset-Counters { Get-ChildItem -LiteralPath $work -Filter '*.txt' -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }
+    $script:asked = New-Object System.Collections.ArrayList
+    $script:answers = New-Object System.Collections.ArrayList
+    $handler = { param($q) [void]$script:asked.Add($q); if ($script:answers.Count -eq 0) { return 's' }; $a = $script:answers[0]; $script:answers.RemoveAt(0); return $a }
+    function Set-Answers { param($List) $script:asked.Clear(); $script:answers.Clear(); foreach ($a in @($List)) { [void]$script:answers.Add($a) } }
+    $oneRow = '[ { "Correl_ID_S": "A1", "JOB_NAME": "JOB_A", "status": "0", "mask": "0" } ]'
+    function New-PolicyWorkflow {
+        param([string]$Name, [string]$Each, [string]$OnError = '', [string]$Rows = $oneRow, [string]$SourceExtra = '')
+        $top = if ($OnError -ne '') { '"onError": ' + $OnError + ', ' } else { '' }
+        return (Write-Workflow $Name ('{ "schema": 1, "id": "p104.' + $Name + '", ' + $top +
+            '"source": { "table": "wl", "select": { "field": "status", "pendingWhen": "always" }' + $SourceExtra + ' }, ' +
+            '"setup": [ { "id": "load", "use": "fake.load", "with": { "rows": ' + $Rows + ', "as": "wl" } } ], ' +
+            '"each": ' + $Each + ', ' +
+            '"teardown": [ { "id": "bye", "use": "fake.pure", "with": { "text": "bye" } } ] }'))
+    }
+
+    # -- retry: a transient failure is retried with backoff, then succeeds
+    Reset-Counters; Set-Answers @()
+    $wf = New-PolicyWorkflow -Name 'retry' -OnError '{ "policy": "retry", "times": 3, "backoffMs": 1 }' `
+        -Each '[ { "id": "flaky", "use": "fake.flaky", "with": { "name": "r1", "failUntil": 2 } }, { "id": "after", "use": "fake.item", "with": { "a": "{{steps.flaky.out.calls}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-retry' -Profile $profile -AskHandler $handler
+    Assert-True ($res['ok']) 'retry: the run is ok once the retry succeeds'
+    $flaky = Get-ItemRecs $res 'flaky'
+    Assert-Equal 'fail,fail,ok' (@($flaky | ForEach-Object { $_['status'] }) -join ',') 'retry: two failed attempts are on record, then the ok'
+    Assert-Equal 3 $flaky[2]['attempt'] 'retry: the record carries the attempt number'
+    Assert-Equal 'retry' $flaky[0]['policy'] 'retry: ... and the policy that was applied'
+    Assert-Equal 3 (Get-ItemRecs $res 'after')[0]['outputs']['a'] 'retry: the later step sees the successful attempt''s outputs'
+    Assert-Equal 0 $script:asked.Count 'retry: nobody was asked'
+    $onErr = @(Read-TraceEvents -WorkDir $work -RunId 'r-p104-retry' | Where-Object { $_['action'] -eq 'onError' })
+    Assert-Equal 2 $onErr.Count 'retry: each failed attempt traces the policy decision'
+    Assert-Equal 'True' ([string]$onErr[0]['data']['transient']) 'retry: ... including that the failure was transient'
+
+    # -- retry exhausted -> ask; a non-transient failure never retries -> ask right away
+    Reset-Counters; Set-Answers @('s')
+    $wf = New-PolicyWorkflow -Name 'exhaust' -OnError '{ "policy": "retry", "times": 1, "backoffMs": 1 }' `
+        -Each '[ { "id": "flaky", "use": "fake.flaky", "with": { "name": "x1", "failUntil": 5 } }, { "id": "after", "use": "fake.item" } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-exhaust' -Profile $profile -AskHandler $handler
+    Assert-Equal 2 @((Get-ItemRecs $res 'flaky') | Where-Object { $_['status'] -eq 'fail' }).Count 'exhaust: times=1 means two attempts'
+    Assert-Equal 1 $script:asked.Count 'exhaust: then the operator is asked'
+    Assert-Equal 'error' $script:asked[0]['kind'] 'exhaust: ... an error question'
+    Assert-Equal 'timeout' $script:asked[0]['failure'] 'exhaust: ... naming the failure'
+    Assert-Equal 'skip' $res['items'][0]['status'] 'exhaust: s skips the item'
+    Assert-Equal 'skip' (Get-ItemRecs $res 'after')[0]['status'] 'exhaust: the item''s remaining steps are skipped'
+    Assert-True ($res['ok']) 'exhaust: a skipped item is not a failed run'
+    Reset-Counters; Set-Answers @('s')
+    $wf = New-PolicyWorkflow -Name 'nontransient' -OnError '{ "policy": "retry", "times": 3, "backoffMs": 1 }' `
+        -Each '[ { "id": "flaky", "use": "fake.flaky", "with": { "name": "n1", "failUntil": 5, "mode": "not_found" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-nontransient' -Profile $profile -AskHandler $handler
+    Assert-Equal 1 @((Get-ItemRecs $res 'flaky') | Where-Object { $_['status'] -eq 'fail' }).Count 'non-transient: not_found is not retried even under policy retry (P0-R5)'
+    Assert-Equal 'ask' (Get-ItemRecs $res 'flaky')[0]['policy'] 'non-transient: retry degraded to ask'
+    Assert-Equal 1 $script:asked.Count 'non-transient: the operator was asked once'
+    Assert-Equal 'False' ([string]$script:asked[0]['transient']) 'non-transient: the question says it is not transient'
+
+    # -- byFailure overrides the top-level policy per failure id; a step onError overrides the workflow's
+    Reset-Counters; Set-Answers @()
+    $wf = New-PolicyWorkflow -Name 'byfailure' -OnError '{ "policy": "skip", "byFailure": { "timeout": { "policy": "retry", "times": 2, "backoffMs": 1 } } }' `
+        -Each '[ { "id": "flaky", "use": "fake.flaky", "with": { "name": "b1", "failUntil": 1 } }, { "id": "nf", "use": "fake.flaky", "with": { "name": "b2", "failUntil": 9, "mode": "not_found" } }, { "id": "after", "use": "fake.item" } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-byfailure' -Profile $profile -AskHandler $handler
+    Assert-Equal 'fail,ok' (@((Get-ItemRecs $res 'flaky') | ForEach-Object { $_['status'] }) -join ',') 'byFailure: timeout took the retry override'
+    Assert-Equal 'fail,skip' (@((Get-ItemRecs $res 'nf') | ForEach-Object { $_['status'] }) -join ',') 'byFailure: not_found fell through to the top-level skip'
+    Assert-Equal 'skip' $res['items'][0]['status'] 'byFailure: ... which skipped the item'
+    Assert-Equal 0 $script:asked.Count 'byFailure: skip asks nobody'
+    Reset-Counters; Set-Answers @()
+    $wf = New-PolicyWorkflow -Name 'stepover' -OnError '{ "policy": "fail" }' `
+        -Each '[ { "id": "nf", "use": "fake.flaky", "onError": { "policy": "skip" }, "with": { "name": "s1", "failUntil": 9, "mode": "not_found" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-stepover' -Profile $profile -AskHandler $handler
+    Assert-Equal 'skip' $res['items'][0]['status'] 'step onError: the call''s own policy wins over the workflow''s fail'
+    Assert-True ($res['ok']) 'step onError: ... so the run is not aborted'
+
+    # -- ask: r retries, q cancels (teardown still runs)
+    Reset-Counters; Set-Answers @('r')
+    $wf = New-PolicyWorkflow -Name 'ask' -Each '[ { "id": "flaky", "use": "fake.flaky", "with": { "name": "a1", "failUntil": 1 } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-ask' -Profile $profile -AskHandler $handler
+    Assert-True ($res['ok']) 'ask: default policy is ask; r retried and it succeeded'
+    Assert-Equal 'fail,ok' (@((Get-ItemRecs $res 'flaky') | ForEach-Object { $_['status'] }) -join ',') 'ask: one failed attempt, one ok'
+    Assert-Equal 'ask' $script:asked[0]['policy'] 'ask: the question carries the policy'
+    Reset-Counters; Set-Answers @('q')
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-askq' -Profile $profile -AskHandler $handler
+    Assert-Equal 'cancelled' $res['failure'] 'ask: q cancels the run'
+    Assert-Equal 'cancelled' $res['items'][0]['status'] 'ask: ... the item is cancelled'
+    Assert-Equal 'ok' (Get-Rec $res 'bye')['status'] 'ask: ... teardown still ran'
+    $askEv = @(Read-TraceEvents -WorkDir $work -RunId 'r-p104-askq' | Where-Object { $_['action'] -eq 'ask' })
+    Assert-Equal 'q' $askEv[0]['status'] 'ask: the answer is traced'
+
+    # -- fail: aborts the run, later items are listed, teardown runs
+    Reset-Counters; Set-Answers @()
+    $threeRows = '[ { "Correl_ID_S": "A1", "JOB_NAME": "JOB_A", "status": "0" }, { "Correl_ID_S": "declared", "JOB_NAME": "JOB_A", "status": "0" }, { "Correl_ID_S": "A3", "JOB_NAME": "JOB_A", "status": "0" } ]'
+    $wf = New-PolicyWorkflow -Name 'failpolicy' -OnError '{ "policy": "fail" }' -Rows $threeRows `
+        -Each '[ { "id": "maybe", "use": "fake.fail", "with": { "mode": "{{item.Correl_ID_S}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-fail' -Profile $profile -AskHandler $handler
+    Assert-True (-not $res['ok']) 'fail: the run is not ok'
+    Assert-Equal 'boom' $res['failure'] 'fail: the failure id is the step''s'
+    Assert-Equal 'ok,fail,skip' (@($res['items'] | ForEach-Object { $_['status'] }) -join ',') 'fail: the run stopped after the failing item; the rest is listed as skip'
+    Assert-Equal 'run aborted (onError: fail)' $res['items'][2]['message'] 'fail: ... saying why'
+    Assert-Equal 'ok' (Get-Rec $res 'bye')['status'] 'fail: teardown ran'
+
+    # -- destructive: confirm gate
+    Set-Answers @('y')
+    $destroyWf = New-PolicyWorkflow -Name 'destroy' -Each '[ { "id": "d", "use": "fake.destroy", "with": { "what": "{{item.key}}" } } ]'
+    $wf = $destroyWf
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-destroy' -Profile $profile -AskHandler $handler
+    Assert-True ($res['ok'] -and (Get-ItemRecs $res 'd')[0]['outputs']['done'] -eq $true) 'confirm: y runs the destructive step'
+    Assert-Equal 'confirm' $script:asked[0]['kind'] 'confirm: the question kind is confirm'
+    Assert-Equal 'A1 / JOB_A' $script:asked[0]['with']['what'] 'confirm: the question shows the expanded with'
+    Set-Answers @('n')
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-destroyn' -Profile $profile -AskHandler $handler
+    Assert-Equal 'skip' $res['items'][0]['status'] 'confirm: n skips the item (left pending)'
+    Assert-Equal 0 @((Get-ItemRecs $res 'd') | Where-Object { $_['status'] -eq 'ok' }).Count 'confirm: ... and the step did not run'
+    Set-Answers @('q')
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-destroyq' -Profile $profile -AskHandler $handler
+    Assert-Equal 'cancelled' $res['failure'] 'confirm: q cancels the run'
+    Set-Answers @()
+    $wf = New-PolicyWorkflow -Name 'noconfirm' -Each '[ { "id": "d", "use": "fake.destroy", "confirm": false } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-noconfirm' -Profile $profile -AskHandler $handler
+    Assert-True ($res['ok'] -and $script:asked.Count -eq 0) 'confirm: "confirm": false skips the gate'
+    $res = Invoke-EbiWorkflow -Path $destroyWf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-destroydry' -Profile $profile -DryRun
+    Assert-True ($res['ok']) 'confirm: a dry run without a handler answers itself (never blocks)'
+
+    # -- ledger + resume: completed (item, step) records are replayed, not re-run
+    Reset-Counters; Set-Answers @()
+    $wf = New-PolicyWorkflow -Name 'resume' -OnError '{ "policy": "fail" }' -Rows $threeRows `
+        -Each '[ { "id": "count", "use": "fake.count", "with": { "name": "c-{{item.Correl_ID_S}}" } },
+                 { "id": "opt",   "use": "fake.item",  "when": "item.Correl_ID_S == never", "with": { "a": "x" } },
+                 { "id": "maybe", "use": "fake.fail",  "with": { "mode": "{{item.Correl_ID_S}}" } },
+                 { "id": "use",   "use": "fake.item",  "with": { "a": "{{steps.count.out.n}}", "b": "{{steps.opt.out.skipped}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-resume' -Profile $profile -AskHandler $handler
+    Assert-Equal 'boom' $res['failure'] 'resume: run 1 aborted on the second item'
+    Assert-Equal 1 (Get-Count 'c-A1') 'resume: run 1 really ran A1''s count step once'
+    $ledger = Read-EbiLedger -Path (Get-EbiLedgerFile -WorkDir $work -RunId 'r-p104-resume')
+    Assert-True ($ledger['done'].Contains('item:A1 / JOB_A|count') -and $ledger['done'].Contains('item:A1 / JOB_A|use')) 'resume: run 1 ledgered A1''s completed steps'
+    Assert-True ($ledger['done'].Contains('item:A1 / JOB_A|opt') -and $ledger['done']['item:A1 / JOB_A|opt']['status'] -eq 'skipped') 'resume: a when-skipped step is a ledger record too'
+    Assert-True (-not $ledger['done'].Contains('item:declared / JOB_A|maybe')) 'resume: the failed step is NOT in the ledger'
+    Assert-Equal 1 $ledger['done']['item:A1 / JOB_A|count']['outputs']['n'] 'resume: the record carries the outputs'
+    $runDoc = (Read-EbiRunFile -WorkDir $work -RunId 'r-p104-resume')['value']
+    Assert-Equal 'False' ([string]$runDoc['finished']) 'resume: run.json says the run is unfinished'
+    Assert-Equal 'p104.resume' $runDoc['workflow']['id'] 'resume: run.json names the workflow'
+    Assert-Equal 1 @(Find-EbiUnfinishedRuns -WorkDir $work -WorkflowId 'p104.resume').Count 'resume: the unfinished run is findable'
+    # the operator fixes the data (the second row no longer fails) and resumes the same run id
+    $fixed = Write-Workflow 'resume.json' ([System.IO.File]::ReadAllText($wf).Replace('"Correl_ID_S": "declared"', '"Correl_ID_S": "A2"'))
+    $res = Invoke-EbiWorkflow -Path $fixed -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-resume' -Profile $profile -AskHandler $handler -Resume
+    Assert-True ($res['ok']) 'resume: run 2 completes'
+    Assert-True ($res['resumed']) 'resume: the result says it resumed'
+    Assert-Equal 1 (Get-Count 'c-A1') 'resume: A1''s count step was NOT run again'
+    Assert-Equal 1 (Get-Count 'c-A2') 'resume: A2''s (never completed) ran'
+    Assert-Equal 1 (Get-Count 'c-A3') 'resume: A3''s ran'
+    $a1 = @($res['steps'] | Where-Object { $_['item'] -eq 'A1 / JOB_A' })
+    Assert-Equal 'replayed,replayed,replayed,replayed' (@($a1 | ForEach-Object { $_['status'] }) -join ',') 'resume: every A1 step was replayed from the ledger (including the when-skipped one)'
+    Assert-Equal 1 @($a1 | Where-Object { $_['id'] -eq 'use' })[0]['outputs']['a'] 'resume: the replayed later step still holds the value it got from the replayed earlier one'
+    Assert-Equal 'True' ([string]@($a1 | Where-Object { $_['id'] -eq 'use' })[0]['outputs']['b']) 'resume: ... and the skipped flag of the when-skipped one'
+    $a2 = @($res['steps'] | Where-Object { $_['item'] -eq 'A2 / JOB_A' -and $_['id'] -eq 'use' })
+    Assert-Equal 1 $a2[0]['outputs']['a'] 'resume: A2''s use step got its own fresh count output'
+    Assert-Equal 'True' ([string](Read-EbiRunFile -WorkDir $work -RunId 'r-p104-resume')['value']['finished']) 'resume: run.json now says finished'
+    Assert-Equal 0 @(Find-EbiUnfinishedRuns -WorkDir $work -WorkflowId 'p104.resume').Count 'resume: no unfinished run is left'
+    $res = Invoke-EbiWorkflow -Path $fixed -WorkDir $work -ModulesRoot $modules -RunId 'r-never-ran' -Profile $profile -Resume
+    Assert-Equal 'workflow_invalid' $res['failure'] 'resume: a run id with no run.json cannot be resumed'
+    $other = New-PolicyWorkflow -Name 'other' -Each '[ { "id": "e", "use": "fake.item" } ]'
+    $res = Invoke-EbiWorkflow -Path $other -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-resume' -Profile $profile -Resume
+    Assert-True ($res['failure'] -eq 'workflow_invalid' -and $res['message'] -like '*ran workflow "p104.resume", not "p104.other"*') 'resume: a different workflow cannot resume that run'
+
+    # -- once: groupEnd fires once per group after its last item, also when that item was skipped by a policy
+    Set-Answers @()
+    $groupRows = '[ { "Correl_ID_S": "A1", "JOB_NAME": "JOB_B", "status": "0" }, { "Correl_ID_S": "A2", "JOB_NAME": "JOB_A", "status": "0" }, { "Correl_ID_S": "declared", "JOB_NAME": "JOB_B", "status": "0" }, { "Correl_ID_S": "A4", "JOB_NAME": "JOB_A", "status": "0" } ]'
+    $wf = New-PolicyWorkflow -Name 'groupend' -OnError '{ "policy": "skip" }' -Rows $groupRows -SourceExtra ', "groupBy": "JOB_NAME"' `
+        -Each '[ { "id": "open",  "use": "fake.ensure",  "once": "group",    "with": { "title": "{{item.group}}", "as": "wb" } },
+                 { "id": "work",  "use": "fake.fail",    "with": { "mode": "{{item.Correl_ID_S}}" } },
+                 { "id": "peek",  "use": "fake.capture", "with": { "window": "wb", "saveAs": "{{item.keySafe}}.png" } },
+                 { "id": "close", "use": "fake.release", "once": "groupEnd", "with": { "window": "wb" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-groupend' -Profile $profile -AskHandler $handler
+    Assert-True ($res['ok']) 'groupEnd: the run is ok (one item skipped by policy)'
+    Assert-Equal 'ok,ok,ok,skip' (@($res['items'] | ForEach-Object { $_['status'] }) -join ',') 'groupEnd: JOB_A first (A2, A4), then JOB_B (A1, declared -> skipped)'
+    $closes = Get-ItemRecs $res 'close'
+    Assert-Equal 2 $closes.Count 'groupEnd: close ran once per group'
+    Assert-Equal 'JOB_A,JOB_B' (@($closes | ForEach-Object { $_['group'] }) -join ',') 'groupEnd: ... for each group in order'
+    Assert-Equal 'declared / JOB_B' $closes[1]['item'] 'groupEnd: JOB_B''s close ran on the group''s LAST item even though that item was skipped'
+    Assert-True (-not $res['session'].Contains('wb') -and $res['session'].Count -eq 1) 'groupEnd: every wb was released (only the worklist wl remains)'
+    $ids = @($res['steps'] | Where-Object { $_['group'] -eq 'JOB_B' } | ForEach-Object { $_['id'] + ':' + $_['status'] })
+    Assert-True (($ids -join ',').EndsWith('close:ok')) 'groupEnd: close is the last thing that happens for the group'
+    $ledger = Read-EbiLedger -Path (Get-EbiLedgerFile -WorkDir $work -RunId 'r-p104-groupend')
+    Assert-True ($ledger['done'].Contains('group:JOB_A|open') -and $ledger['done'].Contains('group:JOB_A|close')) 'groupEnd: once: group / groupEnd are ledgered under (group, step)'
+
+    # -- resume with a group resource: the provides / releases steps run again, the rest replays (7.6)
+    Reset-Counters; Set-Answers @()
+    $wf = New-PolicyWorkflow -Name 'groupresume' -OnError '{ "policy": "fail" }' -Rows $groupRows -SourceExtra ', "groupBy": "JOB_NAME"' `
+        -Each '[ { "id": "open",  "use": "fake.ensure",  "once": "group",    "with": { "title": "{{item.group}}", "as": "wb" } },
+                 { "id": "count", "use": "fake.count",   "with": { "name": "g-{{item.Correl_ID_S}}" } },
+                 { "id": "work",  "use": "fake.fail",    "with": { "mode": "{{item.Correl_ID_S}}" } },
+                 { "id": "peek",  "use": "fake.capture", "with": { "window": "wb", "saveAs": "{{item.keySafe}}.png" } },
+                 { "id": "close", "use": "fake.release", "once": "groupEnd", "with": { "window": "wb" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-groupresume' -Profile $profile -AskHandler $handler
+    Assert-Equal 'boom' $res['failure'] 'group resume: run 1 aborted inside JOB_B (after JOB_A completed)'
+    Assert-Equal 'ok,ok,ok,fail' (@($res['items'] | ForEach-Object { $_['status'] }) -join ',') 'group resume: JOB_A done, A1 of JOB_B done, the third item failed'
+    $fixed = Write-Workflow 'groupresume.json' ([System.IO.File]::ReadAllText($wf).Replace('"Correl_ID_S": "declared"', '"Correl_ID_S": "A3"'))
+    $res = Invoke-EbiWorkflow -Path $fixed -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-groupresume' -Profile $profile -AskHandler $handler -Resume
+    Assert-True ($res['ok']) 'group resume: run 2 completes'
+    $opens = Get-ItemRecs $res 'open'
+    Assert-Equal 'ok,ok' (@($opens | ForEach-Object { $_['status'] }) -join ',') 'group resume: open (provides) really ran again for BOTH groups, not replayed (6.2)'
+    Assert-Equal 1 (Get-Count 'g-A2') 'group resume: JOB_A''s count steps were replayed, not re-run'
+    Assert-Equal 1 (Get-Count 'g-A1') 'group resume: ... A1 of JOB_B too'
+    Assert-Equal 1 (Get-Count 'g-A3') 'group resume: the item that never completed ran'
+    $peeks = Get-ItemRecs $res 'peek'
+    Assert-Equal 'replayed,replayed,replayed,ok' (@($peeks | ForEach-Object { $_['status'] }) -join ',') 'group resume: peek replayed where done; the fresh item found wb registered (no session_missing)'
+    Assert-Equal 'ok,ok' (@((Get-ItemRecs $res 'close') | ForEach-Object { $_['status'] }) -join ',') 'group resume: close (releases) really ran for both groups'
+    Assert-True (-not $res['session'].Contains('wb') -and $res['session'].Count -eq 1) 'group resume: no wb left registered (only the worklist wl)'
+
+    # -- warnings are counted at the end
+    $res = Invoke-EbiWorkflow -Path (Join-Path $tmpRoot 'warn.json') -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-warn'
+    Assert-Equal 1 $res['warnings'] 'warnings: the run result counts them'
 
     # ------------------------------------------------ the fixtures pass the real contract checker
     . (Join-Path $here 'StepContract.ps1')
     $specText = [System.IO.File]::ReadAllText((Join-Path (Split-Path $here -Parent) 'docs/ebi-dance/spec/STEP-CONTRACT.md'))
     $kinds = Get-StepContractMustReleaseKinds -Text $specText
-    foreach ($name in @('fake.ensure', 'fake.capture', 'fake.release', 'fake.pure', 'fake.fail', 'fake.needbook', 'fake.noresource')) {
+    foreach ($name in @('fake.ensure', 'fake.capture', 'fake.release', 'fake.pure', 'fake.fail', 'fake.needbook', 'fake.noresource', 'fake.load', 'fake.item', 'fake.flaky', 'fake.count', 'fake.destroy')) {
         $findings = @(Test-StepFileContract -Path (Join-Path (Join-Path $modules 'fake') ($name + '.ps1')) -MustRelease $kinds)
         Assert-Equal 0 $findings.Count ('fixture ' + $name + ' passes the step contract checker' + $(if ($findings.Count -gt 0) { ': ' + (($findings | ForEach-Object { $_['rule'] + ' ' + $_['message'] }) -join '; ') } else { '' }))
     }
