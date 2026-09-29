@@ -58,7 +58,9 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         crosscheck (P2-10: any disagreement is unknown);
                         human/ prepare, gate (always runs), choose (the one
                         P0-R4 renderer), input (P2-07: sets
-                        $Ctx.Run.timeWindow). Steps share kernel/ libraries via
+                        $Ctx.Run.timeWindow; keeps one already set by
+                        -TimeWindow / -Resume, kept=true, never asks
+                        twice). Steps share kernel/ libraries via
                         `. (Join-Path $PSScriptRoot '..\..\kernel\X.ps1')`;
                         they never call each other. Tests\Test-StepDryRun.ps1
                         (P1-36, harness Tests\StepDryRun.ps1) dry-runs EVERY

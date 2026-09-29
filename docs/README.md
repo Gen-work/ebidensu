@@ -51,7 +51,10 @@ check`,挂进 `Run-Tests.ps1`)、P2-09(`ebi profile check / new / diff`,
 文本上跑过一次真的 tune 循环)、P2-06(`Tests/Test-Parity.ps1`:旧判定 vs 新引擎同
 文本对拍、新 CSV 被旧工具读、中断续跑不重复;四处故意的差异作为差异断言)`[x]`——
 **P2 关闭(2026-09-28)**。留给办公 PC 的两项在 P2-03 / P2-06 卡上:真实页面的
-grammar tune、PNG 尺寸对拍。P3 从 P3-01(操作员收集素材)开始。
+grammar tune、PNG 尺寸对拍。合并后(2026-09-29)按 review 修了两处 P1:
+`human.input` 在 `-Resume` / `-TimeWindow` 已有窗口时不再重问(输出 `kept=true`,
+不会把已完成行用过的窗口换掉);`file.find` 的 `recurse` 不再把不同子目录的同名文件
+折叠成一个(同名即 `ambiguous`,候选带 `path`)。P3 从 P3-01(操作员收集素材)开始。
 
 ---
 

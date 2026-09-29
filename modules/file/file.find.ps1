@@ -90,7 +90,7 @@ function FileFind-Candidates {
     $i = 0
     foreach ($f in @($Files)) {
         $i++
-        [void]$list.Add(@{ id = ('c' + $i); candidate = [string]$f['name']; evidence = @{ source = $Dir; modifiedAt = [string]$f['modifiedAt']; size = [string]$f['size']; matchedBy = $Tier } })
+        [void]$list.Add(@{ id = ('c' + $i); candidate = [string]$f['name']; evidence = @{ source = $Dir; path = [string]$f['path']; modifiedAt = [string]$f['modifiedAt']; size = [string]$f['size']; matchedBy = $Tier } })
     }
     $sugg = $null
     if ($list.Count -gt 0) { $sugg = @{ id = 'c1'; reason = 'newest by modified time' } }
@@ -112,14 +112,18 @@ function Invoke-Step {
         return @{ ok = $false; failure = 'dir_not_found'; message = $dir; path = ''; files = @(); found = 0; matchedBy = ''; candidates = $null }
     }
     $items = @(Get-ChildItem -LiteralPath $dir -Filter $glob -File -Recurse:([bool]$In['recurse']) -ErrorAction SilentlyContinue)
+    # name -> ALL the files carrying it. With recurse the same key file name
+    # can sit in several sub-folders; each is a hit of its own, and the
+    # ambiguity check below must see every one (a name-keyed lookup let the
+    # last one enumerated silently win).
     $byName = @{}
-    foreach ($it in $items) { $byName[$it.Name] = $it }
+    foreach ($it in $items) { if (-not $byName.Contains($it.Name)) { $byName[$it.Name] = New-Object System.Collections.ArrayList }; [void]$byName[$it.Name].Add($it) }
     $rank = FileFind-Rank -Names @($byName.Keys) -Key $key -Ext $ext -Rules (Get-EbiKeyRules -Profile $Ctx['Profile'])
     if ($rank['tier'] -eq '') {
         return @{ ok = $false; failure = 'file_not_found'; message = ('nothing for key "' + $key + '"' + $(if ($ext -ne '') { ' (.' + $ext.TrimStart('.') + ')' } else { '' }) + ' under ' + $dir + ' (' + $items.Count + ' file(s) seen)'); path = ''; files = @(); found = 0; matchedBy = ''; candidates = $null }
     }
     $hits = New-Object System.Collections.ArrayList
-    foreach ($it in @(@($rank['names']) | ForEach-Object { $byName[$_] } | Sort-Object -Property @{ Expression = 'LastWriteTimeUtc'; Descending = $true }, @{ Expression = 'Name' })) {
+    foreach ($it in @(@($rank['names']) | ForEach-Object { @($byName[$_].ToArray()) } | Sort-Object -Property @{ Expression = 'LastWriteTimeUtc'; Descending = $true }, @{ Expression = 'Name' }, @{ Expression = 'FullName' })) {
         [void]$hits.Add(@{ name = $it.Name; path = $it.FullName; modifiedAt = $it.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'); size = [int64]$it.Length })
     }
     $paths = @(@($hits.ToArray()) | ForEach-Object { $_['path'] })

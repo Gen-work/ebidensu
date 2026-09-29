@@ -57,7 +57,11 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   resource channel of `docs/ebi-dance/spec/STEP-CONTRACT.md` section 3.4
   point 7. P1-04 adds `Invoke-EbiStepWithPolicy` around every call:
   ledger replay on `-Resume` (never for a `provides` / `releases` step,
-  which always runs again), the confirm gate before a `destructive` step
+  which always runs again; setup and teardown are not in the ledger and
+  run again too, so a `human.input` window question finds `run.timeWindow`
+  already restored from `run.json` -- or given by `-TimeWindow` -- and
+  returns it with `kept=true` rather than asking twice), the confirm gate
+  before a `destructive` step
   (unless `"confirm": false`), then attempts under the `onError` policy
   (`retry` only for a transient failure, doubling backoff, exhausted ->
   `ask`; `ask` r/s/q; `skip`; `fail`; `byFailure` and a per-call `onError`
