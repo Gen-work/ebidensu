@@ -74,9 +74,34 @@ $totalFail = 0
 # that silently stops being discovered is worse than one that fails.
 $testFiles = @(Get-ChildItem -LiteralPath $here -Filter 'Test-*.ps1' -File -Recurse | Sort-Object FullName)
 foreach ($t in $testFiles) {
-    & $t.FullName
-    $rc = $LASTEXITCODE
-    if ($null -eq $rc) { $rc = 0 }
+    # One suite that dies (a terminating error outside any assertion) is ONE
+    # failure, reported by file and line; the suites after it still run. On
+    # PS 5.1 a provider error (Copy-Item into a missing directory) terminated
+    # Test-P2 and, before this guard, took the rest of the run with it.
+    # Two ways a suite can die: the error propagates out of the call (5.1's
+    # provider errors do), or the script just ends without reaching its exit
+    # (then $LASTEXITCODE is still the null set here, never the previous
+    # suite's stale code). Both count as one failure with the file and line.
+    $global:LASTEXITCODE = $null
+    $errBefore = $Error.Count
+    $rc = $null; $crash = $null
+    try {
+        & $t.FullName
+        $rc = $LASTEXITCODE
+    } catch { $crash = $_ }
+    if ($null -eq $rc) {
+        if ($null -eq $crash -and $Error.Count -gt $errBefore) { $crash = $Error[0] }
+        $where = ''; $msg = 'the suite ended without reaching its exit'
+        if ($null -ne $crash) {
+            $msg = [string]$crash.Exception.Message
+            try { if ($null -ne $crash.InvocationInfo -and $crash.InvocationInfo.ScriptLineNumber -gt 0 -and -not [string]::IsNullOrEmpty([string]$crash.InvocationInfo.ScriptName)) { $where = ' at ' + (Split-Path -Leaf ([string]$crash.InvocationInfo.ScriptName)) + ':' + $crash.InvocationInfo.ScriptLineNumber } } catch { }
+        }
+        $line = ('{0}: stopped with an error{1}: {2}' -f $t.Name, $where, $msg)
+        Write-Host ('  [FAIL] ' + $line) -ForegroundColor Red
+        Write-Host ('  ---- {0}: stopped, counted as 1 failure; the remaining suites still run ----' -f ($t.BaseName -replace '^Test-', '')) -ForegroundColor Red
+        if ($null -ne $Global:EbiTestFailures) { [void]$Global:EbiTestFailures.Add($line) }
+        $rc = 1
+    }
     $totalFail += [int]$rc
 }
 

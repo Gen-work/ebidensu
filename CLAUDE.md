@@ -536,7 +536,9 @@ Validate.ps1            Phase Validate (read-only diagnostic)
 Watch-MappingProgress.ps1  read-only progress monitor (does NOT lock mapping)
 Check-Encoding.ps1      read-only encoding policy checker + label self-test
 Tests/                  Run-Tests.ps1 (parse-checks every .ps1 in the tree, then
-                        runs Tests\**\Test-*.ps1) + Test-*.ps1.
+                        runs Tests\**\Test-*.ps1; a suite that dies is ONE
+                        failure named by file:line, the rest still run) +
+                        Test-*.ps1.
                         Test-Docs.ps1 + DocsCheck.ps1 + docs-checks.json make the
                         ebi-dance docs self-checking: retired spellings, card-count
                         agreement across BACKLOG/Plan/README, cross-file section
