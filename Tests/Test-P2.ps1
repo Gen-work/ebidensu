@@ -101,10 +101,12 @@ $res = Invoke-EbiWorkflow -Path $wfPath -WorkDir $wd -ModulesRoot $modules -RunI
 Assert-True ($res['ok'] -and $res['steps'][0]['outputs']['w']['from'] -eq '2026-06-12T09:00:00') 'runner: a resume restores the window from run.json without asking'
 # human.input in setup persists the window before the next setup step sees it
 [System.IO.File]::WriteAllText((Join-Path $tmpRoot 'tw2.json'), '{ "schema": 1, "id": "p2.tw2", "setup": [ { "id": "ask", "use": "human.input", "with": { "question": "w?", "kind": "timeWindow", "default": "2026/06/12 8:00..2026/06/12 9:00" } }, { "id": "e", "use": "fake.echo", "with": { "w": "{{run.timeWindow}}" } } ] }', $utf8)
-Copy-Item -LiteralPath (Join-Path $repoRoot 'modules/human/human.input.ps1') -Destination (Join-Path $modules 'human/human.input.ps1') -Force -ErrorAction SilentlyContinue
+# the fixture modules tree gets the real human.input step, and a copy of kernel/ beside it
+# (the step dot-sources ..\..\kernel relative to its own file). The directory is created
+# first: on PS 5.1 a Copy-Item into a missing directory is a TERMINATING error that
+# -ErrorAction SilentlyContinue does not swallow (it did on pwsh 7, which hid this).
 New-Item -ItemType Directory -Path (Join-Path $modules 'human') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'modules/human/human.input.ps1') -Destination (Join-Path $modules 'human/human.input.ps1') -Force
-foreach ($k in @('kernel')) { }   # human.input dot-sources ..\..\kernel relative to its file: give the fixture tree a kernel link
 Copy-Item -LiteralPath (Join-Path $repoRoot 'kernel') -Destination (Join-Path $tmpRoot 'kernel') -Recurse -Force
 $res = Invoke-EbiWorkflow -Path (Join-Path $tmpRoot 'tw2.json') -WorkDir $wd -ModulesRoot $modules -RunId 'tw2' -DryRun
 Assert-True ($res['ok'] -and $res['steps'][1]['outputs']['w']['from'] -eq '2026-06-12T08:00:00') 'runner: human.input in setup sets run.timeWindow for the next setup step (dry run takes the default)'
