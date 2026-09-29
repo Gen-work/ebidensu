@@ -78,7 +78,10 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         Read-EbiJsonLines for JSONL, ConvertTo-EbiHashtable;
                         hashtables not PSCustomObjects, depth 20 and LOUD
                         beyond it instead of silent truncation, Japanese
-                        written as characters, UTF-8 no BOM. Iron rule R8:
+                        and ' < > & written as characters, ONE indented
+                        layout on 5.1 and 7 (Format-EbiJsonPretty, so the
+                        committed catalog.json never drifts with the
+                        PowerShell that wrote it), UTF-8 no BOM. Iron rule R8:
                         nothing else under modules/ or kernel/ calls
                         ConvertFrom-Json / ConvertTo-Json / Get-Content on
                         a .json -- the contract checker greps for it.
