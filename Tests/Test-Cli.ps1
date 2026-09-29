@@ -246,7 +246,11 @@ $psExe = (Get-Process -Id $PID).Path
 $ebi = Join-Path $repoRoot 'ebi.ps1'
 function Invoke-Ebi {
     param([string[]]$CliArgs)
-    $out = & $psExe -NoLogo -NoProfile -File $ebi @CliArgs 2>&1 | Out-String
+    # stdin is piped (and so redirected) on purpose: with the test console
+    # inherited, a `run` that reaches a gate would sit in Read-Host forever
+    # (it did, on the office PC); redirected input makes every gate answer
+    # itself, the same as the Linux CI's < /dev/null.
+    $out = '' | & $psExe -NoLogo -NoProfile -File $ebi @CliArgs 2>&1 | Out-String
     return @{ code = $LASTEXITCODE; out = $out }
 }
 $r = Invoke-Ebi @('help')

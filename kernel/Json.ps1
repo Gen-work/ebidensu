@@ -20,11 +20,15 @@
 #       depth) rather than truncated: no data written by this file is ever
 #       cut short without anyone knowing.
 #    3. ConvertTo-Json turns every non-ASCII character into \uXXXX, so the
-#       Japanese in a profile or a trace is unreadable in the file. -> the
-#       writer turns escapes for code points >= 0x80 back into characters
-#       (ConvertFrom-ConfigJson's ConvertFrom-JsonUnicodeEscape, moved in);
-#       escapes below 0x80 (quotes, control characters, < > &) stay escapes
-#       so the text remains valid JSON.
+#       Japanese in a profile or a trace is unreadable in the file -- and
+#       on 5.1 also ' < > & (' ...), which 7 writes as themselves. ->
+#       the writer turns every escape that is valid unescaped back into
+#       its character (ConvertFrom-ConfigJson's ConvertFrom-JsonUnicode
+#       Escape, moved in and widened); quotes, backslashes and control
+#       characters stay escapes so the text remains valid JSON. And 5.1's
+#       indented layout differs from 7's (4-space indent, two spaces after
+#       the colon), so ConvertTo-EbiJson lays the text out itself
+#       (Format-EbiJsonPretty): the same value is the same bytes on both.
 #    4. A file read without an explicit encoding is decoded as ANSI on a JP
 #       locale host, which mojibakes UTF-8 Japanese. -> every read here is
 #       [IO.File]::ReadAllText with UTF-8, every write is UTF-8 without a
@@ -104,27 +108,82 @@ function Get-EbiJsonDepth {
 }
 
 function ConvertFrom-EbiJsonUnicodeEscape {
-    # \uXXXX for code points >= 0x80 -> the character itself. Escapes below
-    # 0x80 are left alone so quotes, control characters and the < > &
-    # escapes PS 5.1 emits keep the text valid JSON. Surrogate pairs come
-    # out as two chars, which is the pair again.
+    # \uXXXX -> the character itself for every code point that is valid
+    # unescaped inside a JSON string: >= 0x80 (Japanese), and the printable
+    # ASCII PS 5.1 escapes for HTML's sake (' < > & come out as '
+    # < > & on 5.1 and as themselves on 7 -- the same value
+    # must serialize to the same text on both, or a generated file drifts
+    # with the PowerShell that wrote it). Control characters, the quote and
+    # the backslash stay escapes so the text remains valid JSON. A literal
+    # backslash followed by uXXXX in the DATA is "\\uXXXX" in the text (an
+    # odd run of backslashes never precedes the u) and is left alone.
+    # Surrogate pairs come out as two chars, which is the pair again.
     param([string]$Json)
     if ([string]::IsNullOrEmpty($Json)) { return $Json }
     $evaluator = {
         param($m)
-        $code = [Convert]::ToInt32($m.Groups[1].Value, 16)
-        if ($code -lt 0x80) { return $m.Value }
-        return ([string][char]$code)
+        $code = [Convert]::ToInt32($m.Groups[2].Value, 16)
+        if ($code -lt 0x20 -or $code -eq 0x22 -or $code -eq 0x5C) { return $m.Value }
+        return ($m.Groups[1].Value + [string][char]$code)
     }
-    return [regex]::Replace($Json, '\\u([0-9a-fA-F]{4})', $evaluator)
+    return [regex]::Replace($Json, '(?<!\\)((?:\\\\)*)\\u([0-9a-fA-F]{4})', $evaluator)
+}
+
+function Format-EbiJsonPretty {
+    <#
+      PURE. Compressed JSON text -> one indented layout, the same on every
+      PowerShell: two-space indent, "key": value with one space, one element
+      per line, {} and [] for empty containers (what pwsh 7 prints; 5.1
+      prints four-space indents, two spaces after the colon and a blank
+      line inside an empty array, so a file written by 5.1 and one written
+      by 7 differed on every line). Strings are copied through untouched,
+      escapes included; whitespace outside strings is dropped.
+    #>
+    param([string]$Json, [int]$Indent = 2)
+    if ([string]::IsNullOrEmpty($Json)) { return $Json }
+    $sb = New-Object System.Text.StringBuilder
+    $level = 0; $inStr = $false; $esc = $false
+    $n = $Json.Length
+    for ($i = 0; $i -lt $n; $i++) {
+        $c = [string]$Json[$i]
+        if ($inStr) {
+            [void]$sb.Append($c)
+            if ($esc) { $esc = $false } elseif ($c -eq '\') { $esc = $true } elseif ($c -eq '"') { $inStr = $false }
+            continue
+        }
+        if ($c -eq '"') { $inStr = $true; [void]$sb.Append($c); continue }
+        if ($c -eq '{' -or $c -eq '[') {
+            $close = if ($c -eq '{') { '}' } else { ']' }
+            $j = $i + 1
+            while ($j -lt $n -and [char]::IsWhiteSpace($Json[$j])) { $j++ }
+            if ($j -lt $n -and [string]$Json[$j] -eq $close) { [void]$sb.Append($c).Append($close); $i = $j; continue }
+            $level++
+            [void]$sb.Append($c).Append("`n").Append(' ' * ($Indent * $level))
+            continue
+        }
+        if ($c -eq '}' -or $c -eq ']') {
+            $level = [Math]::Max(0, $level - 1)
+            [void]$sb.Append("`n").Append(' ' * ($Indent * $level)).Append($c)
+            continue
+        }
+        if ($c -eq ',') { [void]$sb.Append(',').Append("`n").Append(' ' * ($Indent * $level)); continue }
+        if ($c -eq ':') { [void]$sb.Append(': '); continue }
+        if ([char]::IsWhiteSpace($Json[$i])) { continue }
+        [void]$sb.Append($c)
+    }
+    return $sb.ToString()
 }
 
 function ConvertTo-EbiJson {
     <#
       Value -> JSON text. Depth fixed at Get-EbiJsonMaxDepth (20); non-ASCII
-      readable; -Compress for one-line output (JSONL). Always -InputObject,
-      never piped: a piped empty array unrolls to nothing and serializes as
-      "" on PS 5.1, which reads back as a string.
+      and ' < > & readable; -Compress for one-line output (JSONL), else the
+      one layout of Format-EbiJsonPretty -- ConvertTo-Json is only ever
+      asked for the compressed form here, because its indented form differs
+      between 5.1 and 7 and a committed generated file (catalog.json) must
+      not change with the PowerShell that regenerated it. Always
+      -InputObject, never piped: a piped empty array unrolls to nothing and
+      serializes as "" on PS 5.1, which reads back as a string.
 
       THROWS when the value nests deeper than the limit -- see the header.
     #>
@@ -134,9 +193,9 @@ function ConvertTo-EbiJson {
     if ($depth -gt $limit) {
         throw ('value nests {0} levels deep; ConvertTo-EbiJson serializes at most {1} (deeper would be silently truncated to a string)' -f $depth, $limit)
     }
-    $text = if ($Compress.IsPresent) { ConvertTo-Json -InputObject $Value -Depth $limit -Compress }
-            else                     { ConvertTo-Json -InputObject $Value -Depth $limit }
-    return (ConvertFrom-EbiJsonUnicodeEscape ([string]$text))
+    $text = ConvertFrom-EbiJsonUnicodeEscape ([string](ConvertTo-Json -InputObject $Value -Depth $limit -Compress))
+    if ($Compress.IsPresent) { return $text }
+    return (Format-EbiJsonPretty -Json $text)
 }
 
 function Test-EbiJsonSerializable {

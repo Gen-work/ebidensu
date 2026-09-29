@@ -14,7 +14,11 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   ledger), `ConvertTo-EbiHashtable`, `Test-EbiJsonSerializable`. Values come
   back as hashtables and `object[]`, never PSCustomObjects; depth is fixed at
   20 and a deeper value is refused loudly instead of truncated to a string;
-  Japanese is written as characters; UTF-8 without BOM. Failures are records
+  Japanese and `' < > &` are written as characters (5.1 escapes them as
+  `\u00XX`, 7 does not); the indented form is laid out by
+  `Format-EbiJsonPretty`, not by `ConvertTo-Json`, so the same value is the
+  same bytes on 5.1 and 7 and the committed `catalog.json` cannot drift with
+  the PowerShell that regenerated it; UTF-8 without BOM. Failures are records
   (`@{ ok; value; message }`); the depth guard in `ConvertTo-EbiJson` is the
   one exception and throws. Iron rule R8: nothing else under `modules/` or
   `kernel/` calls `ConvertFrom-Json` / `ConvertTo-Json` / `Get-Content` on a

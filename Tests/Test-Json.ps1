@@ -56,6 +56,23 @@ Assert-True (((ConvertFrom-EbiJson -Text $text)['value'])['q'] -eq 'a"b') 'to-js
 Assert-Equal '<' ((ConvertFrom-EbiJson -Text $text)['value'])['lt'] 'to-json: an ASCII character PS 5.1 escapes (<) reads back'
 $text = ConvertTo-EbiJson -Value @{ a = 1 } -Compress
 Assert-True (-not $text.Contains("`n")) 'to-json: -Compress gives one line'
+# the same value is the same text on PS 5.1 and 7 (catalog.json is committed and drift-checked)
+$text = ConvertTo-EbiJson -Value @{ q = "it's"; amp = 'a&b<c>' } -Compress
+Assert-True ($text.Contains("it's") -and $text.Contains('a&b<c>') -and -not ($text -match '\\u00[0-9a-fA-F]{2}')) "to-json: ' < > & are written as themselves (5.1 escapes them, 7 does not)"
+$text = ConvertTo-EbiJson -Value @{ p = 'C:\u0027s'; bs = 'a\\u00e9' } -Compress
+$back = (ConvertFrom-EbiJson -Text $text)['value']
+Assert-True ($back['p'] -eq 'C:\u0027s' -and $back['bs'] -eq 'a\\u00e9') 'to-json: a literal backslash-u in the DATA is not mistaken for an escape'
+$pretty = ConvertTo-EbiJson -Value ([ordered]@{ a = 1; b = @(1, 'x'); c = [ordered]@{}; d = @(); e = [ordered]@{ f = $true; g = $null } })
+$expect = "{`n  `"a`": 1,`n  `"b`": [`n    1,`n    `"x`"`n  ],`n  `"c`": {},`n  `"d`": [],`n  `"e`": {`n    `"f`": true,`n    `"g`": null`n  }`n}"
+Assert-Equal $expect $pretty 'to-json: one indented layout on every PowerShell (2-space, "key": value, {} and [] when empty)'
+Assert-Equal '{"s":"a{b}[c],:d \" e"}' (ConvertTo-EbiJson -Value @{ s = 'a{b}[c],:d " e' } -Compress) 'to-json: ... structure characters inside a string are data'
+Assert-Equal "{`n  `"s`": `"a{b}[c],:d \`" e`"`n}" (ConvertTo-EbiJson -Value @{ s = 'a{b}[c],:d " e' }) 'to-json: ... and the layout never breaks inside a string'
+# fixtures of what Windows PowerShell 5.1's ConvertTo-Json emits (this suite may be running on 7)
+$ps51 = '{"q":"it\u0027s","lt":"\u003c","amp":"\u0026","gt":"\u003e","jp":"\u65e5\u672c","bs":"C:\\u0027s","nl":"a\nb","quote":"\"","ctl":"\u001b[0m"}'
+$jpNihon = [string][char]0x65E5 + [char]0x672C   # ASCII source: the two kanji built from code points
+Assert-Equal ('{"q":"it''s","lt":"<","amp":"&","gt":">","jp":"' + $jpNihon + '","bs":"C:\\u0027s","nl":"a\nb","quote":"\"","ctl":"\u001b[0m"}') (ConvertFrom-EbiJsonUnicodeEscape -Json $ps51) 'to-json: a 5.1-escaped text becomes the 7 text (only control chars, the quote and the backslash stay escaped)'
+$ps51Pretty = "{`r`n    `"transient`":  true,`r`n    `"list`":  [`r`n`r`n              ],`r`n    `"o`":  {`r`n               `"k`":  `"v  w`"`r`n           }`r`n}"
+Assert-Equal "{`n  `"transient`": true,`n  `"list`": [],`n  `"o`": {`n    `"k`": `"v  w`"`n  }`n}" (Format-EbiJsonPretty -Json $ps51Pretty) 'to-json: 5.1''s indented layout (4 spaces, two after the colon, a blank line in an empty array) is normalized to the one layout'
 Assert-Equal '[]' (ConvertTo-EbiJson -Value @() -Compress) 'to-json: a top-level empty array is [] (not "" as a piped @() gives on 5.1)'
 Assert-Equal '[1,2]' (ConvertTo-EbiJson -Value @(1, 2) -Compress) 'to-json: a top-level array serializes as an array'
 Assert-Equal '{"a":[]}' (ConvertTo-EbiJson -Value @{ a = @() } -Compress) 'to-json: a nested empty array is []'
