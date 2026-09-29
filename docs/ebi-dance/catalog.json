@@ -1238,7 +1238,7 @@
         }
       },
       "needs": [],
-      "notes": "Runs in setup, once per run (the ledger does not replay setup, but run.json carries the window, so a resumed run keeps it without asking). Under DryRun or without a console the default is taken and reported with auto=true.",
+      "notes": "Runs in setup, once per run. The ledger does not replay setup, so on a resume the step runs again -- but run.json carries the window, the runner restores it into run.timeWindow first, and a kind=timeWindow question then returns it with kept=true instead of asking (the same when the CLI gave -TimeWindow). Under DryRun or without a console the default is taken and reported with auto=true.",
       "outputs": {
         "auto": {
           "desc": "nobody could answer (dry run / no console): the default was taken",
@@ -1247,6 +1247,10 @@
         "filled": {
           "desc": "rows whose blank cell was filled",
           "type": "int"
+        },
+        "kept": {
+          "desc": "run.timeWindow was already set (-TimeWindow or a resume): returned as is, nobody asked",
+          "type": "bool"
         },
         "timeWindow": {
           "desc": "{ from; to } ISO when kind is timeWindow, else null",

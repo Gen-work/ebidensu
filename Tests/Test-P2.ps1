@@ -53,6 +53,19 @@ $reader = { if ($script:answers.Count -eq 0) { return 'q' }; $a = $script:answer
 $ctx = New-TestCtx -Reader $reader
 $ret = Step 'human.input' @{ question = 'window?'; kind = 'timeWindow'; default = ''; persistTo = ''; format = 'yyyy/MM/dd H:mm:ss' } $ctx
 Assert-True ($ret['ok'] -and -not $ret['auto'] -and $ret['timeWindow']['from'] -like '*T09:00:00' -and $ret['timeWindow']['to'] -like '*T11:00:00') 'input step: a bad answer is asked again, the next good one is taken'
+# run.timeWindow already set (a resume restored it, or the CLI gave -TimeWindow): kept, nobody asked
+$script:asked = 0
+$askReader = { $script:asked++; return '2026/06/12 13:00..2026/06/12 14:00' }
+$ctx = New-TestCtx -Reader $askReader
+$ctx['Run']['timeWindow'] = @{ from = '2026-06-12T08:00:00'; to = '2026-06-12T09:00:00' }
+$ret = Step 'human.input' @{ question = 'window?'; kind = 'timeWindow'; default = ''; persistTo = ''; format = 'yyyy/MM/dd H:mm:ss' } $ctx
+Assert-True ($ret['ok'] -and $ret['kept'] -and -not $ret['auto'] -and $script:asked -eq 0 -and $ret['timeWindow']['from'] -eq '2026-06-12T08:00:00' -and $ret['value'] -eq '2026-06-12T08:00:00..2026-06-12T09:00:00' -and $ctx['Run']['timeWindow']['to'] -eq '2026-06-12T09:00:00') 'input step: run.timeWindow already set -> kept as is, not asked, not overwritten'
+$ctx = New-TestCtx -DryRun $true
+$ctx['Run']['timeWindow'] = @{ from = '2026-06-12T08:00:00'; to = '2026-06-12T09:00:00' }
+$ret = Step 'human.input' @{ question = 'window?'; kind = 'timeWindow'; default = ''; persistTo = ''; format = 'yyyy/MM/dd H:mm:ss' } $ctx
+Assert-True ($ret['ok'] -and $ret['kept'] -and $ret['timeWindow']['from'] -eq '2026-06-12T08:00:00') 'input step: ... also with nobody to ask (the last-hour default does not replace it)'
+$ret = Step 'human.input' @{ question = 'x'; kind = 'text'; default = 'dflt'; persistTo = ''; format = '' } $ctx
+Assert-True ($ret['ok'] -and -not $ret['kept'] -and $ret['value'] -eq 'dflt') 'input step: a text question is not the window: still asked (dry run takes the default)'
 $script:answers.Clear(); [void]$script:answers.Add('q')
 $ret = Step 'human.input' @{ question = 'x'; kind = 'text'; default = ''; persistTo = ''; format = '' } (New-TestCtx -Reader $reader)
 Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'operator_quit') 'input step: q quits'
@@ -96,6 +109,15 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'kernel') -Destination (Join-Path $t
 $res = Invoke-EbiWorkflow -Path (Join-Path $tmpRoot 'tw2.json') -WorkDir $wd -ModulesRoot $modules -RunId 'tw2' -DryRun
 Assert-True ($res['ok'] -and $res['steps'][1]['outputs']['w']['from'] -eq '2026-06-12T08:00:00') 'runner: human.input in setup sets run.timeWindow for the next setup step (dry run takes the default)'
 Assert-True ((Read-EbiRunFile -WorkDir $wd -RunId 'tw2')['value']['timeWindow']['from'] -eq '2026-06-12T08:00:00') 'runner: ... and run.json was rewritten at once'
+# a resume runs setup again (the ledger holds only "each"), so human.input runs again: it must
+# keep the 08:00..09:00 that run.json carries even though the workflow's default changed and
+# nobody can answer (a dry run would otherwise take the new default)
+[System.IO.File]::WriteAllText((Join-Path $tmpRoot 'tw2.json'), '{ "schema": 1, "id": "p2.tw2", "setup": [ { "id": "ask", "use": "human.input", "with": { "question": "w?", "kind": "timeWindow", "default": "2026/06/12 10:00..2026/06/12 11:00" } }, { "id": "e", "use": "fake.echo", "with": { "w": "{{run.timeWindow}}" } } ] }', $utf8)
+$res = Invoke-EbiWorkflow -Path (Join-Path $tmpRoot 'tw2.json') -WorkDir $wd -ModulesRoot $modules -RunId 'tw2' -DryRun -Resume
+Assert-True ($res['ok'] -and $res['steps'][0]['outputs']['kept'] -and $res['steps'][1]['outputs']['w']['from'] -eq '2026-06-12T08:00:00') 'runner: a resumed run keeps the window human.input persisted and does not ask again'
+Assert-True ((Read-EbiRunFile -WorkDir $wd -RunId 'tw2')['value']['timeWindow']['from'] -eq '2026-06-12T08:00:00') 'runner: ... and run.json still carries it'
+$res = Invoke-EbiWorkflow -Path (Join-Path $tmpRoot 'tw2.json') -WorkDir $wd -ModulesRoot $modules -RunId 'tw2' -DryRun -Resume -TimeWindow @{ from = '2026-06-12T07:00:00'; to = '2026-06-12T07:30:00' }
+Assert-True ($res['ok'] -and $res['steps'][0]['outputs']['kept'] -and $res['steps'][1]['outputs']['w']['from'] -eq '2026-06-12T07:00:00') 'runner: ... unless the CLI gives -TimeWindow, which wins and is also kept'
 
 # --- 2. verify.crosscheck ----------------------------------------------------------------
 Write-Host '  -- verify.crosscheck'

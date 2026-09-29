@@ -949,6 +949,7 @@ Ask the operator for a value (text, time, or the run time window) with a default
 |--------|------|------|
 | `auto` | bool | nobody could answer (dry run / no console): the default was taken |
 | `filled` | int | rows whose blank cell was filled |
+| `kept` | bool | run.timeWindow was already set (-TimeWindow or a resume): returned as is, nobody asked |
 | `timeWindow` | map | { from; to } ISO when kind is timeWindow, else null |
 | `value` | string | the answer as text (a time in `format`; a window as "from..to") |
 
@@ -958,7 +959,7 @@ failures: `operator_quit` (not transient), `input_invalid` (not transient), `wri
 {"id":"input","use":"human.input","with":{"default":"","kind":"timeWindow","question":"Batch run window for today?"}}
 ```
 
-Notes: Runs in setup, once per run (the ledger does not replay setup, but run.json carries the window, so a resumed run keeps it without asking). Under DryRun or without a console the default is taken and reported with auto=true.
+Notes: Runs in setup, once per run. The ledger does not replay setup, so on a resume the step runs again -- but run.json carries the window, the runner restores it into run.timeWindow first, and a kind=timeWindow question then returns it with kept=true instead of asking (the same when the CLI gave -TimeWindow). Under DryRun or without a console the default is taken and reported with auto=true.
 
 ### `human.prepare`
 

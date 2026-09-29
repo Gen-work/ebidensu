@@ -242,6 +242,16 @@ $ret = Find @{ glob = '*.txt' }
 Assert-True ($ret['ok'] -and $ret['matchedBy'] -eq 'glob' -and $ret['found'] -eq 1) 'find: glob only'
 $ret = Find @{ dir = 'nowhere' }
 Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'dir_not_found') 'find: missing dir'
+# recurse: the same key file name in two sub-folders is two hits, never a silent pick of the last one enumerated
+foreach ($sub in @('a', 'b')) { New-Item -ItemType Directory -Path (Join-Path $dl $sub) -Force | Out-Null; [System.IO.File]::WriteAllBytes((Join-Path (Join-Path $dl $sub) 'JKL111.dat'), [byte[]](1)) }
+$ret = Find @{ key = 'JKL111'; ext = 'dat'; recurse = $true }
+$sep = [string][IO.Path]::DirectorySeparatorChar
+Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'ambiguous' -and $ret['found'] -eq 2 -and @($ret['candidates']['candidates']).Count -eq 2 -and (@($ret['files']) -join '|').Contains($sep + 'a' + $sep) -and (@($ret['files']) -join '|').Contains($sep + 'b' + $sep)) 'find: recurse keeps same-named files from different folders -> ambiguous, both listed'
+Assert-True ($ret['candidates']['candidates'][0]['evidence']['path'] -ne $ret['candidates']['candidates'][1]['evidence']['path']) 'find: ... and the candidates tell them apart by path'
+$ret = Find @{ key = 'JKL111'; ext = 'dat'; recurse = $true; expect = 'any' }
+Assert-True ($ret['ok'] -and $ret['found'] -eq 2 -and @($ret['files']).Count -eq 2) 'find: ... expect=any returns both paths'
+$ret = Find @{ key = 'JKL111'; ext = 'dat' }
+Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'file_not_found') 'find: without recurse the sub-folders are not searched'
 
 # --- 8. file.assert_exists ---------------------------------------------------------
 Write-Host '  -- file.assert_exists'
