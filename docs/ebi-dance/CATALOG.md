@@ -337,7 +337,9 @@ Poll the page text until it contains a string, or time out
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
 | `archiveTo` | path |  | (empty) |  | write the last text read here (relative: under the work dir) |
-| `contains` | string | yes |  |  | the text that means the page is ready |
+| `contains` | string |  | (empty) |  | the text that means the page is ready |
+| `containsAny` | list |  | [] |  | or: ready when ANY of these texts is there (e.g. every minute of a time window) |
+| `deselectAt` | map |  | {} |  | @{ x; y } window-relative blank point clicked after the last read, so the Ctrl+A selection does not show in a screenshot taken next |
 | `pollMs` | int |  | 800 |  | wait between reads |
 | `refreshRecipe` | list |  | [] |  | run before every read: find:<text> \| keys:<SendKeys> \| wait:<ms> (e.g. a refresh button the page needs) |
 | `timeoutSec` | int |  | 12 |  | give up after this many seconds |
@@ -350,7 +352,7 @@ Poll the page text until it contains a string, or time out
 | `polls` | int |  |
 | `text` | string | the page text at the end (matched or not) |
 
-failures: `timeout` (transient), `foreground_lost` (transient), `archive_failed` (transient), `recipe_invalid` (not transient)
+failures: `timeout` (transient), `foreground_lost` (transient), `archive_failed` (transient), `recipe_invalid` (not transient), `input_invalid` (not transient)
 
 ```json
 {"id":"wait_for","use":"browser.wait_for","with":{"archiveTo":"capture/before_list/{{item.keySafe}}.txt","contains":"{{item.Correl_ID_S}}","timeoutSec":12,"window":"mainWindow"}}
@@ -568,6 +570,7 @@ Run a program per argument set, capture its window (and again after keys), close
 | `secondField` | string |  | long |  | field that is true when a second capture is wanted |
 | `settleMs` | int |  | 1200 |  | wait after the window appears / after keys |
 | `width` | int |  | 0 |  | visible window width; 0 = leave as the program opens it |
+| `windowTitle` | string |  | (empty) |  | fallback when the started process shows no window of its own (a launcher / single-instance program): the top-level window whose title contains this |
 | `windowWaitSec` | int |  | 15 |  |  |
 | `x` | int |  | 40 |  |  |
 | `y` | int |  | 40 |  |  |
@@ -1584,6 +1587,7 @@ Insert or refresh worklist rows by key; merge duplicates and count them
 | `countAs` | string |  | (empty) |  | worklist column that receives how many input rows had the key |
 | `fields` | map | yes |  |  | worklist column -> record field; the key columns must be among them |
 | `overwrite` | list |  | [] |  | columns refreshed on rows that already exist (others are only filled when blank) |
+| `resetOnChange` | map |  | {} |  | @{ watch = <column>; clear = @(<columns>) }: when an existing row's watch value changes, the clear columns are emptied (the same deliverable planned again on another day starts over) |
 | `rows` | list | yes |  |  | records (excel.read_rows / verify.filter_records output) |
 | `worklist` | session:worklist | yes |  |  |  |
 
@@ -1839,6 +1843,7 @@ Build a from/to time window around a date and a clock time
 | `atText` | string | at, in format |
 | `clock` | string | the clock as HH:mm:ss |
 | `fromText` | string | from, in format |
+| `minuteTexts` | list | every minute from..to in format (browser.wait_for containsAny: ready when any of them shows) |
 | `toText` | string | to, in format |
 | `window` | map | @{ from; to } ISO yyyy-MM-ddTHH:mm:ss |
 

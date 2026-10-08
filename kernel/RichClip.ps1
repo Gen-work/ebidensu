@@ -118,9 +118,8 @@ function New-EbiShareRtf {
         if ($null -eq $p) { continue }
         $bytes = [byte[]]$p['bytes']
         $w = [int]$p['width']; $h = [int]$p['height']
-        $hex = New-Object System.Text.StringBuilder ($bytes.Length * 2)
-        foreach ($b in $bytes) { [void]$hex.Append(([int]$b).ToString('x2')) }
-        [void]$sb.Append('{\pict\pngblip\picw' + $w + '\pich' + $h + '\picwgoal' + ($w * 15) + '\pichgoal' + ($h * 15) + ' ' + $hex.ToString() + '}\par ')
+        $hex = [System.BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
+        [void]$sb.Append('{\pict\pngblip\picw' + $w + '\pich' + $h + '\picwgoal' + ($w * 15) + '\pichgoal' + ($h * 15) + ' ' + $hex + '}\par ')
     }
     [void]$sb.Append('}')
     return $sb.ToString()

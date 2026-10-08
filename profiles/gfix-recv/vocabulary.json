@@ -18,7 +18,7 @@
   },
   "messages": {
     "feedbackOk": "OPEN側で確認できました。前後一致です。",
-    "waitHost": "Teams で HOST の「ジョブ:{job}が正常終了しました。」が来たら Enter(リアクションは手で)",
+    "waitHost": "Teams で HOST の「ジョブ:<このジョブ>が正常終了しました。」が来たら Enter(リアクションは手で)",
     "openPages": "GoAnywhere(完了したジョブ:日付範囲 Today / プロジェクト名で絞り込み / 開始時間 ▼)と Jenkins の data/report を別々のウィンドウで開いてください"
   }
 }

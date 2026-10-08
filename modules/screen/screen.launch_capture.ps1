@@ -36,6 +36,7 @@ $Manifest = @{
     width        = @{ type='int';    default=0; desc='visible window width; 0 = leave as the program opens it' }
     height       = @{ type='int';    default=0 }
     windowWaitSec = @{ type='int';   default=15 }
+    windowTitle  = @{ type='string'; default=''; desc='fallback when the started process shows no window of its own (a launcher / single-instance program): the top-level window whose title contains this' }
     settleMs     = @{ type='int';    default=1200; desc='wait after the window appears / after keys' }
   }
   outputs    = @{
@@ -102,10 +103,14 @@ function Invoke-Step {
         catch { return @{ ok = $false; failure = 'file_not_found'; message = $_.Exception.Message; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
         $h = [IntPtr]::Zero
         $deadline = (Get-Date).AddSeconds([Math]::Max(2, [int]$In['windowWaitSec']))
+        $wt = [string]$In['windowTitle']
         while ((Get-Date) -lt $deadline) {
             try { $proc.Refresh() } catch { }
-            if ($proc.HasExited) { break }
-            if ($proc.MainWindowHandle -ne [IntPtr]::Zero) { $h = $proc.MainWindowHandle; break }
+            if (-not $proc.HasExited -and $proc.MainWindowHandle -ne [IntPtr]::Zero) { $h = $proc.MainWindowHandle; break }
+            if ($wt -ne '') {
+                $cand = @(Get-EbiTopWindows | Where-Object { $_['title'].IndexOf($wt, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 })
+                if ($cand.Count -gt 0) { $h = $cand[0]['handle']; break }
+            } elseif ($proc.HasExited) { break }
             Start-Sleep -Milliseconds 250
         }
         if ($h -eq [IntPtr]::Zero) {

@@ -79,33 +79,20 @@ function Get-EbiUtf8SequenceLength {
     return $n
 }
 
-function ConvertFrom-EbiMixedBytes {
-    <#
-      PURE (but for Get-EbiCodePage). Decode bytes that are UTF-8 except for
-      the odd CP932 pair -- the batch logs write their full-width colon
-      ("update count<colon>1") in SJIS inside an otherwise UTF-8 file, so a
-      plain UTF-8 read turns it into U+FFFD and Excel shows "_xDC81_F".
-      Valid UTF-8 runs decode as UTF-8; an invalid byte that starts a valid
-      CP932 pair decodes as that CP932 character; anything else becomes
-      U+FFFD (never silently dropped). A UTF-8 BOM is skipped.
-      Returns @{ text; foreignPairs; badBytes }.
-    #>
-    param([byte[]]$Bytes)
-    if ($null -eq $Bytes -or $Bytes.Length -eq 0) { return @{ text = ''; foreignPairs = 0; badBytes = 0 } }
-    $utf8 = New-Object System.Text.UTF8Encoding($false)
-    $sjis = Get-EbiCodePage -CodePage 932
+function ConvertFrom-EbiMixedSegment {
+    # The slow, byte-by-byte half of ConvertFrom-EbiMixedBytes for one range
+    # of bytes that strict UTF-8 refused. @{ text; foreignPairs; badBytes }.
+    param([byte[]]$Bytes, [int]$Start, [int]$End, $Utf8, $Sjis)
     $sb = New-Object System.Text.StringBuilder
-    $i = 0
-    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { $i = 3 }
-    $runStart = $i
+    $i = $Start; $runStart = $Start
     $pairs = 0; $bad = 0
-    while ($i -lt $Bytes.Length) {
+    while ($i -lt $End) {
         $n = Get-EbiUtf8SequenceLength -Bytes $Bytes -i $i
-        if ($n -gt 0) { $i += $n; continue }
-        if ($i -gt $runStart) { [void]$sb.Append($utf8.GetString($Bytes, $runStart, $i - $runStart)) }
+        if ($n -gt 0 -and ($i + $n) -le $End) { $i += $n; continue }
+        if ($i -gt $runStart) { [void]$sb.Append($Utf8.GetString($Bytes, $runStart, $i - $runStart)) }
         $b0 = [int]$Bytes[$i]
-        if ((Test-EbiCp932Lead $b0) -and ($i + 1) -lt $Bytes.Length -and (Test-EbiCp932Trail ([int]$Bytes[$i + 1]))) {
-            [void]$sb.Append($sjis.GetString($Bytes, $i, 2))
+        if ((Test-EbiCp932Lead $b0) -and ($i + 1) -lt $End -and (Test-EbiCp932Trail ([int]$Bytes[$i + 1]))) {
+            [void]$sb.Append($Sjis.GetString($Bytes, $i, 2))
             $pairs++
             $i += 2
         } else {
@@ -115,7 +102,47 @@ function ConvertFrom-EbiMixedBytes {
         }
         $runStart = $i
     }
-    if ($i -gt $runStart) { [void]$sb.Append($utf8.GetString($Bytes, $runStart, $i - $runStart)) }
+    if ($i -gt $runStart) { [void]$sb.Append($Utf8.GetString($Bytes, $runStart, $i - $runStart)) }
+    return @{ text = $sb.ToString(); foreignPairs = $pairs; badBytes = $bad }
+}
+
+function ConvertFrom-EbiMixedBytes {
+    <#
+      PURE (but for Get-EbiCodePage). Decode bytes that are UTF-8 except for
+      the odd CP932 pair -- the batch logs write their full-width colon
+      ("update count<colon>1") in SJIS inside an otherwise UTF-8 file, so a
+      plain UTF-8 read turns it into U+FFFD and Excel shows "_xDC81_F".
+      Valid UTF-8 runs decode as UTF-8; an invalid byte that starts a valid
+      CP932 pair decodes as that CP932 character; anything else becomes
+      U+FFFD (never silently dropped). A UTF-8 BOM is skipped.
+      Fast: the whole file is tried as strict UTF-8 first (one .NET call),
+      then line by line, and only a line strict UTF-8 refuses is walked
+      byte by byte (a 600 KB log has a few dozen such lines).
+      Returns @{ text; foreignPairs; badBytes }.
+    #>
+    param([byte[]]$Bytes)
+    if ($null -eq $Bytes -or $Bytes.Length -eq 0) { return @{ text = ''; foreignPairs = 0; badBytes = 0 } }
+    $start = 0
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { $start = 3 }
+    $strict = New-Object System.Text.UTF8Encoding($false, $true)
+    try { return @{ text = $strict.GetString($Bytes, $start, $Bytes.Length - $start); foreignPairs = 0; badBytes = 0 } } catch { }
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $sjis = Get-EbiCodePage -CodePage 932
+    $sb = New-Object System.Text.StringBuilder
+    $pairs = 0; $bad = 0
+    $pos = $start
+    while ($pos -lt $Bytes.Length) {
+        $nl = [Array]::IndexOf($Bytes, [byte]10, $pos)
+        $end = if ($nl -lt 0) { $Bytes.Length } else { $nl + 1 }
+        $ok = $true
+        try { [void]$sb.Append($strict.GetString($Bytes, $pos, $end - $pos)) } catch { $ok = $false }
+        if (-not $ok) {
+            $seg = ConvertFrom-EbiMixedSegment -Bytes $Bytes -Start $pos -End $end -Utf8 $utf8 -Sjis $sjis
+            [void]$sb.Append($seg['text'])
+            $pairs += [int]$seg['foreignPairs']; $bad += [int]$seg['badBytes']
+        }
+        $pos = $end
+    }
     return @{ text = $sb.ToString(); foreignPairs = $pairs; badBytes = $bad }
 }
 

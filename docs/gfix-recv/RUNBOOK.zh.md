@@ -91,7 +91,9 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 1. **PREPARE 面板**：「Teams の『ジョブ:XXXが正常終了しました。』が来たら Enter」。
    reaction 你自己在 Teams 点。
 2. 自动：在 GoAnywhere 上执行 Ctrl+F「フィルタリングする」→ Esc → Tab×5 → Enter（**更新**，不按 F5），
-   直到预定时刻那一分钟的行出现 → 读文本 → 挑出这个 job 的行（预定时刻 −2 分 ～ +13 分）→ Receive 的 job 号。
+   直到出现预定时刻 −2 分 ～ +13 分之间任意一分钟的行 → 读文本 → 挑出这个 job 的行 → Receive 的 job 号。
+   读完文本后会**点一下页面空白处**（`pages.goAnywhere.deselectAt`，默认 1700,900），取消 Ctrl+A 留下的全选
+   （Edge 里按 Esc 取消不了），不然截图会是一片蓝。
 3. 自动：截取 GoAnywhere「上面那部分」（面板标题到这个 job 的行，就是 p4 的范围）。
 4. 自动：Jenkins 按 F5 → Ctrl+End → 读文本 → 找出在 Receive 时间段里放进 report 的 `F…csv`
    → 用 HTTP 直接下载到 `DATA\GFIX\<W名>\`（文件夹不存在会自动建）。
@@ -113,6 +115,8 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 | 「更新」按钮配方有没有点到 | 控制台：超时（timeout）= 没刷新出来 | `pages.goAnywhere.refreshRecipe`（Tab 的次数） |
 | DF 是不是一屏 16 行 | `df\*__first.png` | `layout.df.width/height` |
 | Teams 粘贴时图片在不在 | Teams | 把 `layout.share.mode` 改成 `"sequence"`（文字、图片分几次贴） |
+| 截图里有没有残留的蓝色全选 | `goanywhere.png`、证据里的 Jenkins 图 | `deselectAt` 换一个空白位置（窗口内像素） |
+| DF 有没有被拉起来并截到 | 控制台 `no_window` | DF 是启动器型程序的话会按标题 `DF - ` 找窗口（`layout.df.windowTitle`） |
 
 `ebi.local.json` 覆盖写法示例（深度合并，只写要改的键）：
 
@@ -178,6 +182,7 @@ GIFTデータvsGFIXデータ：
 
 - 中途断了：同样的命令加 `-Resume`（续跑上一次的 run，已经做完的步骤不会重做）。
 - 想重做某个 job：在 `gfixrecv.csv` 里把对应的 `track` / `logs` / `evidence` 清空。
+  同一个 job 以后换了日期再次出现在计划里时，plan 会自动把这三列清空（`resetOnChange`）。
 - 所有中间产物：`capture\gfix\<W名>\`（截图、页面文本、track.json、logs.json、receive.txt）。
 - 每次运行的记录：`run\<runId>\`（trace、ledger）。出了问题把这个文件夹的内容发给我就能看。
 

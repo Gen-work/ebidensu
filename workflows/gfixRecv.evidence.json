@@ -74,7 +74,7 @@
 
     { "id": "jkText", "use": "browser.wait_for",
       "label": "Jenkins を F5 + 最下部、一覧テキストを保存",
-      "with": { "window": "jk", "contains": "{{page.readyText}}",
+      "with": { "window": "jk", "contains": "{{page.readyText}}", "deselectAt": "{{page.deselectAt}}",
                 "refreshRecipe": "{{page.refreshRecipe}}", "timeoutSec": "{{page.timeoutSec}}", "pollMs": "{{page.pollMs}}",
                 "archiveTo": "{{vars.capture}}/{{item.keySafe}}/jenkins-evidence.txt" } },
     { "id": "jkShot", "use": "screen.capture_window",

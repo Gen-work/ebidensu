@@ -780,6 +780,10 @@
         {
           "id": "recipe_invalid",
           "transient": false
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
         }
       ],
       "file": "modules/browser/browser.wait_for.ps1",
@@ -793,9 +797,19 @@
           "type": "path"
         },
         "contains": {
+          "default": "",
           "desc": "the text that means the page is ready",
-          "required": true,
           "type": "string"
+        },
+        "containsAny": {
+          "default": [],
+          "desc": "or: ready when ANY of these texts is there (e.g. every minute of a time window)",
+          "type": "list"
+        },
+        "deselectAt": {
+          "default": {},
+          "desc": "@{ x; y } window-relative blank point clicked after the last read, so the Ctrl+A selection does not show in a screenshot taken next",
+          "type": "map"
         },
         "pollMs": {
           "default": 800,
@@ -3772,6 +3786,11 @@
           "desc": "visible window width; 0 = leave as the program opens it",
           "type": "int"
         },
+        "windowTitle": {
+          "default": "",
+          "desc": "fallback when the started process shows no window of its own (a launcher / single-instance program): the top-level window whose title contains this",
+          "type": "string"
+        },
         "windowWaitSec": {
           "default": 15,
           "type": "int"
@@ -4494,6 +4513,11 @@
           "desc": "columns refreshed on rows that already exist (others are only filled when blank)",
           "type": "list"
         },
+        "resetOnChange": {
+          "default": {},
+          "desc": "@{ watch = <column>; clear = @(<columns>) }: when an existing row's watch value changes, the clear columns are emptied (the same deliverable planned again on another day starts over)",
+          "type": "map"
+        },
         "rows": {
           "desc": "records (excel.read_rows / verify.filter_records output)",
           "required": true,
@@ -5100,6 +5124,10 @@
         "fromText": {
           "desc": "from, in format",
           "type": "string"
+        },
+        "minuteTexts": {
+          "desc": "every minute from..to in format (browser.wait_for containsAny: ready when any of them shows)",
+          "type": "list"
         },
         "toText": {
           "desc": "to, in format",

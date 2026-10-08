@@ -26,6 +26,7 @@ $Manifest = @{
     fields    = @{ type='map';    required=$true; desc='worklist column -> record field; the key columns must be among them' }
     countAs   = @{ type='string'; default=''; desc='worklist column that receives how many input rows had the key' }
     overwrite = @{ type='list';   default=@(); desc='columns refreshed on rows that already exist (others are only filled when blank)' }
+    resetOnChange = @{ type='map'; default=@{}; desc='@{ watch = <column>; clear = @(<columns>) }: when an existing row''s watch value changes, the clear columns are emptied (the same deliverable planned again on another day starts over)' }
   }
   outputs    = @{
     added   = @{ type='int' }
@@ -83,6 +84,14 @@ function Invoke-Step {
         $vals = $merged[$kd]
         if ($byKey.Contains($kd)) {
             $row = $byKey[$kd]; $changed = $false
+            $rc = $In['resetOnChange']
+            if ($rc -is [System.Collections.IDictionary] -and $rc.Contains('watch') -and $map.Contains([string]$rc['watch'])) {
+                $wc = [string]$rc['watch']
+                $old = if ($row.Contains($wc) -and $null -ne $row[$wc]) { [string]$row[$wc] } else { '' }
+                if ($old -ne '' -and $old -ne [string]$vals[$wc]) {
+                    foreach ($cc in @($rc['clear'])) { $cur = if ($row.Contains([string]$cc)) { [string]$row[[string]$cc] } else { '' }; if ($cur -ne '') { [void]$plan.Add(@{ row = $row; col = [string]$cc; value = '' }); $changed = $true } }
+                }
+            }
             foreach ($col in $map.Keys) {
                 $cur = if ($row.Contains($col) -and $null -ne $row[$col]) { [string]$row[$col] } else { '' }
                 if (($over -contains [string]$col) -or $cur -eq '') { if ($cur -ne [string]$vals[$col]) { [void]$plan.Add(@{ row = $row; col = [string]$col; value = [string]$vals[$col] }); $changed = $true } }

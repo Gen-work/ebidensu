@@ -55,6 +55,19 @@ is static-checked and dry-run only -- the office PC run is the first real one
 - The DryRun harness fakes the session inputs of a step that also registers
   a resource (excel.open consumes an excelApp and provides a workbook).
 
+- Review fixes before the first Windows run: `Set-EbiForeground` no longer
+  un-maximizes a maximized window (SW_RESTORE only when minimized);
+  `browser.wait_for` gained `containsAny` and `deselectAt` (a blank-point click
+  after Ctrl+A -- Esc does not clear an Edge selection, so screenshots and the
+  blue-ink row detection were taken over a highlighted page); the find recipe
+  no longer presses Enter (it jumped to the second match); rooted paths are
+  normalized; visible-bounds math falls back to GetWindowRect at non-100% DPI;
+  the mixed decoder tries strict UTF-8 first and walks only the refused lines
+  byte by byte (600 KB log: ~15 s -> ~1 s); `excel.read_rows` finds the last
+  row with Ctrl+Up instead of UsedRange; `table.upsert` `resetOnChange`;
+  `screen.launch_capture` `windowTitle` fallback; `screen.list_rects` warns
+  when the bottom band is not one pitch below the next.
+
 ### Notes
 - The batch logs write a full-width colon in SJIS inside UTF-8; it now decodes
   as the colon. Evidence pasted the old way showed `_xDC81_F` there.

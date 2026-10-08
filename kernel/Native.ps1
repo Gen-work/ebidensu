@@ -88,7 +88,8 @@ function Get-EbiWindowRect {
 function Set-EbiForeground {
     <#
       Bring the window to the front and VERIFY it is there. Returns
-      @{ ok; message }. Restores a minimized window first; retries the
+      @{ ok; message }. Restores a minimized window (and leaves a maximized
+      one maximized); retries the
       SetForegroundWindow once (Windows refuses it when another process
       holds the foreground lock, and a second try after a short wait
       usually goes through).
@@ -97,7 +98,10 @@ function Set-EbiForeground {
     [void](Get-EbiNative)
     if ($HWnd -eq [IntPtr]::Zero -or -not [EbiNative]::IsWindow($HWnd)) { return @{ ok = $false; message = 'the window handle is not a window (closed?)' } }
     for ($try = 1; $try -le 2; $try++) {
-        [void][EbiNative]::ShowWindowAsync($HWnd, 9)   # SW_RESTORE
+        # SW_RESTORE (9) only for a MINIMIZED window: on a maximized one it
+        # would un-maximize it, and screen geometry measured on the maximized
+        # window would land in the wrong place. Otherwise SW_SHOW (5).
+        if ([EbiNative]::IsIconic($HWnd)) { [void][EbiNative]::ShowWindowAsync($HWnd, 9) } else { [void][EbiNative]::ShowWindowAsync($HWnd, 5) }
         [void][EbiNative]::SetForegroundWindow($HWnd)
         Start-Sleep -Milliseconds ([Math]::Max(50, $SettleMs))
         if ([EbiNative]::GetForegroundWindow() -eq $HWnd) { return @{ ok = $true; message = '' } }
@@ -166,7 +170,10 @@ function Resolve-EbiWorkPath {
     # that writes a file).
     param([string]$PathValue, [string]$WorkDir)
     if ([string]::IsNullOrWhiteSpace($PathValue)) { return '' }
-    if ([System.IO.Path]::IsPathRooted($PathValue)) { return $PathValue }
+    if ([System.IO.Path]::IsPathRooted($PathValue)) {
+        # one separator style: '\\srv\share\x/DATA/y' reaches DF.exe and Excel as written otherwise
+        try { return [System.IO.Path]::GetFullPath($PathValue) } catch { return $PathValue }
+    }
     if ([string]::IsNullOrWhiteSpace($WorkDir)) { return $PathValue }
     return [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($WorkDir, $PathValue))
 }
@@ -285,6 +292,13 @@ function Get-EbiWindowVisibleRect {
     $hr = -1
     try { $hr = [EbiNative]::DwmGetWindowAttribute($HWnd, 9, [ref]$vis, 16) } catch { $hr = -1 }   # DWMWA_EXTENDED_FRAME_BOUNDS
     if ($hr -ne 0 -or ($vis.Right - $vis.Left) -le 0) { $outer['borderL'] = 0; $outer['borderT'] = 0; $outer['borderR'] = 0; $outer['borderB'] = 0; return $outer }
+    $bl = $vis.Left - $outer['X']; $bt = $vis.Top - $outer['Y']; $br = ($outer['X'] + $outer['W']) - $vis.Right; $bb = ($outer['Y'] + $outer['H']) - $vis.Bottom
+    foreach ($b in @($bl, $bt, $br, $bb)) {
+        # DWM answers in physical pixels, GetWindowRect in this (DPI-unaware)
+        # process's scaled ones: at a scaling other than 100% the "borders"
+        # come out absurd -- trust GetWindowRect then.
+        if ($b -lt 0 -or $b -gt 16) { $outer['borderL'] = 0; $outer['borderT'] = 0; $outer['borderR'] = 0; $outer['borderB'] = 0; return $outer }
+    }
     return @{ ok = $true; X = $vis.Left; Y = $vis.Top; W = ($vis.Right - $vis.Left); H = ($vis.Bottom - $vis.Top);
               borderL = ($vis.Left - $outer['X']); borderT = ($vis.Top - $outer['Y']); borderR = (($outer['X'] + $outer['W']) - $vis.Right); borderB = (($outer['Y'] + $outer['H']) - $vis.Bottom) }
 }
@@ -302,14 +316,14 @@ function Set-EbiWindowVisibleSize {
 
 function Invoke-EbiFindText {
     # Ctrl+F the text (through the clipboard: SendKeys mangles kana and
-    # some symbols), Enter to jump to it, Esc to close the bar -- Chromium
-    # then leaves the focus on the link the match sits in.
+    # some symbols), Esc to close the bar -- Chromium then leaves the focus
+    # on the FIRST match (the active one while typing; an Enter here would
+    # jump to the second) or the link it sits in.
     param([string]$Text)
     Set-EbiClipboardText -Text $Text
     Send-EbiKeys -Keys '^{f}' -WaitMs 300
     Send-EbiKeys -Keys '^a' -WaitMs 100
-    Send-EbiKeys -Keys '^v' -WaitMs 300
-    Send-EbiKeys -Keys '{ENTER}' -WaitMs 400
+    Send-EbiKeys -Keys '^v' -WaitMs 500
     Send-EbiKeys -Keys '{ESC}' -WaitMs 300
 }
 
@@ -344,4 +358,16 @@ function Invoke-EbiKeyRecipe {
         elseif ($s -match '^keys:(.+)$') { Send-EbiKeys -Keys $Matches[1] -WaitMs $KeyWaitMs }
     }
     return @{ ok = $true; failure = ''; message = '' }
+}
+
+function Invoke-EbiDeselect {
+    # Click a blank point of the window (window-relative px) so the Ctrl+A
+    # selection Read-EbiPageText leaves behind is gone before a screenshot:
+    # Esc does not clear an Edge selection (JenkinsSnap.ps1 / HmSnap.ps1 click
+    # for the same reason).
+    param([IntPtr]$HWnd, [int]$X, [int]$Y)
+    $r = Get-EbiWindowRect -HWnd $HWnd
+    if (-not $r['ok']) { return $false }
+    Invoke-EbiClick -X ([int]$r['X'] + $X) -Y ([int]$r['Y'] + $Y) -SettleMs 300
+    return $true
 }

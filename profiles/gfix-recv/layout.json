@@ -60,7 +60,9 @@
     ],
     "separator": "profiles/gfix-recv/assets/wave.png",
     "separatorColumn": "Z",
-    "separatorRows": 4
+    "separatorRows": 4,
+    "settleMs": 2000,
+    "windowTitle": "DF - "
   },
   "share": {
     "_doc": "how human.share puts the Teams reply on the clipboard: rich = text + pictures in ONE paste (HTML + RTF); sequence = text, then each picture, one paste each. Switch in <WorkDir>/ebi.local.json { \"layout\": { \"share\": { \"mode\": \"sequence\" } } } if Teams drops the pictures of a rich paste.",

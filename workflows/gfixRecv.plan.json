@@ -65,12 +65,14 @@
       "with": { "worklist": "wl", "rows": "{{steps.rows.out.records}}",
                 "fields": { "Excel_NAME": "Excel_NAME", "JOB": "JOB", "USER": "USER", "RCVFILE": "RCVFILE",
                             "GFIX_DATE": "GFIX_DATE", "GFIX_TIME": "GFIX_TIME" },
-                "countAs": "FileCount", "overwrite": ["GFIX_DATE", "GFIX_TIME"] } },
+                "countAs": "FileCount", "overwrite": ["GFIX_DATE", "GFIX_TIME"],
+                "resetOnChange": { "watch": "GFIX_DATE", "clear": ["track", "logs", "evidence"] } } },
     { "id": "upsertMine", "use": "table.upsert", "when": "steps.gate.out.action != skip",
       "with": { "worklist": "wl", "rows": "{{steps.mine.out.records}}",
                 "fields": { "Excel_NAME": "Excel_NAME", "JOB": "JOB", "USER": "USER", "RCVFILE": "RCVFILE",
                             "GFIX_DATE": "GFIX_DATE", "GFIX_TIME": "GFIX_TIME" },
-                "countAs": "FileCount", "overwrite": ["GFIX_DATE", "GFIX_TIME"] } }
+                "countAs": "FileCount", "overwrite": ["GFIX_DATE", "GFIX_TIME"],
+                "resetOnChange": { "watch": "GFIX_DATE", "clear": ["track", "logs", "evidence"] } } }
   ],
 
   "teardown": [

@@ -30,6 +30,7 @@ $Manifest = @{
     atText   = @{ type='string'; desc='at, in format' }
     fromText = @{ type='string'; desc='from, in format' }
     toText   = @{ type='string'; desc='to, in format' }
+    minuteTexts = @{ type='list'; desc='every minute from..to in format (browser.wait_for containsAny: ready when any of them shows)' }
   }
   failures   = @(
     @{ id = 'parse_error'; transient = $false }
@@ -41,11 +42,14 @@ function Invoke-Step {
     param($In, $Ctx)
     $w = Get-EbiTimeAround -Date ([string]$In['date']) -Clock ([string]$In['clock']) -BeforeMinutes ([int]$In['beforeMinutes']) -AfterMinutes ([int]$In['afterMinutes'])
     if (-not $w['ok']) {
-        if ($Ctx['DryRun']) { return @{ ok = $true; window = @{}; at = ''; clock = ''; atText = ''; fromText = ''; toText = '' } }
-        return @{ ok = $false; failure = 'parse_error'; message = $w['message']; window = @{}; at = ''; clock = ''; atText = ''; fromText = ''; toText = '' }
+        if ($Ctx['DryRun']) { return @{ ok = $true; window = @{}; at = ''; clock = ''; atText = ''; fromText = ''; toText = ''; minuteTexts = @() } }
+        return @{ ok = $false; failure = 'parse_error'; message = $w['message']; window = @{}; at = ''; clock = ''; atText = ''; fromText = ''; toText = ''; minuteTexts = @() }
     }
     $fmt = [string]$In['format']; if ([string]::IsNullOrWhiteSpace($fmt)) { $fmt = 'yyyy-MM-dd HH:mm' }
     $inv = [System.Globalization.CultureInfo]::InvariantCulture
     $f = { param($iso) ([datetime]::ParseExact($iso, 'yyyy-MM-ddTHH:mm:ss', $inv)).ToString($fmt, $inv) }
-    return @{ ok = $true; window = @{ from = $w['from']; to = $w['to'] }; at = $w['at']; clock = (ConvertTo-EbiClockText -Value ([string]$In['clock'])); atText = (& $f $w['at']); fromText = (& $f $w['from']); toText = (& $f $w['to']) }
+    $mins = New-Object System.Collections.ArrayList
+    $t0 = [datetime]::ParseExact($w['from'], 'yyyy-MM-ddTHH:mm:ss', $inv); $t1 = [datetime]::ParseExact($w['to'], 'yyyy-MM-ddTHH:mm:ss', $inv)
+    for ($t = $t0; $t -le $t1 -and $mins.Count -lt 240; $t = $t.AddMinutes(1)) { [void]$mins.Add($t.ToString($fmt, $inv)) }
+    return @{ ok = $true; window = @{ from = $w['from']; to = $w['to'] }; at = $w['at']; clock = (ConvertTo-EbiClockText -Value ([string]$In['clock'])); atText = (& $f $w['at']); fromText = (& $f $w['from']); toText = (& $f $w['to']); minuteTexts = $mins.ToArray() }
 }

@@ -22,7 +22,9 @@ $Manifest = @{
   idempotent = $true
   inputs     = @{
     window     = @{ type='session'; sessionKind='window'; required=$true; desc='the window to read' }
-    contains   = @{ type='string'; required=$true; desc='the text that means the page is ready' }
+    contains   = @{ type='string'; default=''; desc='the text that means the page is ready' }
+    containsAny = @{ type='list'; default=@(); desc='or: ready when ANY of these texts is there (e.g. every minute of a time window)' }
+    deselectAt = @{ type='map';  default=@{}; desc='@{ x; y } window-relative blank point clicked after the last read, so the Ctrl+A selection does not show in a screenshot taken next' }
     timeoutSec = @{ type='int'; default=12; desc='give up after this many seconds' }
     pollMs     = @{ type='int'; default=800; desc='wait between reads' }
     archiveTo  = @{ type='path'; default=''; desc='write the last text read here (relative: under the work dir)' }
@@ -39,6 +41,7 @@ $Manifest = @{
     @{ id = 'foreground_lost'; transient = $true }
     @{ id = 'archive_failed';  transient = $true }
     @{ id = 'recipe_invalid';  transient = $false }
+    @{ id = 'input_invalid';   transient = $false }
   )
   example    = @{ use = 'browser.wait_for'; with = @{ window = 'mainWindow'; contains = '{{item.Correl_ID_S}}'; timeoutSec = 12; archiveTo = 'capture/before_list/{{item.keySafe}}.txt' } }
 }
@@ -53,6 +56,10 @@ function BrowserWaitFor-Matches {
 function Invoke-Step {
     param($In, $Ctx)
     $needle = [string]$In['contains']
+    $any = @(@($In['containsAny']) | Where-Object { -not [string]::IsNullOrEmpty([string]$_) } | ForEach-Object { [string]$_ })
+    if ($needle -ne '') { $any = @($needle) + $any }
+    if ($any.Count -eq 0) { return @{ ok = $false; failure = 'input_invalid'; message = 'give contains or containsAny'; text = ''; elapsedMs = 0; polls = 0; path = '' } }
+    $needle = $any -join ' | '
     $archive = Resolve-EbiWorkPath -PathValue ([string]$In['archiveTo']) -WorkDir ([string]$Ctx['WorkDir'])
     if ($Ctx['DryRun']) { $Ctx.Log.Info(('would poll the page text for "{0}" up to {1}s' -f $needle, [int]$In['timeoutSec'])); return @{ ok = $true; text = ''; elapsedMs = 0; polls = 0; path = $archive } }
     $recipe = @(@($In['refreshRecipe']) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
@@ -73,10 +80,13 @@ function Invoke-Step {
             if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message'] } }
         }
         $text = Read-EbiPageText
-        if (BrowserWaitFor-Matches -Text $text -Needle $needle) { $hit = $true; break }
+        foreach ($n in $any) { if (BrowserWaitFor-Matches -Text $text -Needle $n) { $hit = $true; break } }
+        if ($hit) { break }
         Start-Sleep -Milliseconds ([Math]::Max(100, [int]$In['pollMs']))
     } while ((Get-Date) -lt $deadline)
     $elapsed = [int]((Get-Date) - $started).TotalMilliseconds
+    $da = $In['deselectAt']
+    if ($da -is [System.Collections.IDictionary] -and $da.Contains('x') -and $da.Contains('y')) { [void](Invoke-EbiDeselect -HWnd $hWnd -X ([int]$da['x']) -Y ([int]$da['y'])) }
     if ($archive -ne '') {
         $w = Write-EbiTextFile -Path $archive -Text $text
         if (-not $w['ok']) { return @{ ok = $false; failure = 'archive_failed'; message = $w['message']; text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive } }

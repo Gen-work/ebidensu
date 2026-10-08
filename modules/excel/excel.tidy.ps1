@@ -60,6 +60,7 @@ function Invoke-Step {
     }
     if ($odd -gt 10) { [void]$warn.Add(@{ code = 'odd_fonts'; message = ('' + $odd + ' cell(s) in all (10 listed)') }) }
     $n = 0
+    try { [void]$wb.Activate() } catch { }
     try { $wb.Application.CutCopyMode = $false } catch { }
     foreach ($ws in @($wb.Worksheets)) {
         try {

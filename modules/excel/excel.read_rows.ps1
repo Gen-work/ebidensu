@@ -72,7 +72,17 @@ function Invoke-Step {
     $first = [Math]::Max(1, [int]$In['firstRow'])
     $last = [int]$In['lastRow']
     try {
-        if ($last -le 0) { $ur = $ws.UsedRange; $last = [int]$ur.Row + [int]$ur.Rows.Count - 1 }
+        if ($last -le 0) {
+            # The last row that holds a value in any requested column
+            # (Ctrl+Up from the bottom), not UsedRange: a shared plan formatted
+            # down to row 1048576 would turn into a million-row read.
+            $bottom = [int]$ws.Rows.Count
+            foreach ($f in $cols.Keys) {
+                $cn = ConvertTo-EbiColumnNumber ([string]$cols[$f])
+                $r = [int]$ws.Cells.Item($bottom, $cn).End(-4162).Row   # xlUp
+                if ($r -gt $last) { $last = $r }
+            }
+        }
         if ($last -lt $first) { return @{ ok = $true; records = @(); matched = 0; scanned = 0; plucked = @() } }
         $data = @{}
         foreach ($f in $cols.Keys) {

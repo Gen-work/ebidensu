@@ -77,6 +77,14 @@ function Invoke-Step {
         return @{ ok = $false; failure = 'not_found'; message = ('none of ' + ($targets -join ', ') + ' could be placed'); rects = @(); missing = $missing.ToArray(); source = $source }
     }
     $out = @{ ok = $true; rects = $rects.ToArray(); missing = $missing.ToArray(); source = $source }
-    if ($missing.Count -gt 0) { $out['warnings'] = @(@{ code = 'target_missing'; message = ('not placed: ' + ($missing -join ', ')) }) }
+    $warn = New-Object System.Collections.ArrayList
+    if ($missing.Count -gt 0) { [void]$warn.Add(@{ code = 'target_missing'; message = ('not placed: ' + ($missing -join ', ')) }) }
+    if ($source -eq 'bands' -and $bands.Count -ge 2) {
+        # the bottom band should be a list row: one pitch below the one above it
+        $gap = [double]$bands[$bands.Count - 1]['center'] - [double]$bands[$bands.Count - 2]['center']
+        $p = [double]$In['rowPitch']
+        if ($p -gt 0 -and [Math]::Abs($gap - $p) -gt ($p * 0.35)) { [void]$warn.Add(@{ code = 'pitch_mismatch'; message = ('the last two ink bands are ' + $gap + ' px apart (row pitch ' + $p + '): something below the list may be counted as a row -- check the box') }) }
+    }
+    if ($warn.Count -gt 0) { $out['warnings'] = $warn.ToArray() }
     return $out
 }

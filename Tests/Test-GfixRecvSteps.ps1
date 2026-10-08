@@ -42,7 +42,7 @@ $ctx = @{ WorkDir = $tmp; RunId = 'test'; Profile = $prof; Log = $log; DryRun = 
 # the same): a step's helpers and the kernel files it dot-sources must stay
 # visible for every later call.
 $loaded = @{}
-foreach ($u in @('verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
+foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
@@ -64,6 +64,8 @@ try {
     $win = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-08'; clock = '13:44:59.9999999999968050'; beforeMinutes = $prof['pages']['goAnywhere']['windowBefore']; afterMinutes = $prof['pages']['goAnywhere']['windowAfter'] }
     Assert-Equal '2026-10-08 13:45' $win['atText'] 'track: the GoAnywhere wait text is the scheduled minute as the page prints it'
     Assert-True ($gaText.Contains($win['atText'])) 'track: ... and the sample page does contain it'
+    Assert-Equal 16 @($win['minuteTexts']).Count 'track: every minute of the -2..+13 window is a ready text'
+    Assert-Equal '2026-10-08 13:43|2026-10-08 13:58' (@($win['minuteTexts'])[0] + '|' + @($win['minuteTexts'])[15]) 'track: first and last ready minute'
     $rec = Invoke-TestStep 'verify.parse_text' @{ text = $gaText; grammar = $prof['grammar']['goAnywhere'] }
     Assert-Equal 12 $rec['recordCount'] 'track: 12 GoAnywhere rows parsed'
     Assert-Equal 0 $rec['unrecognized'] 'track: no GoAnywhere line left unrecognised'
@@ -164,6 +166,21 @@ try {
     $lr2 = Invoke-TestStep 'screen.list_rects' @{ names = $names; targets = @('F202610070002.csv', 'F202610080006.csv'); x = 445; width = 892; height = 25; lastRowCenterY = 718; rowPitch = 20 }
     Assert-Equal 'pitch' $lr2['source'] 'evidence: without bands the fixed pitch is used'
     Assert-Equal 2 @($lr2['rects']).Count 'evidence: two files apart -> two boxes'
+
+    # ============================================================ plan: upsert
+    $wl = @{ path = ''; columns = @('Excel_NAME', 'JOB', 'GFIX_DATE', 'GFIX_TIME', 'FileCount', 'track', 'logs', 'evidence'); rows = @() }
+    $ctx['Session']['wl'] = @{ kind = 'worklist'; value = $wl; registeredBy = 'test' }
+    $flds = @{ Excel_NAME = 'Excel_NAME'; JOB = 'JOB'; GFIX_DATE = 'GFIX_DATE'; GFIX_TIME = 'GFIX_TIME' }
+    $reset = @{ watch = 'GFIX_DATE'; clear = @('track', 'logs', 'evidence') }
+    $rows1 = @(@{ Excel_NAME = 'JJDSWM51'; JOB = 'JJDSJM51'; GFIX_DATE = '2026-10-08'; GFIX_TIME = '10:00:00' }, @{ Excel_NAME = 'JJDSWM51'; JOB = 'JJDSJM51'; GFIX_DATE = '2026-10-08'; GFIX_TIME = '10:00:00' })
+    $u1 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows1; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME'); resetOnChange = $reset }
+    Assert-Equal '1|2' ('' + $u1['added'] + '|' + $wl['rows'][0]['FileCount']) 'plan: two mapping rows of one job -> one worklist row, FileCount 2'
+    $wl['rows'][0]['track'] = 'ok'
+    $u2 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows1; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME'); resetOnChange = $reset }
+    Assert-Equal 'ok' $wl['rows'][0]['track'] 'plan: a rerun the same day keeps the progress'
+    $rows2 = @(@{ Excel_NAME = 'JJDSWM51'; JOB = 'JJDSJM51'; GFIX_DATE = '2026-10-09'; GFIX_TIME = '11:00:00' })
+    $u3 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows2; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME'); resetOnChange = $reset }
+    Assert-Equal '|2026-10-09|11:00:00|1' ('' + $wl['rows'][0]['track'] + '|' + $wl['rows'][0]['GFIX_DATE'] + '|' + $wl['rows'][0]['GFIX_TIME'] + '|' + $wl['rows'][0]['FileCount']) 'plan: planned again on another day -> progress cleared, new date / time'
 
     # ============================================================ kernel/Layout.ps1
     $bs = @(Get-EbiInkBands -Counts @(0, 0, 3, 4, 0, 5, 0, 0, 0, 2) -MinInk 1 -MergeGap 1)

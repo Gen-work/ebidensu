@@ -38,8 +38,8 @@
                 "beforeMinutes": "{{page.windowBefore}}", "afterMinutes": "{{page.windowAfter}}" } },
 
     { "id": "gaText", "use": "browser.wait_for",
-      "label": "更新ボタンで GoAnywhere を更新し、予定時刻の行が出るまで待つ",
-      "with": { "window": "ga", "contains": "{{steps.win.out.atText}}",
+      "label": "更新ボタンで GoAnywhere を更新し、予定時刻 -2..+13 分の行が出るまで待つ",
+      "with": { "window": "ga", "containsAny": "{{steps.win.out.minuteTexts}}", "deselectAt": "{{page.deselectAt}}",
                 "refreshRecipe": "{{page.refreshRecipe}}",
                 "timeoutSec": "{{page.timeoutSec}}", "pollMs": "{{page.pollMs}}",
                 "archiveTo": "{{vars.capture}}/{{item.keySafe}}/goanywhere.txt" } },
@@ -65,9 +65,6 @@
                 "firstRowTop": "{{page.crop.firstRowTop}}", "rowHeight": "{{page.crop.rowHeight}}",
                 "first": "{{steps.mine.out.first}}", "rows": "{{steps.mine.out.matched}}" } },
 
-    { "id": "gaFront", "use": "browser.send_keys",
-      "with": { "window": "ga", "sequence": "{ESC}", "waitMs": 300 } },
-
     { "id": "gaShot", "use": "screen.capture_region",
       "with": { "x": "{{steps.gaRegion.out.x}}", "y": "{{steps.gaRegion.out.y}}",
                 "width": "{{steps.gaRegion.out.width}}", "height": "{{steps.gaRegion.out.height}}",
@@ -75,7 +72,7 @@
 
     { "id": "jkText", "use": "browser.wait_for",
       "label": "Jenkins を F5、今日のファイルが見えるまで",
-      "with": { "window": "jk", "contains": "{{run.dateSlash}}",
+      "with": { "window": "jk", "contains": "{{run.dateSlash}}", "deselectAt": "{{profile.pages.jenkinsReport.deselectAt}}",
                 "refreshRecipe": "{{profile.pages.jenkinsReport.refreshRecipe}}",
                 "timeoutSec": "{{profile.pages.jenkinsReport.timeoutSec}}", "pollMs": "{{profile.pages.jenkinsReport.pollMs}}",
                 "archiveTo": "{{vars.capture}}/{{item.keySafe}}/jenkins.txt" } },
@@ -112,6 +109,7 @@
     { "id": "df", "use": "screen.launch_capture",
       "with": { "exe": "{{profile.paths.dfExe}}", "argSets": "{{steps.pair.out.pairs}}",
                 "width": "{{profile.layout.df.width}}", "height": "{{profile.layout.df.height}}",
+                "settleMs": "{{profile.layout.df.settleMs}}", "windowTitle": "{{profile.layout.df.windowTitle}}",
                 "saveDir": "{{vars.capture}}/{{item.keySafe}}/df" } },
 
     { "id": "gate", "use": "human.gate",
