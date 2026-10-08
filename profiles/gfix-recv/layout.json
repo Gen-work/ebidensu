@@ -1,7 +1,7 @@
 {
   "_doc": "The evidence workbook (J4検証資料(...)_<Excel_NAME>.xlsx), read off the delivered sample (QJDSWM39): sheet names, labels, font, highlight patterns, and where the DF / Jenkins boxes go.",
   "evidence": {
-    "glob": "*_{{item.Excel_NAME}}.xlsx",
+    "glob": "J4*_{{item.Excel_NAME}}.xlsx",
     "sheets": {
       "sendData": "送信データ",
       "giftResult": "GIFT受信結果",
@@ -27,7 +27,8 @@
       ],
       "unitsPerColumn": 3
     },
-    "compareFirstRow": 4
+    "compareFirstRow": 4,
+    "_glob_doc": "starts with J4 so the ~$ lock file Excel leaves next to an open workbook never matches"
   },
   "df": {
     "_doc": "DF window 1133 x 429 shows exactly 16 data lines (the sample evidence); a file with more lines gets a second capture after Ctrl+End with the wave between. Boxes on the END picture: the last line number (found as the last band of dark ink in the line-number strip) and the 同一内容 cell of the status bar (bottom-right).",
