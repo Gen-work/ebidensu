@@ -1,0 +1,36 @@
+{
+  "goAnywhere": {
+    "default": "ok",
+    "rules": [
+      {
+        "field": "key",
+        "op": "present",
+        "else": "unknown",
+        "message": "no job number on the row"
+      }
+    ]
+  },
+  "jenkinsReport": {
+    "default": "ok",
+    "rules": [
+      {
+        "field": "key",
+        "op": "present",
+        "else": "unknown",
+        "message": "no file name on the row"
+      }
+    ]
+  },
+  "jobLog": {
+    "default": "ok",
+    "rules": [
+      {
+        "field": "key",
+        "op": "matches",
+        "value": "^JJPCRS\\d",
+        "else": "unknown",
+        "message": "the transfer file name does not look like JJPCRS..."
+      }
+    ]
+  }
+}

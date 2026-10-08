@@ -73,6 +73,131 @@
       "summary": "Classify page text by fingerprint: ok, loading, empty, expired, unknown",
       "tier": "core"
     },
+    "browser.download_each": {
+      "effects": "ui",
+      "example": {
+        "use": "browser.download_each",
+        "with": {
+          "destDir": "log/jobs",
+          "recipe": [
+            "find:Download job log",
+            "keys:{TAB}{TAB}",
+            "keys:{ENTER}"
+          ],
+          "terms": "{{steps.mine.out.plucked}}",
+          "window": "listWindow"
+        }
+      },
+      "failures": [
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "not_found",
+          "transient": true
+        },
+        {
+          "id": "timeout",
+          "transient": true
+        },
+        {
+          "id": "move_failed",
+          "transient": true
+        },
+        {
+          "id": "clipboard_error",
+          "transient": true
+        },
+        {
+          "id": "recipe_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/browser/browser.download_each.ps1",
+      "group": "browser",
+      "id": "browser.download_each",
+      "idempotent": false,
+      "inputs": {
+        "backKeys": {
+          "default": "%{LEFT}",
+          "desc": "keys that return to the list; empty = stay",
+          "type": "string"
+        },
+        "backWaitMs": {
+          "default": 2500,
+          "type": "int"
+        },
+        "destDir": {
+          "required": true,
+          "type": "path"
+        },
+        "downloadDir": {
+          "default": "",
+          "desc": "where the browser saves; empty = the user's Downloads",
+          "type": "path"
+        },
+        "glob": {
+          "default": "*",
+          "type": "string"
+        },
+        "nameTemplate": {
+          "default": "{term}{ext}",
+          "desc": "{term} {ext} {name}: the destination file name",
+          "type": "string"
+        },
+        "openWaitMs": {
+          "default": 2500,
+          "desc": "wait after Enter on the link",
+          "type": "int"
+        },
+        "recipe": {
+          "default": [],
+          "desc": "after opening: find:<text> | keys:<SendKeys> | wait:<ms>, in order",
+          "type": "list"
+        },
+        "skipExisting": {
+          "default": true,
+          "desc": "a term whose destination file already exists is not downloaded again",
+          "type": "bool"
+        },
+        "terms": {
+          "desc": "exact texts of the links to open, one download each",
+          "required": true,
+          "type": "list"
+        },
+        "timeoutSec": {
+          "default": 60,
+          "type": "int"
+        },
+        "window": {
+          "required": true,
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "foreground"
+      ],
+      "notes": "Not idempotent by nature (each run downloads again) -- skipExisting makes a rerun cheap, and a flow.checkpoint after it records the item done. The foreground is re-checked before every key burst.",
+      "outputs": {
+        "fetched": {
+          "desc": "downloads actually made",
+          "type": "int"
+        },
+        "files": {
+          "desc": "@{ term; path; skipped } per term",
+          "type": "list"
+        },
+        "paths": {
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Per term: Ctrl+F it, open it, key a download, collect the file, go back",
+      "tier": "core"
+    },
     "browser.ensure": {
       "effects": "ui",
       "example": {
@@ -651,6 +776,10 @@
         {
           "id": "archive_failed",
           "transient": true
+        },
+        {
+          "id": "recipe_invalid",
+          "transient": false
         }
       ],
       "file": "modules/browser/browser.wait_for.ps1",
@@ -672,6 +801,11 @@
           "default": 800,
           "desc": "wait between reads",
           "type": "int"
+        },
+        "refreshRecipe": {
+          "default": [],
+          "desc": "run before every read: find:<text> | keys:<SendKeys> | wait:<ms> (e.g. a refresh button the page needs)",
+          "type": "list"
         },
         "timeoutSec": {
           "default": 12,
@@ -707,6 +841,951 @@
       "provides": [],
       "releases": [],
       "summary": "Poll the page text until it contains a string, or time out",
+      "tier": "core"
+    },
+    "excel.close": {
+      "effects": "write",
+      "example": {
+        "use": "excel.close",
+        "with": {
+          "save": true,
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.close.ps1",
+      "group": "excel",
+      "id": "excel.close",
+      "idempotent": true,
+      "inputs": {
+        "save": {
+          "default": false,
+          "desc": "save before closing",
+          "type": "bool"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "save_failed keeps the workbook open and registered (the runner only releases on ok), so a retry after fixing the cause (a full disk, a locked file) can still save it.",
+      "outputs": {
+        "closed": {
+          "desc": "false when there was nothing to close",
+          "type": "bool"
+        },
+        "saved": {
+          "type": "bool"
+        }
+      },
+      "provides": [],
+      "releases": [
+        "workbook"
+      ],
+      "summary": "Close a registered workbook (save or discard) and release it",
+      "tier": "core"
+    },
+    "excel.copy_picture": {
+      "effects": "write",
+      "example": {
+        "use": "excel.copy_picture",
+        "with": {
+          "cell": "B3",
+          "fromSheet": "sheetA",
+          "toSheet": "sheetB",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "not_found",
+          "transient": false
+        },
+        {
+          "id": "copy_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.copy_picture.ps1",
+      "group": "excel",
+      "id": "excel.copy_picture",
+      "idempotent": false,
+      "inputs": {
+        "cell": {
+          "default": "B3",
+          "desc": "top-left cell of the copy",
+          "type": "string"
+        },
+        "fromSheet": {
+          "required": true,
+          "type": "string"
+        },
+        "gapRows": {
+          "default": 0,
+          "desc": "added to nextRow",
+          "type": "int"
+        },
+        "index": {
+          "default": 1,
+          "desc": "1-based, top-to-bottom",
+          "type": "int"
+        },
+        "toSheet": {
+          "required": true,
+          "type": "string"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "Clobbers the clipboard. Not idempotent: a rerun pastes a second copy.",
+      "outputs": {
+        "name": {
+          "type": "string"
+        },
+        "nextRow": {
+          "desc": "first row whose top is below the copy, plus gapRows",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Copy the n-th picture of a sheet to a cell of another sheet",
+      "tier": "core"
+    },
+    "excel.ensure_app": {
+      "effects": "ui",
+      "example": {
+        "use": "excel.ensure_app",
+        "with": {
+          "as": "xl"
+        }
+      },
+      "failures": [
+        {
+          "id": "excel_unavailable",
+          "transient": false
+        }
+      ],
+      "file": "modules/excel/excel.ensure_app.ps1",
+      "group": "excel",
+      "id": "excel.ensure_app",
+      "idempotent": true,
+      "inputs": {
+        "visible": {
+          "default": true,
+          "desc": "show the window (the operator sees what is written)",
+          "type": "bool"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "Always a NEW instance: workbooks the operator has open in their own Excel are not touched (excel.open reports read_only if one of them is the target). Release with excel.quit_app in teardown.",
+      "outputs": {
+        "version": {
+          "desc": "Excel version, e.g. 16.0",
+          "type": "string"
+        }
+      },
+      "provides": [
+        "excelApp"
+      ],
+      "releases": [],
+      "summary": "Start a dedicated Excel instance and register it",
+      "tier": "core"
+    },
+    "excel.highlight": {
+      "effects": "write",
+      "example": {
+        "use": "excel.highlight",
+        "with": {
+          "fromRow": "{{steps.log.out.firstRow}}",
+          "patterns": [
+            "Command: "
+          ],
+          "sheet": "result",
+          "toRow": "{{steps.log.out.lastRow}}",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "not_found",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.highlight.ps1",
+      "group": "excel",
+      "id": "excel.highlight",
+      "idempotent": true,
+      "inputs": {
+        "color": {
+          "default": 65535,
+          "desc": "OLE colour (BGR); 65535 = yellow",
+          "type": "int"
+        },
+        "column": {
+          "default": "B",
+          "desc": "the column holding the text",
+          "type": "string"
+        },
+        "expect": {
+          "default": -1,
+          "desc": "how many rows should match; -1 = any. A different count is a warning",
+          "type": "int"
+        },
+        "fromRow": {
+          "required": true,
+          "type": "int"
+        },
+        "maxColumn": {
+          "default": 0,
+          "desc": "never fill past this column number; 0 = no cap",
+          "type": "int"
+        },
+        "padColumns": {
+          "default": 0,
+          "type": "int"
+        },
+        "patterns": {
+          "desc": "regexes; a row matching any of them is filled",
+          "required": true,
+          "type": "list"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "toRow": {
+          "required": true,
+          "type": "int"
+        },
+        "unitsPerColumn": {
+          "default": 3,
+          "desc": "half-width characters one column holds",
+          "type": "int"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "not_found when no row in the range matches any pattern: the evidence would be missing its mark, which is worth stopping for.",
+      "outputs": {
+        "filled": {
+          "type": "int"
+        },
+        "rows": {
+          "desc": "@{ row; endColumn (letter); pattern; text } per filled row",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Fill the rows whose text matches a pattern, as wide as the text",
+      "tier": "core"
+    },
+    "excel.insert_pictures": {
+      "effects": "write",
+      "example": {
+        "use": "excel.insert_pictures",
+        "with": {
+          "pictures": [
+            "{{steps.shot.out.path}}"
+          ],
+          "rects": "{{steps.lr.out.rects}}",
+          "row": "{{steps.log.out.nextRow}}",
+          "sheet": "result",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "insert_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.insert_pictures.ps1",
+      "group": "excel",
+      "id": "excel.insert_pictures",
+      "idempotent": false,
+      "inputs": {
+        "column": {
+          "default": "B",
+          "desc": "default column",
+          "type": "string"
+        },
+        "gapRows": {
+          "default": 1,
+          "desc": "blank rows between pictures when an entry does not say",
+          "type": "int"
+        },
+        "lineWeight": {
+          "default": 0,
+          "desc": "box line weight in points; 0 = 1.5",
+          "type": "int"
+        },
+        "pictures": {
+          "desc": "paths, or @{ path; column; gapRows; rows; rects } (excel layout plan)",
+          "required": true,
+          "type": "list"
+        },
+        "rects": {
+          "default": [],
+          "desc": "boxes for EVERY picture given as a plain path",
+          "type": "list"
+        },
+        "row": {
+          "desc": "row of the first picture",
+          "required": true,
+          "type": "int"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "skipRows": {
+          "default": 0,
+          "desc": "blank rows left before the first picture",
+          "type": "int"
+        },
+        "tag": {
+          "default": "",
+          "desc": "shape name prefix (verifyMark_<tag>_n) so a rerun can find them",
+          "type": "string"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "Not idempotent: a second run adds the pictures again. The evidence workflows start from a clean sheet section and checkpoint after.",
+      "outputs": {
+        "boxes": {
+          "desc": "rectangles drawn",
+          "type": "int"
+        },
+        "nextRow": {
+          "desc": "first row below the last picture",
+          "type": "int"
+        },
+        "shapes": {
+          "desc": "@{ name; path; row; top; left; width; height; boxes }",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Stack pictures down a sheet at native size and draw red boxes on them",
+      "tier": "core"
+    },
+    "excel.open": {
+      "effects": "ui",
+      "example": {
+        "use": "excel.open",
+        "with": {
+          "app": "xl",
+          "as": "wb",
+          "path": "{{vars.evidenceDir}}/{{item.Excel_NAME}}.xlsx"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "read_only",
+          "transient": true
+        },
+        {
+          "id": "open_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.open.ps1",
+      "group": "excel",
+      "id": "excel.open",
+      "idempotent": true,
+      "inputs": {
+        "app": {
+          "required": true,
+          "sessionKind": "excelApp",
+          "type": "session"
+        },
+        "path": {
+          "desc": "the .xlsx (relative: under the work dir)",
+          "required": true,
+          "type": "path"
+        },
+        "readOnly": {
+          "default": false,
+          "desc": "open read-only (reading a shared plan someone may have open)",
+          "type": "bool"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).",
+      "outputs": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "path"
+        },
+        "readOnly": {
+          "type": "bool"
+        },
+        "sheets": {
+          "desc": "sheet names in tab order",
+          "type": "list"
+        }
+      },
+      "provides": [
+        "workbook"
+      ],
+      "releases": [],
+      "summary": "Open a workbook in the registered Excel instance and register it",
+      "tier": "core"
+    },
+    "excel.quit_app": {
+      "effects": "ui",
+      "example": {
+        "use": "excel.quit_app",
+        "with": {
+          "app": "xl"
+        }
+      },
+      "failures": [
+        {
+          "id": "internal_error",
+          "transient": false
+        }
+      ],
+      "file": "modules/excel/excel.quit_app.ps1",
+      "group": "excel",
+      "id": "excel.quit_app",
+      "idempotent": true,
+      "inputs": {
+        "app": {
+          "required": true,
+          "sessionKind": "excelApp",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "Workbooks still open in the instance are closed WITHOUT saving -- close them with excel.close (save = true) first.",
+      "outputs": {
+        "quit": {
+          "desc": "false when there was nothing to quit",
+          "type": "bool"
+        }
+      },
+      "provides": [],
+      "releases": [
+        "excelApp"
+      ],
+      "summary": "Quit the registered Excel instance and release it",
+      "tier": "core"
+    },
+    "excel.read_rows": {
+      "effects": "read",
+      "example": {
+        "use": "excel.read_rows",
+        "with": {
+          "columns": {
+            "job": "A",
+            "kind": "B"
+          },
+          "pluck": "job",
+          "sheet": "WBS",
+          "where": [
+            {
+              "field": "kind",
+              "op": "equals",
+              "value": "recv"
+            }
+          ],
+          "workbook": "plan"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "rules_invalid",
+          "transient": false
+        },
+        {
+          "id": "read_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.read_rows.ps1",
+      "group": "excel",
+      "id": "excel.read_rows",
+      "idempotent": true,
+      "inputs": {
+        "columns": {
+          "desc": "field -> column letter, e.g. { job: A, time: P }",
+          "required": true,
+          "type": "map"
+        },
+        "dateFields": {
+          "default": [],
+          "desc": "fields whose cells are dates -> yyyy-MM-dd",
+          "type": "list"
+        },
+        "firstRow": {
+          "default": 2,
+          "desc": "first data row",
+          "type": "int"
+        },
+        "lastRow": {
+          "default": 0,
+          "desc": "0 = the last used row",
+          "type": "int"
+        },
+        "pluck": {
+          "default": "",
+          "desc": "field whose values go to plucked",
+          "type": "string"
+        },
+        "sheet": {
+          "desc": "sheet name or 1-based index",
+          "required": true,
+          "type": "string"
+        },
+        "timeFields": {
+          "default": [],
+          "desc": "fields whose cells are times -> HH:mm:ss (float artefacts rounded)",
+          "type": "list"
+        },
+        "where": {
+          "default": [],
+          "desc": "conditions @{ field; op; value } on the read fields",
+          "type": "list"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "No matching row is not a failure (matched = 0): an empty day is an answer. A date cell holding text that looks like a date is passed through as it is.",
+      "outputs": {
+        "matched": {
+          "type": "int"
+        },
+        "plucked": {
+          "type": "list"
+        },
+        "records": {
+          "desc": "kept rows: field -> text, plus _row (sheet row number)",
+          "type": "list"
+        },
+        "scanned": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Read lettered columns of a sheet into records, keep rows matching conditions",
+      "tier": "core"
+    },
+    "excel.stack_plan": {
+      "effects": "pure",
+      "example": {
+        "use": "excel.stack_plan",
+        "with": {
+          "separator": "{{run.toolDir}}/profiles/demo/assets/wave.png",
+          "separatorColumn": "Z",
+          "sets": "{{steps.df.out.shots}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/excel/excel.stack_plan.ps1",
+      "group": "excel",
+      "id": "excel.stack_plan",
+      "idempotent": true,
+      "inputs": {
+        "column": {
+          "default": "B",
+          "type": "string"
+        },
+        "gapRows": {
+          "default": 1,
+          "desc": "blank rows between capture sets",
+          "type": "int"
+        },
+        "markRects": {
+          "default": [],
+          "desc": "excel.insert_pictures rect specs for the end picture",
+          "type": "list"
+        },
+        "separator": {
+          "default": "",
+          "desc": "picture placed between first and last",
+          "type": "path"
+        },
+        "separatorColumn": {
+          "default": "",
+          "desc": "column of the separator (default: column)",
+          "type": "string"
+        },
+        "separatorRows": {
+          "default": 4,
+          "desc": "rows the separator takes",
+          "type": "int"
+        },
+        "sets": {
+          "desc": "@{ first; last } per capture set (last empty = one screen)",
+          "required": true,
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "pictures": {
+          "desc": "excel.insert_pictures pictures entries",
+          "type": "list"
+        },
+        "total": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Plan a picture stack from capture sets (first, separator, last; boxes on the end)",
+      "tier": "core"
+    },
+    "excel.tidy": {
+      "effects": "write",
+      "example": {
+        "use": "excel.tidy",
+        "with": {
+          "fontName": "MS Gothic",
+          "fontSheets": [
+            "result"
+          ],
+          "fontSize": 10,
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.tidy.ps1",
+      "group": "excel",
+      "id": "excel.tidy",
+      "idempotent": true,
+      "inputs": {
+        "activate": {
+          "default": "1",
+          "desc": "sheet to leave active (name or 1-based index)",
+          "type": "string"
+        },
+        "fontName": {
+          "default": "",
+          "type": "string"
+        },
+        "fontSheets": {
+          "default": [],
+          "desc": "sheets whose column-B text is checked against fontName / fontSize",
+          "type": "list"
+        },
+        "fontSize": {
+          "default": 0,
+          "type": "int"
+        },
+        "save": {
+          "default": true,
+          "type": "bool"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "outputs": {
+        "oddFonts": {
+          "desc": "cells reported",
+          "type": "int"
+        },
+        "saved": {
+          "type": "bool"
+        },
+        "sheets": {
+          "desc": "sheets visited",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Select A1 on every sheet, activate the first, report odd fonts, save",
+      "tier": "core"
+    },
+    "excel.write_cell": {
+      "effects": "write",
+      "example": {
+        "use": "excel.write_cell",
+        "with": {
+          "cell": "B3",
+          "fromCell": "A3",
+          "fromSheet": "data",
+          "sheet": "compare",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.write_cell.ps1",
+      "group": "excel",
+      "id": "excel.write_cell",
+      "idempotent": true,
+      "inputs": {
+        "cell": {
+          "desc": "address, e.g. B3",
+          "required": true,
+          "type": "string"
+        },
+        "fontName": {
+          "default": "",
+          "type": "string"
+        },
+        "fontSize": {
+          "default": 0,
+          "type": "int"
+        },
+        "fromCell": {
+          "default": "",
+          "type": "string"
+        },
+        "fromSheet": {
+          "default": "",
+          "desc": "instead of value: copy the value of fromCell on this sheet",
+          "type": "string"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "desc": "the text to write",
+          "type": "string"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "outputs": {
+        "row": {
+          "type": "int"
+        },
+        "value": {
+          "desc": "what the cell holds now",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write a value (or another cell's value) into one cell as text",
+      "tier": "core"
+    },
+    "excel.write_lines": {
+      "effects": "write",
+      "example": {
+        "use": "excel.write_lines",
+        "with": {
+          "fontName": "MS Gothic",
+          "fontSize": 10,
+          "label": "receive log",
+          "paths": [
+            "log/jobs/1.log"
+          ],
+          "row": 8,
+          "sheet": "result",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.write_lines.ps1",
+      "group": "excel",
+      "id": "excel.write_lines",
+      "idempotent": true,
+      "inputs": {
+        "column": {
+          "default": "B",
+          "type": "string"
+        },
+        "encoding": {
+          "default": "mixed",
+          "enum": [
+            "mixed",
+            "utf8",
+            "cp932"
+          ],
+          "type": "string"
+        },
+        "fontName": {
+          "default": "",
+          "type": "string"
+        },
+        "fontSize": {
+          "default": 0,
+          "type": "int"
+        },
+        "gapRows": {
+          "default": 0,
+          "desc": "blank rows left before row (row + gapRows is where writing starts)",
+          "type": "int"
+        },
+        "label": {
+          "default": "",
+          "desc": "written at row; the lines start one row below",
+          "type": "string"
+        },
+        "lines": {
+          "default": [],
+          "desc": "more lines, after the files",
+          "type": "list"
+        },
+        "paths": {
+          "default": [],
+          "desc": "text files, concatenated in order",
+          "type": "list"
+        },
+        "row": {
+          "desc": "first row to write (the label, when there is one)",
+          "required": true,
+          "type": "int"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "Rows are written one COM call each; a few hundred lines take a few seconds.",
+      "outputs": {
+        "firstRow": {
+          "desc": "row of the first line",
+          "type": "int"
+        },
+        "labelRow": {
+          "desc": "row of the label; 0 when none",
+          "type": "int"
+        },
+        "lastRow": {
+          "desc": "row of the last line (labelRow when there are no lines)",
+          "type": "int"
+        },
+        "nextRow": {
+          "desc": "the row after the last one written",
+          "type": "int"
+        },
+        "written": {
+          "desc": "lines written (label not counted)",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Paste text lines (from files or a list) down a column, under an optional label",
       "tier": "core"
     },
     "file.assert_exists": {
@@ -759,6 +1838,349 @@
       "provides": [],
       "releases": [],
       "summary": "Fail with file_not_found unless the path exists",
+      "tier": "core"
+    },
+    "file.compare": {
+      "effects": "read",
+      "example": {
+        "use": "file.compare",
+        "with": {
+          "pairs": "{{steps.pair.out.pairs}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.compare.ps1",
+      "group": "file",
+      "id": "file.compare",
+      "idempotent": true,
+      "inputs": {
+        "leftField": {
+          "default": "left",
+          "type": "string"
+        },
+        "pairs": {
+          "desc": "@{ left; right } paths (verify.pair_files output)",
+          "required": true,
+          "type": "list"
+        },
+        "rightField": {
+          "default": "right",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "A difference is a verdict (ng), not a failure: the workflow decides (human.gate). firstDiff is 1-based.",
+      "outputs": {
+        "code": {
+          "desc": "ok (all identical) | ng (a pair differs) | unknown (no pairs, or a file missing)",
+          "type": "string"
+        },
+        "identical": {
+          "desc": "pairs that are identical",
+          "type": "int"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "results": {
+          "desc": "@{ left; right; identical; firstDiff; leftLines; rightLines } per pair",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Compare pairs of text files line by line; ok when every pair is identical",
+      "tier": "core"
+    },
+    "file.convert_encoding": {
+      "effects": "write",
+      "example": {
+        "use": "file.convert_encoding",
+        "with": {
+          "path": "log/GFIXReceive/{{run.mmdd}}.log",
+          "to": "cp932"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.convert_encoding.ps1",
+      "group": "file",
+      "id": "file.convert_encoding",
+      "idempotent": true,
+      "inputs": {
+        "from": {
+          "default": "mixed",
+          "desc": "mixed = UTF-8 with stray CP932 pairs (also reads plain UTF-8)",
+          "enum": [
+            "mixed",
+            "utf8",
+            "cp932"
+          ],
+          "type": "string"
+        },
+        "newline": {
+          "default": "keep",
+          "enum": [
+            "keep",
+            "crlf",
+            "lf"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "desc": "the file (relative: under the work dir)",
+          "required": true,
+          "type": "path"
+        },
+        "saveAs": {
+          "default": "",
+          "desc": "write here instead of replacing the file",
+          "type": "path"
+        },
+        "to": {
+          "default": "cp932",
+          "enum": [
+            "cp932",
+            "utf8",
+            "utf8bom"
+          ],
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Idempotent when saveAs is given (the source is left as it was, so a rerun converts the same bytes again). In place, a second run would read already-converted bytes; keep the downloaded original and write the converted copy beside it.",
+      "outputs": {
+        "foreignPairs": {
+          "desc": "CP932 pairs found inside a mixed file",
+          "type": "int"
+        },
+        "lines": {
+          "type": "int"
+        },
+        "lost": {
+          "desc": "characters the target encoding could not hold (written as ?)",
+          "type": "int"
+        },
+        "path": {
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Re-encode a text file (e.g. mixed UTF-8 to Shift_JIS), in place or to a copy",
+      "tier": "core"
+    },
+    "file.download": {
+      "effects": "write",
+      "example": {
+        "use": "file.download",
+        "with": {
+          "baseUrl": "{{profile.urls.jenkinsReport}}",
+          "dir": "DATA/GFIX/{{item.Excel_NAME}}",
+          "names": "{{steps.jk.out.plucked}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        },
+        {
+          "id": "download_failed",
+          "transient": true
+        },
+        {
+          "id": "not_found",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.download.ps1",
+      "group": "file",
+      "id": "file.download",
+      "idempotent": true,
+      "inputs": {
+        "baseUrl": {
+          "default": "",
+          "desc": "URL prefix the names are appended to (a trailing / is added when missing)",
+          "type": "string"
+        },
+        "countLines": {
+          "default": false,
+          "desc": "count each file's lines (files[].lines), for verify.pair_files",
+          "type": "bool"
+        },
+        "dir": {
+          "default": "",
+          "desc": "with names: the folder to write into (created when missing)",
+          "type": "path"
+        },
+        "missingOk": {
+          "default": false,
+          "desc": "a 404 is not a failure: the file is left out (total counts only what arrived)",
+          "type": "bool"
+        },
+        "names": {
+          "default": [],
+          "desc": "file names under baseUrl; each is saved under the same name",
+          "type": "list"
+        },
+        "overwrite": {
+          "default": true,
+          "desc": "false: an existing file is kept and reported as skipped",
+          "type": "bool"
+        },
+        "saveAs": {
+          "default": "",
+          "desc": "with url: the file to write (relative: under the work dir)",
+          "type": "path"
+        },
+        "timeoutSec": {
+          "default": 60,
+          "type": "int"
+        },
+        "url": {
+          "default": "",
+          "desc": "one full URL instead of baseUrl + names",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "An HTTP 404 is not_found (not transient): the file is not there. Anything else (timeout, 5xx, refused) is download_failed and may be retried. Nothing is downloaded when names is empty and url is blank -- that is input_invalid, not a silent success.",
+      "outputs": {
+        "files": {
+          "desc": "@{ name; path; size; skipped; lines; order } per file (lines -1 unless countLines)",
+          "type": "list"
+        },
+        "paths": {
+          "desc": "every file now on disk, in the order asked",
+          "type": "list"
+        },
+        "total": {
+          "desc": "files downloaded or already there",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "HTTP GET files (base URL + names, or one URL) into a folder",
+      "tier": "core"
+    },
+    "file.extract_blocks": {
+      "effects": "write",
+      "example": {
+        "use": "file.extract_blocks",
+        "with": {
+          "blockKeys": "{{steps.names.out.plucked}}",
+          "markers": [
+            "file stored"
+          ],
+          "paths": [
+            "log/GFIXReceive/{{run.mmdd}}.log"
+          ],
+          "saveTo": "capture/gfix/{{item.keySafe}}.receive.txt"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "not_found",
+          "transient": true
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.extract_blocks.ps1",
+      "group": "file",
+      "id": "file.extract_blocks",
+      "idempotent": true,
+      "inputs": {
+        "afterEnd": {
+          "default": 1,
+          "desc": "lines after END that belong to the block (the date stamp)",
+          "type": "int"
+        },
+        "blockKeys": {
+          "desc": "block keys to keep",
+          "required": true,
+          "type": "list"
+        },
+        "encoding": {
+          "default": "mixed",
+          "enum": [
+            "mixed",
+            "utf8",
+            "cp932"
+          ],
+          "type": "string"
+        },
+        "endPattern": {
+          "default": "^(?<tag>\\S+) END (?<key>\\S+)\\s*$",
+          "type": "string"
+        },
+        "markers": {
+          "default": [],
+          "desc": "regexes; matching lines of the result are reported",
+          "type": "list"
+        },
+        "paths": {
+          "desc": "log files to search, in order (e.g. the plain and the unzip log); missing ones are skipped",
+          "required": true,
+          "type": "list"
+        },
+        "saveTo": {
+          "desc": "where the extracted lines go (UTF-8, no BOM)",
+          "required": true,
+          "type": "path"
+        },
+        "startPattern": {
+          "default": "^(?<tag>\\S+) START (?<key>\\S+)\\s*$",
+          "desc": "regex with a named group key",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete).",
+      "outputs": {
+        "blocks": {
+          "desc": "@{ key; source; complete; lines } per block, in output order",
+          "type": "list"
+        },
+        "lineCount": {
+          "type": "int"
+        },
+        "markers": {
+          "desc": "@{ line (1-based in the output); pattern (0-based); text }",
+          "type": "list"
+        },
+        "missing": {
+          "desc": "keys with no block in any log",
+          "type": "list"
+        },
+        "path": {
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Cut keyed START..END blocks out of a log into a file; find marker lines",
       "tier": "core"
     },
     "file.find": {
@@ -853,6 +2275,142 @@
       "summary": "Find the file(s) for a key or glob; full-width and stamped names tolerated",
       "tier": "core"
     },
+    "file.list": {
+      "effects": "read",
+      "example": {
+        "use": "file.list",
+        "with": {
+          "countLines": true,
+          "dir": "DATA/GIFT/{{item.JOB}}",
+          "glob": "*.csv"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.list.ps1",
+      "group": "file",
+      "id": "file.list",
+      "idempotent": true,
+      "inputs": {
+        "countLines": {
+          "default": false,
+          "desc": "read each file and count its lines (CRLF / LF)",
+          "type": "bool"
+        },
+        "dir": {
+          "desc": "relative: under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "glob": {
+          "default": "*",
+          "type": "string"
+        },
+        "mustExist": {
+          "default": true,
+          "desc": "false: a missing folder lists as empty",
+          "type": "bool"
+        },
+        "orderBy": {
+          "default": "name",
+          "enum": [
+            "name",
+            "time"
+          ],
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way.",
+      "outputs": {
+        "files": {
+          "desc": "@{ name; path; size; modified (ISO); lines; order } in order",
+          "type": "list"
+        },
+        "names": {
+          "type": "list"
+        },
+        "paths": {
+          "type": "list"
+        },
+        "total": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "List the files in a folder (size, time, optional line count) in order",
+      "tier": "core"
+    },
+    "file.move": {
+      "effects": "write",
+      "example": {
+        "use": "file.move",
+        "with": {
+          "from": "{{steps.dl.out.path}}",
+          "to": "log/GFIXReceive/{{run.mmdd}}.log"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "target_exists",
+          "transient": false
+        },
+        {
+          "id": "move_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.move.ps1",
+      "group": "file",
+      "id": "file.move",
+      "idempotent": false,
+      "inputs": {
+        "copy": {
+          "default": false,
+          "desc": "copy instead of move",
+          "type": "bool"
+        },
+        "from": {
+          "desc": "the file (relative: under the work dir)",
+          "required": true,
+          "type": "path"
+        },
+        "overwrite": {
+          "default": false,
+          "desc": "replace an existing destination",
+          "type": "bool"
+        },
+        "to": {
+          "desc": "destination file, or a folder when it ends with \\ or / or already is one",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "notes": "Not idempotent: a move done once has no source the second time (put a flow.checkpoint after it, STEP-CONTRACT 6.4). A destination that already holds the very same bytes is not target_exists -- the source is just removed (move) or left (copy).",
+      "outputs": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "desc": "where the file is now",
+          "type": "path"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Move or copy a file into a folder or to a new name (folders created)",
+      "tier": "core"
+    },
     "file.read_json": {
       "effects": "pure",
       "example": {
@@ -898,6 +2456,139 @@
       "provides": [],
       "releases": [],
       "summary": "Read a JSON file; a missing file gives data=null and a warning",
+      "tier": "core"
+    },
+    "file.read_text": {
+      "effects": "read",
+      "example": {
+        "use": "file.read_text",
+        "with": {
+          "path": "log/GFIX/{{item.keySafe}}.log"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "too_large",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.read_text.ps1",
+      "group": "file",
+      "id": "file.read_text",
+      "idempotent": true,
+      "inputs": {
+        "encoding": {
+          "default": "mixed",
+          "enum": [
+            "mixed",
+            "utf8",
+            "cp932"
+          ],
+          "type": "string"
+        },
+        "maxBytes": {
+          "default": 2000000,
+          "desc": "refuse bigger files (the text goes into the trace)",
+          "type": "int"
+        },
+        "path": {
+          "default": "",
+          "desc": "relative: under the work dir",
+          "type": "path"
+        },
+        "paths": {
+          "default": [],
+          "desc": "several files, read in order and joined with a line break (after path, if both)",
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "lines": {
+          "type": "int"
+        },
+        "path": {
+          "desc": "the (first) file read",
+          "type": "path"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Read a text file (UTF-8, CP932 or mixed) and return its text",
+      "tier": "core"
+    },
+    "file.wait_for_download": {
+      "effects": "read",
+      "example": {
+        "use": "file.wait_for_download",
+        "with": {
+          "glob": "*.log",
+          "timeoutSec": 60
+        }
+      },
+      "failures": [
+        {
+          "id": "timeout",
+          "transient": true
+        },
+        {
+          "id": "file_not_found",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.wait_for_download.ps1",
+      "group": "file",
+      "id": "file.wait_for_download",
+      "idempotent": true,
+      "inputs": {
+        "dir": {
+          "default": "",
+          "desc": "folder to watch; empty = the user's Downloads folder",
+          "type": "path"
+        },
+        "glob": {
+          "default": "*",
+          "desc": "only files matching this",
+          "type": "string"
+        },
+        "pollMs": {
+          "default": 400,
+          "type": "int"
+        },
+        "stableMs": {
+          "default": 1200,
+          "desc": "size must hold this long",
+          "type": "int"
+        },
+        "timeoutSec": {
+          "default": 60,
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "Steps run one at a time, so this cannot start before the click that triggers the download: it also accepts a file written up to 30 s before it started. file_not_found: the folder itself is missing.",
+      "outputs": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "desc": "the new file",
+          "type": "path"
+        },
+        "size": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Wait for a new file in a folder whose size has stopped changing",
       "tier": "core"
     },
     "file.write_json": {
@@ -1310,6 +3001,87 @@
       "summary": "Show a message and wait for Enter (ready) or q (quit)",
       "tier": "core"
     },
+    "human.share": {
+      "effects": "ui",
+      "example": {
+        "use": "human.share",
+        "with": {
+          "images": "{{steps.shots.out.paths}}",
+          "lines": [
+            "{{profile.messages.done}}"
+          ],
+          "where": "Teams"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        },
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "clipboard_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/human/human.share.ps1",
+      "group": "human",
+      "id": "human.share",
+      "idempotent": true,
+      "inputs": {
+        "images": {
+          "default": [],
+          "desc": "PNG paths, in order after the text; a nested list is flattened (a path, then a step's list of paths)",
+          "type": "list"
+        },
+        "lines": {
+          "default": [],
+          "desc": "text lines, in order",
+          "type": "list"
+        },
+        "maxWidth": {
+          "default": 0,
+          "desc": "rich mode: show pictures at most this wide (px); 0 = natural size",
+          "type": "int"
+        },
+        "mode": {
+          "default": "rich",
+          "enum": [
+            "rich",
+            "sequence"
+          ],
+          "type": "string"
+        },
+        "where": {
+          "default": "the chat",
+          "desc": "where to paste, for the prompt",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. Foreground is the console afterwards.",
+      "outputs": {
+        "action": {
+          "desc": "sent | skip",
+          "type": "string"
+        },
+        "note": {
+          "desc": "free text typed with m",
+          "type": "string"
+        },
+        "pieces": {
+          "desc": "clipboard loads made",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Put text and pictures on the clipboard for the operator to paste and send",
+      "tier": "core"
+    },
     "progress.event": {
       "effects": "write",
       "example": {
@@ -1529,6 +3301,15 @@
       "id": "screen.capture_window",
       "idempotent": true,
       "inputs": {
+        "bounds": {
+          "default": "window",
+          "desc": "window = GetWindowRect (Windows 10 pads it with invisible borders, which the per-side crop then takes off); visible = the DWM frame bounds, no padding",
+          "enum": [
+            "window",
+            "visible"
+          ],
+          "type": "string"
+        },
         "saveAs": {
           "desc": "PNG path; relative paths resolve under the work dir; parent dirs are created",
           "required": true,
@@ -1637,6 +3418,192 @@
       "summary": "Crop a PNG by per-side pixel amounts and write the result",
       "tier": "core"
     },
+    "screen.find_ink_rows": {
+      "effects": "read",
+      "example": {
+        "use": "screen.find_ink_rows",
+        "with": {
+          "path": "{{steps.shot.out.path}}",
+          "width": 38,
+          "x": 46,
+          "yFrom": 105,
+          "yTo": -35
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "image_read_error",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.find_ink_rows.ps1",
+      "group": "screen",
+      "id": "screen.find_ink_rows",
+      "idempotent": true,
+      "inputs": {
+        "ink": {
+          "default": "dark",
+          "enum": [
+            "dark",
+            "blue"
+          ],
+          "type": "string"
+        },
+        "maxLuma": {
+          "default": 160,
+          "desc": "dark: pixels darker than this",
+          "type": "int"
+        },
+        "mergeGap": {
+          "default": 1,
+          "desc": "blank rows a band may contain",
+          "type": "int"
+        },
+        "minHeight": {
+          "default": 4,
+          "desc": "thinner bands are dropped (underlines, borders)",
+          "type": "int"
+        },
+        "minInk": {
+          "default": 2,
+          "desc": "a row needs this many ink pixels",
+          "type": "int"
+        },
+        "path": {
+          "required": true,
+          "type": "path"
+        },
+        "width": {
+          "required": true,
+          "type": "int"
+        },
+        "x": {
+          "desc": "strip left edge, px",
+          "required": true,
+          "type": "int"
+        },
+        "yFrom": {
+          "default": 0,
+          "type": "int"
+        },
+        "yTo": {
+          "default": 0,
+          "desc": "0 = the bottom; negative = that many px above the bottom",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "bands": {
+          "desc": "@{ top; bottom; height; center } in image px, top to bottom",
+          "type": "list"
+        },
+        "last": {
+          "desc": "the bottom band, or empty",
+          "type": "map"
+        },
+        "lines": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Find the bands of pixel rows carrying ink in a vertical strip of a PNG",
+      "tier": "core"
+    },
+    "screen.find_window": {
+      "effects": "ui",
+      "example": {
+        "use": "screen.find_window",
+        "with": {
+          "as": "listWindow",
+          "state": "maximize",
+          "title": "{{profile.windows.list.title}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "not_found",
+          "transient": true
+        },
+        {
+          "id": "foreground_lost",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.find_window.ps1",
+      "group": "screen",
+      "id": "screen.find_window",
+      "idempotent": true,
+      "inputs": {
+        "height": {
+          "default": 0,
+          "type": "int"
+        },
+        "process": {
+          "default": "",
+          "desc": "process name the window must belong to (without .exe); empty = any",
+          "type": "string"
+        },
+        "settleMs": {
+          "default": 500,
+          "type": "int"
+        },
+        "state": {
+          "default": "keep",
+          "desc": "window state to put it in",
+          "enum": [
+            "keep",
+            "maximize",
+            "restore"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "desc": "text the window title must contain (case-insensitive)",
+          "required": true,
+          "type": "string"
+        },
+        "width": {
+          "default": 0,
+          "desc": "with state restore: resize the VISIBLE window to this (0 = keep)",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "not_found is transient: the usual cause is the page not being open yet; with onError ask the operator opens it and answers r. Several matches: the front-most (Z order) wins and found says how many.",
+      "outputs": {
+        "found": {
+          "desc": "how many windows matched (the front-most is used)",
+          "type": "int"
+        },
+        "height": {
+          "desc": "visible height after the step",
+          "type": "int"
+        },
+        "processId": {
+          "type": "int"
+        },
+        "title": {
+          "desc": "the full title of the window found",
+          "type": "string"
+        },
+        "width": {
+          "desc": "visible width after the step",
+          "type": "int"
+        }
+      },
+      "provides": [
+        "window"
+      ],
+      "releases": [],
+      "summary": "Find a window by title text, bring it to front, register it",
+      "tier": "core"
+    },
     "screen.fit_window": {
       "effects": "ui",
       "example": {
@@ -1712,6 +3679,315 @@
       "provides": [],
       "releases": [],
       "summary": "Move and size a registered window to x,y width x height",
+      "tier": "core"
+    },
+    "screen.launch_capture": {
+      "effects": "ui",
+      "example": {
+        "use": "screen.launch_capture",
+        "with": {
+          "argSets": "{{steps.pair.out.pairs}}",
+          "exe": "{{profile.df.exe}}",
+          "height": 429,
+          "saveDir": "capture/df/{{item.keySafe}}",
+          "width": 1133
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "no_window",
+          "transient": true
+        },
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.launch_capture.ps1",
+      "group": "screen",
+      "id": "screen.launch_capture",
+      "idempotent": true,
+      "inputs": {
+        "argFields": {
+          "default": [
+            "left",
+            "right"
+          ],
+          "desc": "fields of each map passed as quoted arguments, in order",
+          "type": "list"
+        },
+        "argSets": {
+          "desc": "one map per run (e.g. verify.pair_files pairs)",
+          "required": true,
+          "type": "list"
+        },
+        "exe": {
+          "desc": "the program",
+          "required": true,
+          "type": "path"
+        },
+        "height": {
+          "default": 0,
+          "type": "int"
+        },
+        "keysFirst": {
+          "default": "^{HOME}",
+          "desc": "keys before the first capture (SendKeys syntax)",
+          "type": "string"
+        },
+        "keysSecond": {
+          "default": "^{END}",
+          "desc": "keys before the second capture",
+          "type": "string"
+        },
+        "nameField": {
+          "default": "rightName",
+          "desc": "field naming the capture files (its file stem is used); blank = run number",
+          "type": "string"
+        },
+        "saveDir": {
+          "required": true,
+          "type": "path"
+        },
+        "secondField": {
+          "default": "long",
+          "desc": "field that is true when a second capture is wanted",
+          "type": "string"
+        },
+        "settleMs": {
+          "default": 1200,
+          "desc": "wait after the window appears / after keys",
+          "type": "int"
+        },
+        "width": {
+          "default": 0,
+          "desc": "visible window width; 0 = leave as the program opens it",
+          "type": "int"
+        },
+        "windowWaitSec": {
+          "default": 15,
+          "type": "int"
+        },
+        "x": {
+          "default": 40,
+          "type": "int"
+        },
+        "y": {
+          "default": 40,
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "An empty argSets is a successful no-op (runs = 0). The program is closed with WM_CLOSE and killed if it is still there 3 s later; a capture already saved is kept either way.",
+      "outputs": {
+        "paths": {
+          "desc": "every capture, in order",
+          "type": "list"
+        },
+        "runs": {
+          "type": "int"
+        },
+        "shots": {
+          "desc": "@{ first; last; name } per run (last empty when no second capture)",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Run a program per argument set, capture its window (and again after keys), close it",
+      "tier": "core"
+    },
+    "screen.list_rects": {
+      "effects": "pure",
+      "example": {
+        "use": "screen.list_rects",
+        "with": {
+          "bands": "{{steps.ink.out.bands}}",
+          "names": "{{steps.rec.out.names}}",
+          "targets": "{{steps.mine.out.plucked}}",
+          "width": 892,
+          "x": 445
+        }
+      },
+      "failures": [
+        {
+          "id": "not_found",
+          "transient": false
+        }
+      ],
+      "file": "modules/screen/screen.list_rects.ps1",
+      "group": "screen",
+      "id": "screen.list_rects",
+      "idempotent": true,
+      "inputs": {
+        "bands": {
+          "default": [],
+          "desc": "screen.find_ink_rows bands of the entry column",
+          "type": "list"
+        },
+        "height": {
+          "default": 25,
+          "desc": "box height for one row, px",
+          "type": "int"
+        },
+        "lastRowCenterY": {
+          "default": 0,
+          "desc": "fallback when bands is empty: centre of the last row, px",
+          "type": "int"
+        },
+        "names": {
+          "desc": "every entry of the list in page order (parsed page text)",
+          "required": true,
+          "type": "list"
+        },
+        "rowPitch": {
+          "default": 20,
+          "desc": "fallback row pitch, px",
+          "type": "int"
+        },
+        "targets": {
+          "desc": "the entries to box",
+          "required": true,
+          "type": "list"
+        },
+        "width": {
+          "required": true,
+          "type": "int"
+        },
+        "x": {
+          "desc": "box left edge, px",
+          "required": true,
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "not_found when no target can be placed at all. Bands are matched from the bottom only as far as there are bands; an entry scrolled off the top is reported missing, not boxed at a guessed place.",
+      "outputs": {
+        "missing": {
+          "desc": "targets not among names, or above the top of the picture",
+          "type": "list"
+        },
+        "rects": {
+          "desc": "@{ x; y; w; h; names } in image px",
+          "type": "list"
+        },
+        "source": {
+          "desc": "bands | pitch",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Locate target list entries in an end-scrolled screenshot; one rect per run",
+      "tier": "core"
+    },
+    "screen.row_region": {
+      "effects": "read",
+      "example": {
+        "use": "screen.row_region",
+        "with": {
+          "first": "{{steps.mine.out.first}}",
+          "firstRowTop": 268,
+          "left": 590,
+          "right": 1560,
+          "rowHeight": 31,
+          "rows": "{{steps.mine.out.matched}}",
+          "top": 146
+        }
+      },
+      "failures": [
+        {
+          "id": "window_gone",
+          "transient": true
+        }
+      ],
+      "file": "modules/screen/screen.row_region.ps1",
+      "group": "screen",
+      "id": "screen.row_region",
+      "idempotent": true,
+      "inputs": {
+        "bottomPad": {
+          "default": 2,
+          "type": "int"
+        },
+        "first": {
+          "default": 1,
+          "desc": "1-based list row to start at",
+          "type": "int"
+        },
+        "firstRowTop": {
+          "desc": "top edge of list row 1",
+          "required": true,
+          "type": "int"
+        },
+        "insetX": {
+          "default": 0,
+          "desc": "added to the window's left (a maximized window's frame sits off-screen)",
+          "type": "int"
+        },
+        "insetY": {
+          "default": 0,
+          "type": "int"
+        },
+        "left": {
+          "required": true,
+          "type": "int"
+        },
+        "right": {
+          "required": true,
+          "type": "int"
+        },
+        "rowHeight": {
+          "required": true,
+          "type": "int"
+        },
+        "rows": {
+          "default": 1,
+          "desc": "how many rows",
+          "type": "int"
+        },
+        "top": {
+          "desc": "top of the region (the panel title)",
+          "required": true,
+          "type": "int"
+        },
+        "window": {
+          "desc": "make the geometry relative to this window's top-left",
+          "sessionKind": "window",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "skippedRows > 0 is reported as a warning: the picture then shows newer rows above the ones meant.",
+      "outputs": {
+        "height": {
+          "type": "int"
+        },
+        "skippedRows": {
+          "desc": "rows above first that the region also shows (they cannot be cut out)",
+          "type": "int"
+        },
+        "width": {
+          "type": "int"
+        },
+        "x": {
+          "type": "int"
+        },
+        "y": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Compute the rectangle covering a list header plus a run of rows",
       "tier": "core"
     },
     "screen.save": {
@@ -2174,6 +4450,80 @@
       "summary": "Set a cell (value or named bit) of the row for a key, then flush",
       "tier": "core"
     },
+    "table.upsert": {
+      "effects": "write",
+      "example": {
+        "use": "table.upsert",
+        "with": {
+          "countAs": "note",
+          "fields": {
+            "Correl_ID_S": "id",
+            "JOB_NAME": "job"
+          },
+          "rows": "{{steps.today.out.records}}",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "key_column_missing",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/table/table.upsert.ps1",
+      "group": "table",
+      "id": "table.upsert",
+      "idempotent": true,
+      "inputs": {
+        "countAs": {
+          "default": "",
+          "desc": "worklist column that receives how many input rows had the key",
+          "type": "string"
+        },
+        "fields": {
+          "desc": "worklist column -> record field; the key columns must be among them",
+          "required": true,
+          "type": "map"
+        },
+        "overwrite": {
+          "default": [],
+          "desc": "columns refreshed on rows that already exist (others are only filled when blank)",
+          "type": "list"
+        },
+        "rows": {
+          "desc": "records (excel.read_rows / verify.filter_records output)",
+          "required": true,
+          "type": "list"
+        },
+        "worklist": {
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "A column named in fields that the worklist lacks is added (and gets the profile default on the other rows). Rows whose key is blank are skipped with a warning.",
+      "outputs": {
+        "added": {
+          "type": "int"
+        },
+        "keyList": {
+          "desc": "key display of every row touched, in input order",
+          "type": "list"
+        },
+        "updated": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Insert or refresh worklist rows by key; merge duplicates and count them",
+      "tier": "core"
+    },
     "verify.assert": {
       "effects": "pure",
       "example": {
@@ -2228,6 +4578,69 @@
       "provides": [],
       "releases": [],
       "summary": "Run a rule table over a record: ok / ng / unknown plus the message",
+      "tier": "core"
+    },
+    "verify.compare_sets": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.compare_sets",
+        "with": {
+          "left": "{{steps.wbs.out.plucked}}",
+          "leftLabel": "WBS",
+          "right": "{{steps.map.out.plucked}}",
+          "rightLabel": "mapping"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.compare_sets.ps1",
+      "group": "verify",
+      "id": "verify.compare_sets",
+      "idempotent": true,
+      "inputs": {
+        "left": {
+          "required": true,
+          "type": "list"
+        },
+        "leftLabel": {
+          "default": "left",
+          "type": "string"
+        },
+        "right": {
+          "required": true,
+          "type": "list"
+        },
+        "rightLabel": {
+          "default": "right",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "both": {
+          "type": "list"
+        },
+        "code": {
+          "desc": "ok | unknown (a value on one side only)",
+          "type": "string"
+        },
+        "onlyLeft": {
+          "type": "list"
+        },
+        "onlyRight": {
+          "type": "list"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Compare two lists as sets; ok when they hold the same values",
       "tier": "core"
     },
     "verify.crosscheck": {
@@ -2303,6 +4716,110 @@
       "provides": [],
       "releases": [],
       "summary": "Compare the same fact from several sources; any disagreement is unknown",
+      "tier": "core"
+    },
+    "verify.filter_records": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.filter_records",
+        "with": {
+          "pluck": "key",
+          "records": "{{steps.rec.out.records}}",
+          "where": [
+            {
+              "field": "folder",
+              "op": "equals",
+              "value": "/in"
+            }
+          ]
+        }
+      },
+      "failures": [
+        {
+          "id": "rules_invalid",
+          "transient": false
+        },
+        {
+          "id": "not_found",
+          "transient": true
+        }
+      ],
+      "file": "modules/verify/verify.filter_records.ps1",
+      "group": "verify",
+      "id": "verify.filter_records",
+      "idempotent": true,
+      "inputs": {
+        "expect": {
+          "default": -1,
+          "desc": "how many records should match; -1 = any number. A different count is a warning, not a failure",
+          "type": "int"
+        },
+        "padAfterSec": {
+          "default": 0,
+          "desc": "span.to moved this much later",
+          "type": "int"
+        },
+        "padBeforeSec": {
+          "default": 0,
+          "desc": "span.from moved this much earlier",
+          "type": "int"
+        },
+        "pluck": {
+          "default": "",
+          "desc": "field whose value of every kept record goes to plucked",
+          "type": "string"
+        },
+        "records": {
+          "desc": "verify.parse_text output",
+          "required": true,
+          "type": "list"
+        },
+        "spanFrom": {
+          "default": "",
+          "desc": "time field whose earliest value starts span",
+          "type": "string"
+        },
+        "spanTo": {
+          "default": "",
+          "desc": "time field whose latest value ends span (default spanFrom)",
+          "type": "string"
+        },
+        "where": {
+          "default": [],
+          "desc": "conditions @{ field; op; value } (verify.assert ops); empty keeps all",
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "notes": "not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output).",
+      "outputs": {
+        "first": {
+          "desc": "position of the first kept record; 0 when none",
+          "type": "int"
+        },
+        "indexes": {
+          "desc": "their 1-based positions in the input list",
+          "type": "list"
+        },
+        "matched": {
+          "type": "int"
+        },
+        "plucked": {
+          "desc": "the pluck field of each kept record",
+          "type": "list"
+        },
+        "records": {
+          "desc": "the kept records, in list order",
+          "type": "list"
+        },
+        "span": {
+          "desc": "@{ from; to } ISO, empty map when spanFrom is blank or nothing matched",
+          "type": "map"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Keep the records matching every condition; positions, plucked values, time span",
       "tier": "core"
     },
     "verify.match_record": {
@@ -2394,6 +4911,68 @@
       "summary": "Find the record for a key; newest / first / ask on several",
       "tier": "core"
     },
+    "verify.pair_files": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.pair_files",
+        "with": {
+          "left": "{{steps.gift.out.files}}",
+          "right": "{{steps.gfix.out.files}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.pair_files.ps1",
+      "group": "verify",
+      "id": "verify.pair_files",
+      "idempotent": true,
+      "inputs": {
+        "left": {
+          "desc": "file.list files (name, path, lines, order)",
+          "required": true,
+          "type": "list"
+        },
+        "longOver": {
+          "default": 16,
+          "desc": "a pair with more lines than this is flagged long (one screen shows this many)",
+          "type": "int"
+        },
+        "right": {
+          "desc": "file.list files of the other side",
+          "required": true,
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "notes": "A file whose lines is -1 (file.list without countLines) cannot be paired by size: run file.list with countLines = true.",
+      "outputs": {
+        "code": {
+          "desc": "ok | unknown",
+          "type": "string"
+        },
+        "leftOver": {
+          "type": "list"
+        },
+        "pairs": {
+          "desc": "@{ left; right; leftName; rightName; lines; long } (paths)",
+          "type": "list"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rightOver": {
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Pair two file lists by line count and arrival order",
+      "tier": "core"
+    },
     "verify.parse_text": {
       "effects": "pure",
       "example": {
@@ -2456,6 +5035,84 @@
       "provides": [],
       "releases": [],
       "summary": "Parse page text into records with a delimited / labeled / columns / regex grammar",
+      "tier": "core"
+    },
+    "verify.time_window": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.time_window",
+        "with": {
+          "afterMinutes": 13,
+          "beforeMinutes": 2,
+          "clock": "{{item.GFIX_TIME}}",
+          "date": "{{run.date}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "parse_error",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.time_window.ps1",
+      "group": "verify",
+      "id": "verify.time_window",
+      "idempotent": true,
+      "inputs": {
+        "afterMinutes": {
+          "default": 0,
+          "type": "int"
+        },
+        "beforeMinutes": {
+          "default": 0,
+          "type": "int"
+        },
+        "clock": {
+          "desc": "HH:mm[:ss[.fff]] or an Excel day fraction",
+          "required": true,
+          "type": "string"
+        },
+        "date": {
+          "desc": "yyyy-MM-dd or yyyy/MM/dd (more is ignored)",
+          "required": true,
+          "type": "string"
+        },
+        "format": {
+          "default": "yyyy-MM-dd HH:mm",
+          "desc": ".NET format for the *Text outputs (what a page prints, e.g. yyyy/MM/dd HH:mm)",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "at": {
+          "desc": "the scheduled moment, ISO",
+          "type": "string"
+        },
+        "atText": {
+          "desc": "at, in format",
+          "type": "string"
+        },
+        "clock": {
+          "desc": "the clock as HH:mm:ss",
+          "type": "string"
+        },
+        "fromText": {
+          "desc": "from, in format",
+          "type": "string"
+        },
+        "toText": {
+          "desc": "to, in format",
+          "type": "string"
+        },
+        "window": {
+          "desc": "@{ from; to } ISO yyyy-MM-ddTHH:mm:ss",
+          "type": "map"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Build a from/to time window around a date and a clock time",
       "tier": "core"
     }
   }

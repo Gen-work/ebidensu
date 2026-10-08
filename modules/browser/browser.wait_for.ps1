@@ -4,6 +4,9 @@
 # (P1-14): what to wait for is an input, the page kind is browser.assert_page's
 # business. The last text read is archived whether or not it matched --
 # a timeout with the page text on disk is a diagnosable timeout.
+# A page that does not update by itself (a list behind a refresh button)
+# takes a refreshRecipe: find:<text> / keys:<SendKeys> / wait:<ms> entries
+# run before every read (kernel/Native.ps1 Invoke-EbiKeyRecipe).
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')
 
@@ -23,6 +26,7 @@ $Manifest = @{
     timeoutSec = @{ type='int'; default=12; desc='give up after this many seconds' }
     pollMs     = @{ type='int'; default=800; desc='wait between reads' }
     archiveTo  = @{ type='path'; default=''; desc='write the last text read here (relative: under the work dir)' }
+    refreshRecipe = @{ type='list'; default=@(); desc='run before every read: find:<text> | keys:<SendKeys> | wait:<ms> (e.g. a refresh button the page needs)' }
   }
   outputs    = @{
     text      = @{ type='string'; desc='the page text at the end (matched or not)' }
@@ -34,6 +38,7 @@ $Manifest = @{
     @{ id = 'timeout';         transient = $true }
     @{ id = 'foreground_lost'; transient = $true }
     @{ id = 'archive_failed';  transient = $true }
+    @{ id = 'recipe_invalid';  transient = $false }
   )
   example    = @{ use = 'browser.wait_for'; with = @{ window = 'mainWindow'; contains = '{{item.Correl_ID_S}}'; timeoutSec = 12; archiveTo = 'capture/before_list/{{item.keySafe}}.txt' } }
 }
@@ -50,6 +55,8 @@ function Invoke-Step {
     $needle = [string]$In['contains']
     $archive = Resolve-EbiWorkPath -PathValue ([string]$In['archiveTo']) -WorkDir ([string]$Ctx['WorkDir'])
     if ($Ctx['DryRun']) { $Ctx.Log.Info(('would poll the page text for "{0}" up to {1}s' -f $needle, [int]$In['timeoutSec'])); return @{ ok = $true; text = ''; elapsedMs = 0; polls = 0; path = $archive } }
+    $recipe = @(@($In['refreshRecipe']) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    if ($recipe.Count -gt 0) { $t = Test-EbiKeyRecipe -Recipe $recipe; if (-not $t['ok']) { return @{ ok = $false; failure = 'recipe_invalid'; message = $t['message']; text = ''; elapsedMs = 0; polls = 0; path = $archive } } }
     $hWnd = ConvertTo-EbiHandle $In['window']
     $fg = Set-EbiForeground -HWnd $hWnd
     if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message'] } }
@@ -58,6 +65,13 @@ function Invoke-Step {
     $text = ''; $polls = 0; $hit = $false
     do {
         $polls++
+        if ($recipe.Count -gt 0) {
+            $rr = Invoke-EbiKeyRecipe -HWnd $hWnd -Recipe $recipe
+            if (-not $rr['ok']) { return @{ ok = $false; failure = $rr['failure']; message = $rr['message']; text = $text; elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds; polls = $polls; path = $archive } }
+        } elseif ($polls -gt 1) {
+            $fg = Set-EbiForeground -HWnd $hWnd -SettleMs 100
+            if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message'] } }
+        }
         $text = Read-EbiPageText
         if (BrowserWaitFor-Matches -Text $text -Needle $needle) { $hit = $true; break }
         Start-Sleep -Milliseconds ([Math]::Max(100, [int]$In['pollMs']))

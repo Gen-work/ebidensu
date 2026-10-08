@@ -1,0 +1,198 @@
+#Requires -Version 5.1
+# Test-GfixRecvSteps.ps1 -- the steps the gfix-recv workflows chain, run for
+# real (not dry) on the real samples in Tests/fixtures/gfix-recv, in the
+# order the workflows call them:
+#   track:    GoAnywhere text -> parse -> this job's rows -> Receive rows +
+#             time span -> Jenkins text -> the received file -> pairing with
+#             the GIFT side -> line compare -> Teams picture region
+#   logs:     job log -> transfer file name
+#   evidence: receive log -> the transfer's START..END block + marker lines
+#             -> picture stack plan; Jenkins row boxes from ink bands
+# plus kernel/Layout.ps1 and kernel/RichClip.ps1. UI / COM halves are not
+# here (they need Windows); their DryRun contract is Test-StepDryRun.ps1.
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$here     = Split-Path $MyInvocation.MyCommand.Path
+$repoRoot = Split-Path $here -Parent
+. (Join-Path $here '_TestCommon.ps1')
+. (Join-Path $repoRoot 'kernel/Json.ps1')
+. (Join-Path $repoRoot 'kernel/Registry.ps1')
+. (Join-Path $repoRoot 'kernel/Profile.ps1')
+. (Join-Path $repoRoot 'kernel/Layout.ps1')
+. (Join-Path $repoRoot 'kernel/RichClip.ps1')
+. (Join-Path $repoRoot 'kernel/LogText.ps1')
+
+Reset-Tests 'GfixRecvSteps'
+
+$fx = Join-Path (Join-Path $here 'fixtures') 'gfix-recv'
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('ebi-gfix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+$prof = (Read-EbiProfile -Dir (Join-Path $repoRoot 'profiles/gfix-recv')).value
+$reg = New-EbiRegistry -ModulesRoot (Join-Path $repoRoot 'modules')
+$log = New-Object PSObject
+$log | Add-Member -MemberType NoteProperty -Name Lines -Value (New-Object System.Collections.ArrayList)
+$log | Add-Member -MemberType ScriptMethod -Name Info -Value { param($m) [void]$this.Lines.Add($m) }
+$log | Add-Member -MemberType ScriptMethod -Name Warn -Value { param($m) [void]$this.Lines.Add($m) }
+$log | Add-Member -MemberType ScriptMethod -Name Debug -Value { param($m) }
+$ctx = @{ WorkDir = $tmp; RunId = 'test'; Profile = $prof; Log = $log; DryRun = $false; Session = @{}; Item = $null; KeyColumns = @('Excel_NAME') }
+
+# Every step is loaded ONCE, dot-sourced at script scope (the runner does
+# the same): a step's helpers and the kernel files it dot-sources must stay
+# visible for every later call.
+$loaded = @{}
+foreach ($u in @('verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
+                 'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects')) {
+    $r = . Import-EbiStep -Registry $reg -Use $u
+    if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
+    $loaded[$u] = $r['Entry']
+}
+
+function Invoke-TestStep {
+    # Check inputs like the runner does, run, return the step's hashtable.
+    param([string]$Use, [hashtable]$With)
+    $e = $loaded[$Use]
+    $res = Resolve-EbiStepInputs -Manifest $e['Manifest'] -With $With -Session $ctx['Session']
+    if (-not $res['ok']) { throw ($Use + ' inputs: ' + $res['message']) }
+    return (& $e['Invoke'] $res['In'] $ctx)
+}
+
+try {
+    # ============================================================ track
+    $gaText = [System.IO.File]::ReadAllText((Join-Path $fx 'goanywhere-list.sample.txt'))
+    $win = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-08'; clock = '13:44:59.9999999999968050'; beforeMinutes = $prof['pages']['goAnywhere']['windowBefore']; afterMinutes = $prof['pages']['goAnywhere']['windowAfter'] }
+    Assert-Equal '2026-10-08 13:45' $win['atText'] 'track: the GoAnywhere wait text is the scheduled minute as the page prints it'
+    Assert-True ($gaText.Contains($win['atText'])) 'track: ... and the sample page does contain it'
+    $rec = Invoke-TestStep 'verify.parse_text' @{ text = $gaText; grammar = $prof['grammar']['goAnywhere'] }
+    Assert-Equal 12 $rec['recordCount'] 'track: 12 GoAnywhere rows parsed'
+    Assert-Equal 0 $rec['unrecognized'] 'track: no GoAnywhere line left unrecognised'
+    $mine = Invoke-TestStep 'verify.filter_records' @{ records = $rec['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $win['window'] }) }
+    Assert-Equal 2 $mine['matched'] 'track: the 13:45 job is two rows (Send + Receive)'
+    Assert-Equal 1 $mine['first'] 'track: ... at the top of the list (newest first)'
+    $recv = Invoke-TestStep 'verify.filter_records' @{ records = $mine['records']; where = @(@{ field = 'folder'; op = 'equals'; value = $prof['pages']['goAnywhere']['receiveFolder'] }); pluck = 'key'; spanFrom = 'startTime'; spanTo = 'endTime'; padBeforeSec = 2; padAfterSec = 10; expect = '1' }
+    Assert-Equal '1000004619654' (@($recv['plucked']) -join ',') 'track: the Receive job number'
+    Assert-Equal '2026-10-08T13:45:22' $recv['span']['from'] 'track: span starts 2 s before the Receive start'
+    Assert-Equal '2026-10-08T13:45:37' $recv['span']['to'] 'track: span ends 10 s after the Receive end'
+    Assert-True (-not $recv.Contains('warnings') -or @($recv['warnings']).Count -eq 0) 'track: one file expected, one found: no warning'
+    $w11 = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-08'; clock = '11:15:00.000'; beforeMinutes = 2; afterMinutes = 13 }
+    $m11 = Invoke-TestStep 'verify.filter_records' @{ records = $rec['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $w11['window'] }) }
+    Assert-Equal 11 $m11['first'] 'track: the 11:15 job is rows 11-12 further down'
+    $none = Invoke-TestStep 'verify.filter_records' @{ records = $rec['records']; where = @(@{ field = 'startTime'; op = 'within'; value = @{ from = '2026-10-08T15:00:00'; to = '2026-10-08T15:10:00' } }) }
+    Assert-True (-not $none['ok'] -and $none['failure'] -eq 'not_found') 'track: a slot with no row yet is not_found (transient: refresh and retry)'
+
+    $reg2 = Invoke-TestStep 'screen.row_region' @{ left = 590; right = 1560; top = 146; firstRowTop = 268; rowHeight = 31; first = $mine['first']; rows = $mine['matched'] }
+    Assert-Equal 590 $reg2['x'] 'track: Teams picture x'
+    Assert-Equal 146 $reg2['y'] 'track: Teams picture y (panel title)'
+    Assert-Equal 970 $reg2['width'] 'track: Teams picture width (to the start-time column)'
+    Assert-Equal 186 $reg2['height'] 'track: Teams picture height = title..2 rows + pad'
+    $reg11 = Invoke-TestStep 'screen.row_region' @{ left = 590; right = 1560; top = 146; firstRowTop = 268; rowHeight = 31; first = 11; rows = 2 }
+    Assert-Equal 10 $reg11['skippedRows'] 'track: rows lower in the list are reported as skipped above'
+
+    $jkText = [System.IO.File]::ReadAllText((Join-Path $fx 'jenkins-report.sample.txt'))
+    $jk = Invoke-TestStep 'verify.parse_text' @{ text = $jkText; grammar = $prof['grammar']['jenkinsReport'] }
+    Assert-Equal 24 $jk['recordCount'] 'track: 24 Jenkins rows parsed'
+    $jkMine = Invoke-TestStep 'verify.filter_records' @{ records = $jk['records']; where = @(@{ field = 'time'; op = 'within'; value = $recv['span'] }, @{ field = 'key'; op = 'matches'; value = $prof['pages']['jenkinsReport']['fileNamePattern'] }); pluck = 'key'; expect = 1 }
+    Assert-Equal 'F202610080006.csv' (@($jkMine['plucked']) -join ',') 'track: the received file is the one stored inside the Receive span'
+
+    # GIFT side vs GFIX side: two files each, order and line counts
+    $giftDir = Join-Path $tmp 'DATA/GIFT/RJDSJM40'; $gfixDir = Join-Path $tmp 'DATA/GFIX/RJDSWM40'
+    New-Item -ItemType Directory -Path $giftDir, $gfixDir -Force | Out-Null
+    $short = "S,Q`r`nHDR,2026/05/15`r`nCOL,A,B`r`nNO DATA`r`n"
+    $long = (1..40 | ForEach-Object { 'ROW' + $_ + ',x' }) -join "`r`n"
+    [System.IO.File]::WriteAllText((Join-Path $giftDir 'F202608270023.csv'), $short)
+    [System.IO.File]::WriteAllText((Join-Path $giftDir 'F202608270024.csv'), $long)
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir 'F202610080001.csv'), $short.Replace("`r`n", "`n"))
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir 'F202610080002.csv'), $long)
+    $gift = Invoke-TestStep 'file.list' @{ dir = $giftDir; glob = '*.csv'; countLines = $true }
+    $gfix = Invoke-TestStep 'file.list' @{ dir = $gfixDir; glob = '*.csv'; countLines = $true }
+    Assert-Equal '4,40' (@($gift['files'] | ForEach-Object { $_['lines'] }) -join ',') 'track: line counts of the GIFT files'
+    $pair = Invoke-TestStep 'verify.pair_files' @{ left = $gift['files']; right = $gfix['files']; longOver = 16 }
+    Assert-Equal 'ok' $pair['code'] 'track: two files each, same counts in order -> paired'
+    Assert-Equal 'F202610080001.csv' $pair['pairs'][0]['rightName'] 'track: first GIFT file with first GFIX file'
+    Assert-True ((-not [bool]$pair['pairs'][0]['long']) -and [bool]$pair['pairs'][1]['long']) 'track: the 4-line file fits one DF screen, the 40-line one does not'
+    $cmp = Invoke-TestStep 'file.compare' @{ pairs = $pair['pairs'] }
+    Assert-Equal 'ok' $cmp['code'] 'track: identical content (CRLF vs LF ignored) -> ok'
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir 'F202610080002.csv'), $long.Replace('ROW7,', 'ROW7X,'))
+    $cmp2 = Invoke-TestStep 'file.compare' @{ pairs = $pair['pairs'] }
+    Assert-Equal 'ng' $cmp2['code'] 'track: one changed line -> ng'
+    Assert-True ($cmp2['reason'] -match 'line 7') 'track: ... and the reason names the line'
+
+    # ============================================================ logs
+    $job = Invoke-TestStep 'file.read_text' @{ paths = @((Join-Path $fx 'job-1000004619654.log')) }
+    $fn = Invoke-TestStep 'verify.parse_text' @{ text = $job['text']; grammar = $prof['grammar']['jobLog'] }
+    Assert-Equal 'JJPCRS1220260706110052987442' (@($fn['names']) -join ',') 'logs: the transfer file name from the job log'
+    $raw = Join-Path $tmp 'log/GFIXReceive/1008.utf8.log'
+    New-Item -ItemType Directory -Path (Split-Path $raw) -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $fx 'GFIXReceive.sample.log') -Destination $raw
+    $conv = Invoke-TestStep 'file.convert_encoding' @{ path = $raw; saveAs = 'log/GFIXReceive/1008.log'; from = 'mixed'; to = 'cp932' }
+    Assert-True ([bool]$conv['ok'] -and [int]$conv['foreignPairs'] -ge 2 -and [int]$conv['lost'] -eq 0) 'logs: mixed UTF-8 -> SJIS, the SJIS colons recovered, nothing lost'
+    $back = (Get-EbiCodePage -CodePage 932).GetString([System.IO.File]::ReadAllBytes((Join-Path $tmp 'log/GFIXReceive/1008.log')))
+    Assert-True ($back.Contains('update count' + [char]0xFF1A + '1')) 'logs: the SJIS file reads back with the full-width colon'
+    $conv2 = Invoke-TestStep 'file.convert_encoding' @{ path = $raw; saveAs = 'log/GFIXReceive/1008.log'; from = 'mixed'; to = 'cp932' }
+    Assert-True ([System.IO.File]::ReadAllText((Join-Path $tmp 'log/GFIXReceive/1008.log'), (Get-EbiCodePage -CodePage 932)) -eq $back) 'logs: converting again from the kept original gives the same file'
+
+    # ============================================================ evidence
+    $blk = Invoke-TestStep 'file.extract_blocks' @{ paths = @('log/GFIXReceive/1008.log', 'log/GFIXReceive/1008-unzip.log'); blockKeys = $fn['names']; encoding = 'cp932'; markers = $prof['layout']['evidence']['highlight']['receiveLog']; saveTo = 'capture/gfix/RJDSWM40/receive.txt' }
+    Assert-True ([bool]$blk['ok']) 'evidence: the block was cut (the missing unzip log is skipped)'
+    Assert-Equal 148 $blk['lineCount'] 'evidence: START..END + date line = 148 lines'
+    Assert-Equal 2 @($blk['markers']).Count 'evidence: two marker lines (fileName, file stored)'
+    Assert-True ($blk['markers'][1]['text'] -match 'F202610080006\.csv') 'evidence: the stored file is the Jenkins file found in track'
+    $lines = @(Get-EbiTextLines -Text ([System.IO.File]::ReadAllText($blk['path'])))
+    Assert-Equal ('GFIXReceiver START JJPCRS1220260706110052987442') $lines[0] 'evidence: the block starts with START'
+    $endCol = Get-EbiHighlightEndColumn -Text $lines[$blk['markers'][1]['line'] - 1] -StartColumn 2
+    Assert-True ($endCol -gt 60 -and $endCol -lt 100) ('evidence: the file stored highlight ends around column BZ (got ' + (ConvertTo-EbiColumnLetter $endCol) + ')')
+    $jobHits = @(Find-EbiLineHits -Lines @(Get-EbiTextLines -Text $job['text']) -Patterns $prof['layout']['evidence']['highlight']['jobLog'])
+    Assert-Equal 2 $jobHits.Count 'evidence: the job log has exactly the upload line and the Command line to highlight'
+    $miss = Invoke-TestStep 'file.extract_blocks' @{ paths = @('log/GFIXReceive/1008.log'); blockKeys = @('JJPCRS12NOTHERE'); saveTo = 'capture/x.txt' }
+    Assert-True (-not $miss['ok'] -and $miss['failure'] -eq 'not_found') 'evidence: a transfer with no block is not_found'
+
+    $plan = Invoke-TestStep 'excel.stack_plan' @{ sets = @(@{ first = 'a.png'; last = '' }, @{ first = 'b1.png'; last = 'b2.png' }); separator = 'wave.png'; separatorColumn = 'Z'; markRects = $prof['layout']['df']['marks'] }
+    Assert-Equal 'a.png|b1.png|wave.png|b2.png' (@($plan['pictures'] | ForEach-Object { $_['path'] }) -join '|') 'evidence: short file one shot; long file first, wave, last'
+    Assert-Equal '2|0|0|2' (@($plan['pictures'] | ForEach-Object { @($_['rects']).Count }) -join '|') 'evidence: the boxes go on the picture showing the end'
+    Assert-Equal 'Z' $plan['pictures'][2]['column'] 'evidence: the wave sits in column Z'
+    Assert-Equal 1 $plan['pictures'][1]['gapRows'] 'evidence: one blank row between files'
+
+    $names = @($jk['names'])
+    $bands = @(for ($i = 0; $i -lt 30; $i++) { @{ top = 100 + $i * 20; bottom = 112 + $i * 20; height = 13; center = 106 + $i * 20 } })
+    $lr = Invoke-TestStep 'screen.list_rects' @{ names = $names; targets = @('F202610080005.csv', 'F202610080006.csv'); bands = $bands; x = 445; width = 892; height = 25 }
+    Assert-Equal 1 @($lr['rects']).Count 'evidence: two consecutive files -> one box'
+    $k = [array]::IndexOf($names, 'F202610080005.csv')
+    $expectTop = [int][Math]::Round((106 + (30 - ($names.Count - $k)) * 20) - 12.5, [System.MidpointRounding]::AwayFromZero)
+    Assert-Equal $expectTop $lr['rects'][0]['y'] 'evidence: the box sits on the band counted from the bottom'
+    Assert-Equal 45 $lr['rects'][0]['h'] 'evidence: two rows tall'
+    $lr2 = Invoke-TestStep 'screen.list_rects' @{ names = $names; targets = @('F202610070002.csv', 'F202610080006.csv'); x = 445; width = 892; height = 25; lastRowCenterY = 718; rowPitch = 20 }
+    Assert-Equal 'pitch' $lr2['source'] 'evidence: without bands the fixed pitch is used'
+    Assert-Equal 2 @($lr2['rects']).Count 'evidence: two files apart -> two boxes'
+
+    # ============================================================ kernel/Layout.ps1
+    $bs = @(Get-EbiInkBands -Counts @(0, 0, 3, 4, 0, 5, 0, 0, 0, 2) -MinInk 1 -MergeGap 1)
+    Assert-Equal '2-5|9-9' ((@($bs | ForEach-Object { '' + $_['top'] + '-' + $_['bottom'] })) -join '|') 'layout: a one-row gap merges, a three-row gap splits'
+    $a = Resolve-EbiAnchoredRect -Rect @{ x = 117; y = 19; w = 112; h = 19; anchor = 'br' } -ImageWidth 1133 -ImageHeight 429
+    Assert-Equal '1016,410' ('' + $a['x'] + ',' + $a['y']) 'layout: a bottom-right anchored box lands on the status bar cell'
+    $sr = ConvertTo-EbiSheetRect -PicLeft 10 -PicTop 100 -PicWidth 849.75 -PicHeight 321.75 -ImageWidth 1133 -ImageHeight 429 -Rect @{ x = 100; y = 40; w = 48; h = 18 }
+    Assert-Equal '85,130,36,13.5' ('' + $sr['left'] + ',' + $sr['top'] + ',' + $sr['width'] + ',' + $sr['height']) 'layout: image px -> sheet points through the picture scale'
+
+    # ============================================================ kernel/RichClip.ps1
+    $png = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAYAAAC56t6BAAAAEUlEQVR42mP8z8Dwn4EIwDiqEAD8xwMBmkAeOAAAAABJRU5ErkJggg==')
+    $pi = Get-EbiPngInfo -Bytes $png
+    Assert-Equal '2x3' ('' + $pi['width'] + 'x' + $pi['height']) 'clip: PNG size from IHDR'
+    Assert-True (-not (Get-EbiPngInfo -Bytes ([byte[]](1, 2, 3)))['ok']) 'clip: not a PNG -> not ok'
+    $msg = [string][char]0x524D + [char]0x5F8C + [char]0x4E00 + [char]0x81F4   # zen-go-itchi
+    $frag = New-EbiShareHtml -Lines @($msg, 'a<b') -Pictures @(@{ bytes = $png; width = 2; height = 3 })
+    Assert-True ($frag.Contains('a&lt;b') -and $frag.Contains('data:image/png;base64,')) 'clip: text escaped, picture inline'
+    $cf = New-EbiCfHtml -Fragment $frag
+    $u8 = New-Object System.Text.UTF8Encoding($false)
+    $b = $u8.GetBytes($cf)
+    $sf = [int]([regex]::Match($cf, 'StartFragment:(\d+)').Groups[1].Value); $ef = [int]([regex]::Match($cf, 'EndFragment:(\d+)').Groups[1].Value)
+    Assert-Equal $frag ($u8.GetString($b, $sf, $ef - $sf)) 'clip: CF_HTML byte offsets cut out exactly the fragment (Japanese included)'
+    $eh = [int]([regex]::Match($cf, 'EndHTML:(\d+)').Groups[1].Value)
+    Assert-Equal $b.Length $eh 'clip: EndHTML is the byte length'
+    $rtf = New-EbiShareRtf -Lines @($msg) -Pictures @(@{ bytes = $png; width = 2; height = 3 })
+    Assert-True ($rtf.Contains(('\u' + '21069?')) -and $rtf.Contains('\pngblip') -and $rtf.Contains('\picwgoal30')) 'clip: RTF text as \uN?, picture as pngblip in twips'
+    Assert-Equal '\\\{x\}' (ConvertTo-EbiRtfText -Text '\{x}') 'clip: RTF escapes'
+} finally {
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+exit (Complete-Tests)

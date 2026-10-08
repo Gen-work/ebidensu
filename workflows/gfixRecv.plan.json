@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "id": "gfixRecv.plan",
+  "title": "GFIX受信: 今日やるジョブを WBS から拾い、mapping.xlsx の時刻と合わせて作業リスト (gfixrecv.csv) へ",
+  "version": "0.1.0",
+  "profile": "gfix-recv",
+
+  "vars": {
+    "wbsSheet": "WBS",
+    "wbsFirstRow": 7,
+    "mappingSheet": "mapping",
+    "side": "受信",
+    "task": "修正後実施",
+    "ownerPattern": "^\\s*厳\\s*($|←)|→\\s*厳\\s*$"
+  },
+
+  "onError": { "policy": "ask" },
+
+  "setup": [
+    { "id": "load", "use": "table.load",
+      "with": { "path": "{{profile.worklist.file}}", "mustExist": false, "as": "wl" } },
+    { "id": "app", "use": "excel.ensure_app", "with": { "visible": false, "as": "xl" } },
+
+    { "id": "wbs", "use": "excel.open",
+      "with": { "app": "xl", "path": "{{profile.paths.wbs}}", "readOnly": true, "as": "wbs" } },
+    { "id": "today", "use": "excel.read_rows",
+      "label": "WBS: 受信 / 修正後実施 / 担当が「厳」「厳←○○」「○○→厳」(OwnerFilter と同じ矢印ルール) / 最新計画の開始 = 今日",
+      "with": { "workbook": "wbs", "sheet": "{{vars.wbsSheet}}", "firstRow": "{{vars.wbsFirstRow}}",
+                "columns": { "job": "A", "side": "B", "task": "G", "owner": "P", "start": "AF" },
+                "dateFields": ["start"],
+                "where": [ { "field": "side", "op": "equals", "value": "{{vars.side}}" },
+                           { "field": "task", "op": "equals", "value": "{{vars.task}}" },
+                           { "field": "owner", "op": "matches", "value": "{{vars.ownerPattern}}" },
+                           { "field": "start", "op": "equals", "value": "{{run.date}}" } ],
+                "pluck": "job" } },
+    { "id": "wbsClose", "use": "excel.close", "with": { "workbook": "wbs" } },
+
+    { "id": "map", "use": "excel.open",
+      "with": { "app": "xl", "path": "{{profile.paths.mapping}}", "readOnly": true, "as": "map" } },
+    { "id": "rows", "use": "excel.read_rows",
+      "label": "mapping.xlsx: WBS の今日のジョブの行(1 ファイル 1 行)",
+      "with": { "workbook": "map", "sheet": "{{vars.mappingSheet}}", "firstRow": 2,
+                "columns": { "JOB": "A", "Excel_NAME": "B", "USER": "C", "RCVFILE": "D", "GFIX_DATE": "O", "GFIX_TIME": "P" },
+                "dateFields": ["GFIX_DATE"], "timeFields": ["GFIX_TIME"],
+                "where": [ { "field": "JOB", "op": "in", "value": "{{steps.today.out.plucked}}" } ],
+                "pluck": "JOB" } },
+    { "id": "mine", "use": "excel.read_rows",
+      "label": "mapping.xlsx: GFIX実行日 = 今日 の行(自分の予定表)",
+      "with": { "workbook": "map", "sheet": "{{vars.mappingSheet}}", "firstRow": 2,
+                "columns": { "JOB": "A", "Excel_NAME": "B", "USER": "C", "RCVFILE": "D", "GFIX_DATE": "O", "GFIX_TIME": "P" },
+                "dateFields": ["GFIX_DATE"], "timeFields": ["GFIX_TIME"],
+                "where": [ { "field": "GFIX_DATE", "op": "equals", "value": "{{run.date}}" } ],
+                "pluck": "JOB" } },
+    { "id": "mapClose", "use": "excel.close", "with": { "workbook": "map" } },
+
+    { "id": "cmp", "use": "verify.compare_sets",
+      "with": { "left": "{{steps.today.out.plucked}}", "right": "{{steps.mine.out.plucked}}",
+                "leftLabel": "WBS (today, yours)", "rightLabel": "mapping.xlsx (GFIX date = today)" } },
+    { "id": "gate", "use": "human.gate",
+      "label": "WBS と mapping.xlsx の食い違いを確認(Enter = 両方とも作業リストへ / s = 作業リストを変えずに終わる)",
+      "with": { "code": "{{steps.cmp.out.code}}", "askWhen": ["unknown"], "reason": "{{steps.cmp.out.reason}}",
+                "evidence": ["{{profile.paths.wbs}}", "{{profile.paths.mapping}}"] } },
+
+    { "id": "upsertWbs", "use": "table.upsert", "when": "steps.gate.out.action != skip",
+      "with": { "worklist": "wl", "rows": "{{steps.rows.out.records}}",
+                "fields": { "Excel_NAME": "Excel_NAME", "JOB": "JOB", "USER": "USER", "RCVFILE": "RCVFILE",
+                            "GFIX_DATE": "GFIX_DATE", "GFIX_TIME": "GFIX_TIME" },
+                "countAs": "FileCount", "overwrite": ["GFIX_DATE", "GFIX_TIME"] } },
+    { "id": "upsertMine", "use": "table.upsert", "when": "steps.gate.out.action != skip",
+      "with": { "worklist": "wl", "rows": "{{steps.mine.out.records}}",
+                "fields": { "Excel_NAME": "Excel_NAME", "JOB": "JOB", "USER": "USER", "RCVFILE": "RCVFILE",
+                            "GFIX_DATE": "GFIX_DATE", "GFIX_TIME": "GFIX_TIME" },
+                "countAs": "FileCount", "overwrite": ["GFIX_DATE", "GFIX_TIME"] } }
+  ],
+
+  "teardown": [
+    { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
+    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "track" } }
+  ]
+}

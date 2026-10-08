@@ -19,7 +19,7 @@ $hostOpen = Join-Path (Join-Path $repoRoot 'profiles') 'host-open'
 Write-Host '  -- profiles/host-open'
 $p = Read-EbiProfile -Dir $hostOpen -WorkDir $tmpRoot
 Assert-True $p['ok'] ('host-open loads: ' + $p['message'])
-Assert-True (@($p['missing']).Count -eq 1 -and $p['missing'][0] -eq 'calibration') 'host-open: only calibration.json is absent (no fallback tier yet)'
+Assert-True ((@($p['missing']) -join ',') -eq 'calibration,paths') 'host-open: only calibration.json (no fallback tier yet) and paths.json (its locations live in the old VerifyConfig) are absent'
 $prof = $p['value']
 Assert-True ($prof['pages'].Count -eq 5 -and $prof['pages'].Contains('transferStatus') -and $prof['pages']['transferStatus']['role'] -eq 'list' -and $prof['pages']['hmResult']['role'] -eq 'record') 'host-open: the five pages of PROFILE-SCHEMA 3.0, keyed by page name'
 $s = Test-EbiProfileSchema -Profile $prof -Missing $p['missing']

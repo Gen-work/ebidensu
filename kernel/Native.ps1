@@ -36,6 +36,29 @@ public static class EbiNative {
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+    public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
+    [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+    public static IntPtr[] TopWindows() {
+        var list = new System.Collections.Generic.List<IntPtr>();
+        EnumWindows(delegate (IntPtr h, IntPtr l) { list.Add(h); return true; }, IntPtr.Zero);
+        return list.ToArray();
+    }
+    public static string TitleOf(IntPtr hWnd) {
+        int n = GetWindowTextLength(hWnd);
+        if (n <= 0) { return ""; }
+        var sb = new System.Text.StringBuilder(n + 1);
+        GetWindowText(hWnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
 }
 "@
     }
@@ -157,4 +180,168 @@ function Write-EbiTextFile {
         [System.IO.File]::WriteAllText($Path, $Text, (New-Object System.Text.UTF8Encoding($false)))
         return @{ ok = $true; message = '' }
     } catch { return @{ ok = $false; message = $_.Exception.Message } }
+}
+
+function Get-EbiTopWindows {
+    <#
+      Every visible, titled, top-level window (no owner) as
+      @{ handle; title; processId; processName; minimized; maximized }, in
+      Z order (front first). The candidates screen.find_window filters.
+    #>
+    [void](Get-EbiNative)
+    $out = New-Object System.Collections.ArrayList
+    $names = @{}
+    foreach ($h in [EbiNative]::TopWindows()) {
+        if (-not [EbiNative]::IsWindowVisible($h)) { continue }
+        if ([EbiNative]::GetWindow($h, 4) -ne [IntPtr]::Zero) { continue }   # GW_OWNER: a dialog / tool window
+        $title = [EbiNative]::TitleOf($h)
+        if ([string]::IsNullOrWhiteSpace($title)) { continue }
+        [uint32]$procId = 0
+        [void][EbiNative]::GetWindowThreadProcessId($h, [ref]$procId)
+        $pn = ''
+        $key = [string]$procId
+        if ($names.Contains($key)) { $pn = $names[$key] } else { try { $pn = (Get-Process -Id ([int]$procId) -ErrorAction Stop).ProcessName } catch { $pn = '' }; $names[$key] = $pn }
+        [void]$out.Add(@{ handle = $h; title = $title; processId = [int]$procId; processName = $pn; minimized = [bool][EbiNative]::IsIconic($h); maximized = [bool][EbiNative]::IsZoomed($h) })
+    }
+    return $out.ToArray()
+}
+
+function Set-EbiWindowState {
+    # 'maximize' | 'restore' | 'minimize' (ShowWindowAsync 3 / 9 / 6).
+    param([IntPtr]$HWnd, [string]$State, [int]$SettleMs = 400)
+    [void](Get-EbiNative)
+    $cmd = switch ($State) { 'maximize' { 3 } 'minimize' { 6 } default { 9 } }
+    [void][EbiNative]::ShowWindowAsync($HWnd, $cmd)
+    if ($SettleMs -gt 0) { Start-Sleep -Milliseconds $SettleMs }
+}
+
+function Close-EbiWindow {
+    # Ask the window to close (WM_CLOSE). @{ ok; message }; a window that is
+    # already gone is ok (a release must survive "nothing to release").
+    param([IntPtr]$HWnd, [int]$WaitMs = 1500)
+    [void](Get-EbiNative)
+    if ($HWnd -eq [IntPtr]::Zero -or -not [EbiNative]::IsWindow($HWnd)) { return @{ ok = $true; message = 'already closed' } }
+    [void][EbiNative]::PostMessage($HWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+    $deadline = (Get-Date).AddMilliseconds([Math]::Max(100, $WaitMs))
+    while ((Get-Date) -lt $deadline) {
+        if (-not [EbiNative]::IsWindow($HWnd)) { return @{ ok = $true; message = '' } }
+        Start-Sleep -Milliseconds 100
+    }
+    if ([EbiNative]::IsWindow($HWnd)) { return @{ ok = $false; message = 'the window is still open after WM_CLOSE (a save prompt?)' } }
+    return @{ ok = $true; message = '' }
+}
+
+function Set-EbiClipboardRich {
+    <#
+      Put HTML (CF_HTML, already wrapped -- kernel/RichClip.ps1 New-EbiCfHtml),
+      RTF and plain text on the clipboard in one data object, so a chat box
+      that takes pictures gets the pictures and one that does not still gets
+      the words. Needs an STA thread (powershell.exe 5.1's console is).
+      @{ ok; message }.
+    #>
+    param([string]$CfHtml, [string]$Rtf, [string]$Text, [int]$WaitMs = 300)
+    [void](Get-EbiNative)
+    try {
+        $do = New-Object System.Windows.Forms.DataObject
+        if (-not [string]::IsNullOrEmpty($CfHtml)) {
+            # CF_HTML must reach the clipboard as UTF-8 bytes; a .NET string
+            # would be marshalled as UTF-16 and the byte offsets would lie.
+            $ms = New-Object System.IO.MemoryStream (, ((New-Object System.Text.UTF8Encoding($false)).GetBytes($CfHtml)))
+            $do.SetData('HTML Format', $ms)
+        }
+        if (-not [string]::IsNullOrEmpty($Rtf)) { $do.SetData([System.Windows.Forms.DataFormats]::Rtf, $Rtf) }
+        if (-not [string]::IsNullOrEmpty($Text)) { $do.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $Text) }
+        [System.Windows.Forms.Clipboard]::SetDataObject($do, $true, 5, 200)
+        if ($WaitMs -gt 0) { Start-Sleep -Milliseconds $WaitMs }
+        return @{ ok = $true; message = '' }
+    } catch { return @{ ok = $false; message = $_.Exception.Message } }
+}
+
+function Set-EbiClipboardImage {
+    # One PNG on the clipboard as a bitmap (the "sequence" share mode).
+    param([string]$Path, [int]$WaitMs = 300)
+    [void](Get-EbiNative)
+    Add-Type -AssemblyName System.Drawing
+    try {
+        $img = [System.Drawing.Image]::FromFile($Path)
+        try { [System.Windows.Forms.Clipboard]::SetImage($img) } finally { $img.Dispose() }
+        if ($WaitMs -gt 0) { Start-Sleep -Milliseconds $WaitMs }
+        return @{ ok = $true; message = '' }
+    } catch { return @{ ok = $false; message = $_.Exception.Message } }
+}
+
+function Get-EbiWindowVisibleRect {
+    <#
+      The window's VISIBLE bounds (DWM extended frame bounds): Windows 10
+      pads GetWindowRect with invisible resize borders, so a capture of the
+      plain rect shows a strip of whatever is behind the window. Falls back
+      to GetWindowRect. @{ ok; X; Y; W; H; borderL; borderT; borderR; borderB }
+      (the borders are what GetWindowRect adds on each side).
+    #>
+    param([IntPtr]$HWnd)
+    $outer = Get-EbiWindowRect -HWnd $HWnd
+    if (-not $outer['ok']) { return @{ ok = $false; X = 0; Y = 0; W = 0; H = 0; borderL = 0; borderT = 0; borderR = 0; borderB = 0 } }
+    $vis = New-Object EbiNative+RECT
+    $hr = -1
+    try { $hr = [EbiNative]::DwmGetWindowAttribute($HWnd, 9, [ref]$vis, 16) } catch { $hr = -1 }   # DWMWA_EXTENDED_FRAME_BOUNDS
+    if ($hr -ne 0 -or ($vis.Right - $vis.Left) -le 0) { $outer['borderL'] = 0; $outer['borderT'] = 0; $outer['borderR'] = 0; $outer['borderB'] = 0; return $outer }
+    return @{ ok = $true; X = $vis.Left; Y = $vis.Top; W = ($vis.Right - $vis.Left); H = ($vis.Bottom - $vis.Top);
+              borderL = ($vis.Left - $outer['X']); borderT = ($vis.Top - $outer['Y']); borderR = (($outer['X'] + $outer['W']) - $vis.Right); borderB = (($outer['Y'] + $outer['H']) - $vis.Bottom) }
+}
+
+function Set-EbiWindowVisibleSize {
+    # Move / resize so the VISIBLE window is X,Y,W,H (borders added back).
+    param([IntPtr]$HWnd, [int]$X, [int]$Y, [int]$W, [int]$H, [int]$SettleMs = 300)
+    [void](Get-EbiNative)
+    $v = Get-EbiWindowVisibleRect -HWnd $HWnd
+    if (-not $v['ok']) { return $false }
+    [void][EbiNative]::MoveWindow($HWnd, $X - [int]$v['borderL'], $Y - [int]$v['borderT'], $W + [int]$v['borderL'] + [int]$v['borderR'], $H + [int]$v['borderT'] + [int]$v['borderB'], $true)
+    if ($SettleMs -gt 0) { Start-Sleep -Milliseconds $SettleMs }
+    return $true
+}
+
+function Invoke-EbiFindText {
+    # Ctrl+F the text (through the clipboard: SendKeys mangles kana and
+    # some symbols), Enter to jump to it, Esc to close the bar -- Chromium
+    # then leaves the focus on the link the match sits in.
+    param([string]$Text)
+    Set-EbiClipboardText -Text $Text
+    Send-EbiKeys -Keys '^{f}' -WaitMs 300
+    Send-EbiKeys -Keys '^a' -WaitMs 100
+    Send-EbiKeys -Keys '^v' -WaitMs 300
+    Send-EbiKeys -Keys '{ENTER}' -WaitMs 400
+    Send-EbiKeys -Keys '{ESC}' -WaitMs 300
+}
+
+function Test-EbiKeyRecipe {
+    # PURE. Every entry is find:<text> | keys:<SendKeys> | wait:<ms>.
+    # @{ ok; message }.
+    param($Recipe)
+    $i = 0
+    foreach ($r in @($Recipe)) {
+        $i++
+        if ([string]$r -notmatch '^(find:.+|keys:.+|wait:\d+)$') { return @{ ok = $false; message = ('recipe entry ' + $i + ' "' + [string]$r + '" is not find:<text>, keys:<SendKeys> or wait:<ms>') } }
+    }
+    return @{ ok = $true; message = '' }
+}
+
+function Invoke-EbiKeyRecipe {
+    <#
+      Run a key recipe against a window, re-checking the foreground before
+      each entry (P0-R12). Entries: find:<text> (Invoke-EbiFindText),
+      keys:<SendKeys>, wait:<ms>. @{ ok; failure; message } -- failure is
+      foreground_lost or recipe_invalid.
+    #>
+    param([IntPtr]$HWnd, $Recipe, [int]$KeyWaitMs = 300)
+    $t = Test-EbiKeyRecipe -Recipe $Recipe
+    if (-not $t['ok']) { return @{ ok = $false; failure = 'recipe_invalid'; message = $t['message'] } }
+    foreach ($r in @($Recipe)) {
+        $s = [string]$r
+        if ($s -match '^wait:(\d+)$') { Start-Sleep -Milliseconds ([int]$Matches[1]); continue }
+        $fg = Set-EbiForeground -HWnd $HWnd -SettleMs 150
+        if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message'] } }
+        if ($s -match '^find:(.+)$') { Invoke-EbiFindText -Text $Matches[1] }
+        elseif ($s -match '^keys:(.+)$') { Send-EbiKeys -Keys $Matches[1] -WaitMs $KeyWaitMs }
+    }
+    return @{ ok = $true; failure = ''; message = '' }
 }

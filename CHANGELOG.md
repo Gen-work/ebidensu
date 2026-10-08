@@ -1,3 +1,64 @@
+## 2026-10-08 - ebi-dance first new job: GFIX receive verification (gfix-recv) + the P4 steps it needed (v2.23.0)
+
+The first job built on the new engine instead of a phase script: the
+GIFT -> GFIX receive side on OPEN. Four workflows, one profile, 32 new steps
+(catalog 37 -> 69). Written in the cloud (no Windows / Excel there): the pure
+half is unit-tested on the operator's real samples, the COM / SendKeys half
+is static-checked and dry-run only -- the office PC run is the first real one
+(guide: `docs/gfix-recv/RUNBOOK.zh.md`).
+
+### Added
+- **`workflows/gfixRecv.plan`** -- today's jobs: WBS rows (受信 / 修正後実施 /
+  担当 厳 with OwnerFilter's arrow rule / 最新計画 開始 = today) united with
+  the operator's mapping.xlsx rows whose GFIX date is today; a difference
+  between the two stops at a gate. -> `gfixrecv.csv`.
+- **`workflows/gfixRecv.track`** -- per HOST job: wait for the Teams "正常終了",
+  refresh GoAnywhere with its own 更新 button (Ctrl+F -> Esc -> Tab x5 ->
+  Enter, never F5), pick the job's rows by the scheduled time, capture the
+  "part above" for Teams, find the received report file in Jenkins by the
+  Receive time span, download it into DATA\GFIX\<W-job>, pair it with the
+  GIFT-side file(s) by line count + arrival order (never a guess), compare
+  line by line, capture DF (first screen; Ctrl+End too past 16 lines), and put
+  the reply text + pictures on the clipboard for Teams.
+- **`workflows/gfixRecv.logs`** -- end of day: GFIXReceive.log (+ Unzip, a 404
+  is fine) kept raw and converted to SJIS; GoAnywhere / Jenkins overview
+  texts; each Receive job's log downloaded through the page; the transfer file
+  names read out of them.
+- **`workflows/gfixRecv.evidence`** -- the evidence workbook laid out like the
+  delivered sample: Excel snap copy, job log + yellow rows, the transfer's
+  GFIXReceive.log block + yellow rows, Jenkins snap + red box (row found from
+  the blue link-text bands counted from the bottom), GIFTデータvsGFIXデータ
+  (B3 from 送信データ!A3, DF captures, wave, last-line-number and 同一内容 boxes),
+  A1 on every sheet, save, a final look gate.
+- **`profiles/gfix-recv`** -- pages / grammar / rules with real-sample
+  fixtures (`ebi profile check` green), layout measured off the sample
+  workbook, `paths.json` placeholders (real values in `<WorkDir>\ebi.local.json`).
+- **Steps** (STEP-CONTRACT, DryRun-tested): excel.ensure_app / open / close /
+  quit_app (P4-01), read_rows, write_cell / write_lines (P4-06), highlight,
+  insert_pictures (P4-08 + P4-10 boxes), copy_picture, stack_plan, tidy;
+  file.download (P4-19 without a browser), wait_for_download (P4-13), move
+  (P4-14), convert_encoding, read_text, list, extract_blocks, compare;
+  screen.find_window, row_region, find_ink_rows, list_rects, launch_capture;
+  verify.filter_records, time_window, pair_files, compare_sets; human.share;
+  browser.download_each; table.upsert.
+- **kernel**: `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`;
+  Native.ps1 window enumeration / visible bounds / WM_CLOSE / rich clipboard /
+  key recipes; Image.ps1 ink counts; `run.date / dateSlash / mmdd / toolDir`;
+  profile file `paths.json`.
+
+### Changed
+- `browser.wait_for` takes an optional `refreshRecipe` (run before every read).
+- `screen.capture_window` takes `bounds = visible` (DWM frame, no invisible
+  border strip).
+- `verify.parse_text` under DryRun with no page text goes on with no records
+  instead of failing, so a dry run walks the whole workflow.
+- The DryRun harness fakes the session inputs of a step that also registers
+  a resource (excel.open consumes an excelApp and provides a workbook).
+
+### Notes
+- The batch logs write a full-width colon in SJIS inside UTF-8; it now decodes
+  as the colon. Evidence pasted the old way showed `_xDC81_F` there.
+
 ## 2026-09-22 - GiftMqProcessTime: the run could freeze with no output (v2.22.2)
 
 The operator pressed Enter at the capture prompt and the run went silent --

@@ -1,0 +1,40 @@
+{
+  "goAnywhere": {
+    "parser": "delimited",
+    "delimiter": "\t",
+    "fields": [
+      "key",
+      "projectName",
+      "folder",
+      "status",
+      "user",
+      "startTime",
+      "endTime",
+      "seconds",
+      "method"
+    ],
+    "rowWhen": {
+      "field": "key",
+      "matches": "^\\d{6,}$"
+    },
+    "ignore": [
+      "^.{0,3}$",
+      "^(GoAnywhere|システム名|hub\\d+|監査ログ|グローバルログ|サーチ|サービスログ|トリガログ|トリガー|ジョブログ|完了したジョブ|ファイル監査|フィルタリングする|日付範囲|プロジェクト名|詳細|更新|ui-button|表示中|©|AS2|AS4|FTP|FTPS|GoDrive|GoFast|HTTPS|PeSIT|SFTP|アンチウイルス|家|言語|ワークフロー|報告|ヘルプ)",
+      "^ジョブ番号\\t"
+    ]
+  },
+  "jenkinsReport": {
+    "parser": "regex",
+    "pattern": "^\\s*(?<key>\\S+)\\t(?<time>\\d{4}/\\d{1,2}/\\d{1,2} \\d{1,2}:\\d{2}:\\d{2})\\t(?<size>[^\\t]+)\\t",
+    "ignore": [
+      "^(?!\\s*\\S+\\t\\d{4}/\\d{1,2}/\\d{1,2} \\d{1,2}:\\d{2}:\\d{2}\\t)"
+    ]
+  },
+  "jobLog": {
+    "parser": "regex",
+    "pattern": "Overriding variable 'FileName' with value '(?<key>[^']+)'",
+    "ignore": [
+      "^(?!.*Overriding variable 'FileName')"
+    ]
+  }
+}

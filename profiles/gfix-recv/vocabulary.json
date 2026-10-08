@@ -1,0 +1,24 @@
+{
+  "_doc": "GIFT -> GFIX receive verification (J4, OPEN side). Display names, the worklist's neutral column roles, and the fixed message texts the workflows post.",
+  "sides": {
+    "before": "GIFT",
+    "after": "GFIX"
+  },
+  "roles": {
+    "entry": "入口",
+    "form": "検索画面",
+    "record": "結果画面",
+    "list": "一覧",
+    "document": "帳票"
+  },
+  "columns": {
+    "group": "Excel_NAME",
+    "owner": "Owner",
+    "deliverable": "Excel_NAME"
+  },
+  "messages": {
+    "feedbackOk": "OPEN側で確認できました。前後一致です。",
+    "waitHost": "Teams で HOST の「ジョブ:{job}が正常終了しました。」が来たら Enter(リアクションは手で)",
+    "openPages": "GoAnywhere(完了したジョブ:日付範囲 Today / プロジェクト名で絞り込み / 開始時間 ▼)と Jenkins の data/report を別々のウィンドウで開いてください"
+  }
+}

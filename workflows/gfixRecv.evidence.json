@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "id": "gfixRecv.evidence",
+  "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
+  "version": "0.1.0",
+  "profile": "gfix-recv",
+  "page": "jenkinsReport",
+
+  "vars": { "capture": "capture/gfix" },
+
+  "source": {
+    "table": "wl",
+    "select": { "field": "evidence", "pendingWhen": "!= ok" },
+    "groupBy": "Excel_NAME",
+    "orderBy": "GFIX_TIME"
+  },
+
+  "onError": { "policy": "ask" },
+
+  "setup": [
+    { "id": "load", "use": "table.load",
+      "with": { "path": "{{profile.worklist.file}}", "as": "wl" } },
+    { "id": "app", "use": "excel.ensure_app", "with": { "visible": true, "as": "xl" } },
+    { "id": "prepare", "use": "human.prepare",
+      "with": { "message": "Jenkins の data/report を開いてください(証跡のスクリーンショット用)", "url": "{{profile.paths.jenkinsReportUrl}}" } },
+    { "id": "jk", "use": "screen.find_window",
+      "with": { "title": "{{page.windowTitle}}", "state": "restore",
+                "width": "{{profile.window.width}}", "height": "{{profile.window.height}}", "as": "jk" } }
+  ],
+
+  "each": [
+    { "id": "track", "use": "file.read_json",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json" } },
+    { "id": "logs", "use": "file.read_json",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/logs.json" } },
+
+    { "id": "book", "use": "file.find",
+      "with": { "dir": "{{profile.paths.bix}}", "glob": "{{profile.layout.evidence.glob}}", "expect": "one" } },
+    { "id": "open", "use": "excel.open", "once": "group",
+      "with": { "app": "xl", "path": "{{steps.book.out.path}}", "as": "wb" } },
+
+    { "id": "excelSnap", "use": "excel.copy_picture",
+      "label": "GIFT受信結果 の 1 枚目(Excel スナップ)を GFIX受信結果 B3 へ",
+      "with": { "workbook": "wb", "fromSheet": "{{profile.layout.evidence.sheets.giftResult}}", "index": 1,
+                "toSheet": "{{profile.layout.evidence.sheets.gfixResult}}", "cell": "B3" } },
+
+    { "id": "jobLog", "use": "excel.write_lines",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
+                "row": "{{steps.excelSnap.out.nextRow}}", "label": "{{profile.layout.evidence.labels.jobLog}}",
+                "paths": "{{steps.logs.out.data.jobLogs}}",
+                "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
+    { "id": "jobMark", "use": "excel.highlight",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
+                "fromRow": "{{steps.jobLog.out.firstRow}}", "toRow": "{{steps.jobLog.out.lastRow}}",
+                "patterns": "{{profile.layout.evidence.highlight.jobLog}}",
+                "unitsPerColumn": "{{profile.layout.evidence.highlight.unitsPerColumn}}" } },
+
+    { "id": "blocks", "use": "file.extract_blocks",
+      "label": "GFIXReceive.log / Unzip.log から転送ファイルの START..END",
+      "with": { "paths": "{{steps.logs.out.data.receiveLogs}}", "blockKeys": "{{steps.logs.out.data.transferFiles}}",
+                "encoding": "cp932", "markers": "{{profile.layout.evidence.highlight.receiveLog}}",
+                "saveTo": "{{vars.capture}}/{{item.keySafe}}/receive.txt" } },
+    { "id": "recvLog", "use": "excel.write_lines",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
+                "row": "{{steps.jobLog.out.nextRow}}", "gapRows": 1,
+                "label": "{{profile.layout.evidence.labels.receiveLog}}",
+                "paths": ["{{steps.blocks.out.path}}"], "encoding": "utf8",
+                "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
+    { "id": "recvMark", "use": "excel.highlight",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
+                "fromRow": "{{steps.recvLog.out.firstRow}}", "toRow": "{{steps.recvLog.out.lastRow}}",
+                "patterns": "{{profile.layout.evidence.highlight.receiveLog}}",
+                "unitsPerColumn": "{{profile.layout.evidence.highlight.unitsPerColumn}}" } },
+
+    { "id": "jkText", "use": "browser.wait_for",
+      "label": "Jenkins を F5 + 最下部、一覧テキストを保存",
+      "with": { "window": "jk", "contains": "{{page.readyText}}",
+                "refreshRecipe": "{{page.refreshRecipe}}", "timeoutSec": "{{page.timeoutSec}}", "pollMs": "{{page.pollMs}}",
+                "archiveTo": "{{vars.capture}}/{{item.keySafe}}/jenkins-evidence.txt" } },
+    { "id": "jkShot", "use": "screen.capture_window",
+      "with": { "window": "jk", "saveAs": "{{vars.capture}}/{{item.keySafe}}/jenkins.png", "bounds": "visible" } },
+    { "id": "jkRec", "use": "verify.parse_text",
+      "with": { "text": "{{steps.jkText.out.text}}", "grammar": "{{page.grammar}}" } },
+    { "id": "jkInk", "use": "screen.find_ink_rows",
+      "label": "ファイル名列の青いリンク文字の行",
+      "with": { "path": "{{steps.jkShot.out.path}}", "x": "{{page.mark.stripX}}", "width": "{{page.mark.stripWidth}}",
+                "ink": "blue", "minHeight": 6 } },
+    { "id": "jkRects", "use": "screen.list_rects",
+      "with": { "names": "{{steps.jkRec.out.names}}", "targets": "{{steps.track.out.data.jenkinsFiles}}",
+                "bands": "{{steps.jkInk.out.bands}}", "x": "{{page.mark.x}}", "width": "{{page.mark.width}}",
+                "height": "{{page.mark.height}}", "lastRowCenterY": "{{page.mark.lastRowCenterY}}", "rowPitch": "{{page.mark.rowPitch}}" } },
+    { "id": "jkPic", "use": "excel.insert_pictures",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
+                "row": "{{steps.recvLog.out.nextRow}}", "skipRows": 1,
+                "pictures": ["{{steps.jkShot.out.path}}"], "rects": "{{steps.jkRects.out.rects}}", "tag": "jenkins" } },
+
+    { "id": "ifName", "use": "excel.write_cell",
+      "label": "GIFTデータvsGFIXデータ B3 = 送信データ!A3",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.compare}}", "cell": "B3",
+                "fromSheet": "{{profile.layout.evidence.sheets.sendData}}", "fromCell": "A3",
+                "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
+    { "id": "dfPlan", "use": "excel.stack_plan",
+      "with": { "sets": "{{steps.track.out.data.dfShots}}",
+                "separator": "{{run.toolDir}}/{{profile.layout.df.separator}}",
+                "separatorColumn": "{{profile.layout.df.separatorColumn}}", "separatorRows": "{{profile.layout.df.separatorRows}}",
+                "markRects": "{{profile.layout.df.marks}}" } },
+    { "id": "dfPics", "use": "excel.insert_pictures",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.compare}}",
+                "row": "{{profile.layout.evidence.compareFirstRow}}", "pictures": "{{steps.dfPlan.out.pictures}}", "tag": "df" } },
+
+    { "id": "tidy", "use": "excel.tidy",
+      "with": { "workbook": "wb", "fontSheets": ["{{profile.layout.evidence.sheets.gfixResult}}"],
+                "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
+
+    { "id": "look", "use": "human.gate",
+      "label": "ブックを目で確認(Enter = OK / n = NG / s = あとで)",
+      "with": { "code": "unknown", "askWhen": ["unknown"],
+                "reason": "check the workbook in Excel: picture positions, yellow rows, red boxes",
+                "evidence": ["{{steps.book.out.path}}", "{{steps.jkShot.out.path}}"] } },
+
+    { "id": "checkpoint", "use": "flow.checkpoint",
+      "when": "steps.look.out.action != skip",
+      "with": { "worklist": "wl", "field": "evidence", "value": "{{steps.look.out.code}}" } },
+
+    { "id": "close", "use": "excel.close", "once": "groupEnd",
+      "with": { "workbook": "wb", "save": false } }
+  ],
+
+  "teardown": [
+    { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
+    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "evidence" } }
+  ]
+}

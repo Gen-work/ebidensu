@@ -1,0 +1,11 @@
+{
+  "_doc": "Where things are. ONLY placeholders here: the real share paths, URLs and personal folders go in <WorkDir>/ebi.local.json { \"paths\": { ... } } (mask gate: no UNC path / intranet URL / C:\\Users\\<id> in the repo). Relative paths resolve under the work dir.",
+  "bix": "CHANGE-ME/40.J4/08.BIX",
+  "wbs": "CHANGE-ME/00.management/WBS.xlsx",
+  "mapping": "mapping.xlsx",
+  "dfExe": "C:/tools/DF/DF.exe",
+  "goAnywhereUrl": "",
+  "jenkinsReportUrl": "",
+  "receiveLogUrl": "",
+  "receiveUnzipLogUrl": ""
+}

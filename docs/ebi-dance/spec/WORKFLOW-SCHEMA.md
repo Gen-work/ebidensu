@@ -185,7 +185,7 @@ CLI `--only <key>[,<key>...]`(P0-R16)按 `{{item.key}}` 的显示形在
 | `{{vars.X}}` | 工作流常量 | 全部 |
 | `{{profile.X.Y}}` | profile 数据 | 全部 |
 | `{{page.X}}` | 顶层 `page` 绑定的那个 page 的数据(`profile.pages[<page>].X` 的简写),`{{page.id}}` 是 page 名本身 | 全部,且顶层声明了 `page` 字段时才可用(P0-R6) |
-| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `operator` / `workDir` / `timeWindow`)。**持久化在 `run/<runId>/run.json`**(P0-R16):runner 启动时写入,`human.input` / `--time-window` 改 `timeWindow` 时同步更新,`--resume` 时从它恢复,不再问人 | 全部 |
+| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `date`(`yyyy-MM-dd`)/ `dateSlash`(`yyyy/MM/dd`)/ `mmdd`(`MMdd`,日志文件名用)/ `toolDir`(本工具的根目录,引用随仓库发布的素材,如 profile 里的图片)/ `operator` / `workDir` / `timeWindow`)。`date` / `dateSlash` / `mmdd` 取 run 开始那一刻,`--resume` 时沿用原 run 的值(第二天续跑,文件名仍是原来那天)。**持久化在 `run/<runId>/run.json`**(P0-R16):runner 启动时写入,`human.input` / `--time-window` 改 `timeWindow` 时同步更新,`--resume` 时从它恢复,不再问人 | 全部 |
 | `{{item.X}}` | 当前行的某列 | 仅 `each` |
 | `{{item.key}}` | 当前行的主键显示形(复合键按声明顺序用 `" / "` 拼接) | 仅 `each` |
 | `{{item.keySafe}}` | 当前行的主键**文件名安全形**,文件/目录名一律用它,见 `PROFILE-SCHEMA.md` §6.6 | 仅 `each` |

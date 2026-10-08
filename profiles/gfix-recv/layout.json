@@ -1,0 +1,70 @@
+{
+  "_doc": "The evidence workbook (J4検証資料(...)_<Excel_NAME>.xlsx), read off the delivered sample (QJDSWM39): sheet names, labels, font, highlight patterns, and where the DF / Jenkins boxes go.",
+  "evidence": {
+    "glob": "*_{{item.Excel_NAME}}.xlsx",
+    "sheets": {
+      "sendData": "送信データ",
+      "giftResult": "GIFT受信結果",
+      "gfixResult": "GFIX受信結果",
+      "compare": "GIFTデータvsGFIXデータ"
+    },
+    "labels": {
+      "jobLog": "GFIX受信ログ",
+      "receiveLog": "GFIXReceive.log"
+    },
+    "font": {
+      "name": "ＭＳ ゴシック",
+      "size": 10
+    },
+    "highlight": {
+      "jobLog": [
+        "successfully uploaded to",
+        "INFO\\s+Command: "
+      ],
+      "receiveLog": [
+        "FileGIFTGetBLBean\\.execute\\(\\) fileName",
+        "file stored :"
+      ],
+      "unitsPerColumn": 3
+    },
+    "compareFirstRow": 4
+  },
+  "df": {
+    "_doc": "DF window 1133 x 429 shows exactly 16 data lines (the sample evidence); a file with more lines gets a second capture after Ctrl+End with the wave between. Boxes on the END picture: the last line number (found as the last band of dark ink in the line-number strip) and the 同一内容 cell of the status bar (bottom-right).",
+    "width": 1133,
+    "height": 429,
+    "screenLines": 16,
+    "marks": [
+      {
+        "lastInk": {
+          "x": 46,
+          "width": 38,
+          "yFrom": 105,
+          "yTo": -35,
+          "ink": "dark",
+          "maxLuma": 160
+        },
+        "x": 42,
+        "w": 48,
+        "padTop": 3,
+        "padBottom": 3
+      },
+      {
+        "x": 117,
+        "y": 19,
+        "w": 112,
+        "h": 19,
+        "anchor": "br"
+      }
+    ],
+    "separator": "profiles/gfix-recv/assets/wave.png",
+    "separatorColumn": "Z",
+    "separatorRows": 4
+  },
+  "share": {
+    "_doc": "how human.share puts the Teams reply on the clipboard: rich = text + pictures in ONE paste (HTML + RTF); sequence = text, then each picture, one paste each. Switch in <WorkDir>/ebi.local.json { \"layout\": { \"share\": { \"mode\": \"sequence\" } } } if Teams drops the pictures of a rich paste.",
+    "mode": "rich",
+    "where": "Teams (J4検証 チャット)",
+    "maxWidth": 0
+  }
+}

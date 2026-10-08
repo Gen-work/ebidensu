@@ -7,7 +7,7 @@
 #
 #  A profile is a directory of JSON files (PROFILE-SCHEMA.md 1):
 #      vocabulary.json pages.json grammar.json rules.json worklist.json
-#      layout.json calibration.json
+#      layout.json calibration.json window.json paths.json
 #  Each file becomes the same-named top-level key of the profile
 #  hashtable; a file that is not there is simply absent (and listed in
 #  'missing'), a file that is not JSON is an error. <WorkDir>/ebi.local.json
@@ -21,7 +21,7 @@
 . (Join-Path $PSScriptRoot 'Json.ps1')
 
 function Get-EbiProfileFiles {
-    return @('vocabulary', 'pages', 'grammar', 'rules', 'worklist', 'layout', 'calibration', 'window')
+    return @('vocabulary', 'pages', 'grammar', 'rules', 'worklist', 'layout', 'calibration', 'window', 'paths')
 }
 
 function Get-EbiDefaultProfilesRoot {

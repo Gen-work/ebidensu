@@ -14,7 +14,7 @@
 #  the next run must try it again.
 #
 #  run/<runId>/run.json      -- the run.* scope (runId / startedAt /
-#  operator / workDir / timeWindow) plus workflow id/version, the CLI
+#  date / dateSlash / mmdd / toolDir / operator / workDir / timeWindow) plus workflow id/version, the CLI
 #  arguments and the final result, written at start and at end
 #  (P0-R16). --resume restores run.* from it, so nothing is asked twice.
 #
@@ -98,6 +98,10 @@ function Write-EbiRunFile {
     $doc = @{
         runId      = $RunId
         startedAt  = $Run['startedAt']
+        date       = $Run['date']
+        dateSlash  = $Run['dateSlash']
+        mmdd       = $Run['mmdd']
+        toolDir    = $Run['toolDir']
         operator   = $Run['operator']
         workDir    = $Run['workDir']
         timeWindow = $Run['timeWindow']

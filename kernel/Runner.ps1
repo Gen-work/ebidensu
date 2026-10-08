@@ -759,7 +759,8 @@ function Invoke-EbiWorkflow {
 
     # ---- run.json + ledger (resume) ------------------------------------------------
     $wfId = [string]$workflow['id']
-    $run = @{ runId = $RunId; startedAt = (Get-Date).ToString('o'); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
+    $ebiNow = Get-Date
+    $run = @{ runId = $RunId; startedAt = $ebiNow.ToString('o'); date = $ebiNow.ToString('yyyy-MM-dd'); dateSlash = $ebiNow.ToString('yyyy/MM/dd'); mmdd = $ebiNow.ToString('MMdd'); toolDir = (Split-Path $PSScriptRoot -Parent); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
     $timeWindowSeen = $run['timeWindow']
     $ledgerDone = @{}
     if ($resumeFlag) {
@@ -776,7 +777,7 @@ function Invoke-EbiWorkflow {
             Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
             return $result
         }
-        foreach ($k in @('startedAt', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k] -and ($k -ne 'timeWindow' -or $null -eq $run['timeWindow'])) { $run[$k] = $prevDoc[$k] } }
+        foreach ($k in @('startedAt', 'date', 'dateSlash', 'mmdd', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k] -and ($k -ne 'timeWindow' -or $null -eq $run['timeWindow'])) { $run[$k] = $prevDoc[$k] } }
         $timeWindowSeen = $run['timeWindow']
         $ledger = Read-EbiLedger -Path (Get-EbiLedgerFile -WorkDir $WorkDir -RunId $RunId)
         if (-not $ledger['ok']) {

@@ -40,7 +40,7 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         (browser/screen/file/excel/table/verify/human/progress/
                         flow). Files here that are NOT steps are pre-conversion
                         libraries, listed and exempted on every test run.
-                        The P1 catalog (38 steps, docs/ebi-dance/CATALOG.md
+                        The P1 catalog (37 steps, docs/ebi-dance/CATALOG.md
                         is the list): browser/ ensure (provides 'window'),
                         focus_body, send_keys, tab_to, fill, submit,
                         read_text, wait_for, assert_page, navigate, find
@@ -70,6 +70,7 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         Test-TableSteps.ps1 / Test-VerifySteps.ps1 run the
                         pure helpers and the file / table / verify / human
                         steps for real on temp fixtures.
+                        gfix-recv (P3) added 32 steps (excel/ lifecycle etc.; see CHANGELOG.md).
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
 kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
@@ -190,6 +191,7 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
+                        gfixRecv.*.json: GFIX receive day (docs/gfix-recv/RUNBOOK.zh.md).
 ebi.ps1                 ebi-dance CLI entry (P1-10, P2): help [<step>] / lint /
                         explain / dryrun / run (-Resume [-RunId], -Only,
                         -Operator, -Limit, -Var k=v, -Profile, -TimeWindow
@@ -204,6 +206,7 @@ profiles/               per-project data: page bindings, decision rules, schemas
                         (legacy column names + verdict.values codes) / window /
                         fixtures with expected.json. mask-dictionary.json holds
                         the mask-lite words and allow patterns (P2-08).
+                        gfix-recv/ (P3): paths.json placeholders; real ones in ebi.local.json.
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
 MappingStore.ps1        single source of truth for mapping_<Owner>.csv: read/filter/
@@ -668,7 +671,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
 `Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
 `Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`, `Rules.ps1`, `ProfileCheck.ps1`,
-`GrammarTune.ps1`, `Mask.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`, `StepDryRun.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

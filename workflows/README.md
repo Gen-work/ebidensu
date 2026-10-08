@@ -13,4 +13,7 @@ here; put capabilities in `modules/` and local values in ignored local config.
   (writes `capture/spike/window.png` under the work dir). No profile, no
   `source`; it exists to prove the runner and the Session hand-off on a
   real machine. Run it as `kernel/README.md` shows.
-
+- `gfixRecv.plan.json` / `gfixRecv.track.json` / `gfixRecv.logs.json` /
+  `gfixRecv.evidence.json` -- the GFIX receive verification day on profile
+  `gfix-recv` (morning plan, one track round per HOST job, end-of-day logs,
+  the evidence workbook). Operator guide: `docs/gfix-recv/RUNBOOK.zh.md`.
