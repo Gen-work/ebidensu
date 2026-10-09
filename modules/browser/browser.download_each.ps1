@@ -62,17 +62,35 @@ function BrowserDownloadEach-Snapshot {
     return $m
 }
 
+function BrowserDownloadEach-Already {
+    # A finished file in the downloads folder whose name carries the term
+    # (job numbers are unique) -- downloaded by hand after a failed try, or
+    # by an earlier run that stopped before moving it. Newest first; $null.
+    param([string]$Dir, [string]$Glob, [string]$Term)
+    $hit = @(Get-ChildItem -LiteralPath $Dir -File -Filter $Glob -ErrorAction SilentlyContinue | Where-Object { $_.Name.IndexOf($Term, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.Name -notmatch '(?i)\.(crdownload|partial|tmp|download)$' -and $_.Length -gt 0 } | Sort-Object LastWriteTime -Descending)
+    if ($hit.Count -gt 0) { return $hit[0] }
+    return $null
+}
+
+function BrowserDownloadEach-StopKey {
+    # q / Esc typed in the console while waiting: give up now. No console -> never.
+    try { while ([Console]::KeyAvailable) { $k = [Console]::ReadKey($true); if ($k.Key -eq [ConsoleKey]::Escape -or $k.KeyChar -eq 'q' -or $k.KeyChar -eq 'Q') { return $true } } } catch { }
+    return $false
+}
+
 function BrowserDownloadEach-WaitNew {
-    # A file not in Before (or rewritten since), not a partial, whose size
-    # held for 1.2 s. $null on timeout.
-    param([string]$Dir, [string]$Glob, [hashtable]$Before, [int]$TimeoutSec)
+    # A file not in Before (or rewritten since) -- or any file naming the
+    # term -- not a partial, whose size held for 1.2 s. $null on timeout.
+    param([string]$Dir, [string]$Glob, [hashtable]$Before, [int]$TimeoutSec, [string]$Term = '')
     $deadline = (Get-Date).AddSeconds([Math]::Max(1, $TimeoutSec))
     $size = @{}; $at = @{}
     while ((Get-Date) -lt $deadline) {
+        if (BrowserDownloadEach-StopKey) { return $null }
         foreach ($f in @(Get-ChildItem -LiteralPath $Dir -File -Filter $Glob -ErrorAction SilentlyContinue)) {
             if ($f.Name -match '(?i)\.(crdownload|partial|tmp|download)$') { continue }
             $sig = [string]$f.LastWriteTime.Ticks + ':' + [string]$f.Length
-            if ($Before.Contains($f.FullName) -and $Before[$f.FullName] -eq $sig) { continue }
+            $named = ($Term -ne '' -and $f.Name.IndexOf($Term, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+            if (-not $named -and $Before.Contains($f.FullName) -and $Before[$f.FullName] -eq $sig) { continue }
             if ($size.Contains($f.FullName) -and [int64]$size[$f.FullName] -eq [int64]$f.Length -and $f.Length -gt 0) {
                 if (((Get-Date) - [datetime]$at[$f.FullName]).TotalMilliseconds -ge 1200) { return $f }
             } else { $size[$f.FullName] = [int64]$f.Length; $at[$f.FullName] = Get-Date }
@@ -105,9 +123,22 @@ function Invoke-Step {
     if (-not (Test-Path -LiteralPath $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
     $hwnd = ConvertTo-EbiHandle $In['window']
     $fetched = 0
+    $i = 0
     foreach ($t in $terms) {
+        $i++
         $existing = @(Get-ChildItem -LiteralPath $dest -File -Filter ($t + '*') -ErrorAction SilentlyContinue)
-        if ([bool]$In['skipExisting'] -and $existing.Count -gt 0) { [void]$files.Add(@{ term = $t; path = $existing[0].FullName; skipped = $true }); continue }
+        if ([bool]$In['skipExisting'] -and $existing.Count -gt 0) { $Ctx.Log.Info(('[{0}/{1}] {2}: already in {3}' -f $i, $terms.Count, $t, $dest)); [void]$files.Add(@{ term = $t; path = $existing[0].FullName; skipped = $true }); continue }
+        # already in the downloads folder (by hand after a failed try): just take it
+        $ready = BrowserDownloadEach-Already -Dir $dl -Glob $glob -Term $t
+        if ($null -ne $ready) {
+            $name = ([string]$In['nameTemplate']).Replace('{term}', $t).Replace('{ext}', $ready.Extension).Replace('{name}', $ready.Name)
+            $target = Join-Path $dest $name
+            try { Move-Item -LiteralPath $ready.FullName -Destination $target -Force } catch { return @{ ok = $false; failure = 'move_failed'; message = $_.Exception.Message; files = $files.ToArray(); paths = @($files | ForEach-Object { $_['path'] }); fetched = $fetched } }
+            $Ctx.Log.Info(('[{0}/{1}] {2}: found {3} in the downloads folder -> {4}' -f $i, $terms.Count, $t, $ready.Name, $target))
+            [void]$files.Add(@{ term = $t; path = $target; skipped = $false }); $fetched++
+            continue
+        }
+        $Ctx.Log.Info(('[{0}/{1}] {2}: opening it on the page and starting the download' -f $i, $terms.Count, $t))
         $fg = Set-EbiForeground -HWnd $hwnd
         if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; files = $files.ToArray(); paths = @($files | ForEach-Object { $_['path'] }); fetched = $fetched } }
         $page = Read-EbiPageText
@@ -119,8 +150,13 @@ function Invoke-Step {
             $rr = Invoke-EbiKeyRecipe -HWnd $hwnd -Recipe $recipe
             if (-not $rr['ok']) { return @{ ok = $false; failure = $(if ($rr['failure'] -eq 'recipe_invalid') { 'recipe_invalid' } else { 'foreground_lost' }); message = $rr['message']; files = $files.ToArray(); paths = @($files | ForEach-Object { $_['path'] }); fetched = $fetched } }
         } catch { return @{ ok = $false; failure = 'clipboard_error'; message = $_.Exception.Message; files = $files.ToArray(); paths = @($files | ForEach-Object { $_['path'] }); fetched = $fetched } }
-        $new = BrowserDownloadEach-WaitNew -Dir $dl -Glob $glob -Before $before -TimeoutSec ([int]$In['timeoutSec'])
-        if ($null -eq $new) { return @{ ok = $false; failure = 'timeout'; message = ('no download for "' + $t + '" appeared in ' + $dl); files = $files.ToArray(); paths = @($files | ForEach-Object { $_['path'] }); fetched = $fetched } }
+        $Ctx.Log.Info(('[{0}/{1}] {2}: waiting up to {3}s for the file in {4} (q / Esc in this window stops)' -f $i, $terms.Count, $t, [int]$In['timeoutSec'], $dl))
+        $new = BrowserDownloadEach-WaitNew -Dir $dl -Glob $glob -Before $before -TimeoutSec ([int]$In['timeoutSec']) -Term $t
+        if ($null -eq $new) {
+            # back to the list first, so r starts from the right page
+            if (-not [string]::IsNullOrEmpty([string]$In['backKeys'])) { $fg = Set-EbiForeground -HWnd $hwnd; if ($fg['ok']) { Send-EbiKeys -Keys ([string]$In['backKeys']) -WaitMs ([int]$In['backWaitMs']) } }
+            return @{ ok = $false; failure = 'timeout'; message = ('no download for "' + $t + '" appeared in ' + $dl + ' -- download it by hand (any name with ' + $t + ' in ' + $dl + ' is taken), then r'); files = $files.ToArray(); paths = @($files | ForEach-Object { $_['path'] }); fetched = $fetched }
+        }
         $name = ([string]$In['nameTemplate']).Replace('{term}', $t).Replace('{ext}', $new.Extension).Replace('{name}', $new.Name)
         $target = Join-Path $dest $name
         try { Move-Item -LiteralPath $new.FullName -Destination $target -Force } catch { return @{ ok = $false; failure = 'move_failed'; message = $_.Exception.Message; files = $files.ToArray(); paths = @($files | ForEach-Object { $_['path'] }); fetched = $fetched } }

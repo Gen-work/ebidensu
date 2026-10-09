@@ -44,7 +44,7 @@ $ctx = @{ WorkDir = $tmp; RunId = 'test'; Profile = $prof; Log = $log; DryRun = 
 $loaded = @{}
 foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
-                 'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for')) {
+                 'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -298,6 +298,15 @@ try {
     Assert-True ($cmp['code'] -eq 'ng' -and $cmp['reason'].Contains('col 15: U+FF0D vs U+0058')) ('compare: a real difference names line, column and both characters: ' + $cmp['reason'])
     $d1 = ConvertFrom-EbiTextBytes -Bytes $sj.GetBytes($body)
     Assert-True ($d1['encoding'] -eq 'cp932' -and $d1['text'] -eq $body) 'compare: a Shift_JIS file decodes as one Shift_JIS text'
+
+    Write-Host '  -- job log already in Downloads (office run: downloaded by hand, r still waited for a NEW file)'
+    $dlDir = Join-Path $tmp 'Downloads'; New-Item -ItemType Directory -Path $dlDir -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $dlDir '1000004638518.log'), 'x')
+    [System.IO.File]::WriteAllText((Join-Path $dlDir '1000004638518.log.crdownload'), 'x')
+    [System.IO.File]::WriteAllText((Join-Path $dlDir '1000004639999.log'), 'x')
+    $a = BrowserDownloadEach-Already -Dir $dlDir -Glob '*.log' -Term '1000004638518'
+    Assert-True ($null -ne $a -and $a.Name -eq '1000004638518.log') 'joblog: the hand-downloaded file with the job number is taken'
+    Assert-True ($null -eq (BrowserDownloadEach-Already -Dir $dlDir -Glob '*.log' -Term '1000004638521')) 'joblog: another job number is not'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

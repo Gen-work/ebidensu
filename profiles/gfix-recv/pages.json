@@ -27,7 +27,6 @@
     "jobLogRecipe": [
       "wait:1500",
       "find:ジョブログをダウンロードする",
-      "keys:{TAB}{TAB}",
       "keys:{ENTER}"
     ],
     "receiveFolder": "/jpcusr/Receive",
@@ -53,7 +52,8 @@
     "_deselect_doc": "after Ctrl+A/Ctrl+C the selection is dropped with a find (only the small label stays selected) -- no click: a click at fixed pixels can land on a link when the display scale is not 100%. deselectAt is kept for reference, unused by the track.",
     "deselectRecipe": [
       "find:フィルタリングする"
-    ]
+    ],
+    "_jobLogRecipe_doc": "on the job page: find the 'download the job log' button and press Enter on it (office run: the find lands on the button itself; the two Tabs of the first guess walked past it). Override in ebi.local.json if the page changes."
   },
   "jenkinsReport": {
     "role": "list",

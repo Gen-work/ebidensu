@@ -86,7 +86,14 @@
     converters disagree on are folded (`ConvertTo-EbiJisNeutral`: minus,
     wave dash, double bar, cent/pound/not, dash), and a remaining difference
     names line, column and both code points. The exact cause on that pair
-    is not confirmed yet.
+    is not confirmed yet (both files start with the same Shift_JIS bytes).
+  - **gfixRecv.logs, job logs**: the job page's download button is pressed
+    with Enter right after the find (the two Tabs walked past it); a file
+    with the job number already in the downloads folder (downloaded by hand
+    after a failed try) is taken instead of waiting for a NEW one; after a
+    timeout the list page is put back so r starts from it; every job prints
+    what it is doing ([n/N] opening / waiting up to Ns ...) and q / Esc in
+    the console stops the wait.
   - **Questions behind other windows**: the console is brought back with an
     input-queue attach as the last resort, its taskbar button blinks if even
     that fails, and a short beep says a question is waiting.
