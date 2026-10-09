@@ -564,6 +564,7 @@ Run a program per argument set, capture its window (and again after keys), close
 |-------|------|----------|---------|------|------|
 | `argFields` | list |  | ["left","right"] |  | fields of each map passed as quoted arguments, in order |
 | `argSets` | list | yes |  |  | one map per run (e.g. verify.pair_files pairs) |
+| `closeOthers` | bool |  | false |  | close every window whose title contains windowTitle before each start, so the only such window is the new one |
 | `exe` | path | yes |  |  | the program |
 | `height` | int |  | 0 |  |  |
 | `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (SendKeys syntax) |

@@ -314,7 +314,8 @@
         "height": "{{profile.layout.df.height}}",
         "settleMs": "{{profile.layout.df.settleMs}}",
         "windowTitle": "{{profile.layout.df.windowTitle}}",
-        "saveDir": "{{vars.capture}}/{{item.keySafe}}/df"
+        "saveDir": "{{vars.capture}}/{{item.keySafe}}/df",
+        "closeOthers": true
       }
     },
     {

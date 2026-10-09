@@ -255,7 +255,9 @@ try {
 
     Write-Host '  -- first office run of the track: DF window, GIFT folder, waiting'
     $wins = @(@{ handle = '100'; title = 'DF - [C:\x\OLD1.csv  - C:\y\OLD2.csv]' }, @{ handle = '200'; title = 'DF - [C:\a\F202608310006.csv  - C:\b\F202610090033.csv]' }, @{ handle = '300'; title = 'Teams' })
-    Assert-Equal '200' ([string](ScreenLaunchCapture-PickWindow -Windows $wins -Before @('100') -Title 'DF - ' -Names @('F202608310006.csv', 'F202610090033.csv'))) 'df: the new window showing the pair, not the old one left open'
+    Assert-Equal '200' ([string](ScreenLaunchCapture-PickWindow -Windows $wins -Before @('100') -Title 'DF - ' -Names @('F202608310006', 'F202610090033'))) 'df: the new window showing the pair, not the old one left open'
+    $cut = @(@{ handle = '400'; title = 'DF - [\\srv\...\GIFT\JJMRWE6L\F202608310006.csv  -  \\srv\...\GFIX\JJMRWE6L\F202610090033.cs]' })
+    Assert-Equal '400' ([string](ScreenLaunchCapture-PickWindow -Windows $cut -Before @() -Title 'DF - ' -Names @('F202608310006', 'F202610090033'))) 'df: a title cut short by the program (".cs]") still matches by the file stems (office run 3)'
     Assert-Equal '0' ([string][int](ScreenLaunchCapture-PickWindow -Windows @($wins[0], $wins[2]) -Before @('100') -Title 'DF - ' -Names @('F1.csv', 'F2.csv'))) 'df: only the old window there -> none (never capture it)'
     $reused = @(@{ handle = '100'; title = 'DF - [C:\a\F1.csv  - C:\b\F2.csv]' })
     Assert-Equal '100' ([string](ScreenLaunchCapture-PickWindow -Windows $reused -Before @('100') -Title 'DF - ' -Names @('F1.csv', 'F2.csv'))) 'df: a single-instance program that reused its window for THIS pair is taken'

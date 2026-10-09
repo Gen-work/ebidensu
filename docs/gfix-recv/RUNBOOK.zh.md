@@ -97,7 +97,7 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
   GoAnywhere 页面的日期范围要你自己改成那一天。
 - 实时跑的时候，用 Teams 消息决定的开始时刻会**自动写回** `GFIX_TIME`，所以出错后重跑直接 Enter 就是同一个时刻。
 - GoAnywhere 的「プロジェクト名」：JDS 和 JMR 的 job 混在一起跑时，把它清空（显示全部），或者每个 job 前切换。
-- 开始前把**以前打开的 DF 窗口关掉**（工具也不会再截旧窗口，但关掉最省事）。
+- DF：每对文件启动前，工具会**先关掉所有 DF 窗口**，屏幕上只剩新开的那个再截图。
 - 工具在等页面时（`browser.wait_for`），点一下控制台按 **q 或 Esc** 就能停下来，不用 Ctrl+C（那会把整个运行杀掉）。
   页面跳到别的地方时会立刻停下并显示 `wrong_page`：把页面手动回到「完了したジョブ」再按 `r`。
 - GIFT 侧文件夹：先找 `DATA\GIFT\<J名>`（例 JJMRJE6F），没有就找 `<W名>`（JJMRWE6F）。

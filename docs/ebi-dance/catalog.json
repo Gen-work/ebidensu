@@ -3873,6 +3873,11 @@
           "required": true,
           "type": "list"
         },
+        "closeOthers": {
+          "default": false,
+          "desc": "close every window whose title contains windowTitle before each start, so the only such window is the new one",
+          "type": "bool"
+        },
         "exe": {
           "desc": "the program",
           "required": true,

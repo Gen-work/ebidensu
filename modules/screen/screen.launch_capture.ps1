@@ -37,6 +37,7 @@ $Manifest = @{
     height       = @{ type='int';    default=0 }
     windowWaitSec = @{ type='int';   default=15 }
     windowTitle  = @{ type='string'; default=''; desc='fallback when the started process shows no window of its own (a launcher / single-instance program): the top-level window whose title contains this' }
+    closeOthers  = @{ type='bool';   default=$false; desc='close every window whose title contains windowTitle before each start, so the only such window is the new one' }
     settleMs     = @{ type='int';    default=1200; desc='wait after the window appears / after keys' }
   }
   outputs    = @{
@@ -124,7 +125,16 @@ function Invoke-Step {
         $stem = ScreenLaunchCapture-Stem -Set $s -Field ([string]$In['nameField']) -N $n
         $argList = @($fields | ForEach-Object { '"' + ([string]$s[$_]).Replace('"', '') + '"' })
         $wt = [string]$In['windowTitle']
-        $names = @($fields | ForEach-Object { [System.IO.Path]::GetFileName([string]$s[$_]) })
+        # file STEMS: a long title is cut by the program (DF showed
+        # "...F202610090033.cs]"), so the extension cannot be relied on
+        $names = @($fields | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string]$s[$_]) })
+        if ([bool]$In['closeOthers'] -and $wt -ne '') {
+            foreach ($ow in @(Get-EbiTopWindows | Where-Object { ([string]$_['title']).IndexOf($wt, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 })) {
+                $c = Close-EbiWindow -HWnd $ow['handle'] -WaitMs 3000
+                if (-not $c['ok']) { return @{ ok = $false; failure = 'no_window'; message = ('an old window would not close: ' + $ow['title'] + ' -- close it by hand and r'); shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
+            }
+            Start-Sleep -Milliseconds 300
+        }
         $before = @()
         if ($wt -ne '') { $before = @(Get-EbiTopWindows | Where-Object { ([string]$_['title']).IndexOf($wt, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 } | ForEach-Object { [string]$_['handle'] }) }
         $proc = $null

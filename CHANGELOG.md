@@ -75,7 +75,10 @@
     back over 10:30:25); only a time decided now or typed is written back
     (`fresh`).
   - The DF window must show this pair's file names in its title before it
-    is captured, whichever way it was found.
+    is captured, whichever way it was found -- matched by file STEM, since
+    DF cuts a long title ("...F202610090033.cs]", office run 3: DF opened,
+    no capture). The track closes every DF window before each start
+    (`closeOthers`), so the only DF window is the new one.
   - **Questions behind other windows**: the console is brought back with an
     input-queue attach as the last resort, its taskbar button blinks if even
     that fails, and a short beep says a question is waiting.
