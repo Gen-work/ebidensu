@@ -20,6 +20,11 @@
   U+FFFD and `excel.open` reported the WBS as not found. The overlay now
   falls back to CP932 when its bytes are not valid UTF-8 and prints a
   warning (`Read-EbiJson -AllowCp932`; every other JSON stays UTF-8 only).
+- **`gfixRecv.plan` dropped WBS jobs with no mapping.xlsx row without a
+  word**: the first real run found 6 jobs in the WBS, none in mapping.xlsx,
+  the gate was answered ok and the run ended OK with an empty worklist. A
+  second check (`noRow`) now lists those jobs (no W name / GFIX time, so
+  they cannot be tracked) and the worklist is only written on Enter there.
 - `excel.open` failures report the `readOnly` that was asked for (the gate
   showed `readOnly: False` for a read-only open that never happened).
 

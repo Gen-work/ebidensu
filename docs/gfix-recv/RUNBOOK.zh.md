@@ -68,6 +68,9 @@ ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
 - 只读打开 mapping.xlsx，拿到 W 名、时刻、文件数（同一个 job 有几行就是几个文件）。
 - **WBS 和 mapping.xlsx 不一致时会停下来问你**。用你给的 WBS 测过：MJDSJM40 在 WBS 里写的是「ニンヌ」，
   所以只有 mapping 里有它。`Enter` = 两边的 job 都放进作业清单；`s` = 不改作业清单直接结束。
+- **WBS 有、但 mapping.xlsx 里一行都没有的 job 进不了作业清单**（W 名和 GFIX 时刻都在 mapping 里）。
+  这时会再停一次，列出这些 job：`Enter` = 只把有行的 job 放进清单，其他任何键 = 什么都不写。
+  把它们补进 mapping.xlsx（A=J名、B=W名、O=今天、P=时刻）后再跑一次 plan 即可（可重复执行）。
 - 结果：`$W\gfixrecv.csv`（作业清单，用 Excel 打开也行）。用你的 WBS 和 mapping 模拟过：
   F/K/L/M/Q/RJDSWM40，6 个 job、时刻和 p1 完全一致。
 
