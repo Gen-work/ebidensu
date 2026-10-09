@@ -1,6 +1,17 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **`gfixRecv.evidence` boxed nothing on the Jenkins screenshot**
+  (`screen.list_rects: not_found`, first evidence run, SJDSWM40). Two
+  causes: `jkShot` had no `front`, so the foreground rule put the console
+  back over Jenkins before the screenshot (2 ink rows found); and the text
+  read waited for `参照`, which is on every row, so a half-loaded ~4000-row
+  list was copied. The read now sends F5 once (`jkF5`), then waits for the
+  page footer `endText` (全てのファイルをzipで) with Ctrl+End only;
+  `jkEnd` scrolls to the end once more and `jkShot` carries
+  `"front": "jk"`. `screen.list_rects` now says why nothing was placed
+  (not in the page text / row N from the bottom vs M rows in the picture)
+  and that a retry reads the same inputs.
 - **Test fixtures that are `.log` files never reached git** (`.gitignore`'s
   `*.log`), so `Test-LogText` / `Test-GfixRecvSteps` failed on every fresh
   checkout. Re-included under `Tests/fixtures/**` and kept byte-exact

@@ -50,10 +50,11 @@ function Invoke-Step {
     $rects = New-Object System.Collections.ArrayList
     $missing = New-Object System.Collections.ArrayList
     $source = 'pitch'
+    $why = @()
     if ($bands.Count -gt 0) {
         $source = 'bands'
         $idx = @()
-        foreach ($t in $targets) { $i = [array]::IndexOf($names, $t); if ($i -lt 0) { [void]$missing.Add($t) } else { $idx += $i } }
+        foreach ($t in $targets) { $i = [array]::IndexOf($names, $t); if ($i -lt 0) { [void]$missing.Add($t); $why += ($t + ' is not in the page text (' + $names.Count + ' entries; copied before the list finished loading?)') } else { $idx += $i } }
         $idx = @($idx | Sort-Object -Unique)
         $n = $names.Count; $m = $bands.Count
         $k = 0
@@ -61,7 +62,7 @@ function Invoke-Step {
             $a = [int]$idx[$k]; $b = $a
             while (($k + 1) -lt $idx.Count -and [int]$idx[$k + 1] -eq ($b + 1)) { $k++; $b = [int]$idx[$k] }
             $ba = $m - ($n - $a); $bb = $m - ($n - $b)
-            if ($ba -lt 0) { foreach ($j in $a..$b) { [void]$missing.Add($names[$j]) }; $k++; continue }
+            if ($ba -lt 0) { foreach ($j in $a..$b) { [void]$missing.Add($names[$j]) }; $why += ('{0} is row {1} from the bottom, the picture has {2} text row(s)' -f $names[$a], ($n - $a), $m); $k++; continue }
             $ca = [double]$bands[$ba]['center']; $cb = [double]$bands[$bb]['center']
             $top = [int][Math]::Round($ca - $h / 2.0, [System.MidpointRounding]::AwayFromZero); $bottom = [int][Math]::Round($cb + $h / 2.0, [System.MidpointRounding]::AwayFromZero)
             [void]$rects.Add(@{ x = [int]$In['x']; y = $top; w = [int]$In['width']; h = ($bottom - $top); names = @($names[$a..$b]) })
@@ -74,7 +75,7 @@ function Invoke-Step {
     }
     if ($rects.Count -eq 0) {
         if ($Ctx['DryRun']) { return @{ ok = $true; rects = @(); missing = $missing.ToArray(); source = $source } }
-        return @{ ok = $false; failure = 'not_found'; message = ('none of ' + ($targets -join ', ') + ' could be placed'); rects = @(); missing = $missing.ToArray(); source = $source }
+        return @{ ok = $false; failure = 'not_found'; message = ('none of ' + ($targets -join ', ') + ' could be placed' + $(if ($why.Count -gt 0) { ': ' + ($why -join '; ') + ' -- a retry reads the same text and picture; s, then run again' } else { '' })); rects = @(); missing = $missing.ToArray(); source = $source }
     }
     $out = @{ ok = $true; rects = $rects.ToArray(); missing = $missing.ToArray(); source = $source }
     $warn = New-Object System.Collections.ArrayList

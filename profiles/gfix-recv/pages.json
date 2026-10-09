@@ -94,6 +94,8 @@
     },
     "timeField": "time",
     "readyText": "参照",
+    "endText": "全てのファイルをzipで",
+    "_endText_doc": "the footer under the LAST row: only in the copied text once the whole list (~4000 rows) has rendered. readyText (参照) is on every row, so it matches a half-loaded page -- 10-09 the evidence run copied and screenshotted a list that stopped short of the end.",
     "deselectAt": {
       "x": 150,
       "y": 450
