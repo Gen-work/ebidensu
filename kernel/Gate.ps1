@@ -22,9 +22,10 @@
 #      Show-EbiGate          the impure loop: render, read, repeat until
 #                            the answer is one of the offered actions.
 #                            The reader is injectable (tests) and, when
-#                            no console can answer (DryRun or redirected
-#                            stdin), the default action is taken and the
-#                            line says so.
+#                            no console can answer (DryRun, redirected
+#                            stdin, or EBI_NO_ASK=1 as the test runner
+#                            sets it), the default action is taken and
+#                            the line says so.
 #      Invoke-EbiGateAsk     the runner's -AskHandler built on the above
 #                            (the two question shapes of kernel/Runner.ps1's
 #                            Invoke-EbiDefaultAsk).
@@ -159,6 +160,9 @@ function Show-EbiGate {
     $why = 'dry run'
     if (-not $noConsole -and $null -eq $Reader) {
         try { if ([Console]::IsInputRedirected) { $noConsole = $true; $why = 'no console to ask' } } catch { }
+        # EBI_NO_ASK=1: nobody is meant to answer (Tests\Run-Tests.ps1 sets
+        # it), so a real console must not stop the run either.
+        if (-not $noConsole -and [string]$env:EBI_NO_ASK -eq '1') { $noConsole = $true; $why = 'EBI_NO_ASK' }
     }
     if ($noConsole -and $Auto -ne '') {
         Write-Host ('  (' + $why + ': ' + $Auto + ')') -ForegroundColor DarkGray

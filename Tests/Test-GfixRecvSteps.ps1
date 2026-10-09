@@ -69,6 +69,11 @@ try {
     $rec = Invoke-TestStep 'verify.parse_text' @{ text = $gaText; grammar = $prof['grammar']['goAnywhere'] }
     Assert-Equal 12 $rec['recordCount'] 'track: 12 GoAnywhere rows parsed'
     Assert-Equal 0 $rec['unrecognized'] 'track: no GoAnywhere line left unrecognised'
+    # A page that is not the expected one (one non-blank line, nothing the
+    # grammar recognises) is a no_records failure, not a crash: counting a
+    # single filtered line once threw under StrictMode on PS 5.1 and 7.
+    $bad = Invoke-TestStep 'verify.parse_text' @{ text = "not a job list`r`n`r`n"; grammar = $prof['grammar']['goAnywhere'] }
+    Assert-True ((-not $bad['ok']) -and $bad['failure'] -eq 'no_records' -and $bad['message'].Contains(' 1 non-blank line')) ('parse: an unrelated page is no_records over its 1 non-blank line: ' + $bad['message'])
     $mine = Invoke-TestStep 'verify.filter_records' @{ records = $rec['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $win['window'] }) }
     Assert-Equal 2 $mine['matched'] 'track: the 13:45 job is two rows (Send + Receive)'
     Assert-Equal 1 $mine['first'] 'track: ... at the top of the list (newest first)'

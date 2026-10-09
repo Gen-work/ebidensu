@@ -61,6 +61,6 @@ function Invoke-Step {
     foreach ($m in @($r['missing'])) { [void]$warnings.Add(@{ code = 'label_missing'; message = ('label for "' + $m + '" not found in the text'); data = @{ field = $m } }) }
     $records = @($r['records'])
     $names = @(foreach ($rec in $records) { if ($rec.Contains('key')) { [string]$rec['key'] } })
-    if ($records.Count -eq 0) { return @{ ok = $false; failure = 'no_records'; message = ('the ' + $r['parser'] + ' grammar recognised no record in ' + (@(Get-EbiGrammarLines -Text ([string]$In['text'])) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count + ' non-blank line(s)'); records = @(); recordCount = 0; unrecognized = $unrec.Count; names = @(); warnings = $warnings.ToArray() } }
+    if ($records.Count -eq 0) { return @{ ok = $false; failure = 'no_records'; message = ('the ' + $r['parser'] + ' grammar recognised no record in ' + @(@(Get-EbiGrammarLines -Text ([string]$In['text'])) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count + ' non-blank line(s)'); records = @(); recordCount = 0; unrecognized = $unrec.Count; names = @(); warnings = $warnings.ToArray() } }
     return @{ ok = $true; records = $records; recordCount = $records.Count; unrecognized = $unrec.Count; names = $names; warnings = $warnings.ToArray() }
 }

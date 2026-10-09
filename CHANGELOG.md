@@ -1,3 +1,27 @@
+## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
+
+### Fixed
+- **Test fixtures that are `.log` files never reached git** (`.gitignore`'s
+  `*.log`), so `Test-LogText` / `Test-GfixRecvSteps` failed on every fresh
+  checkout. Re-included under `Tests/fixtures/**` and kept byte-exact
+  (`.gitattributes -text`: the receive-log sample mixes UTF-8 with CP932).
+  The job-log samples no longer carry the real host and service-account
+  names.
+- **`verify.parse_text`** counted the lines of an unrecognised page with
+  `(... | Where-Object ...).Count`, which throws under StrictMode when one
+  line (or none) survives -- an unrelated page crashed the step instead of
+  failing with `no_records`. Regression test added.
+- **`Check-Encoding.ps1`** read every file as text on Windows PowerShell 5.1
+  (`-Include` is ignored with `-LiteralPath`) and flagged the profile's
+  `wave.png` as corrupted; it filters by extension itself now.
+
+### Changed
+- **`Tests\Run-Tests.ps1`** shows a progress bar (phase, suite n/N, failures
+  so far) and never stops to ask: it sets `EBI_NO_ASK=1`, which the gate
+  panel, the runner's fallback prompt and `ebi grammar tune` treat like a
+  redirected console (an error is skipped, a confirm is yes, and the line
+  says so). Outside the test run nothing changes.
+
 ## 2026-10-08 - ebi-dance first new job: GFIX receive verification (gfix-recv) + the P4 steps it needed (v2.23.0)
 
 The first job built on the new engine instead of a phase script: the

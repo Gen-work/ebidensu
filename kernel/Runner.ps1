@@ -315,6 +315,7 @@ function Invoke-EbiDefaultAsk {
     $autoWhy = 'dry run'
     if (-not $auto) {
         try { if ([Console]::IsInputRedirected) { $auto = $true; $autoWhy = 'no console to ask' } } catch { }
+        if (-not $auto -and [string]$env:EBI_NO_ASK -eq '1') { $auto = $true; $autoWhy = 'EBI_NO_ASK' }
     }
     $where = if ([string]$Question['key'] -ne '') { $Question['section'] + '[' + $Question['key'] + ']/' + $Question['id'] } else { $Question['section'] + '/' + $Question['id'] }
     if ([string]$Question['kind'] -eq 'confirm') {
