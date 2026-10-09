@@ -66,9 +66,16 @@
   - **DF captured an old DF window** left open: `screen.launch_capture`
     never takes a window that was there before the start unless its title
     shows this pair's file names.
-  - **GIFT folder**: `file.list alsoDirs`; the track tries DATA/GIFT/<J name>
-    then the same name with M as 5th character, and stops naming both when
-    neither exists.
+  - **GIFT folder**: `file.list alsoDirs` / `createIfMissing` / `requireFiles`;
+    the track tries DATA/GIFT/<J name> then <W name>; with neither it creates
+    the J-name folder and stops (no_files, retryable) so the operator can
+    drop the files in and answer r. (An M-as-5th-character guess shipped for
+    an hour -- wrong, the operator's names are J or W.)
+  - `k` on the PASTE panel keeps the row's time (it took now and wrote it
+    back over 10:30:25); only a time decided now or typed is written back
+    (`fresh`).
+  - The DF window must show this pair's file names in its title before it
+    is captured, whichever way it was found.
   - **Questions behind other windows**: the console is brought back with an
     input-queue attach as the last resort, its taskbar button blinks if even
     that fails, and a short beep says a question is waiting.

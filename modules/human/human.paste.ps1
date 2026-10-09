@@ -44,6 +44,7 @@ $Manifest = @{
     clock   = @{ type='string'; desc='HH:mm:ss: when Enter was pressed, or the time typed' }
     date    = @{ type='string'; desc='yyyy-MM-dd of that moment' }
     source  = @{ type='string'; desc='now | typed | worklist | without | auto' }
+    fresh   = @{ type='bool';   desc='the time was decided just now (now / typed) and should be written back to the row' }
   }
   failures   = @(
     @{ id = 'operator_quit'; transient = $false }
@@ -110,7 +111,7 @@ function HumanPaste-Decide {
       Enter      the row's time when there is one (source worklist), else NOW
       n          NOW, even when the row has a time
       10:30      the time typed
-      k          NOW without a message
+      k          go on without a message: the row's time, else NOW
       A time from the row or typed does not need the message (a replay of an
       old day, a message long scrolled away); NOW does -- it is the live
       start and the message is what says this job started.
@@ -118,7 +119,7 @@ function HumanPaste-Decide {
     param([hashtable]$Typed, [string]$Default, [string]$NowClock)
     switch ([string]$Typed['kind']) {
         's'     { return @{ kind = 'skip' } }
-        'k'     { return @{ kind = 'take'; clock = $NowClock; source = 'without'; needMessage = $false } }
+        'k'     { return @{ kind = 'take'; clock = $(if ($Default -ne '') { $Default } else { $NowClock }); source = 'without'; needMessage = $false } }
         'n'     { return @{ kind = 'take'; clock = $NowClock; source = 'now'; needMessage = $true } }
         'time'  { return @{ kind = 'take'; clock = [string]$Typed['clock']; source = 'typed'; needMessage = $false } }
         'enter' {
@@ -148,7 +149,7 @@ function Invoke-Step {
         @(('Enter: start time = ' + $default + ' (the row in the worklist; the clipboard is only checked)'),
           'n: start time = NOW (copy the start message first)',
           '10:30 (a time): start time = the time typed',
-          'k: go on without a message (start time = now)',
+          'k: go on without a message (start time = the row''s time)',
           's: skip this item (leave it pending)   q: cancel the whole run')
     } else {
         @('Enter: read the clipboard; the start time is NOW',
@@ -165,13 +166,13 @@ function Invoke-Step {
         if ($r['auto']) {
             if ($Ctx['DryRun']) { $Ctx.Log.Info('would read the start message from the clipboard here (dry run: start time = the row''s time, else now)') }
             $ac = if ($default -ne '') { $default } else { $now.ToString('HH:mm:ss') }
-            return @{ ok = $true; text = ''; fields = $empty; clock = $ac; date = $now.ToString('yyyy-MM-dd'); source = 'auto' }
+            return @{ ok = $true; text = ''; fields = $empty; clock = $ac; date = $now.ToString('yyyy-MM-dd'); source = 'auto'; fresh = $false }
         }
-        if ([string]$r['action'] -eq 'q') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q'; text = ''; fields = $empty; clock = ''; date = ''; source = '' } }
+        if ([string]$r['action'] -eq 'q') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q'; text = ''; fields = $empty; clock = ''; date = ''; source = ''; fresh = $false } }
         $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer ([string]$r['note'])) -Default $default -NowClock $now.ToString('HH:mm:ss')
-        if ($d['kind'] -eq 'skip') { return @{ ok = $false; failure = 'operator_skip'; message = 'operator skipped this item'; text = ''; fields = $empty; clock = ''; date = ''; source = '' } }
+        if ($d['kind'] -eq 'skip') { return @{ ok = $false; failure = 'operator_skip'; message = 'operator skipped this item'; text = ''; fields = $empty; clock = ''; date = ''; source = ''; fresh = $false } }
         if ($d['kind'] -eq 'again') { $what = @($head.ToArray()) + @(('not understood: "' + [string]$r['note'] + '" -- Enter, n, a time like 10:30, k, s or q')); continue }
-        if ($d['source'] -eq 'without') { return @{ ok = $true; text = ''; fields = $empty; clock = $d['clock']; date = $now.ToString('yyyy-MM-dd'); source = 'without' } }
+        if ($d['source'] -eq 'without') { return @{ ok = $true; text = ''; fields = $empty; clock = $d['clock']; date = $now.ToString('yyyy-MM-dd'); source = 'without'; fresh = ($default -eq '') } }
         $text = Get-EbiClipboardText
         $c = HumanPaste-Check -Text $text -Pattern $pattern -Expect $expect -ExpectGroup $eg
         $otherJob = (-not $c['ok']) -and $c['fields'].Contains($eg) -and ([string]$c['fields'][$eg]) -ne ''
@@ -179,7 +180,7 @@ function Invoke-Step {
             $f = if ($c['ok']) { $c['fields'] } else { $empty }
             $t = if ($c['ok']) { $text } else { '' }
             $Ctx.Log.Info(('{0}: start time {1} ({2}){3}' -f $expect, $d['clock'], $d['source'], $(if ($c['ok']) { '; start message checked' } else { '; no start message on the clipboard' })))
-            return @{ ok = $true; text = $t; fields = $f; clock = $d['clock']; date = $now.ToString('yyyy-MM-dd'); source = $d['source'] }
+            return @{ ok = $true; text = $t; fields = $f; clock = $d['clock']; date = $now.ToString('yyyy-MM-dd'); source = $d['source']; fresh = ($d['source'] -eq 'now' -or $d['source'] -eq 'typed') }
         }
         $what = @($head.ToArray()) + @(('clipboard: ' + $c['reason']))
     }

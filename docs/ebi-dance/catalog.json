@@ -2322,6 +2322,10 @@
         {
           "id": "file_not_found",
           "transient": false
+        },
+        {
+          "id": "no_files",
+          "transient": true
         }
       ],
       "file": "modules/file/file.list.ps1",
@@ -2337,6 +2341,11 @@
         "countLines": {
           "default": false,
           "desc": "read each file and count its lines (CRLF / LF)",
+          "type": "bool"
+        },
+        "createIfMissing": {
+          "default": false,
+          "desc": "no candidate exists: create dir (so the operator can drop the files in) and stop with no_files",
           "type": "bool"
         },
         "dir": {
@@ -2360,6 +2369,11 @@
             "time"
           ],
           "type": "string"
+        },
+        "requireFiles": {
+          "default": false,
+          "desc": "no matching file in the folder is a failure (no_files, retryable) instead of an empty list",
+          "type": "bool"
         }
       },
       "needs": [],
@@ -3068,6 +3082,10 @@
         "fields": {
           "desc": "every named group of the pattern (\"\" when it did not match / no message)",
           "type": "map"
+        },
+        "fresh": {
+          "desc": "the time was decided just now (now / typed) and should be written back to the row",
+          "type": "bool"
         },
         "source": {
           "desc": "now | typed | worklist | without | auto",

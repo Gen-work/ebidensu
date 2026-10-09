@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -79,7 +79,7 @@
     {
       "id": "saveTime",
       "use": "table.set",
-      "when": "steps.start.out.source != worklist",
+      "when": "steps.start.out.fresh == true",
       "label": "決まった開始時刻を作業リスト (gfixrecv.csv) の GFIX_TIME に書く: やり直しはそのまま Enter",
       "with": {
         "worklist": "wl",
@@ -259,26 +259,6 @@
       }
     },
     {
-      "id": "giftNames",
-      "use": "verify.derive_fields",
-      "label": "GIFT 側のフォルダ名の候補: J名そのまま / 5文字目を M にした名前",
-      "with": {
-        "records": [
-          {
-            "job": "{{item.JOB}}"
-          }
-        ],
-        "set": [
-          {
-            "to": "m",
-            "from": "job",
-            "pattern": "^(.{4}).",
-            "replace": "${1}M"
-          }
-        ]
-      }
-    },
-    {
       "id": "gift",
       "use": "file.list",
       "with": {
@@ -286,10 +266,12 @@
         "glob": "*.csv",
         "countLines": true,
         "alsoDirs": [
-          "{{profile.paths.bix}}/DATA/GIFT/{{steps.giftNames.out.records.0.m}}"
-        ]
+          "{{profile.paths.bix}}/DATA/GIFT/{{item.Excel_NAME}}"
+        ],
+        "createIfMissing": true,
+        "requireFiles": true
       },
-      "label": "GIFT 側のファイル: DATA/GIFT/<J名>、無ければ <5文字目 M>。どちらも無ければ止まって聞く"
+      "label": "GIFT 側のファイル: DATA/GIFT/<J名>、無ければ <W名>。どちらも無ければ <J名> のフォルダを作って止まる(ファイルを入れて r)"
     },
     {
       "id": "pair",

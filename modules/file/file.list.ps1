@@ -19,6 +19,8 @@ $Manifest = @{
   inputs     = @{
     dir        = @{ type='path';   required=$true; desc='relative: under the work dir' }
     alsoDirs   = @{ type='list';   default=@(); desc='other names the folder may have, tried after dir (the first that has matching files wins, else the first that exists)' }
+    createIfMissing = @{ type='bool'; default=$false; desc='no candidate exists: create dir (so the operator can drop the files in) and stop with no_files' }
+    requireFiles    = @{ type='bool'; default=$false; desc='no matching file in the folder is a failure (no_files, retryable) instead of an empty list' }
     glob       = @{ type='string'; default='*' }
     orderBy    = @{ type='string'; default='name'; enum=@('name', 'time') }
     countLines = @{ type='bool';   default=$false; desc='read each file and count its lines (CRLF / LF)' }
@@ -33,6 +35,7 @@ $Manifest = @{
   }
   failures   = @(
     @{ id = 'file_not_found'; transient = $false }
+    @{ id = 'no_files';       transient = $true  }
   )
   example    = @{ use = 'file.list'; with = @{ dir = 'DATA/GIFT/{{item.JOB}}'; glob = '*.csv'; countLines = $true } }
   notes      = 'order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way.'
@@ -47,6 +50,11 @@ function Invoke-Step {
     $dir = ''
     foreach ($d in $tried) { if ((Test-Path -LiteralPath $d -PathType Container) -and @(Get-ChildItem -LiteralPath $d -File -Filter $glob -ErrorAction SilentlyContinue).Count -gt 0) { $dir = $d; break } }
     if ($dir -eq '') { foreach ($d in $tried) { if (Test-Path -LiteralPath $d -PathType Container) { $dir = $d; break } } }
+    if ($dir -eq '' -and [bool]$In['createIfMissing'] -and $tried.Count -gt 0 -and -not $Ctx['DryRun']) {
+        $first = [string]$tried[0]
+        try { [void](New-Item -ItemType Directory -Path $first -Force -ErrorAction Stop) } catch { return @{ ok = $false; failure = 'file_not_found'; message = ('cannot create ' + $first + ': ' + $_.Exception.Message); files = @(); names = @(); paths = @(); total = 0; dir = $first } }
+        return @{ ok = $false; failure = 'no_files'; message = ('no folder was there (tried: ' + ($tried -join ' ; ') + '); created ' + $first + ' -- put the ' + $glob + ' files in, then r'); files = @(); names = @(); paths = @(); total = 0; dir = $first }
+    }
     if ($dir -eq '') {
         $first = if ($tried.Count -gt 0) { [string]$tried[0] } else { '' }
         if ($Ctx['DryRun'] -or -not [bool]$In['mustExist']) {
@@ -65,5 +73,6 @@ function Invoke-Step {
         [void]$files.Add(@{ name = $f.Name; path = $f.FullName; size = [int64]$f.Length; modified = $f.LastWriteTime.ToString('s'); lines = $lines; order = $order })
     }
     if ($dir -ne [string]$tried[0]) { $Ctx.Log.Info(('listed ' + $dir + ' (not ' + $tried[0] + ')')) }
+    if ($files.Count -eq 0 -and [bool]$In['requireFiles'] -and -not $Ctx['DryRun']) { return @{ ok = $false; failure = 'no_files'; message = ('no ' + $glob + ' file in ' + $dir + ' -- put the files in, then r'); files = @(); names = @(); paths = @(); total = 0; dir = $dir } }
     return @{ ok = $true; files = $files.ToArray(); names = @($files | ForEach-Object { $_['name'] }); paths = @($files | ForEach-Object { $_['path'] }); total = $files.Count; dir = $dir }
 }

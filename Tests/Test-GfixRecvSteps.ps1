@@ -262,14 +262,21 @@ try {
     Assert-True (BrowserWaitFor-IsPast -Iso '2000-01-01T00:00:00') 'wait: a window that ended long ago is settled (one read decides)'
     Assert-True (-not (BrowserWaitFor-IsPast -Iso '2999-01-01T00:00:00') -and -not (BrowserWaitFor-IsPast -Iso '')) 'wait: a future window / none -> keep polling'
     $giftRoot = Join-Path $tmp 'GIFT'
-    New-Item -ItemType Directory -Path (Join-Path $giftRoot 'JJMRME6F') -Force | Out-Null
-    [System.IO.File]::WriteAllText((Join-Path (Join-Path $giftRoot 'JJMRME6F') 'F1.csv'), "a`r`nb`r`n")
-    $gl = Invoke-TestStep 'file.list' @{ dir = (Join-Path $giftRoot 'JJMRJE6F'); alsoDirs = @((Join-Path $giftRoot 'JJMRME6F')); glob = '*.csv' }
-    Assert-True ($gl['ok'] -and $gl['total'] -eq 1 -and $gl['dir'].EndsWith('JJMRME6F')) 'gift: the J-name folder is missing -> the M-name one is listed'
+    New-Item -ItemType Directory -Path (Join-Path $giftRoot 'JJMRWE6F') -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path (Join-Path $giftRoot 'JJMRWE6F') 'F1.csv'), "a`r`nb`r`n")
+    $gl = Invoke-TestStep 'file.list' @{ dir = (Join-Path $giftRoot 'JJMRJE6F'); alsoDirs = @((Join-Path $giftRoot 'JJMRWE6F')); glob = '*.csv' }
+    Assert-True ($gl['ok'] -and $gl['total'] -eq 1 -and $gl['dir'].EndsWith('JJMRWE6F')) 'gift: no folder under the J name -> the W-name one is listed'
     $gl = Invoke-TestStep 'file.list' @{ dir = (Join-Path $giftRoot 'NONE1'); alsoDirs = @((Join-Path $giftRoot 'NONE2'), ($giftRoot + '/')); glob = '*.csv' }
     Assert-True ((-not $gl['ok']) -and $gl['failure'] -eq 'file_not_found' -and $gl['message'].Contains('NONE1') -and $gl['message'].Contains('NONE2')) 'gift: neither folder -> stop and say every name tried (an unfilled name ending in / is never the GIFT root)'
-    $gn = Invoke-TestStep 'verify.derive_fields' @{ records = @(@{ job = 'JJMRJE6F' }); set = @(@{ to = 'm'; from = 'job'; pattern = '^(.{4}).'; replace = '${1}M' }) }
-    Assert-Equal 'JJMRME6F' $gn['records'][0]['m'] 'gift: the M-name candidate from the J name'
+    $gl = Invoke-TestStep 'file.list' @{ dir = (Join-Path $giftRoot 'JJMRJE6K'); alsoDirs = @((Join-Path $giftRoot 'JJMRWE6K')); glob = '*.csv'; createIfMissing = $true; requireFiles = $true }
+    Assert-True ((-not $gl['ok']) -and $gl['failure'] -eq 'no_files' -and (Test-Path -LiteralPath (Join-Path $giftRoot 'JJMRJE6K') -PathType Container)) 'gift: neither folder + createIfMissing -> the J-name folder is made and the step stops (put the files in, r)'
+    $gl = Invoke-TestStep 'file.list' @{ dir = (Join-Path $giftRoot 'JJMRJE6K'); glob = '*.csv'; requireFiles = $true }
+    Assert-True ((-not $gl['ok']) -and $gl['failure'] -eq 'no_files') 'gift: the folder is there but empty -> still stops (retryable)'
+    [System.IO.File]::WriteAllText((Join-Path (Join-Path $giftRoot 'JJMRJE6K') 'F2.csv'), "x`r`n")
+    $gl = Invoke-TestStep 'file.list' @{ dir = (Join-Path $giftRoot 'JJMRJE6K'); glob = '*.csv'; requireFiles = $true }
+    Assert-True ($gl['ok'] -and $gl['total'] -eq 1) 'gift: after the files are put in, r goes on'
+    $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer 'k') -Default '10:30:25' -NowClock '14:56:48'
+    Assert-True ($d['clock'] -eq '10:30:25' -and $d['source'] -eq 'without') 'paste: k on a row with a time keeps that time (the second office run took now and overwrote it)'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

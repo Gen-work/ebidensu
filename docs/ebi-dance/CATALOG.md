@@ -895,10 +895,12 @@ List the files in a folder (size, time, optional line count) in order
 |-------|------|----------|---------|------|------|
 | `alsoDirs` | list |  | [] |  | other names the folder may have, tried after dir (the first that has matching files wins, else the first that exists) |
 | `countLines` | bool |  | false |  | read each file and count its lines (CRLF / LF) |
+| `createIfMissing` | bool |  | false |  | no candidate exists: create dir (so the operator can drop the files in) and stop with no_files |
 | `dir` | path | yes |  |  | relative: under the work dir |
 | `glob` | string |  | * |  |  |
 | `mustExist` | bool |  | true |  | false: a missing folder lists as empty |
 | `orderBy` | string |  | name | name, time |  |
+| `requireFiles` | bool |  | false |  | no matching file in the folder is a failure (no_files, retryable) instead of an empty list |
 
 | output | type | desc |
 |--------|------|------|
@@ -908,7 +910,7 @@ List the files in a folder (size, time, optional line count) in order
 | `paths` | list |  |
 | `total` | int |  |
 
-failures: `file_not_found` (not transient)
+failures: `file_not_found` (not transient), `no_files` (transient)
 
 ```json
 {"id":"list","use":"file.list","with":{"countLines":true,"dir":"DATA/GIFT/{{item.JOB}}","glob":"*.csv"}}
@@ -2001,6 +2003,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 | `clock` | string | HH:mm:ss: when Enter was pressed, or the time typed |
 | `date` | string | yyyy-MM-dd of that moment |
 | `fields` | map | every named group of the pattern ("" when it did not match / no message) |
+| `fresh` | bool | the time was decided just now (now / typed) and should be written back to the row |
 | `source` | string | now \| typed \| worklist \| without \| auto |
 | `text` | string | the clipboard text used ("" when going on without one) |
 

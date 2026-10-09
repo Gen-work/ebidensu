@@ -143,6 +143,24 @@ function Invoke-Step {
             } elseif ($proc.HasExited) { break }
             Start-Sleep -Milliseconds 250
         }
+        # the window must show THIS pair before it is captured (the title of a
+        # diff tool names its files; an old window, or one still loading,
+        # does not) -- wait for it within the same deadline
+        if ($h -ne [IntPtr]::Zero -and $wt -ne '' -and $names.Count -gt 0) {
+            $ok = $false
+            while ($true) {
+                $t = ''
+                try { $t = [EbiNative]::TitleOf($h) } catch { }
+                $miss = @($names | Where-Object { $t.IndexOf([string]$_, [System.StringComparison]::OrdinalIgnoreCase) -lt 0 })
+                if ($miss.Count -eq 0) { $ok = $true; break }
+                if ((Get-Date) -ge $deadline) { break }
+                Start-Sleep -Milliseconds 250
+            }
+            if (-not $ok) {
+                try { if (-not $proc.HasExited) { $proc.Kill() } } catch { }
+                return @{ ok = $false; failure = 'no_window'; message = ('the window found does not show ' + ($names -join ' / ') + ' (title: ' + $t + ') -- close old ' + $wt + 'windows and r'); shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 }
+            }
+        }
         if ($h -eq [IntPtr]::Zero) {
             try { if (-not $proc.HasExited) { $proc.Kill() } } catch { }
             return @{ ok = $false; failure = 'no_window'; message = ('{0} showed no window within {1}s' -f $exe, $In['windowWaitSec']); shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 }
