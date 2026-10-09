@@ -236,8 +236,13 @@ function Read-EbiJson {
       with exists=$false, so a caller can tell "no sidecar yet" (P0-R14:
       data=null plus a warning) from "a sidecar that cannot be read". UTF-8;
       a BOM, if present, is skipped by the decoder.
+      -AllowCp932: for a file a person edits by hand (<WorkDir>/ebi.local.json):
+      Notepad on a Japanese Windows saves "ANSI" = Shift_JIS, and reading
+      those bytes as UTF-8 turns every Japanese path into U+FFFD. Bytes that
+      are not valid UTF-8 are then read as CP932 instead, and the result
+      says so (encoding = 'cp932'; otherwise 'utf8').
     #>
-    param([string]$Path)
+    param([string]$Path, [switch]$AllowCp932)
     if ([string]::IsNullOrWhiteSpace($Path)) {
         return @{ ok = $false; value = $null; message = 'no path given'; exists = $false }
     }
@@ -245,16 +250,35 @@ function Read-EbiJson {
         return @{ ok = $false; value = $null; message = ('file not found: ' + $Path); exists = $false }
     }
     $text = ''
+    $enc = 'utf8'
     try {
-        $text = [System.IO.File]::ReadAllText($Path, (Get-EbiJsonEncoding))
+        if ($AllowCp932) {
+            $bytes = [System.IO.File]::ReadAllBytes($Path)
+            $start = 0
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { $start = 3 }
+            try {
+                $text = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes, $start, $bytes.Length - $start)
+            } catch {
+                $cp = $null
+                try { $cp = [System.Text.Encoding]::GetEncoding(932) } catch {
+                    # .NET Core (pwsh 7) ships code pages behind a provider
+                    [System.Text.Encoding]::RegisterProvider([System.Text.CodePagesEncodingProvider]::Instance)
+                    $cp = [System.Text.Encoding]::GetEncoding(932)
+                }
+                $text = $cp.GetString($bytes)
+                $enc = 'cp932'
+            }
+        } else {
+            $text = [System.IO.File]::ReadAllText($Path, (Get-EbiJsonEncoding))
+        }
     } catch {
-        return @{ ok = $false; value = $null; message = ('cannot read {0}: {1}' -f $Path, $_.Exception.Message); exists = $true }
+        return @{ ok = $false; value = $null; message = ('cannot read {0}: {1}' -f $Path, $_.Exception.Message); exists = $true; encoding = $enc }
     }
     $parsed = ConvertFrom-EbiJson -Text $text
     if (-not $parsed['ok']) {
-        return @{ ok = $false; value = $null; message = ('{0}: {1}' -f $Path, $parsed['message']); exists = $true }
+        return @{ ok = $false; value = $null; message = ('{0}: {1}' -f $Path, $parsed['message']); exists = $true; encoding = $enc }
     }
-    return @{ ok = $true; value = $parsed['value']; message = ''; exists = $true }
+    return @{ ok = $true; value = $parsed['value']; message = ''; exists = $true; encoding = $enc }
 }
 
 function Write-EbiJson {

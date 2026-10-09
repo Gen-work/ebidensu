@@ -1,3 +1,207 @@
+## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
+
+### Fixed
+- **Test fixtures that are `.log` files never reached git** (`.gitignore`'s
+  `*.log`), so `Test-LogText` / `Test-GfixRecvSteps` failed on every fresh
+  checkout. Re-included under `Tests/fixtures/**` and kept byte-exact
+  (`.gitattributes -text`: the receive-log sample mixes UTF-8 with CP932).
+  The job-log samples no longer carry the real host and service-account
+  names.
+- **`verify.parse_text`** counted the lines of an unrecognised page with
+  `(... | Where-Object ...).Count`, which throws under StrictMode when one
+  line (or none) survives -- an unrelated page crashed the step instead of
+  failing with `no_records`. Regression test added.
+- **`Check-Encoding.ps1`** read every file as text on Windows PowerShell 5.1
+  (`-Include` is ignored with `-LiteralPath`) and flagged the profile's
+  `wave.png` as corrupted; it filters by extension itself now.
+
+- **`<WorkDir>\ebi.local.json` saved by Notepad as "ANSI"** (Shift_JIS)
+  was read as UTF-8, so every Japanese segment of the share paths became
+  U+FFFD and `excel.open` reported the WBS as not found. The overlay now
+  falls back to CP932 when its bytes are not valid UTF-8 and prints a
+  warning (`Read-EbiJson -AllowCp932`; every other JSON stays UTF-8 only).
+- **`gfixRecv.plan` dropped WBS jobs with no mapping.xlsx row without a
+  word**: the first real run found 6 jobs in the WBS, none in mapping.xlsx,
+  the gate was answered ok and the run ended OK with an empty worklist.
+  The plan now builds the worklist from the WBS alone (W name = J name with
+  the 5th character J -> W, `verify.derive_fields`; GFIX_DATE = today;
+  FileCount -1 = not known); mapping.xlsx rows dated today only add
+  GFIX_TIME / FileCount and jobs the WBS does not list. The WBS/mapping
+  difference is shown, no longer asked.
+- **`gfixRecv.track` no longer needs a scheduled time**: the operator copies
+  the HOST team's Teams start message and presses Enter (`human.paste`); the
+  moment of Enter is the job's start (or a time typed from the leader's
+  schedule), the message names the job (checked against the item) and its
+  send count (kept in track.json). `s` skips the item (operator_skip ->
+  policy skip). The "finished" Enter stays as the second prompt.
+
+- **The worklist is the place to set times**: `human.paste` takes the row's
+  `GFIX_TIME` on Enter (no message needed; `n` = now), a live start is
+  written back to `GFIX_TIME` (`saveTime`), and the track uses the row's
+  `GFIX_DATE` instead of the run date (time window, Jenkins date) -- so a
+  rerun, a whole day run afterwards, or an old day is an edit of
+  gfixrecv.csv.
+- **Jenkins page text read empty** seven times in a row on the first office
+  run: `Read-EbiPageText` waited a fixed 400 ms after Ctrl+C, too short for
+  a list of thousands of rows. It now waits until the clipboard holds the
+  text (up to 8 s).
+- **The first bring-to-front failed** (`foreground_lost` right after the
+  operator pressed Enter in the console): `Set-EbiForeground` tries three
+  times and taps Alt before a retry, which lifts Windows' foreground lock.
+- **Questions waited behind the browser**: the runner remembers the console
+  window at start and every gate panel brings it back before reading.
+
+- Second office run (all six jobs replayed from gfixrecv.csv times):
+  - **The GoAnywhere refresh walked to another page from the second refresh
+    on**: re-pasting the same text into the find box starts no new search,
+    so Esc left the focus where it was and the Tabs went elsewhere. The box
+    is emptied before pasting. The deselect CLICK after reading is gone for
+    GoAnywhere too (a find drops the selection instead; a fixed-pixel click
+    can hit a link off 100 % display scale).
+  - `browser.wait_for` stops at once with `wrong_page` when a read lacks the
+    page's own texts (`expectPage`) instead of pressing keys on a wrong page
+    for two minutes; a time window already over (`settledAfter`) is decided
+    by one read; q / Esc in the console stops the wait (Ctrl+C killed the
+    whole run).
+  - **DF captured an old DF window** left open: `screen.launch_capture`
+    never takes a window that was there before the start unless its title
+    shows this pair's file names.
+  - **GIFT folder**: `file.list alsoDirs` / `createIfMissing` / `requireFiles`;
+    the track tries DATA/GIFT/<J name> then <W name>; with neither it creates
+    the J-name folder and stops (no_files, retryable) so the operator can
+    drop the files in and answer r. (An M-as-5th-character guess shipped for
+    an hour -- wrong, the operator's names are J or W.)
+  - `k` on the PASTE panel keeps the row's time (it took now and wrote it
+    back over 10:30:25); only a time decided now or typed is written back
+    (`fresh`).
+  - The DF window must show this pair's file names in its title before it
+    is captured, whichever way it was found -- matched by file STEM, since
+    DF cuts a long title ("...F202610090033.cs]", office run 3: DF opened,
+    no capture). The track closes every DF window before each start
+    (`closeOthers`), so the only DF window is the new one.
+  - **file.compare said ng where DF said 同一内容** (JJMRWE6L, "first
+    difference at line 1"). Each file is now decoded in its ONE encoding
+    (`ConvertFrom-EbiTextBytes`: valid UTF-8 throughout, else Shift_JIS --
+    GIFT writes Shift_JIS, GFIX UTF-8), the characters CP932 and JIS-mapped
+    converters disagree on are folded (`ConvertTo-EbiJisNeutral`: minus,
+    wave dash, double bar, cent/pound/not, dash), and a remaining difference
+    names line, column and both code points. The exact cause on that pair
+    is not confirmed yet (both files start with the same Shift_JIS bytes).
+  - **gfixRecv.logs, job logs**: the job page's download button is pressed
+    with Enter right after the find (the two Tabs walked past it); a file
+    with the job number already in the downloads folder (downloaded by hand
+    after a failed try) is taken instead of waiting for a NEW one; after a
+    timeout the list page is put back so r starts from it; every job prints
+    what it is doing ([n/N] opening / waiting up to Ns ...) and q / Esc in
+    the console stops the wait.
+  - **Foreground rule in the runner** (operator: "only the page that is
+    needed in front, the console otherwise, so I can do other things while
+    it runs"): before each call, a call's new `front` field (a window
+    session) is brought in front -- the GoAnywhere screenshot uses it --; a
+    step that needs `foreground` brings its own window; any other step
+    after one that put a window in front puts the console back (quietly).
+    The console is always in front when the run ends.
+  - JJMRWE6L: `fc /b` says the GIFT and GFIX files are byte-identical, so
+    the "ng" was not a real difference; the compare is per-file-encoding
+    now and names column + code points if it ever says ng again.
+  - Back to the job list with the page's own return control (Tab Tab Enter,
+    `pages.goAnywhere.jobLogBackKeys`), never the browser's Back: the list
+    is a posted form and Alt+Left showed "resend the form?" (ERR_CACHE_MISS).
+  - **Questions behind other windows**: the console is brought back with an
+    input-queue attach as the last resort, its taskbar button blinks if even
+    that fails, and a short beep says a question is waiting.
+  - The PASTE panel says "the row has a start time, Enter uses it" on a
+    rerun instead of the copy-the-Teams-message text; the setup panel is a
+    numbered checklist (and asks to close old DF windows).
+
+### Added
+- `verify.derive_fields` (constant / copy / regex rewrite of a field on
+  every record) and `human.paste` (clipboard message + regex + the moment);
+  catalog 69 -> 71.
+- `excel.open` failures report the `readOnly` that was asked for (the gate
+  showed `readOnly: False` for a read-only open that never happened).
+
+### Changed
+- **`Tests\Run-Tests.ps1`** shows a progress bar (phase, suite n/N, failures
+  so far) and never stops to ask: it sets `EBI_NO_ASK=1`, which the gate
+  panel, the runner's fallback prompt and `ebi grammar tune` treat like a
+  redirected console (an error is skipped, a confirm is yes, and the line
+  says so). Outside the test run nothing changes.
+
+## 2026-10-08 - ebi-dance first new job: GFIX receive verification (gfix-recv) + the P4 steps it needed (v2.23.0)
+
+The first job built on the new engine instead of a phase script: the
+GIFT -> GFIX receive side on OPEN. Four workflows, one profile, 32 new steps
+(catalog 37 -> 69). Written in the cloud (no Windows / Excel there): the pure
+half is unit-tested on the operator's real samples, the COM / SendKeys half
+is static-checked and dry-run only -- the office PC run is the first real one
+(guide: `docs/gfix-recv/RUNBOOK.zh.md`).
+
+### Added
+- **`workflows/gfixRecv.plan`** -- today's jobs: WBS rows (受信 / 修正後実施 /
+  担当 厳 with OwnerFilter's arrow rule / 最新計画 開始 = today) united with
+  the operator's mapping.xlsx rows whose GFIX date is today; a difference
+  between the two stops at a gate. -> `gfixrecv.csv`.
+- **`workflows/gfixRecv.track`** -- per HOST job: wait for the Teams "正常終了",
+  refresh GoAnywhere with its own 更新 button (Ctrl+F -> Esc -> Tab x5 ->
+  Enter, never F5), pick the job's rows by the scheduled time, capture the
+  "part above" for Teams, find the received report file in Jenkins by the
+  Receive time span, download it into DATA\GFIX\<W-job>, pair it with the
+  GIFT-side file(s) by line count + arrival order (never a guess), compare
+  line by line, capture DF (first screen; Ctrl+End too past 16 lines), and put
+  the reply text + pictures on the clipboard for Teams.
+- **`workflows/gfixRecv.logs`** -- end of day: GFIXReceive.log (+ Unzip, a 404
+  is fine) kept raw and converted to SJIS; GoAnywhere / Jenkins overview
+  texts; each Receive job's log downloaded through the page; the transfer file
+  names read out of them.
+- **`workflows/gfixRecv.evidence`** -- the evidence workbook laid out like the
+  delivered sample: Excel snap copy, job log + yellow rows, the transfer's
+  GFIXReceive.log block + yellow rows, Jenkins snap + red box (row found from
+  the blue link-text bands counted from the bottom), GIFTデータvsGFIXデータ
+  (B3 from 送信データ!A3, DF captures, wave, last-line-number and 同一内容 boxes),
+  A1 on every sheet, save, a final look gate.
+- **`profiles/gfix-recv`** -- pages / grammar / rules with real-sample
+  fixtures (`ebi profile check` green), layout measured off the sample
+  workbook, `paths.json` placeholders (real values in `<WorkDir>\ebi.local.json`).
+- **Steps** (STEP-CONTRACT, DryRun-tested): excel.ensure_app / open / close /
+  quit_app (P4-01), read_rows, write_cell / write_lines (P4-06), highlight,
+  insert_pictures (P4-08 + P4-10 boxes), copy_picture, stack_plan, tidy;
+  file.download (P4-19 without a browser), wait_for_download (P4-13), move
+  (P4-14), convert_encoding, read_text, list, extract_blocks, compare;
+  screen.find_window, row_region, find_ink_rows, list_rects, launch_capture;
+  verify.filter_records, time_window, pair_files, compare_sets; human.share;
+  browser.download_each; table.upsert.
+- **kernel**: `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`;
+  Native.ps1 window enumeration / visible bounds / WM_CLOSE / rich clipboard /
+  key recipes; Image.ps1 ink counts; `run.date / dateSlash / mmdd / toolDir`;
+  profile file `paths.json`.
+
+### Changed
+- `browser.wait_for` takes an optional `refreshRecipe` (run before every read).
+- `screen.capture_window` takes `bounds = visible` (DWM frame, no invisible
+  border strip).
+- `verify.parse_text` under DryRun with no page text goes on with no records
+  instead of failing, so a dry run walks the whole workflow.
+- The DryRun harness fakes the session inputs of a step that also registers
+  a resource (excel.open consumes an excelApp and provides a workbook).
+
+- Review fixes before the first Windows run: `Set-EbiForeground` no longer
+  un-maximizes a maximized window (SW_RESTORE only when minimized);
+  `browser.wait_for` gained `containsAny` and `deselectAt` (a blank-point click
+  after Ctrl+A -- Esc does not clear an Edge selection, so screenshots and the
+  blue-ink row detection were taken over a highlighted page); the find recipe
+  no longer presses Enter (it jumped to the second match); rooted paths are
+  normalized; visible-bounds math falls back to GetWindowRect at non-100% DPI;
+  the mixed decoder tries strict UTF-8 first and walks only the refused lines
+  byte by byte (600 KB log: ~15 s -> ~1 s); `excel.read_rows` finds the last
+  row with Ctrl+Up instead of UsedRange; `table.upsert` `resetOnChange`;
+  `screen.launch_capture` `windowTitle` fallback; `screen.list_rects` warns
+  when the bottom band is not one pitch below the next.
+
+### Notes
+- The batch logs write a full-width colon in SJIS inside UTF-8; it now decodes
+  as the colon. Evidence pasted the old way showed `_xDC81_F` there.
+
 ## 2026-09-22 - GiftMqProcessTime: the run could freeze with no output (v2.22.2)
 
 The operator pressed Enter at the capture prompt and the run went silent --

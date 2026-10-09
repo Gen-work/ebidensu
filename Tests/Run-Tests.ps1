@@ -6,6 +6,12 @@
 #  2) Runs each Tests\Test-*.ps1 and aggregates pass/fail.
 #
 #  Usage:  .\Tests\Run-Tests.ps1
+#
+#  Never stops to ask: EBI_NO_ASK=1 is set for the run, so every gate /
+#  confirm / error question a suite reaches without an injected reader
+#  takes its default answer (skip an error, yes to a confirm) instead of
+#  waiting at Read-Host on a real console. A progress bar shows which
+#  phase and suite is running.
 # ============================================================
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -16,6 +22,9 @@ try {
 
 $here     = Split-Path $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path $here -Parent
+$prevNoAsk = $env:EBI_NO_ASK
+$env:EBI_NO_ASK = '1'
+$progressId = 4711
 
 Write-Host ''
 Write-Host '===== Parse check (all *.ps1) =====' -ForegroundColor Green
@@ -26,7 +35,12 @@ $parseErrors = 0
 # console lines inside the Runner suite); this block is the part to copy.
 $Global:EbiTestFailures = New-Object System.Collections.ArrayList
 $psFiles = @(Get-ChildItem -LiteralPath $repoRoot -Filter '*.ps1' -File -Recurse)
+$parsed = 0
 foreach ($f in $psFiles) {
+    $parsed++
+    if ($parsed -eq 1 -or ($parsed % 25) -eq 0 -or $parsed -eq $psFiles.Count) {
+        Write-Progress -Id $progressId -Activity 'Run-Tests' -Status ('parse check {0}/{1}' -f $parsed, $psFiles.Count) -PercentComplete ([int](10 * $parsed / [Math]::Max(1, $psFiles.Count)))
+    }
     $tokens = $null; $errs = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errs)
     if ($errs -and $errs.Count -gt 0) {
@@ -61,6 +75,7 @@ Write-Host ''
 Write-Host '===== Mask check (P2-08) =====' -ForegroundColor Green
 # Fixtures are real page text: a sensitive item that lands in git is a
 # history rewrite later, so the gate runs before the unit tests.
+Write-Progress -Id $progressId -Activity 'Run-Tests' -Status 'mask check' -PercentComplete 10
 . (Join-Path (Join-Path $repoRoot 'kernel') 'Mask.ps1')
 $maskRes = Invoke-EbiMaskCheck -RepoRoot $repoRoot
 foreach ($l in @(Format-EbiMaskReport -Result $maskRes -RepoRoot $repoRoot)) { Write-Host $l -ForegroundColor $(if ($maskRes['ok']) { 'Green' } else { 'Red' }) }
@@ -73,7 +88,11 @@ $totalFail = 0
 # Recursive: Tests/ gains subdirectories as the module tree grows, and a test
 # that silently stops being discovered is worse than one that fails.
 $testFiles = @(Get-ChildItem -LiteralPath $here -Filter 'Test-*.ps1' -File -Recurse | Sort-Object FullName)
+$suiteNo = 0
 foreach ($t in $testFiles) {
+    $suiteNo++
+    # Percent 10..100 over the suites (parse + mask took the first 10).
+    Write-Progress -Id $progressId -Activity 'Run-Tests' -Status ('suite {0}/{1}: {2}   (failures so far: {3})' -f $suiteNo, $testFiles.Count, $t.Name, $Global:EbiTestFailures.Count) -PercentComplete ([int](10 + 90 * ($suiteNo - 1) / [Math]::Max(1, $testFiles.Count)))
     # One suite that dies (a terminating error outside any assertion) is ONE
     # failure, reported by file and line; the suites after it still run. On
     # PS 5.1 a provider error (Copy-Item into a missing directory) terminated
@@ -104,6 +123,9 @@ foreach ($t in $testFiles) {
     }
     $totalFail += [int]$rc
 }
+
+Write-Progress -Id $progressId -Activity 'Run-Tests' -Completed
+$env:EBI_NO_ASK = $prevNoAsk
 
 Write-Host ''
 Write-Host '===== Not passed (copy from here) =====' -ForegroundColor Green

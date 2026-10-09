@@ -5,6 +5,14 @@ file stays small. Designed-then-shelved work lives in
 [`Parked-Ideas.md`](Parked-Ideas.md) instead; release history lives in
 [`../CHANGELOG.md`](../CHANGELOG.md).
 
+- **gfix-recv: a progress view the operator can see while the browser is
+  full screen** (office run feedback, 2026-10-09). During browser / DF
+  steps the console is behind Edge and the operator cannot tell whether to
+  wait or touch anything; bringing the console forward would send the
+  keys to it. Idea: a small topmost, non-activating, click-through window
+  (WS_EX_NOACTIVATE | WS_EX_TRANSPARENT) in a corner OUTSIDE every capture
+  region, showing "item n/N - step - do not touch keyboard/mouse", hidden
+  for the instant of a capture. Not started.
 - **ProcessTime: ja-OCR digit 9<->3 -- DETERMINISTIC FIX SHIPPED (v2.21.0),
   measurement still open.** The confusion itself is now handled without
   guessing, by `TimeDigitVerify.ps1`: (a) a digit that makes its field

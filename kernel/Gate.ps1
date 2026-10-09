@@ -22,15 +22,73 @@
 #      Show-EbiGate          the impure loop: render, read, repeat until
 #                            the answer is one of the offered actions.
 #                            The reader is injectable (tests) and, when
-#                            no console can answer (DryRun or redirected
-#                            stdin), the default action is taken and the
-#                            line says so.
+#                            no console can answer (DryRun, redirected
+#                            stdin, or EBI_NO_ASK=1 as the test runner
+#                            sets it), the default action is taken and
+#                            the line says so.
 #      Invoke-EbiGateAsk     the runner's -AskHandler built on the above
 #                            (the two question shapes of kernel/Runner.ps1's
 #                            Invoke-EbiDefaultAsk).
 # ============================================================
 
+. (Join-Path $PSScriptRoot 'Native.ps1')   # console window back to the front before a question
+
 function Get-EbiGateWidth { return 80 }
+
+function Save-EbiConsoleWindow {
+    # Remember the window the operator started the run from (the one in
+    # front right now: they just pressed Enter in it), so every question
+    # can bring it back after a step put a browser / DF / Excel in front.
+    # Windows only; never throws.
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    try {
+        [void](Get-EbiNative)
+        $h = [EbiNative]::GetForegroundWindow()
+        if ($h -eq [IntPtr]::Zero) { $h = [EbiNative]::GetConsoleWindow() }
+        $global:EbiConsoleHwnd = $h
+    } catch { }
+}
+
+function Set-EbiWindowFront {
+    <#
+      The runner's foreground rule (office feedback 2026-10-09: "only the
+      page that is needed in front, the console otherwise, so I can do
+      other things while it runs"), called before every step:
+        -FrontHWnd  the call's "front" window (a session name the workflow
+                    gave, e.g. a screen capture that must see the page)
+                    -> bring it in front
+        -NeedsForeground  the step brings its own window -> leave it
+        otherwise   a window a previous step put in front -> console back
+      Never throws; a no-op off Windows.
+    #>
+    param([IntPtr]$FrontHWnd = [IntPtr]::Zero, [bool]$NeedsForeground = $false)
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    try {
+        if ($FrontHWnd -ne [IntPtr]::Zero) { [void](Set-EbiForeground -HWnd $FrontHWnd -SettleMs 300); return }
+        if ($NeedsForeground) { return }
+        if ($global:EbiWindowOut) { Restore-EbiConsoleWindow -Quiet; $global:EbiWindowOut = $false }
+    } catch { }
+}
+
+function Restore-EbiConsoleWindow {
+    # Bring the remembered console back before reading an answer. The
+    # first office run: after the browser steps the panel waited in a
+    # console hidden behind Edge. Best effort; never throws. -Quiet: no
+    # blink, no beep (the runner putting the console back between steps).
+    param([switch]$Quiet)
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    try {
+        $h = $global:EbiConsoleHwnd
+        if ($null -eq $h -or $h -eq [IntPtr]::Zero) { return }
+        if ([EbiNative]::GetForegroundWindow() -ne $h) {
+            $fg = Set-EbiForeground -HWnd $h -SettleMs 100
+            # still behind: blink its taskbar button so it can be found
+            if ($Quiet) { return }
+            if (-not $fg['ok']) { [void][EbiNative]::FlashWindow($h, $true) }
+            try { [Console]::Beep(880, 120) } catch { }   # the console was behind: say a question is waiting
+        }
+    } catch { }
+}
 
 function ConvertTo-EbiGateWrapped {
     # PURE. Wrap one text to at most $Width characters, breaking at spaces
@@ -159,12 +217,16 @@ function Show-EbiGate {
     $why = 'dry run'
     if (-not $noConsole -and $null -eq $Reader) {
         try { if ([Console]::IsInputRedirected) { $noConsole = $true; $why = 'no console to ask' } } catch { }
+        # EBI_NO_ASK=1: nobody is meant to answer (Tests\Run-Tests.ps1 sets
+        # it), so a real console must not stop the run either.
+        if (-not $noConsole -and [string]$env:EBI_NO_ASK -eq '1') { $noConsole = $true; $why = 'EBI_NO_ASK' }
     }
     if ($noConsole -and $Auto -ne '') {
         Write-Host ('  (' + $why + ': ' + $Auto + ')') -ForegroundColor DarkGray
         return @{ action = $Auto; note = ''; auto = $true }
     }
     $read = if ($null -ne $Reader) { $Reader } else { { Read-Host } }
+    if ($null -eq $Reader) { Restore-EbiConsoleWindow }
     $tries = 0
     while ($true) {
         $tries++

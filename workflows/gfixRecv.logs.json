@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "id": "gfixRecv.logs",
+  "title": "GFIX受信: 一日の終わりにログを集める(GFIXReceive.log / Unzip / GoAnywhere 一覧・ジョブログ / Jenkins 一覧)",
+  "version": "0.1.0",
+  "profile": "gfix-recv",
+  "page": "goAnywhere",
+
+  "vars": { "capture": "capture/gfix", "jobLogDir": "log/GFIX受信ログ" },
+
+  "source": {
+    "table": "wl",
+    "select": { "field": "logs", "pendingWhen": "!= ok" },
+    "orderBy": "GFIX_TIME"
+  },
+
+  "onError": { "policy": "ask" },
+
+  "setup": [
+    { "id": "load", "use": "table.load",
+      "with": { "path": "{{profile.worklist.file}}", "as": "wl" } },
+
+    { "id": "recvRaw", "use": "file.download",
+      "label": "GFIXReceive.log (固定リンク、UTF-8 のまま保存)",
+      "with": { "url": "{{profile.paths.receiveLogUrl}}", "saveAs": "log/GFIXReceive/{{run.mmdd}}.utf8.log" } },
+    { "id": "recvSjis", "use": "file.convert_encoding",
+      "label": "SJIS に変換して mmdd.log",
+      "with": { "path": "log/GFIXReceive/{{run.mmdd}}.utf8.log", "saveAs": "log/GFIXReceive/{{run.mmdd}}.log", "from": "mixed", "to": "cp932" } },
+
+    { "id": "unzipRaw", "use": "file.download",
+      "label": "GFIXReceiveUnzip.log (zip の日だけある)",
+      "with": { "url": "{{profile.paths.receiveUnzipLogUrl}}", "saveAs": "log/GFIXReceive/{{run.mmdd}}-unzip.utf8.log", "missingOk": true } },
+    { "id": "unzipSjis", "use": "file.convert_encoding",
+      "when": "steps.unzipRaw.out.total == 1",
+      "with": { "path": "log/GFIXReceive/{{run.mmdd}}-unzip.utf8.log", "saveAs": "log/GFIXReceive/{{run.mmdd}}-unzip.log", "from": "mixed", "to": "cp932" } },
+
+    { "id": "prepare", "use": "human.prepare",
+      "with": { "message": "{{profile.vocabulary.messages.openPages}}", "url": "{{profile.paths.goAnywhereUrl}}" } },
+    { "id": "ga", "use": "screen.find_window",
+      "with": { "title": "{{page.windowTitle}}", "state": "maximize", "as": "ga" } },
+    { "id": "gaText", "use": "browser.wait_for",
+      "label": "GoAnywhere 一覧を更新して mmdd.txt に保存",
+      "with": { "window": "ga", "contains": "{{run.date}}", "refreshRecipe": "{{page.refreshRecipe}}",
+                "timeoutSec": "{{page.timeoutSec}}", "pollMs": "{{page.pollMs}}",
+                "archiveTo": "log/GoAnywhere/{{run.mmdd}}.txt" } },
+
+    { "id": "jk", "use": "screen.find_window",
+      "with": { "title": "{{profile.pages.jenkinsReport.windowTitle}}", "state": "restore",
+                "width": "{{profile.window.width}}", "height": "{{profile.window.height}}", "as": "jk" } },
+    { "id": "jkText", "use": "browser.wait_for",
+      "label": "Jenkins 一覧を F5 + 最下部で mmdd.txt に保存",
+      "with": { "window": "jk", "contains": "{{run.dateSlash}}",
+                "refreshRecipe": "{{profile.pages.jenkinsReport.refreshRecipe}}",
+                "timeoutSec": "{{profile.pages.jenkinsReport.timeoutSec}}", "pollMs": "{{profile.pages.jenkinsReport.pollMs}}",
+                "archiveTo": "log/JenkinsOverview/{{run.mmdd}}.txt" } }
+  ],
+
+  "each": [
+    { "id": "track", "use": "file.read_json",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json" } },
+
+    { "id": "jobLogs", "use": "browser.download_each",
+      "label": "Receive のジョブ番号ごとにジョブログをダウンロード",
+      "with": { "window": "ga", "terms": "{{steps.track.out.data.recvJobs}}",
+                "recipe": "{{page.jobLogRecipe}}", "glob": "*.log",
+                "destDir": "{{vars.jobLogDir}}", "nameTemplate": "{term}.log",
+                "backKeys": "{{page.jobLogBackKeys}}" } },
+
+    { "id": "jobText", "use": "file.read_text",
+      "with": { "paths": "{{steps.jobLogs.out.paths}}" } },
+    { "id": "fileNames", "use": "verify.parse_text",
+      "label": "ジョブログから転送ファイル名 (JJPCRS12...)",
+      "with": { "text": "{{steps.jobText.out.text}}", "grammar": "{{profile.grammar.jobLog}}" } },
+
+    { "id": "meta", "use": "file.write_json",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/logs.json",
+                "data": { "key": "{{item.key}}", "date": "{{steps.track.out.data.date}}",
+                          "jobLogs": "{{steps.jobLogs.out.paths}}",
+                          "transferFiles": "{{steps.fileNames.out.names}}",
+                          "receiveLogs": ["log/GFIXReceive/{{run.mmdd}}.log", "log/GFIXReceive/{{run.mmdd}}-unzip.log"],
+                          "goAnywhereOverview": "log/GoAnywhere/{{run.mmdd}}.txt",
+                          "jenkinsOverview": "log/JenkinsOverview/{{run.mmdd}}.txt" } } },
+
+    { "id": "checkpoint", "use": "flow.checkpoint",
+      "with": { "worklist": "wl", "field": "logs", "value": "ok" } }
+  ],
+
+  "teardown": [
+    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "logs" } }
+  ]
+}

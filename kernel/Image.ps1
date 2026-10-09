@@ -185,3 +185,63 @@ function Invoke-EbiCropPngCore {
     }
     return @{ ok = $true; failure = ''; message = ''; width = $geo['width']; height = $geo['height']; path = $dest }
 }
+
+function Get-EbiInkCounts {
+    <#
+      Per pixel row, how many pixels of a vertical strip are "ink":
+        dark  luminance (R+G+B)/3 below MaxLuma
+        blue  B > 140 and R < 120 and G < 140 (link text)
+      Strip: columns [X, X+Width), rows [YFrom, YTo) -- a negative YTo
+      counts from the bottom edge (-35 = stop 35 px above it). The result
+      is relative to YFrom: counts[0] is row YFrom.
+      -> @{ ok; failure; message; counts; width; height; yFrom }
+         failures: file_not_found | image_read_error
+    #>
+    param([string]$Path, [int]$X, [int]$Width, [int]$YFrom = 0, [int]$YTo = 0, [string]$Ink = 'dark', [int]$MaxLuma = 160)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('file not found: ' + $Path); counts = @(); width = 0; height = 0; yFrom = $YFrom } }
+    return (Get-EbiInkCountsCore -Path $Path -X $X -Width $Width -YFrom $YFrom -YTo $YTo -Ink $Ink -MaxLuma $MaxLuma)
+}
+
+function Get-EbiInkCountsCore {
+    # The GDI+ half of Get-EbiInkCounts (see Get-EbiPngSizeCore). LockBits
+    # once and walk a byte copy -- GetPixel per pixel is far too slow in PS.
+    param([string]$Path, [int]$X, [int]$Width, [int]$YFrom, [int]$YTo, [string]$Ink, [int]$MaxLuma)
+    [void](Get-EbiDrawing)
+    $ms = $null; $img = $null; $bmp = $null
+    try {
+        $ms = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($Path))
+        $img = [System.Drawing.Image]::FromStream($ms)
+        $bmp = New-Object System.Drawing.Bitmap($img)
+        $w = [int]$bmp.Width; $h = [int]$bmp.Height
+        $y0 = [Math]::Max(0, $YFrom)
+        $y1 = if ($YTo -le 0) { $h + $YTo } else { [Math]::Min($h, $YTo) }
+        $x0 = [Math]::Max(0, $X); $x1 = [Math]::Min($w, $X + $Width)
+        if ($y1 -le $y0 -or $x1 -le $x0) { return @{ ok = $true; failure = ''; message = 'strip outside the image'; counts = @(); width = $w; height = $h; yFrom = $y0 } }
+        $rect = New-Object System.Drawing.Rectangle(0, 0, $w, $h)
+        $data = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $stride = [int]$data.Stride
+        $buf = New-Object byte[] ($stride * $h)
+        [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $buf, 0, $buf.Length)
+        $bmp.UnlockBits($data)
+        $counts = New-Object int[] ($y1 - $y0)
+        $blue = ($Ink -eq 'blue')
+        for ($y = $y0; $y -lt $y1; $y++) {
+            $row = $y * $stride
+            $n = 0
+            for ($x = $x0; $x -lt $x1; $x++) {
+                $o = $row + $x * 3
+                $b = [int]$buf[$o]; $g = [int]$buf[$o + 1]; $r = [int]$buf[$o + 2]
+                if ($blue) { if ($b -gt 140 -and $r -lt 120 -and $g -lt 140) { $n++ } }
+                elseif ((($r + $g + $b) / 3) -lt $MaxLuma) { $n++ }
+            }
+            $counts[$y - $y0] = $n
+        }
+        return @{ ok = $true; failure = ''; message = ''; counts = $counts; width = $w; height = $h; yFrom = $y0 }
+    } catch {
+        return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; counts = @(); width = 0; height = 0; yFrom = $YFrom }
+    } finally {
+        if ($null -ne $bmp) { $bmp.Dispose() }
+        if ($null -ne $img) { $img.Dispose() }
+        if ($null -ne $ms) { $ms.Dispose() }
+    }
+}

@@ -1,0 +1,123 @@
+{
+  "goAnywhere": {
+    "role": "list",
+    "label": "GoAnywhere 完了したジョブ",
+    "url": "",
+    "openHint": "GoAnywhere 監査ログ > ジョブログ > 完了したジョブ。日付範囲: Today、プロジェクト名で絞り込み、開始時間 ▼(新しい順)",
+    "windowTitle": "GoAnywhere",
+    "fingerprint": {
+      "ok": [
+        "完了したジョブ",
+        "ジョブ番号"
+      ],
+      "loading": [],
+      "empty": [
+        "表示中 0"
+      ],
+      "expired": [
+        "ログイン"
+      ]
+    },
+    "refreshRecipe": [
+      "find:フィルタリングする",
+      "keys:{TAB}{TAB}{TAB}{TAB}{TAB}",
+      "keys:{ENTER}",
+      "wait:2500"
+    ],
+    "jobLogRecipe": [
+      "wait:1500",
+      "find:ジョブログをダウンロードする",
+      "keys:{ENTER}"
+    ],
+    "receiveFolder": "/jpcusr/Receive",
+    "timeoutSec": 120,
+    "pollMs": 3000,
+    "windowBefore": 2,
+    "windowAfter": 13,
+    "_crop_doc": "the 'part above' of the list for Teams (p4): panel title down to the job's rows. Pixels relative to the screen with the window MAXIMIZED on a 1920x1080 display (measured on the operator's full-screen capture). insetX/insetY undo the off-screen frame of a maximized window.",
+    "crop": {
+      "left": 590,
+      "right": 1560,
+      "top": 146,
+      "firstRowTop": 268,
+      "rowHeight": 31,
+      "insetX": 8,
+      "insetY": 8
+    },
+    "timeField": "startTime",
+    "deselectAt": {
+      "x": 1700,
+      "y": 900
+    },
+    "_deselect_doc": "after Ctrl+A/Ctrl+C the selection is dropped with a find (only the small label stays selected) -- no click: a click at fixed pixels can land on a link when the display scale is not 100%. deselectAt is kept for reference, unused by the track.",
+    "deselectRecipe": [
+      "find:フィルタリングする"
+    ],
+    "_jobLogRecipe_doc": "on the job page: find the 'download the job log' button and Enter on it; then jobLogBackKeys (Tab Tab Enter = the page's own return button) goes back to the list. NEVER the browser's Back (Alt+Left): the list is a posted form and Back shows 'resend the form?' (ERR_CACHE_MISS). Override either in ebi.local.json if the page changes.",
+    "jobLogBackKeys": "{TAB}{TAB}{ENTER}"
+  },
+  "jenkinsReport": {
+    "role": "list",
+    "label": "Jenkins data/report",
+    "url": "",
+    "openHint": "Jenkins の userContent logs/files/<system>/data/report/ を開く(別ウィンドウ)",
+    "windowTitle": "data/report [Jenkins]",
+    "fingerprint": {
+      "ok": [
+        "User content",
+        "参照"
+      ],
+      "loading": [],
+      "empty": [],
+      "expired": [
+        "ログイン"
+      ]
+    },
+    "refreshRecipe": [
+      "keys:{F5}",
+      "wait:2500",
+      "keys:^{END}",
+      "wait:800"
+    ],
+    "fileNamePattern": "^F\\d{12}\\.(csv|txt|zip)$",
+    "timeoutSec": 60,
+    "pollMs": 3000,
+    "_mark_doc": "a box on the received file row in the end-scrolled screenshot: rows are found as bands of BLUE link text in the name column (strip), counted from the bottom against the page text; the box spans name .. 参照 (measured on the delivered evidence screenshots: x 445, width 892, rows 20 px apart).",
+    "mark": {
+      "stripX": 460,
+      "stripWidth": 140,
+      "x": 445,
+      "width": 892,
+      "height": 25,
+      "lastRowCenterY": 718,
+      "rowPitch": 20
+    },
+    "timeField": "time",
+    "readyText": "参照",
+    "deselectAt": {
+      "x": 150,
+      "y": 450
+    },
+    "_deselect_doc": "the blank left margin of the 1410x807 Jenkins window"
+  },
+  "jobLog": {
+    "role": "document",
+    "label": "GoAnywhere ジョブログ(ダウンロードしたファイル)",
+    "url": "",
+    "openHint": "完了したジョブ > ジョブ番号 > ジョブログをダウンロードする",
+    "fingerprint": {
+      "ok": [
+        "Job Number:",
+        "Project Name:"
+      ],
+      "loading": [],
+      "empty": [],
+      "expired": [
+        "ログイン"
+      ]
+    },
+    "timeoutSec": 30,
+    "pollMs": 1000,
+    "timeField": "time"
+  }
+}

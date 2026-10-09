@@ -7,7 +7,7 @@
 #
 #  A profile is a directory of JSON files (PROFILE-SCHEMA.md 1):
 #      vocabulary.json pages.json grammar.json rules.json worklist.json
-#      layout.json calibration.json
+#      layout.json calibration.json window.json paths.json
 #  Each file becomes the same-named top-level key of the profile
 #  hashtable; a file that is not there is simply absent (and listed in
 #  'missing'), a file that is not JSON is an error. <WorkDir>/ebi.local.json
@@ -21,7 +21,7 @@
 . (Join-Path $PSScriptRoot 'Json.ps1')
 
 function Get-EbiProfileFiles {
-    return @('vocabulary', 'pages', 'grammar', 'rules', 'worklist', 'layout', 'calibration', 'window')
+    return @('vocabulary', 'pages', 'grammar', 'rules', 'worklist', 'layout', 'calibration', 'window', 'paths')
 }
 
 function Get-EbiDefaultProfilesRoot {
@@ -81,8 +81,11 @@ function Read-EbiProfile {
     if (-not [string]::IsNullOrWhiteSpace($WorkDir)) {
         $local = Join-Path $WorkDir 'ebi.local.json'
         if (Test-Path -LiteralPath $local -PathType Leaf) {
-            $r = Read-EbiJson -Path $local
+            # hand-edited: tolerate Notepad's "ANSI" (Shift_JIS) save, but say so
+            $r = Read-EbiJson -Path $local -AllowCp932
             if (-not $r['ok']) { $result['message'] = $r['message']; $result['missing'] = $missing.ToArray(); return $result }
+            $result['localEncoding'] = $r['encoding']
+            if ($r['encoding'] -eq 'cp932') { Write-Host ('  [warn ] ' + $local + ' is not UTF-8; read it as Shift_JIS (CP932). Save it as UTF-8 to silence this.') -ForegroundColor Yellow }
             if ($r['value'] -is [System.Collections.IDictionary]) { $profile = Merge-EbiHashtable -Base $profile -Overlay $r['value']; $result['overlay'] = $true }
         }
     }

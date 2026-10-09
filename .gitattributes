@@ -17,3 +17,6 @@
 *.txt  text eol=lf
 .gitattributes text eol=lf
 .gitignore     text eol=lf
+# Byte-exact test fixtures: a sample log mixes UTF-8 with stray CP932 bytes
+# and must reach the tests exactly as captured (no eol conversion).
+Tests/fixtures/**/*.log -text

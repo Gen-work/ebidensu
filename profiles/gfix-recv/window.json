@@ -1,0 +1,5 @@
+{
+  "_doc": "Jenkins report window size (visible px). 1410 x 807 is the size of the Jenkins screenshots in the delivered evidence; screen.find_window restores the window to it so every day's screenshot has the same layout. Override per machine in <WorkDir>/ebi.local.json { \"window\": { ... } }.",
+  "width": 1410,
+  "height": 807
+}

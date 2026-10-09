@@ -4,17 +4,17 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-37 step(s) in 8 group(s).
+71 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
-| browser | `browser.assert_page`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
-| screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.fit_window`, `screen.save` |
-| file | `file.assert_exists`, `file.find`, `file.read_json`, `file.write_json` |
-| excel | (none yet) |
-| table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set` |
-| verify | `verify.assert`, `verify.crosscheck`, `verify.match_record`, `verify.parse_text` |
-| human | `human.choose`, `human.gate`, `human.input`, `human.prepare` |
+| browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
+| screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.row_region`, `screen.save` |
+| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
+| excel | `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.quit_app`, `excel.read_rows`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
+| table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
+| verify | `verify.assert`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.pair_files`, `verify.parse_text`, `verify.time_window` |
+| human | `human.choose`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint` |
 
@@ -45,6 +45,43 @@ failures: `page_loading` (transient), `page_empty` (not transient), `page_expire
 ```
 
 Notes: Order of judgment: blank text is loading; then expired, then empty, then loading (any listed string), then ok (ALL listed strings); anything else is unknown. expired / empty / unknown are not transient: retrying the same page changes nothing, a person must look.
+
+### `browser.download_each`
+
+Per term: Ctrl+F it, open it, key a download, collect the file, go back
+
+- file: `modules/browser/browser.download_each.ps1`
+- effects: `ui` / tier: `core` / idempotent: `false`
+- needs: `foreground` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `backKeys` | string |  | %{LEFT} |  | keys that return to the list; empty = stay. Use the page's own return control when the list is a posted form (browser Back asks to resend it) |
+| `backWaitMs` | int |  | 2500 |  |  |
+| `destDir` | path | yes |  |  |  |
+| `downloadDir` | path |  | (empty) |  | where the browser saves; empty = the user's Downloads |
+| `glob` | string |  | * |  |  |
+| `nameTemplate` | string |  | {term}{ext} |  | {term} {ext} {name}: the destination file name |
+| `openWaitMs` | int |  | 2500 |  | wait after Enter on the link |
+| `recipe` | list |  | [] |  | after opening: find:<text> \| keys:<SendKeys> \| wait:<ms>, in order |
+| `skipExisting` | bool |  | true |  | a term whose destination file already exists is not downloaded again |
+| `terms` | list | yes |  |  | exact texts of the links to open, one download each |
+| `timeoutSec` | int |  | 60 |  |  |
+| `window` | session:window | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `fetched` | int | downloads actually made |
+| `files` | list | @{ term; path; skipped } per term |
+| `paths` | list |  |
+
+failures: `foreground_lost` (transient), `not_found` (transient), `timeout` (transient), `move_failed` (transient), `clipboard_error` (transient), `recipe_invalid` (not transient)
+
+```json
+{"id":"download_each","use":"browser.download_each","with":{"destDir":"log/jobs","recipe":["find:Download job log","keys:{TAB}{TAB}","keys:{ENTER}"],"terms":"{{steps.mine.out.plucked}}","window":"listWindow"}}
+```
+
+Notes: Not idempotent by nature (each run downloads again) -- skipExisting makes a rerun cheap, and a flow.checkpoint after it records the item done. The foreground is re-checked before every key burst.
 
 ### `browser.ensure`
 
@@ -300,8 +337,14 @@ Poll the page text until it contains a string, or time out
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
 | `archiveTo` | path |  | (empty) |  | write the last text read here (relative: under the work dir) |
-| `contains` | string | yes |  |  | the text that means the page is ready |
+| `contains` | string |  | (empty) |  | the text that means the page is ready |
+| `containsAny` | list |  | [] |  | or: ready when ANY of these texts is there (e.g. every minute of a time window) |
+| `deselectAt` | map |  | {} |  | @{ x; y } window-relative blank point clicked after the last read, so the Ctrl+A selection does not show in a screenshot taken next |
+| `deselectRecipe` | list |  | [] |  | instead of deselectAt: keys run after the last read to drop the Ctrl+A selection without a click (e.g. find:<a label at the top>) |
+| `expectPage` | list |  | [] |  | texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes) |
 | `pollMs` | int |  | 800 |  | wait between reads |
+| `refreshRecipe` | list |  | [] |  | run before every read: find:<text> \| keys:<SendKeys> \| wait:<ms> (e.g. a refresh button the page needs) |
+| `settledAfter` | string |  | (empty) |  | ISO time after which the page cannot change any more (the end of the time window): when it is already past, one read decides -- no polling |
 | `timeoutSec` | int |  | 12 |  | give up after this many seconds |
 | `window` | session:window | yes |  |  | the window to read |
 
@@ -312,7 +355,7 @@ Poll the page text until it contains a string, or time out
 | `polls` | int |  |
 | `text` | string | the page text at the end (matched or not) |
 
-failures: `timeout` (transient), `foreground_lost` (transient), `archive_failed` (transient)
+failures: `timeout` (transient), `foreground_lost` (transient), `archive_failed` (transient), `recipe_invalid` (not transient), `input_invalid` (not transient), `wrong_page` (not transient)
 
 ```json
 {"id":"wait_for","use":"browser.wait_for","with":{"archiveTo":"capture/before_list/{{item.keySafe}}.txt","contains":"{{item.Correl_ID_S}}","timeoutSec":12,"window":"mainWindow"}}
@@ -362,6 +405,7 @@ Save a PNG screenshot of the window held in a session resource
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `bounds` | string |  | window | window, visible | window = GetWindowRect (Windows 10 pads it with invisible borders, which the per-side crop then takes off); visible = the DWM frame bounds, no padding |
 | `saveAs` | path | yes |  |  | PNG path; relative paths resolve under the work dir; parent dirs are created |
 | `window` | session:window | yes |  |  | name of a registered window resource |
 
@@ -410,6 +454,72 @@ failures: `file_not_found` (not transient), `crop_exceeds_image` (not transient)
 
 Notes: Idempotent only in the "out" form: cropping in place twice takes the border off twice. Zero on all four sides copies (or leaves) the file untouched.
 
+### `screen.find_ink_rows`
+
+Find the bands of pixel rows carrying ink in a vertical strip of a PNG
+
+- file: `modules/screen/screen.find_ink_rows.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `ink` | string |  | dark | dark, blue |  |
+| `maxLuma` | int |  | 160 |  | dark: pixels darker than this |
+| `mergeGap` | int |  | 1 |  | blank rows a band may contain |
+| `minHeight` | int |  | 4 |  | thinner bands are dropped (underlines, borders) |
+| `minInk` | int |  | 2 |  | a row needs this many ink pixels |
+| `path` | path | yes |  |  |  |
+| `width` | int | yes |  |  |  |
+| `x` | int | yes |  |  | strip left edge, px |
+| `yFrom` | int |  | 0 |  |  |
+| `yTo` | int |  | 0 |  | 0 = the bottom; negative = that many px above the bottom |
+
+| output | type | desc |
+|--------|------|------|
+| `bands` | list | @{ top; bottom; height; center } in image px, top to bottom |
+| `last` | map | the bottom band, or empty |
+| `lines` | int |  |
+
+failures: `file_not_found` (transient), `image_read_error` (transient)
+
+```json
+{"id":"find_ink_rows","use":"screen.find_ink_rows","with":{"path":"{{steps.shot.out.path}}","width":38,"x":46,"yFrom":105,"yTo":-35}}
+```
+
+### `screen.find_window`
+
+Find a window by title text, bring it to front, register it
+
+- file: `modules/screen/screen.find_window.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: `window` / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `height` | int |  | 0 |  |  |
+| `process` | string |  | (empty) |  | process name the window must belong to (without .exe); empty = any |
+| `settleMs` | int |  | 500 |  |  |
+| `state` | string |  | keep | keep, maximize, restore | window state to put it in |
+| `title` | string | yes |  |  | text the window title must contain (case-insensitive) |
+| `width` | int |  | 0 |  | with state restore: resize the VISIBLE window to this (0 = keep) |
+
+| output | type | desc |
+|--------|------|------|
+| `found` | int | how many windows matched (the front-most is used) |
+| `height` | int | visible height after the step |
+| `processId` | int |  |
+| `title` | string | the full title of the window found |
+| `width` | int | visible width after the step |
+
+failures: `not_found` (transient), `foreground_lost` (transient)
+
+```json
+{"id":"find_window","use":"screen.find_window","with":{"as":"listWindow","state":"maximize","title":"{{profile.windows.list.title}}"}}
+```
+
+Notes: not_found is transient: the usual cause is the page not being open yet; with onError ask the operator opens it and answers r. Several matches: the front-most (Z order) wins and found says how many.
+
 ### `screen.fit_window`
 
 Move and size a registered window to x,y width x height
@@ -441,6 +551,118 @@ failures: `window_gone` (transient), `move_failed` (transient)
 ```
 
 Notes: The outputs are read back with GetWindowRect: a window with a minimum size larger than asked reports what it settled on, and a workflow that cares compares them (verify.assert).
+
+### `screen.launch_capture`
+
+Run a program per argument set, capture its window (and again after keys), close it
+
+- file: `modules/screen/screen.launch_capture.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `argFields` | list |  | ["left","right"] |  | fields of each map passed as quoted arguments, in order |
+| `argSets` | list | yes |  |  | one map per run (e.g. verify.pair_files pairs) |
+| `closeOthers` | bool |  | false |  | close every window whose title contains windowTitle before each start, so the only such window is the new one |
+| `exe` | path | yes |  |  | the program |
+| `height` | int |  | 0 |  |  |
+| `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (SendKeys syntax) |
+| `keysSecond` | string |  | ^{END} |  | keys before the second capture |
+| `nameField` | string |  | rightName |  | field naming the capture files (its file stem is used); blank = run number |
+| `saveDir` | path | yes |  |  |  |
+| `secondField` | string |  | long |  | field that is true when a second capture is wanted |
+| `settleMs` | int |  | 1200 |  | wait after the window appears / after keys |
+| `width` | int |  | 0 |  | visible window width; 0 = leave as the program opens it |
+| `windowTitle` | string |  | (empty) |  | fallback when the started process shows no window of its own (a launcher / single-instance program): the top-level window whose title contains this |
+| `windowWaitSec` | int |  | 15 |  |  |
+| `x` | int |  | 40 |  |  |
+| `y` | int |  | 40 |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `paths` | list | every capture, in order |
+| `runs` | int |  |
+| `shots` | list | @{ first; last; name } per run (last empty when no second capture) |
+
+failures: `file_not_found` (not transient), `no_window` (transient), `foreground_lost` (transient), `save_failed` (transient)
+
+```json
+{"id":"launch_capture","use":"screen.launch_capture","with":{"argSets":"{{steps.pair.out.pairs}}","exe":"{{profile.df.exe}}","height":429,"saveDir":"capture/df/{{item.keySafe}}","width":1133}}
+```
+
+Notes: An empty argSets is a successful no-op (runs = 0). The program is closed with WM_CLOSE and killed if it is still there 3 s later; a capture already saved is kept either way.
+
+### `screen.list_rects`
+
+Locate target list entries in an end-scrolled screenshot; one rect per run
+
+- file: `modules/screen/screen.list_rects.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `bands` | list |  | [] |  | screen.find_ink_rows bands of the entry column |
+| `height` | int |  | 25 |  | box height for one row, px |
+| `lastRowCenterY` | int |  | 0 |  | fallback when bands is empty: centre of the last row, px |
+| `names` | list | yes |  |  | every entry of the list in page order (parsed page text) |
+| `rowPitch` | int |  | 20 |  | fallback row pitch, px |
+| `targets` | list | yes |  |  | the entries to box |
+| `width` | int | yes |  |  |  |
+| `x` | int | yes |  |  | box left edge, px |
+
+| output | type | desc |
+|--------|------|------|
+| `missing` | list | targets not among names, or above the top of the picture |
+| `rects` | list | @{ x; y; w; h; names } in image px |
+| `source` | string | bands \| pitch |
+
+failures: `not_found` (not transient)
+
+```json
+{"id":"list_rects","use":"screen.list_rects","with":{"bands":"{{steps.ink.out.bands}}","names":"{{steps.rec.out.names}}","targets":"{{steps.mine.out.plucked}}","width":892,"x":445}}
+```
+
+Notes: not_found when no target can be placed at all. Bands are matched from the bottom only as far as there are bands; an entry scrolled off the top is reported missing, not boxed at a guessed place.
+
+### `screen.row_region`
+
+Compute the rectangle covering a list header plus a run of rows
+
+- file: `modules/screen/screen.row_region.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `bottomPad` | int |  | 2 |  |  |
+| `first` | int |  | 1 |  | 1-based list row to start at |
+| `firstRowTop` | int | yes |  |  | top edge of list row 1 |
+| `insetX` | int |  | 0 |  | added to the window's left (a maximized window's frame sits off-screen) |
+| `insetY` | int |  | 0 |  |  |
+| `left` | int | yes |  |  |  |
+| `right` | int | yes |  |  |  |
+| `rowHeight` | int | yes |  |  |  |
+| `rows` | int |  | 1 |  | how many rows |
+| `top` | int | yes |  |  | top of the region (the panel title) |
+| `window` | session:window |  |  |  | make the geometry relative to this window's top-left |
+
+| output | type | desc |
+|--------|------|------|
+| `height` | int |  |
+| `skippedRows` | int | rows above first that the region also shows (they cannot be cut out) |
+| `width` | int |  |
+| `x` | int |  |
+| `y` | int |  |
+
+failures: `window_gone` (transient)
+
+```json
+{"id":"row_region","use":"screen.row_region","with":{"first":"{{steps.mine.out.first}}","firstRowTop":268,"left":590,"right":1560,"rowHeight":31,"rows":"{{steps.mine.out.matched}}","top":146}}
+```
+
+Notes: skippedRows > 0 is reported as a warning: the picture then shows newer rows above the ones meant.
 
 ### `screen.save`
 
@@ -500,6 +722,135 @@ failures: `file_not_found` (transient)
 
 Notes: file_not_found is transient here for the same reason as in file.find: the file is usually on its way.
 
+### `file.compare`
+
+Compare pairs of text files line by line; ok when every pair is identical
+
+- file: `modules/file/file.compare.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `leftField` | string |  | left |  |  |
+| `pairs` | list | yes |  |  | @{ left; right } paths (verify.pair_files output) |
+| `rightField` | string |  | right |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `code` | string | ok (all identical) \| ng (a pair differs) \| unknown (no pairs, or a file missing) |
+| `identical` | int | pairs that are identical |
+| `reason` | string |  |
+| `results` | list | @{ left; right; identical; firstDiff; leftLines; rightLines; leftEncoding; rightEncoding } per pair |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"compare","use":"file.compare","with":{"pairs":"{{steps.pair.out.pairs}}"}}
+```
+
+Notes: A difference is a verdict (ng), not a failure: the workflow decides (human.gate). firstDiff is 1-based.
+
+### `file.convert_encoding`
+
+Re-encode a text file (e.g. mixed UTF-8 to Shift_JIS), in place or to a copy
+
+- file: `modules/file/file.convert_encoding.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `from` | string |  | mixed | mixed, utf8, cp932 | mixed = UTF-8 with stray CP932 pairs (also reads plain UTF-8) |
+| `newline` | string |  | keep | keep, crlf, lf |  |
+| `path` | path | yes |  |  | the file (relative: under the work dir) |
+| `saveAs` | path |  | (empty) |  | write here instead of replacing the file |
+| `to` | string |  | cp932 | cp932, utf8, utf8bom |  |
+
+| output | type | desc |
+|--------|------|------|
+| `foreignPairs` | int | CP932 pairs found inside a mixed file |
+| `lines` | int |  |
+| `lost` | int | characters the target encoding could not hold (written as ?) |
+| `path` | path |  |
+
+failures: `file_not_found` (not transient), `write_failed` (transient)
+
+```json
+{"id":"convert_encoding","use":"file.convert_encoding","with":{"path":"log/GFIXReceive/{{run.mmdd}}.log","to":"cp932"}}
+```
+
+Notes: Idempotent when saveAs is given (the source is left as it was, so a rerun converts the same bytes again). In place, a second run would read already-converted bytes; keep the downloaded original and write the converted copy beside it.
+
+### `file.download`
+
+HTTP GET files (base URL + names, or one URL) into a folder
+
+- file: `modules/file/file.download.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `baseUrl` | string |  | (empty) |  | URL prefix the names are appended to (a trailing / is added when missing) |
+| `countLines` | bool |  | false |  | count each file's lines (files[].lines), for verify.pair_files |
+| `dir` | path |  | (empty) |  | with names: the folder to write into (created when missing) |
+| `missingOk` | bool |  | false |  | a 404 is not a failure: the file is left out (total counts only what arrived) |
+| `names` | list |  | [] |  | file names under baseUrl; each is saved under the same name |
+| `overwrite` | bool |  | true |  | false: an existing file is kept and reported as skipped |
+| `saveAs` | path |  | (empty) |  | with url: the file to write (relative: under the work dir) |
+| `timeoutSec` | int |  | 60 |  |  |
+| `url` | string |  | (empty) |  | one full URL instead of baseUrl + names |
+
+| output | type | desc |
+|--------|------|------|
+| `files` | list | @{ name; path; size; skipped; lines; order } per file (lines -1 unless countLines) |
+| `paths` | list | every file now on disk, in the order asked |
+| `total` | int | files downloaded or already there |
+
+failures: `input_invalid` (not transient), `download_failed` (transient), `not_found` (not transient)
+
+```json
+{"id":"download","use":"file.download","with":{"baseUrl":"{{profile.urls.jenkinsReport}}","dir":"DATA/GFIX/{{item.Excel_NAME}}","names":"{{steps.jk.out.plucked}}"}}
+```
+
+Notes: An HTTP 404 is not_found (not transient): the file is not there. Anything else (timeout, 5xx, refused) is download_failed and may be retried. Nothing is downloaded when names is empty and url is blank -- that is input_invalid, not a silent success.
+
+### `file.extract_blocks`
+
+Cut keyed START..END blocks out of a log into a file; find marker lines
+
+- file: `modules/file/file.extract_blocks.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `afterEnd` | int |  | 1 |  | lines after END that belong to the block (the date stamp) |
+| `blockKeys` | list | yes |  |  | block keys to keep |
+| `encoding` | string |  | mixed | mixed, utf8, cp932 |  |
+| `endPattern` | string |  | ^(?<tag>\S+) END (?<key>\S+)\s*$ |  |  |
+| `markers` | list |  | [] |  | regexes; matching lines of the result are reported |
+| `paths` | list | yes |  |  | log files to search, in order (e.g. the plain and the unzip log); missing ones are skipped |
+| `saveTo` | path | yes |  |  | where the extracted lines go (UTF-8, no BOM) |
+| `startPattern` | string |  | ^(?<tag>\S+) START (?<key>\S+)\s*$ |  | regex with a named group key |
+
+| output | type | desc |
+|--------|------|------|
+| `blocks` | list | @{ key; source; complete; lines } per block, in output order |
+| `lineCount` | int |  |
+| `markers` | list | @{ line (1-based in the output); pattern (0-based); text } |
+| `missing` | list | keys with no block in any log |
+| `path` | path |  |
+
+failures: `file_not_found` (transient), `not_found` (transient), `write_failed` (transient)
+
+```json
+{"id":"extract_blocks","use":"file.extract_blocks","with":{"blockKeys":"{{steps.names.out.plucked}}","markers":["file stored"],"paths":["log/GFIXReceive/{{run.mmdd}}.log"],"saveTo":"capture/gfix/{{item.keySafe}}.receive.txt"}}
+```
+
+Notes: not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete).
+
 ### `file.find`
 
 Find the file(s) for a key or glob; full-width and stamped names tolerated
@@ -533,6 +884,69 @@ failures: `dir_not_found` (not transient), `file_not_found` (transient), `ambigu
 
 Notes: file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order is kernel/Key.ps1's: exact stem, suffix/prefix rules stripped (the batch stamp), full-width folded, case folded; the first tier with hits wins.
 
+### `file.list`
+
+List the files in a folder (size, time, optional line count) in order
+
+- file: `modules/file/file.list.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `alsoDirs` | list |  | [] |  | other names the folder may have, tried after dir (the first that has matching files wins, else the first that exists) |
+| `countLines` | bool |  | false |  | read each file and count its lines (CRLF / LF) |
+| `createIfMissing` | bool |  | false |  | no candidate exists: create dir (so the operator can drop the files in) and stop with no_files |
+| `dir` | path | yes |  |  | relative: under the work dir |
+| `glob` | string |  | * |  |  |
+| `mustExist` | bool |  | true |  | false: a missing folder lists as empty |
+| `orderBy` | string |  | name | name, time |  |
+| `requireFiles` | bool |  | false |  | no matching file in the folder is a failure (no_files, retryable) instead of an empty list |
+
+| output | type | desc |
+|--------|------|------|
+| `dir` | path | the folder actually listed (dir or one of alsoDirs) |
+| `files` | list | @{ name; path; size; modified (ISO); lines; order } in order |
+| `names` | list |  |
+| `paths` | list |  |
+| `total` | int |  |
+
+failures: `file_not_found` (not transient), `no_files` (transient)
+
+```json
+{"id":"list","use":"file.list","with":{"countLines":true,"dir":"DATA/GIFT/{{item.JOB}}","glob":"*.csv"}}
+```
+
+Notes: order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way.
+
+### `file.move`
+
+Move or copy a file into a folder or to a new name (folders created)
+
+- file: `modules/file/file.move.ps1`
+- effects: `write` / tier: `core` / idempotent: `false`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `copy` | bool |  | false |  | copy instead of move |
+| `from` | path | yes |  |  | the file (relative: under the work dir) |
+| `overwrite` | bool |  | false |  | replace an existing destination |
+| `to` | path | yes |  |  | destination file, or a folder when it ends with \ or / or already is one |
+
+| output | type | desc |
+|--------|------|------|
+| `name` | string |  |
+| `path` | path | where the file is now |
+
+failures: `file_not_found` (transient), `target_exists` (not transient), `move_failed` (transient)
+
+```json
+{"id":"move","use":"file.move","with":{"from":"{{steps.dl.out.path}}","to":"log/GFIXReceive/{{run.mmdd}}.log"}}
+```
+
+Notes: Not idempotent: a move done once has no source the second time (put a flow.checkpoint after it, STEP-CONTRACT 6.4). A destination that already holds the very same bytes is not target_exists -- the source is just removed (move) or left (copy).
+
 ### `file.read_json`
 
 Read a JSON file; a missing file gives data=null and a warning
@@ -557,6 +971,63 @@ failures: `json_invalid` (not transient), `read_failed` (transient)
 {"id":"read_json","use":"file.read_json","with":{"path":"capture/before_transferStatus/{{item.keySafe}}.meta.json"}}
 ```
 
+### `file.read_text`
+
+Read a text file (UTF-8, CP932 or mixed) and return its text
+
+- file: `modules/file/file.read_text.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `encoding` | string |  | mixed | mixed, utf8, cp932 |  |
+| `maxBytes` | int |  | 2000000 |  | refuse bigger files (the text goes into the trace) |
+| `path` | path |  | (empty) |  | relative: under the work dir |
+| `paths` | list |  | [] |  | several files, read in order and joined with a line break (after path, if both) |
+
+| output | type | desc |
+|--------|------|------|
+| `lines` | int |  |
+| `path` | path | the (first) file read |
+| `text` | string |  |
+
+failures: `file_not_found` (transient), `too_large` (not transient)
+
+```json
+{"id":"read_text","use":"file.read_text","with":{"path":"log/GFIX/{{item.keySafe}}.log"}}
+```
+
+### `file.wait_for_download`
+
+Wait for a new file in a folder whose size has stopped changing
+
+- file: `modules/file/file.wait_for_download.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `dir` | path |  | (empty) |  | folder to watch; empty = the user's Downloads folder |
+| `glob` | string |  | * |  | only files matching this |
+| `pollMs` | int |  | 400 |  |  |
+| `stableMs` | int |  | 1200 |  | size must hold this long |
+| `timeoutSec` | int |  | 60 |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `name` | string |  |
+| `path` | path | the new file |
+| `size` | int |  |
+
+failures: `timeout` (transient), `file_not_found` (not transient)
+
+```json
+{"id":"wait_for_download","use":"file.wait_for_download","with":{"glob":"*.log","timeoutSec":60}}
+```
+
+Notes: Steps run one at a time, so this cannot start before the click that triggers the download: it also accepts a file written up to 30 s before it started. file_not_found: the folder itself is missing.
+
 ### `file.write_json`
 
 Write a value to a JSON file (atomic, UTF-8 without BOM)
@@ -579,6 +1050,372 @@ failures: `write_failed` (transient), `not_serializable` (not transient)
 ```json
 {"id":"write_json","use":"file.write_json","with":{"data":{"capturedAt":"{{run.startedAt}}","key":"{{item.key}}"},"path":"capture/before_transferStatus/{{item.keySafe}}.meta.json"}}
 ```
+
+## excel
+
+### `excel.close`
+
+Close a registered workbook (save or discard) and release it
+
+- file: `modules/excel/excel.close.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: `workbook`
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `save` | bool |  | false |  | save before closing |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `closed` | bool | false when there was nothing to close |
+| `saved` | bool |  |
+
+failures: `save_failed` (transient)
+
+```json
+{"id":"close","use":"excel.close","with":{"save":true,"workbook":"wb"}}
+```
+
+Notes: save_failed keeps the workbook open and registered (the runner only releases on ok), so a retry after fixing the cause (a full disk, a locked file) can still save it.
+
+### `excel.copy_picture`
+
+Copy the n-th picture of a sheet to a cell of another sheet
+
+- file: `modules/excel/excel.copy_picture.ps1`
+- effects: `write` / tier: `core` / idempotent: `false`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `cell` | string |  | B3 |  | top-left cell of the copy |
+| `fromSheet` | string | yes |  |  |  |
+| `gapRows` | int |  | 0 |  | added to nextRow |
+| `index` | int |  | 1 |  | 1-based, top-to-bottom |
+| `toSheet` | string | yes |  |  |  |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `name` | string |  |
+| `nextRow` | int | first row whose top is below the copy, plus gapRows |
+
+failures: `sheet_not_found` (not transient), `not_found` (not transient), `copy_failed` (transient)
+
+```json
+{"id":"copy_picture","use":"excel.copy_picture","with":{"cell":"B3","fromSheet":"sheetA","toSheet":"sheetB","workbook":"wb"}}
+```
+
+Notes: Clobbers the clipboard. Not idempotent: a rerun pastes a second copy.
+
+### `excel.ensure_app`
+
+Start a dedicated Excel instance and register it
+
+- file: `modules/excel/excel.ensure_app.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: `excelApp` / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `visible` | bool |  | true |  | show the window (the operator sees what is written) |
+
+| output | type | desc |
+|--------|------|------|
+| `version` | string | Excel version, e.g. 16.0 |
+
+failures: `excel_unavailable` (not transient)
+
+```json
+{"id":"ensure_app","use":"excel.ensure_app","with":{"as":"xl"}}
+```
+
+Notes: Always a NEW instance: workbooks the operator has open in their own Excel are not touched (excel.open reports read_only if one of them is the target). Release with excel.quit_app in teardown.
+
+### `excel.highlight`
+
+Fill the rows whose text matches a pattern, as wide as the text
+
+- file: `modules/excel/excel.highlight.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `color` | int |  | 65535 |  | OLE colour (BGR); 65535 = yellow |
+| `column` | string |  | B |  | the column holding the text |
+| `expect` | int |  | -1 |  | how many rows should match; -1 = any. A different count is a warning |
+| `fromRow` | int | yes |  |  |  |
+| `maxColumn` | int |  | 0 |  | never fill past this column number; 0 = no cap |
+| `padColumns` | int |  | 0 |  |  |
+| `patterns` | list | yes |  |  | regexes; a row matching any of them is filled |
+| `sheet` | string | yes |  |  |  |
+| `toRow` | int | yes |  |  |  |
+| `unitsPerColumn` | int |  | 3 |  | half-width characters one column holds |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `filled` | int |  |
+| `rows` | list | @{ row; endColumn (letter); pattern; text } per filled row |
+
+failures: `sheet_not_found` (not transient), `not_found` (not transient), `write_failed` (transient)
+
+```json
+{"id":"highlight","use":"excel.highlight","with":{"fromRow":"{{steps.log.out.firstRow}}","patterns":["Command: "],"sheet":"result","toRow":"{{steps.log.out.lastRow}}","workbook":"wb"}}
+```
+
+Notes: not_found when no row in the range matches any pattern: the evidence would be missing its mark, which is worth stopping for.
+
+### `excel.insert_pictures`
+
+Stack pictures down a sheet at native size and draw red boxes on them
+
+- file: `modules/excel/excel.insert_pictures.ps1`
+- effects: `write` / tier: `core` / idempotent: `false`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `column` | string |  | B |  | default column |
+| `gapRows` | int |  | 1 |  | blank rows between pictures when an entry does not say |
+| `lineWeight` | int |  | 0 |  | box line weight in points; 0 = 1.5 |
+| `pictures` | list | yes |  |  | paths, or @{ path; column; gapRows; rows; rects } (excel layout plan) |
+| `rects` | list |  | [] |  | boxes for EVERY picture given as a plain path |
+| `row` | int | yes |  |  | row of the first picture |
+| `sheet` | string | yes |  |  |  |
+| `skipRows` | int |  | 0 |  | blank rows left before the first picture |
+| `tag` | string |  | (empty) |  | shape name prefix (verifyMark_<tag>_n) so a rerun can find them |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `boxes` | int | rectangles drawn |
+| `nextRow` | int | first row below the last picture |
+| `shapes` | list | @{ name; path; row; top; left; width; height; boxes } |
+
+failures: `sheet_not_found` (not transient), `file_not_found` (transient), `insert_failed` (transient)
+
+```json
+{"id":"insert_pictures","use":"excel.insert_pictures","with":{"pictures":["{{steps.shot.out.path}}"],"rects":"{{steps.lr.out.rects}}","row":"{{steps.log.out.nextRow}}","sheet":"result","workbook":"wb"}}
+```
+
+Notes: Not idempotent: a second run adds the pictures again. The evidence workflows start from a clean sheet section and checkpoint after.
+
+### `excel.open`
+
+Open a workbook in the registered Excel instance and register it
+
+- file: `modules/excel/excel.open.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: `workbook` / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `app` | session:excelApp | yes |  |  |  |
+| `path` | path | yes |  |  | the .xlsx (relative: under the work dir) |
+| `readOnly` | bool |  | false |  | open read-only (reading a shared plan someone may have open) |
+
+| output | type | desc |
+|--------|------|------|
+| `name` | string |  |
+| `path` | path |  |
+| `readOnly` | bool |  |
+| `sheets` | list | sheet names in tab order |
+
+failures: `file_not_found` (transient), `read_only` (transient), `open_failed` (transient)
+
+```json
+{"id":"open","use":"excel.open","with":{"app":"xl","as":"wb","path":"{{vars.evidenceDir}}/{{item.Excel_NAME}}.xlsx"}}
+```
+
+Notes: read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).
+
+### `excel.quit_app`
+
+Quit the registered Excel instance and release it
+
+- file: `modules/excel/excel.quit_app.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: `excelApp`
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `app` | session:excelApp | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `quit` | bool | false when there was nothing to quit |
+
+failures: `internal_error` (not transient)
+
+```json
+{"id":"quit_app","use":"excel.quit_app","with":{"app":"xl"}}
+```
+
+Notes: Workbooks still open in the instance are closed WITHOUT saving -- close them with excel.close (save = true) first.
+
+### `excel.read_rows`
+
+Read lettered columns of a sheet into records, keep rows matching conditions
+
+- file: `modules/excel/excel.read_rows.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `columns` | map | yes |  |  | field -> column letter, e.g. { job: A, time: P } |
+| `dateFields` | list |  | [] |  | fields whose cells are dates -> yyyy-MM-dd |
+| `firstRow` | int |  | 2 |  | first data row |
+| `lastRow` | int |  | 0 |  | 0 = the last used row |
+| `pluck` | string |  | (empty) |  | field whose values go to plucked |
+| `sheet` | string | yes |  |  | sheet name or 1-based index |
+| `timeFields` | list |  | [] |  | fields whose cells are times -> HH:mm:ss (float artefacts rounded) |
+| `where` | list |  | [] |  | conditions @{ field; op; value } on the read fields |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `matched` | int |  |
+| `plucked` | list |  |
+| `records` | list | kept rows: field -> text, plus _row (sheet row number) |
+| `scanned` | int |  |
+
+failures: `sheet_not_found` (not transient), `rules_invalid` (not transient), `read_failed` (transient)
+
+```json
+{"id":"read_rows","use":"excel.read_rows","with":{"columns":{"job":"A","kind":"B"},"pluck":"job","sheet":"WBS","where":[{"field":"kind","op":"equals","value":"recv"}],"workbook":"plan"}}
+```
+
+Notes: No matching row is not a failure (matched = 0): an empty day is an answer. A date cell holding text that looks like a date is passed through as it is.
+
+### `excel.stack_plan`
+
+Plan a picture stack from capture sets (first, separator, last; boxes on the end)
+
+- file: `modules/excel/excel.stack_plan.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `column` | string |  | B |  |  |
+| `gapRows` | int |  | 1 |  | blank rows between capture sets |
+| `markRects` | list |  | [] |  | excel.insert_pictures rect specs for the end picture |
+| `separator` | path |  | (empty) |  | picture placed between first and last |
+| `separatorColumn` | string |  | (empty) |  | column of the separator (default: column) |
+| `separatorRows` | int |  | 4 |  | rows the separator takes |
+| `sets` | list | yes |  |  | @{ first; last } per capture set (last empty = one screen) |
+
+| output | type | desc |
+|--------|------|------|
+| `pictures` | list | excel.insert_pictures pictures entries |
+| `total` | int |  |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"stack_plan","use":"excel.stack_plan","with":{"separator":"{{run.toolDir}}/profiles/demo/assets/wave.png","separatorColumn":"Z","sets":"{{steps.df.out.shots}}"}}
+```
+
+### `excel.tidy`
+
+Select A1 on every sheet, activate the first, report odd fonts, save
+
+- file: `modules/excel/excel.tidy.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `activate` | string |  | 1 |  | sheet to leave active (name or 1-based index) |
+| `fontName` | string |  | (empty) |  |  |
+| `fontSheets` | list |  | [] |  | sheets whose column-B text is checked against fontName / fontSize |
+| `fontSize` | int |  | 0 |  |  |
+| `save` | bool |  | true |  |  |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `oddFonts` | int | cells reported |
+| `saved` | bool |  |
+| `sheets` | int | sheets visited |
+
+failures: `save_failed` (transient)
+
+```json
+{"id":"tidy","use":"excel.tidy","with":{"fontName":"MS Gothic","fontSheets":["result"],"fontSize":10,"workbook":"wb"}}
+```
+
+### `excel.write_cell`
+
+Write a value (or another cell's value) into one cell as text
+
+- file: `modules/excel/excel.write_cell.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `cell` | string | yes |  |  | address, e.g. B3 |
+| `fontName` | string |  | (empty) |  |  |
+| `fontSize` | int |  | 0 |  |  |
+| `fromCell` | string |  | (empty) |  |  |
+| `fromSheet` | string |  | (empty) |  | instead of value: copy the value of fromCell on this sheet |
+| `sheet` | string | yes |  |  |  |
+| `value` | string |  | (empty) |  | the text to write |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `row` | int |  |
+| `value` | string | what the cell holds now |
+
+failures: `sheet_not_found` (not transient), `write_failed` (transient)
+
+```json
+{"id":"write_cell","use":"excel.write_cell","with":{"cell":"B3","fromCell":"A3","fromSheet":"data","sheet":"compare","workbook":"wb"}}
+```
+
+### `excel.write_lines`
+
+Paste text lines (from files or a list) down a column, under an optional label
+
+- file: `modules/excel/excel.write_lines.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `column` | string |  | B |  |  |
+| `encoding` | string |  | mixed | mixed, utf8, cp932 |  |
+| `fontName` | string |  | (empty) |  |  |
+| `fontSize` | int |  | 0 |  |  |
+| `gapRows` | int |  | 0 |  | blank rows left before row (row + gapRows is where writing starts) |
+| `label` | string |  | (empty) |  | written at row; the lines start one row below |
+| `lines` | list |  | [] |  | more lines, after the files |
+| `paths` | list |  | [] |  | text files, concatenated in order |
+| `row` | int | yes |  |  | first row to write (the label, when there is one) |
+| `sheet` | string | yes |  |  |  |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `firstRow` | int | row of the first line |
+| `labelRow` | int | row of the label; 0 when none |
+| `lastRow` | int | row of the last line (labelRow when there are no lines) |
+| `nextRow` | int | the row after the last one written |
+| `written` | int | lines written (label not counted) |
+
+failures: `sheet_not_found` (not transient), `file_not_found` (transient), `write_failed` (transient)
+
+```json
+{"id":"write_lines","use":"excel.write_lines","with":{"fontName":"MS Gothic","fontSize":10,"label":"receive log","paths":["log/jobs/1.log"],"row":8,"sheet":"result","workbook":"wb"}}
+```
+
+Notes: Rows are written one COM call each; a few hundred lines take a few seconds.
 
 ## table
 
@@ -745,6 +1582,37 @@ failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_
 {"id":"set","use":"table.set","with":{"field":"note","value":"checked by hand","worklist":"wl"}}
 ```
 
+### `table.upsert`
+
+Insert or refresh worklist rows by key; merge duplicates and count them
+
+- file: `modules/table/table.upsert.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `countAs` | string |  | (empty) |  | worklist column that receives how many input rows had the key |
+| `fields` | map | yes |  |  | worklist column -> record field; the key columns must be among them |
+| `overwrite` | list |  | [] |  | columns refreshed on rows that already exist (others are only filled when blank) |
+| `resetOnChange` | map |  | {} |  | @{ watch = <column>; clear = @(<columns>) }: when an existing row's watch value changes, the clear columns are emptied (the same deliverable planned again on another day starts over) |
+| `rows` | list | yes |  |  | records (excel.read_rows / verify.filter_records output) |
+| `worklist` | session:worklist | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `added` | int |  |
+| `keyList` | list | key display of every row touched, in input order |
+| `updated` | int |  |
+
+failures: `key_column_missing` (not transient), `write_failed` (transient)
+
+```json
+{"id":"upsert","use":"table.upsert","with":{"countAs":"note","fields":{"Correl_ID_S":"id","JOB_NAME":"job"},"rows":"{{steps.today.out.records}}","worklist":"wl"}}
+```
+
+Notes: A column named in fields that the worklist lacks is added (and gets the profile default on the other rows). Rows whose key is blank are skipped with a warning.
+
 ## verify
 
 ### `verify.assert`
@@ -775,6 +1643,35 @@ failures: `rules_invalid` (not transient)
 
 Notes: A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails. A within rule whose value is null or an empty map (no run.timeWindow given) holds: an absent window is not a failed check.
 
+### `verify.compare_sets`
+
+Compare two lists as sets; ok when they hold the same values
+
+- file: `modules/verify/verify.compare_sets.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `left` | list | yes |  |  |  |
+| `leftLabel` | string |  | left |  |  |
+| `right` | list | yes |  |  |  |
+| `rightLabel` | string |  | right |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `both` | list |  |
+| `code` | string | ok \| unknown (a value on one side only) |
+| `onlyLeft` | list |  |
+| `onlyRight` | list |  |
+| `reason` | string |  |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"compare_sets","use":"verify.compare_sets","with":{"left":"{{steps.wbs.out.plucked}}","leftLabel":"WBS","right":"{{steps.map.out.plucked}}","rightLabel":"mapping"}}
+```
+
 ### `verify.crosscheck`
 
 Compare the same fact from several sources; any disagreement is unknown
@@ -803,6 +1700,68 @@ failures: `input_invalid` (not transient)
 ```
 
 Notes: unknown is a verdict for human.gate, never a failure. Values that cannot be read as a number / time under numericEqual / timeWithinSec count as a disagreement, not as a pass.
+
+### `verify.derive_fields`
+
+Add fields to records: a constant, a copy, or a regex rewrite of another field
+
+- file: `modules/verify/verify.derive_fields.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `records` | list | yes |  |  | records (excel.read_rows / verify.parse_text output) |
+| `set` | list | yes |  |  | @{ to; value } \| @{ to; from } \| @{ to; from; pattern; replace } (.NET regex, $1 / ${name} in replace), applied in order |
+
+| output | type | desc |
+|--------|------|------|
+| `records` | list | copies of the input records with the fields set |
+| `unchanged` | list | "<to> <- <from>: <value>" for every rewrite whose pattern did not match (the value was copied as is) |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"derive_fields","use":"verify.derive_fields","with":{"records":"{{steps.today.out.records}}","set":[{"from":"job","pattern":"^(.{4})J","replace":"${1}W","to":"Excel_NAME"},{"to":"GFIX_DATE","value":"{{run.date}}"}]}}
+```
+
+Notes: A rule naming a field the record lacks reads it as empty. A pattern that does not match copies the value unchanged and lists it in unchanged (a warning), so a name that does not follow the rule is visible instead of silently wrong.
+
+### `verify.filter_records`
+
+Keep the records matching every condition; positions, plucked values, time span
+
+- file: `modules/verify/verify.filter_records.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `expect` | int |  | -1 |  | how many records should match; -1 = any number. A different count is a warning, not a failure |
+| `padAfterSec` | int |  | 0 |  | span.to moved this much later |
+| `padBeforeSec` | int |  | 0 |  | span.from moved this much earlier |
+| `pluck` | string |  | (empty) |  | field whose value of every kept record goes to plucked |
+| `records` | list | yes |  |  | verify.parse_text output |
+| `spanFrom` | string |  | (empty) |  | time field whose earliest value starts span |
+| `spanTo` | string |  | (empty) |  | time field whose latest value ends span (default spanFrom) |
+| `where` | list |  | [] |  | conditions @{ field; op; value } (verify.assert ops); empty keeps all |
+
+| output | type | desc |
+|--------|------|------|
+| `first` | int | position of the first kept record; 0 when none |
+| `indexes` | list | their 1-based positions in the input list |
+| `matched` | int |  |
+| `plucked` | list | the pluck field of each kept record |
+| `records` | list | the kept records, in list order |
+| `span` | map | @{ from; to } ISO, empty map when spanFrom is blank or nothing matched |
+
+failures: `rules_invalid` (not transient), `not_found` (transient)
+
+```json
+{"id":"filter_records","use":"verify.filter_records","with":{"pluck":"key","records":"{{steps.rec.out.records}}","where":[{"field":"folder","op":"equals","value":"/in"}]}}
+```
+
+Notes: not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output).
 
 ### `verify.match_record`
 
@@ -837,6 +1796,36 @@ failures: `record_not_found` (transient), `ambiguous` (not transient)
 
 Notes: record_not_found is transient: the row is usually still arriving. The key input is a raw column value ({{item.<col>}}), not {{item.key}}, unless the records carry the composite key in one field.
 
+### `verify.pair_files`
+
+Pair two file lists by line count and arrival order
+
+- file: `modules/verify/verify.pair_files.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `left` | list | yes |  |  | file.list files (name, path, lines, order) |
+| `longOver` | int |  | 16 |  | a pair with more lines than this is flagged long (one screen shows this many) |
+| `right` | list | yes |  |  | file.list files of the other side |
+
+| output | type | desc |
+|--------|------|------|
+| `code` | string | ok \| unknown |
+| `leftOver` | list |  |
+| `pairs` | list | @{ left; right; leftName; rightName; lines; long } (paths) |
+| `reason` | string |  |
+| `rightOver` | list |  |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"pair_files","use":"verify.pair_files","with":{"left":"{{steps.gift.out.files}}","right":"{{steps.gfix.out.files}}"}}
+```
+
+Notes: A file whose lines is -1 (file.list without countLines) cannot be paired by size: run file.list with countLines = true.
+
 ### `verify.parse_text`
 
 Parse page text into records with a delimited / labeled / columns / regex grammar
@@ -865,6 +1854,38 @@ failures: `grammar_invalid` (not transient), `no_records` (transient)
 ```
 
 Notes: no_records is transient: the usual cause is a page still loading. A labeled grammar always yields one record; a label it could not find is a warning (label_missing) with the field blank, and verify.assert's present/empty rules decide what that means.
+
+### `verify.time_window`
+
+Build a from/to time window around a date and a clock time
+
+- file: `modules/verify/verify.time_window.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `afterMinutes` | int |  | 0 |  |  |
+| `beforeMinutes` | int |  | 0 |  |  |
+| `clock` | string | yes |  |  | HH:mm[:ss[.fff]] or an Excel day fraction |
+| `date` | string | yes |  |  | yyyy-MM-dd or yyyy/MM/dd (more is ignored) |
+| `format` | string |  | yyyy-MM-dd HH:mm |  | .NET format for the *Text outputs (what a page prints, e.g. yyyy/MM/dd HH:mm) |
+
+| output | type | desc |
+|--------|------|------|
+| `at` | string | the scheduled moment, ISO |
+| `atText` | string | at, in format |
+| `clock` | string | the clock as HH:mm:ss |
+| `fromText` | string | from, in format |
+| `minuteTexts` | list | every minute from..to in format (browser.wait_for containsAny: ready when any of them shows) |
+| `toText` | string | to, in format |
+| `window` | map | @{ from; to } ISO yyyy-MM-ddTHH:mm:ss |
+
+failures: `parse_error` (not transient)
+
+```json
+{"id":"time_window","use":"verify.time_window","with":{"afterMinutes":13,"beforeMinutes":2,"clock":"{{item.GFIX_TIME}}","date":"{{run.date}}"}}
+```
 
 ## human
 
@@ -961,6 +1982,40 @@ failures: `operator_quit` (not transient), `input_invalid` (not transient), `wri
 
 Notes: Runs in setup, once per run. The ledger does not replay setup, so on a resume the step runs again -- but run.json carries the window, the runner restores it into run.timeWindow first, and a kind=timeWindow question then returns it with kept=true instead of asking (the same when the CLI gave -TimeWindow). Under DryRun or without a console the default is taken and reported with auto=true.
 
+### `human.paste`
+
+Operator copies a chat message; read it from the clipboard, check it, note the time
+
+- file: `modules/human/human.paste.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `defaultClock` | string |  | (empty) |  | a start time already known (the worklist row): Enter takes it, n takes now |
+| `expect` | string |  | (empty) |  | value the expectGroup must have (full-width folded, case-insensitive); empty = any |
+| `expectGroup` | string |  | job |  |  |
+| `message` | string | yes |  |  | what to copy (shown on the panel) |
+| `messageWithTime` | string |  | (empty) |  | shown instead of message when defaultClock is set (the copy-the-message text does not fit a rerun) |
+| `pattern` | string | yes |  |  | .NET regex searched in the clipboard text; named groups become fields |
+
+| output | type | desc |
+|--------|------|------|
+| `clock` | string | HH:mm:ss: when Enter was pressed, or the time typed |
+| `date` | string | yyyy-MM-dd of that moment |
+| `fields` | map | every named group of the pattern ("" when it did not match / no message) |
+| `fresh` | bool | the time was decided just now (now / typed) and should be written back to the row |
+| `source` | string | now \| typed \| worklist \| without \| auto |
+| `text` | string | the clipboard text used ("" when going on without one) |
+
+failures: `operator_quit` (not transient), `operator_skip` (not transient)
+
+```json
+{"id":"paste","use":"human.paste","with":{"expect":"{{item.Excel_NAME}}","message":"Copy the Teams start message of the job and press Enter","pattern":"\\u30B8\\u30E7\\u30D6[:\\uFF1A]\\s*(?<job>[A-Z0-9]+)"}}
+```
+
+Notes: Under DryRun or without a console nobody is asked: source=auto, the time is now, fields are empty. Map operator_skip to policy skip in the workflow (onError.byFailure) so s skips the item without a second question.
+
 ### `human.prepare`
 
 Show a message and wait for Enter (ready) or q (quit)
@@ -985,6 +2040,36 @@ failures: `operator_quit` (not transient)
 ```
 
 Notes: DryRun (or no console) answers Enter on the operator's behalf, so a dry run never blocks. After this step the foreground is the console (P0-R12): the next browser step brings its window back.
+
+### `human.share`
+
+Put text and pictures on the clipboard for the operator to paste and send
+
+- file: `modules/human/human.share.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `images` | list |  | [] |  | PNG paths, in order after the text; a nested list is flattened (a path, then a step's list of paths) |
+| `lines` | list |  | [] |  | text lines, in order |
+| `maxWidth` | int |  | 0 |  | rich mode: show pictures at most this wide (px); 0 = natural size |
+| `mode` | string |  | rich | rich, sequence |  |
+| `where` | string |  | the chat |  | where to paste, for the prompt |
+
+| output | type | desc |
+|--------|------|------|
+| `action` | string | sent \| skip |
+| `note` | string | free text typed with m |
+| `pieces` | int | clipboard loads made |
+
+failures: `operator_quit` (not transient), `file_not_found` (not transient), `clipboard_error` (transient)
+
+```json
+{"id":"share","use":"human.share","with":{"images":"{{steps.shots.out.paths}}","lines":["{{profile.messages.done}}"],"where":"Teams"}}
+```
+
+Notes: Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. Foreground is the console afterwards.
 
 ## progress
 

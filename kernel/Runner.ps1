@@ -315,6 +315,7 @@ function Invoke-EbiDefaultAsk {
     $autoWhy = 'dry run'
     if (-not $auto) {
         try { if ([Console]::IsInputRedirected) { $auto = $true; $autoWhy = 'no console to ask' } } catch { }
+        if (-not $auto -and [string]$env:EBI_NO_ASK -eq '1') { $auto = $true; $autoWhy = 'EBI_NO_ASK' }
     }
     $where = if ([string]$Question['key'] -ne '') { $Question['section'] + '[' + $Question['key'] + ']/' + $Question['id'] } else { $Question['section'] + '/' + $Question['id'] }
     if ([string]$Question['kind'] -eq 'confirm') {
@@ -584,6 +585,16 @@ function Invoke-EbiStepCall {
         return $ebiCall['rec']
     }
 
+    # -- foreground: only the window this step needs; the console otherwise --
+    if (-not $ebiCall['ctx']['DryRun']) {
+        $ebiCall['frontH'] = [IntPtr]::Zero
+        if ($Call.Contains('front') -and -not [string]::IsNullOrWhiteSpace([string]$Call['front'])) {
+            $ebiCall['frontS'] = $ebiCall['ctx']['Session'][[string]$Call['front']]
+            if ($null -ne $ebiCall['frontS']) { try { $ebiCall['frontH'] = ConvertTo-EbiHandle $ebiCall['frontS'] } catch { } }
+        }
+        Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (@($ebiCall['manifest']['needs']) -contains 'foreground')
+    }
+
     # -- call -----------------------------------------------------------------
     $ebiCall['ret'] = $null
     $ebiCall['threw'] = ''
@@ -709,6 +720,7 @@ function Invoke-EbiWorkflow {
     )
 
     $dryRunFlag = [bool]$DryRun.IsPresent
+    if (-not $dryRunFlag) { Save-EbiConsoleWindow }   # kernel/Gate.ps1: questions bring this window back
     $resumeFlag = [bool]$Resume.IsPresent
     if ([string]::IsNullOrWhiteSpace($ModulesRoot)) { $ModulesRoot = Get-EbiDefaultModulesRoot }
     if ([string]::IsNullOrWhiteSpace($RunId))       { $RunId = New-EbiRunId }
@@ -759,7 +771,8 @@ function Invoke-EbiWorkflow {
 
     # ---- run.json + ledger (resume) ------------------------------------------------
     $wfId = [string]$workflow['id']
-    $run = @{ runId = $RunId; startedAt = (Get-Date).ToString('o'); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
+    $ebiNow = Get-Date
+    $run = @{ runId = $RunId; startedAt = $ebiNow.ToString('o'); date = $ebiNow.ToString('yyyy-MM-dd'); dateSlash = $ebiNow.ToString('yyyy/MM/dd'); mmdd = $ebiNow.ToString('MMdd'); toolDir = (Split-Path $PSScriptRoot -Parent); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
     $timeWindowSeen = $run['timeWindow']
     $ledgerDone = @{}
     if ($resumeFlag) {
@@ -776,7 +789,7 @@ function Invoke-EbiWorkflow {
             Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
             return $result
         }
-        foreach ($k in @('startedAt', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k] -and ($k -ne 'timeWindow' -or $null -eq $run['timeWindow'])) { $run[$k] = $prevDoc[$k] } }
+        foreach ($k in @('startedAt', 'date', 'dateSlash', 'mmdd', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k] -and ($k -ne 'timeWindow' -or $null -eq $run['timeWindow'])) { $run[$k] = $prevDoc[$k] } }
         $timeWindowSeen = $run['timeWindow']
         $ledger = Read-EbiLedger -Path (Get-EbiLedgerFile -WorkDir $WorkDir -RunId $RunId)
         if (-not $ledger['ok']) {
@@ -982,6 +995,8 @@ function Invoke-EbiWorkflow {
                 elseif ($done['outcome'] -eq 'fail' -or $done['outcome'] -eq 'skip') { [void]$unrecovered.Add($done['last']) }
             }
         }
+
+        if (-not $dryRunFlag) { Restore-EbiConsoleWindow -Quiet; $global:EbiWindowOut = $false }   # the run is over: the console in front
 
         $result['steps'] = $records.ToArray()
         $result['items'] = $itemRecords.ToArray()
