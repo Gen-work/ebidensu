@@ -2,149 +2,377 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
-
-  "vars": { "capture": "capture/gfix" },
-
+  "vars": {
+    "capture": "capture/gfix"
+  },
   "source": {
     "table": "wl",
-    "select": { "field": "track", "pendingWhen": "!= ok" },
+    "select": {
+      "field": "track",
+      "pendingWhen": "!= ok"
+    },
     "orderBy": "GFIX_TIME"
   },
-
-  "onError": { "policy": "ask" },
-
+  "onError": {
+    "policy": "ask",
+    "byFailure": {
+      "operator_skip": {
+        "policy": "skip"
+      }
+    }
+  },
   "setup": [
-    { "id": "load", "use": "table.load",
-      "with": { "path": "{{profile.worklist.file}}", "as": "wl" } },
-    { "id": "prepare", "use": "human.prepare",
-      "with": { "message": "{{profile.vocabulary.messages.openPages}}", "url": "{{profile.paths.goAnywhereUrl}}" } },
-    { "id": "ga", "use": "screen.find_window",
-      "with": { "title": "{{page.windowTitle}}", "state": "maximize", "as": "ga" } },
-    { "id": "jk", "use": "screen.find_window",
-      "with": { "title": "{{profile.pages.jenkinsReport.windowTitle}}", "state": "restore",
-                "width": "{{profile.window.width}}", "height": "{{profile.window.height}}", "as": "jk" } }
+    {
+      "id": "load",
+      "use": "table.load",
+      "with": {
+        "path": "{{profile.worklist.file}}",
+        "as": "wl"
+      }
+    },
+    {
+      "id": "prepare",
+      "use": "human.prepare",
+      "with": {
+        "message": "{{profile.vocabulary.messages.openPages}}",
+        "url": "{{profile.paths.goAnywhereUrl}}"
+      }
+    },
+    {
+      "id": "ga",
+      "use": "screen.find_window",
+      "with": {
+        "title": "{{page.windowTitle}}",
+        "state": "maximize",
+        "as": "ga"
+      }
+    },
+    {
+      "id": "jk",
+      "use": "screen.find_window",
+      "with": {
+        "title": "{{profile.pages.jenkinsReport.windowTitle}}",
+        "state": "restore",
+        "width": "{{profile.window.width}}",
+        "height": "{{profile.window.height}}",
+        "as": "jk"
+      }
+    }
   ],
-
   "each": [
-    { "id": "waitHost", "use": "human.prepare",
+    {
+      "id": "start",
+      "use": "human.paste",
+      "label": "Teams の「ジョブ:XXXを実施します」をコピー -> その時刻 = 開始時刻",
+      "with": {
+        "message": "{{item.Excel_NAME}}: {{profile.vocabulary.messages.startPaste}}",
+        "pattern": "{{profile.vocabulary.startPattern}}",
+        "expect": "{{item.Excel_NAME}}",
+        "expectGroup": "job"
+      }
+    },
+    {
+      "id": "waitHost",
+      "use": "human.prepare",
       "label": "Teams の「正常終了しました」を待つ",
-      "with": { "message": "{{item.Excel_NAME}} ({{item.GFIX_TIME}}): {{profile.vocabulary.messages.waitHost}}" } },
-
-    { "id": "win", "use": "verify.time_window",
-      "with": { "date": "{{run.date}}", "clock": "{{item.GFIX_TIME}}",
-                "beforeMinutes": "{{page.windowBefore}}", "afterMinutes": "{{page.windowAfter}}" } },
-
-    { "id": "gaText", "use": "browser.wait_for",
+      "with": {
+        "message": "{{item.Excel_NAME}} (開始 {{steps.start.out.clock}}): {{profile.vocabulary.messages.waitHost}}"
+      }
+    },
+    {
+      "id": "win",
+      "use": "verify.time_window",
+      "with": {
+        "date": "{{run.date}}",
+        "clock": "{{steps.start.out.clock}}",
+        "beforeMinutes": "{{page.windowBefore}}",
+        "afterMinutes": "{{page.windowAfter}}"
+      },
+      "label": "開始時刻 -2..+13 分(GoAnywhere の行をこの時間帯で拾う)"
+    },
+    {
+      "id": "gaText",
+      "use": "browser.wait_for",
       "label": "更新ボタンで GoAnywhere を更新し、予定時刻 -2..+13 分の行が出るまで待つ",
-      "with": { "window": "ga", "containsAny": "{{steps.win.out.minuteTexts}}", "deselectAt": "{{page.deselectAt}}",
-                "refreshRecipe": "{{page.refreshRecipe}}",
-                "timeoutSec": "{{page.timeoutSec}}", "pollMs": "{{page.pollMs}}",
-                "archiveTo": "{{vars.capture}}/{{item.keySafe}}/goanywhere.txt" } },
-
-    { "id": "gaRec", "use": "verify.parse_text",
-      "with": { "text": "{{steps.gaText.out.text}}", "grammar": "{{page.grammar}}" } },
-
-    { "id": "mine", "use": "verify.filter_records",
+      "with": {
+        "window": "ga",
+        "containsAny": "{{steps.win.out.minuteTexts}}",
+        "deselectAt": "{{page.deselectAt}}",
+        "refreshRecipe": "{{page.refreshRecipe}}",
+        "timeoutSec": "{{page.timeoutSec}}",
+        "pollMs": "{{page.pollMs}}",
+        "archiveTo": "{{vars.capture}}/{{item.keySafe}}/goanywhere.txt"
+      }
+    },
+    {
+      "id": "gaRec",
+      "use": "verify.parse_text",
+      "with": {
+        "text": "{{steps.gaText.out.text}}",
+        "grammar": "{{page.grammar}}"
+      }
+    },
+    {
+      "id": "mine",
+      "use": "verify.filter_records",
       "label": "このジョブの行(Send + Receive)",
-      "with": { "records": "{{steps.gaRec.out.records}}",
-                "where": [ { "field": "startTime", "op": "within", "value": "{{steps.win.out.window}}" } ] } },
-
-    { "id": "recv", "use": "verify.filter_records",
+      "with": {
+        "records": "{{steps.gaRec.out.records}}",
+        "where": [
+          {
+            "field": "startTime",
+            "op": "within",
+            "value": "{{steps.win.out.window}}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "recv",
+      "use": "verify.filter_records",
       "label": "Receive の行 = GFIX に着いたファイル",
-      "with": { "records": "{{steps.mine.out.records}}",
-                "where": [ { "field": "folder", "op": "equals", "value": "{{page.receiveFolder}}" } ],
-                "pluck": "key", "spanFrom": "startTime", "spanTo": "endTime",
-                "padBeforeSec": 2, "padAfterSec": 10, "expect": "{{item.FileCount}}" } },
-
-    { "id": "gaRegion", "use": "screen.row_region",
-      "with": { "window": "ga", "insetX": "{{page.crop.insetX}}", "insetY": "{{page.crop.insetY}}",
-                "left": "{{page.crop.left}}", "right": "{{page.crop.right}}", "top": "{{page.crop.top}}",
-                "firstRowTop": "{{page.crop.firstRowTop}}", "rowHeight": "{{page.crop.rowHeight}}",
-                "first": "{{steps.mine.out.first}}", "rows": "{{steps.mine.out.matched}}" } },
-
-    { "id": "gaShot", "use": "screen.capture_region",
-      "with": { "x": "{{steps.gaRegion.out.x}}", "y": "{{steps.gaRegion.out.y}}",
-                "width": "{{steps.gaRegion.out.width}}", "height": "{{steps.gaRegion.out.height}}",
-                "saveAs": "{{vars.capture}}/{{item.keySafe}}/goanywhere.png" } },
-
-    { "id": "jkText", "use": "browser.wait_for",
+      "with": {
+        "records": "{{steps.mine.out.records}}",
+        "where": [
+          {
+            "field": "folder",
+            "op": "equals",
+            "value": "{{page.receiveFolder}}"
+          }
+        ],
+        "pluck": "key",
+        "spanFrom": "startTime",
+        "spanTo": "endTime",
+        "padBeforeSec": 2,
+        "padAfterSec": 10,
+        "expect": "{{item.FileCount}}"
+      }
+    },
+    {
+      "id": "gaRegion",
+      "use": "screen.row_region",
+      "with": {
+        "window": "ga",
+        "insetX": "{{page.crop.insetX}}",
+        "insetY": "{{page.crop.insetY}}",
+        "left": "{{page.crop.left}}",
+        "right": "{{page.crop.right}}",
+        "top": "{{page.crop.top}}",
+        "firstRowTop": "{{page.crop.firstRowTop}}",
+        "rowHeight": "{{page.crop.rowHeight}}",
+        "first": "{{steps.mine.out.first}}",
+        "rows": "{{steps.mine.out.matched}}"
+      }
+    },
+    {
+      "id": "gaShot",
+      "use": "screen.capture_region",
+      "with": {
+        "x": "{{steps.gaRegion.out.x}}",
+        "y": "{{steps.gaRegion.out.y}}",
+        "width": "{{steps.gaRegion.out.width}}",
+        "height": "{{steps.gaRegion.out.height}}",
+        "saveAs": "{{vars.capture}}/{{item.keySafe}}/goanywhere.png"
+      }
+    },
+    {
+      "id": "jkText",
+      "use": "browser.wait_for",
       "label": "Jenkins を F5、今日のファイルが見えるまで",
-      "with": { "window": "jk", "contains": "{{run.dateSlash}}", "deselectAt": "{{profile.pages.jenkinsReport.deselectAt}}",
-                "refreshRecipe": "{{profile.pages.jenkinsReport.refreshRecipe}}",
-                "timeoutSec": "{{profile.pages.jenkinsReport.timeoutSec}}", "pollMs": "{{profile.pages.jenkinsReport.pollMs}}",
-                "archiveTo": "{{vars.capture}}/{{item.keySafe}}/jenkins.txt" } },
-
-    { "id": "jkRec", "use": "verify.parse_text",
-      "with": { "text": "{{steps.jkText.out.text}}", "grammar": "{{profile.grammar.jenkinsReport}}" } },
-
-    { "id": "jkMine", "use": "verify.filter_records",
+      "with": {
+        "window": "jk",
+        "contains": "{{run.dateSlash}}",
+        "deselectAt": "{{profile.pages.jenkinsReport.deselectAt}}",
+        "refreshRecipe": "{{profile.pages.jenkinsReport.refreshRecipe}}",
+        "timeoutSec": "{{profile.pages.jenkinsReport.timeoutSec}}",
+        "pollMs": "{{profile.pages.jenkinsReport.pollMs}}",
+        "archiveTo": "{{vars.capture}}/{{item.keySafe}}/jenkins.txt"
+      }
+    },
+    {
+      "id": "jkRec",
+      "use": "verify.parse_text",
+      "with": {
+        "text": "{{steps.jkText.out.text}}",
+        "grammar": "{{profile.grammar.jenkinsReport}}"
+      }
+    },
+    {
+      "id": "jkMine",
+      "use": "verify.filter_records",
       "label": "Receive の時間帯に report に置かれたファイル",
-      "with": { "records": "{{steps.jkRec.out.records}}",
-                "where": [ { "field": "time", "op": "within", "value": "{{steps.recv.out.span}}" },
-                           { "field": "key", "op": "matches", "value": "{{profile.pages.jenkinsReport.fileNamePattern}}" } ],
-                "pluck": "key", "expect": "{{item.FileCount}}" } },
-
-    { "id": "dl", "use": "file.download",
-      "with": { "baseUrl": "{{profile.paths.jenkinsReportUrl}}", "names": "{{steps.jkMine.out.plucked}}",
-                "dir": "{{profile.paths.bix}}/DATA/GFIX/{{item.Excel_NAME}}", "countLines": true } },
-
-    { "id": "gift", "use": "file.list",
-      "with": { "dir": "{{profile.paths.bix}}/DATA/GIFT/{{item.JOB}}", "glob": "*.csv", "countLines": true } },
-
-    { "id": "pair", "use": "verify.pair_files",
-      "with": { "left": "{{steps.gift.out.files}}", "right": "{{steps.dl.out.files}}",
-                "longOver": "{{profile.layout.df.screenLines}}" } },
-
-    { "id": "pairGate", "use": "human.gate",
-      "with": { "code": "{{steps.pair.out.code}}", "askWhen": ["unknown"],
-                "reason": "{{steps.pair.out.reason}}",
-                "evidence": ["{{steps.gift.out.paths}}", "{{steps.dl.out.paths}}"] } },
-
-    { "id": "cmp", "use": "file.compare",
-      "with": { "pairs": "{{steps.pair.out.pairs}}" } },
-
-    { "id": "df", "use": "screen.launch_capture",
-      "with": { "exe": "{{profile.paths.dfExe}}", "argSets": "{{steps.pair.out.pairs}}",
-                "width": "{{profile.layout.df.width}}", "height": "{{profile.layout.df.height}}",
-                "settleMs": "{{profile.layout.df.settleMs}}", "windowTitle": "{{profile.layout.df.windowTitle}}",
-                "saveDir": "{{vars.capture}}/{{item.keySafe}}/df" } },
-
-    { "id": "gate", "use": "human.gate",
-      "with": { "code": "{{steps.cmp.out.code}}", "askWhen": ["ng", "unknown"],
-                "reason": "{{steps.cmp.out.reason}}",
-                "evidence": ["{{steps.gaShot.out.path}}", "{{steps.df.out.paths}}"] } },
-
-    { "id": "meta", "use": "file.write_json",
-      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json",
-                "data": { "key": "{{item.key}}", "date": "{{run.date}}", "mmdd": "{{run.mmdd}}",
-                          "window": "{{steps.win.out.window}}",
-                          "goAnywhereRows": "{{steps.mine.out.records}}",
-                          "recvJobs": "{{steps.recv.out.plucked}}", "span": "{{steps.recv.out.span}}",
-                          "jenkinsFiles": "{{steps.jkMine.out.plucked}}",
-                          "gfixFiles": "{{steps.dl.out.paths}}", "pairs": "{{steps.pair.out.pairs}}",
-                          "compare": "{{steps.cmp.out.results}}", "dfShots": "{{steps.df.out.shots}}",
-                          "goAnywhereShot": "{{steps.gaShot.out.path}}", "verdict": "{{steps.gate.out.code}}" } } },
-
-    { "id": "share", "use": "human.share",
+      "with": {
+        "records": "{{steps.jkRec.out.records}}",
+        "where": [
+          {
+            "field": "time",
+            "op": "within",
+            "value": "{{steps.recv.out.span}}"
+          },
+          {
+            "field": "key",
+            "op": "matches",
+            "value": "{{profile.pages.jenkinsReport.fileNamePattern}}"
+          }
+        ],
+        "pluck": "key",
+        "expect": "{{item.FileCount}}"
+      }
+    },
+    {
+      "id": "dl",
+      "use": "file.download",
+      "with": {
+        "baseUrl": "{{profile.paths.jenkinsReportUrl}}",
+        "names": "{{steps.jkMine.out.plucked}}",
+        "dir": "{{profile.paths.bix}}/DATA/GFIX/{{item.Excel_NAME}}",
+        "countLines": true
+      }
+    },
+    {
+      "id": "gift",
+      "use": "file.list",
+      "with": {
+        "dir": "{{profile.paths.bix}}/DATA/GIFT/{{item.JOB}}",
+        "glob": "*.csv",
+        "countLines": true
+      }
+    },
+    {
+      "id": "pair",
+      "use": "verify.pair_files",
+      "with": {
+        "left": "{{steps.gift.out.files}}",
+        "right": "{{steps.dl.out.files}}",
+        "longOver": "{{profile.layout.df.screenLines}}"
+      }
+    },
+    {
+      "id": "pairGate",
+      "use": "human.gate",
+      "with": {
+        "code": "{{steps.pair.out.code}}",
+        "askWhen": [
+          "unknown"
+        ],
+        "reason": "{{steps.pair.out.reason}}",
+        "evidence": [
+          "{{steps.gift.out.paths}}",
+          "{{steps.dl.out.paths}}"
+        ]
+      }
+    },
+    {
+      "id": "cmp",
+      "use": "file.compare",
+      "with": {
+        "pairs": "{{steps.pair.out.pairs}}"
+      }
+    },
+    {
+      "id": "df",
+      "use": "screen.launch_capture",
+      "with": {
+        "exe": "{{profile.paths.dfExe}}",
+        "argSets": "{{steps.pair.out.pairs}}",
+        "width": "{{profile.layout.df.width}}",
+        "height": "{{profile.layout.df.height}}",
+        "settleMs": "{{profile.layout.df.settleMs}}",
+        "windowTitle": "{{profile.layout.df.windowTitle}}",
+        "saveDir": "{{vars.capture}}/{{item.keySafe}}/df"
+      }
+    },
+    {
+      "id": "gate",
+      "use": "human.gate",
+      "with": {
+        "code": "{{steps.cmp.out.code}}",
+        "askWhen": [
+          "ng",
+          "unknown"
+        ],
+        "reason": "{{steps.cmp.out.reason}}",
+        "evidence": [
+          "{{steps.gaShot.out.path}}",
+          "{{steps.df.out.paths}}"
+        ]
+      }
+    },
+    {
+      "id": "meta",
+      "use": "file.write_json",
+      "with": {
+        "path": "{{vars.capture}}/{{item.keySafe}}/track.json",
+        "data": {
+          "key": "{{item.key}}",
+          "date": "{{run.date}}",
+          "mmdd": "{{run.mmdd}}",
+          "start": "{{steps.start.out.clock}}",
+          "startSource": "{{steps.start.out.source}}",
+          "startMessage": "{{steps.start.out.text}}",
+          "sendCount": "{{steps.start.out.fields.count}}",
+          "window": "{{steps.win.out.window}}",
+          "goAnywhereRows": "{{steps.mine.out.records}}",
+          "recvJobs": "{{steps.recv.out.plucked}}",
+          "span": "{{steps.recv.out.span}}",
+          "jenkinsFiles": "{{steps.jkMine.out.plucked}}",
+          "gfixFiles": "{{steps.dl.out.paths}}",
+          "pairs": "{{steps.pair.out.pairs}}",
+          "compare": "{{steps.cmp.out.results}}",
+          "dfShots": "{{steps.df.out.shots}}",
+          "goAnywhereShot": "{{steps.gaShot.out.path}}",
+          "verdict": "{{steps.gate.out.code}}"
+        }
+      }
+    },
+    {
+      "id": "share",
+      "use": "human.share",
       "when": "steps.gate.out.code == ok",
-      "with": { "lines": ["{{profile.vocabulary.messages.feedbackOk}}"],
-                "images": ["{{steps.gaShot.out.path}}", "{{steps.df.out.paths}}"],
-                "mode": "{{profile.layout.share.mode}}", "where": "{{profile.layout.share.where}}",
-                "maxWidth": "{{profile.layout.share.maxWidth}}" } },
-
-    { "id": "checkpoint", "use": "flow.checkpoint",
+      "with": {
+        "lines": [
+          "{{profile.vocabulary.messages.feedbackOk}}"
+        ],
+        "images": [
+          "{{steps.gaShot.out.path}}",
+          "{{steps.df.out.paths}}"
+        ],
+        "mode": "{{profile.layout.share.mode}}",
+        "where": "{{profile.layout.share.where}}",
+        "maxWidth": "{{profile.layout.share.maxWidth}}"
+      }
+    },
+    {
+      "id": "checkpoint",
+      "use": "flow.checkpoint",
       "when": "steps.gate.out.action != skip",
-      "with": { "worklist": "wl", "field": "track", "value": "{{steps.gate.out.code}}" } },
-
-    { "id": "event", "use": "progress.event",
-      "with": { "action": "tracked", "status": "ok",
-                "message": "{{steps.gate.out.code}} {{steps.cmp.out.reason}} / teams: {{steps.share.out.action}}" } }
+      "with": {
+        "worklist": "wl",
+        "field": "track",
+        "value": "{{steps.gate.out.code}}"
+      }
+    },
+    {
+      "id": "event",
+      "use": "progress.event",
+      "with": {
+        "action": "tracked",
+        "status": "ok",
+        "message": "{{steps.gate.out.code}} {{steps.cmp.out.reason}} / teams: {{steps.share.out.action}}"
+      }
+    }
   ],
-
   "teardown": [
-    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "track" } }
+    {
+      "id": "status",
+      "use": "progress.status",
+      "with": {
+        "worklist": "wl",
+        "field": "track"
+      }
+    }
   ]
 }

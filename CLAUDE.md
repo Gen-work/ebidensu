@@ -70,7 +70,7 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         Test-TableSteps.ps1 / Test-VerifySteps.ps1 run the
                         pure helpers and the file / table / verify / human
                         steps for real on temp fixtures.
-                        gfix-recv (P3) added 32 steps (excel/ lifecycle etc.; see CHANGELOG.md).
+                        gfix-recv (P3) added 34 steps (excel/ lifecycle etc.; see CHANGELOG.md).
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
 kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON

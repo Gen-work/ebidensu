@@ -22,9 +22,23 @@
   warning (`Read-EbiJson -AllowCp932`; every other JSON stays UTF-8 only).
 - **`gfixRecv.plan` dropped WBS jobs with no mapping.xlsx row without a
   word**: the first real run found 6 jobs in the WBS, none in mapping.xlsx,
-  the gate was answered ok and the run ended OK with an empty worklist. A
-  second check (`noRow`) now lists those jobs (no W name / GFIX time, so
-  they cannot be tracked) and the worklist is only written on Enter there.
+  the gate was answered ok and the run ended OK with an empty worklist.
+  The plan now builds the worklist from the WBS alone (W name = J name with
+  the 5th character J -> W, `verify.derive_fields`; GFIX_DATE = today;
+  FileCount -1 = not known); mapping.xlsx rows dated today only add
+  GFIX_TIME / FileCount and jobs the WBS does not list. The WBS/mapping
+  difference is shown, no longer asked.
+- **`gfixRecv.track` no longer needs a scheduled time**: the operator copies
+  the HOST team's Teams start message and presses Enter (`human.paste`); the
+  moment of Enter is the job's start (or a time typed from the leader's
+  schedule), the message names the job (checked against the item) and its
+  send count (kept in track.json). `s` skips the item (operator_skip ->
+  policy skip). The "finished" Enter stays as the second prompt.
+
+### Added
+- `verify.derive_fields` (constant / copy / regex rewrite of a field on
+  every record) and `human.paste` (clipboard message + regex + the moment);
+  catalog 69 -> 71.
 - `excel.open` failures report the `readOnly` that was asked for (the gate
   showed `readOnly: False` for a read-only open that never happened).
 

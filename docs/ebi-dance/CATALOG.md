@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-69 step(s) in 9 group(s).
+71 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,8 +13,8 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
 | excel | `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.quit_app`, `excel.read_rows`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.compare_sets`, `verify.crosscheck`, `verify.filter_records`, `verify.match_record`, `verify.pair_files`, `verify.parse_text`, `verify.time_window` |
-| human | `human.choose`, `human.gate`, `human.input`, `human.prepare`, `human.share` |
+| verify | `verify.assert`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.pair_files`, `verify.parse_text`, `verify.time_window` |
+| human | `human.choose`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint` |
 
@@ -1693,6 +1693,32 @@ failures: `input_invalid` (not transient)
 
 Notes: unknown is a verdict for human.gate, never a failure. Values that cannot be read as a number / time under numericEqual / timeWithinSec count as a disagreement, not as a pass.
 
+### `verify.derive_fields`
+
+Add fields to records: a constant, a copy, or a regex rewrite of another field
+
+- file: `modules/verify/verify.derive_fields.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `records` | list | yes |  |  | records (excel.read_rows / verify.parse_text output) |
+| `set` | list | yes |  |  | @{ to; value } \| @{ to; from } \| @{ to; from; pattern; replace } (.NET regex, $1 / ${name} in replace), applied in order |
+
+| output | type | desc |
+|--------|------|------|
+| `records` | list | copies of the input records with the fields set |
+| `unchanged` | list | "<to> <- <from>: <value>" for every rewrite whose pattern did not match (the value was copied as is) |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"derive_fields","use":"verify.derive_fields","with":{"records":"{{steps.today.out.records}}","set":[{"from":"job","pattern":"^(.{4})J","replace":"${1}W","to":"Excel_NAME"},{"to":"GFIX_DATE","value":"{{run.date}}"}]}}
+```
+
+Notes: A rule naming a field the record lacks reads it as empty. A pattern that does not match copies the value unchanged and lists it in unchanged (a warning), so a name that does not follow the rule is visible instead of silently wrong.
+
 ### `verify.filter_records`
 
 Keep the records matching every condition; positions, plucked values, time span
@@ -1947,6 +1973,37 @@ failures: `operator_quit` (not transient), `input_invalid` (not transient), `wri
 ```
 
 Notes: Runs in setup, once per run. The ledger does not replay setup, so on a resume the step runs again -- but run.json carries the window, the runner restores it into run.timeWindow first, and a kind=timeWindow question then returns it with kept=true instead of asking (the same when the CLI gave -TimeWindow). Under DryRun or without a console the default is taken and reported with auto=true.
+
+### `human.paste`
+
+Operator copies a chat message; read it from the clipboard, check it, note the time
+
+- file: `modules/human/human.paste.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `expect` | string |  | (empty) |  | value the expectGroup must have (full-width folded, case-insensitive); empty = any |
+| `expectGroup` | string |  | job |  |  |
+| `message` | string | yes |  |  | what to copy (shown on the panel) |
+| `pattern` | string | yes |  |  | .NET regex searched in the clipboard text; named groups become fields |
+
+| output | type | desc |
+|--------|------|------|
+| `clock` | string | HH:mm:ss: when Enter was pressed, or the time typed |
+| `date` | string | yyyy-MM-dd of that moment |
+| `fields` | map | every named group of the pattern ("" when it did not match / no message) |
+| `source` | string | now \| typed \| without \| auto |
+| `text` | string | the clipboard text used ("" when going on without one) |
+
+failures: `operator_quit` (not transient), `operator_skip` (not transient)
+
+```json
+{"id":"paste","use":"human.paste","with":{"expect":"{{item.Excel_NAME}}","message":"Copy the Teams start message of the job and press Enter","pattern":"\\u30B8\\u30E7\\u30D6[:\\uFF1A]\\s*(?<job>[A-Z0-9]+)"}}
+```
+
+Notes: Under DryRun or without a console nobody is asked: source=auto, the time is now, fields are empty. Map operator_skip to policy skip in the workflow (onError.byFailure) so s skips the item without a second question.
 
 ### `human.prepare`
 

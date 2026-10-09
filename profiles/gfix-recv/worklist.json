@@ -1,5 +1,5 @@
 {
-  "_doc": "One row per deliverable (Excel_NAME = the GFIX-side job name, e.g. RJDSWM40). Built by gfixRecv.plan from today's WBS rows + the operator's mapping.xlsx; the three day-flows checkpoint into track / logs / evidence.",
+  "_doc": "One row per deliverable (Excel_NAME = the GFIX-side job name, e.g. RJDSWM40). Built by gfixRecv.plan from today's WBS rows (+ mapping.xlsx rows dated today, for GFIX_TIME / FileCount; FileCount -1 = not known); the three day-flows checkpoint into track / logs / evidence.",
   "file": "gfixrecv.csv",
   "encoding": "utf8-bom",
   "key": {
@@ -14,7 +14,7 @@
     { "name": "RCVFILE", "role": "text", "default": "" },
     { "name": "GFIX_DATE", "role": "text", "default": "" },
     { "name": "GFIX_TIME", "role": "time", "default": "" },
-    { "name": "FileCount", "role": "text", "default": "1" },
+    { "name": "FileCount", "role": "text", "default": "-1" },
     { "name": "Owner", "role": "owner", "default": "" },
     { "name": "track", "role": "verdict", "default": "", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "logs", "role": "verdict", "default": "", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },

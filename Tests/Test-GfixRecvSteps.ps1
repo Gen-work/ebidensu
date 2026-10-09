@@ -43,7 +43,8 @@ $ctx = @{ WorkDir = $tmp; RunId = 'test'; Profile = $prof; Log = $log; DryRun = 
 # visible for every later call.
 $loaded = @{}
 foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
-                 'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects')) {
+                 'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
+                 'verify.derive_fields', 'human.paste')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -213,6 +214,36 @@ try {
     $rtf = New-EbiShareRtf -Lines @($msg) -Pictures @(@{ bytes = $png; width = 2; height = 3 })
     Assert-True ($rtf.Contains(('\u' + '21069?')) -and $rtf.Contains('\pngblip') -and $rtf.Contains('\picwgoal30')) 'clip: RTF text as \uN?, picture as pngblip in twips'
     Assert-Equal '\\\{x\}' (ConvertTo-EbiRtfText -Text '\{x}') 'clip: RTF escapes'
+
+    Write-Host '  -- plan from WBS alone + the start time from the pasted Teams message'
+    $wbsRecs = @(@{ job = 'SJDSJM40'; start = '2026-10-09' }, @{ job = 'JJMRJE6C'; start = '2026-10-09' }, @{ job = 'ODD'; start = '2026-10-09' })
+    $dv = Invoke-TestStep 'verify.derive_fields' @{ records = $wbsRecs; set = @(@{ to = 'Excel_NAME'; from = 'job'; pattern = '^(.{4})J'; replace = '${1}W' }, @{ to = 'JOB'; from = 'job' }, @{ to = 'GFIX_DATE'; value = '2026-10-09' }) }
+    Assert-Equal 'SJDSWM40|JJMRWE6C|ODD' ((@($dv['records']) | ForEach-Object { $_['Excel_NAME'] }) -join '|') 'plan: W name = J name with the 5th character J -> W (the leader table names SJDSWM40, JJMRWE6C)'
+    Assert-Equal 'SJDSJM40' $dv['records'][0]['JOB'] 'plan: JOB keeps the J name (DATA/GIFT/<J>)'
+    Assert-Equal '2026-10-09' $dv['records'][1]['GFIX_DATE'] 'plan: a constant on every row'
+    Assert-True (@($dv['unchanged']).Count -eq 1 -and @($dv['warnings']).Count -eq 1) 'plan: a name that does not follow the rule is copied as is AND warned about'
+    $bad = Invoke-TestStep 'verify.derive_fields' @{ records = $wbsRecs; set = @(@{ to = 'X' }) }
+    Assert-True ((-not $bad['ok']) -and $bad['failure'] -eq 'input_invalid') 'plan: a rule with neither value nor from is refused'
+
+    $pat = $prof['vocabulary']['startPattern']
+    $jobW = 'JJMRWE6K'
+    $kana = -join @([char]0x30B8, [char]0x30E7, [char]0x30D6)          # job (katakana)
+    $wo = [string][char]0x3092; $jisshi = -join @([char]0x5B9F, [char]0x65BD, [char]0x3057, [char]0x307E, [char]0x3059, [char]0x3002)
+    $yotei = -join @([char]0x9001, [char]0x4FE1, [char]0x4E88, [char]0x5B9A); $ken = [string][char]0x4EF6
+    $msgOk = $kana + ':' + $jobW + $wo + $jisshi + '(' + $yotei + ':6' + $ken + ')'
+    $c = HumanPaste-Check -Text $msgOk -Pattern $pat -Expect $jobW -ExpectGroup 'job'
+    Assert-True ($c['ok'] -and $c['fields']['job'] -eq $jobW -and $c['fields']['count'] -eq '6') ('paste: the Teams start message gives job + send count: ' + $c['reason'])
+    $msgFw = $kana + [char]0xFF1A + (-join ($jobW.ToCharArray() | ForEach-Object { [char]([int]$_ + 0xFEE0) })) + $wo + $jisshi
+    $c = HumanPaste-Check -Text $msgFw -Pattern $pat -Expect $jobW -ExpectGroup 'job'
+    Assert-True ($c['ok'] -and $c['fields']['count'] -eq '') 'paste: full-width colon / letters fold; no send count -> count is "" (still templatable)'
+    $c = HumanPaste-Check -Text $msgOk -Pattern $pat -Expect 'SJDSWM40' -ExpectGroup 'job'
+    Assert-True ((-not $c['ok']) -and $c['reason'].Contains('JJMRWE6K') -and $c['reason'].Contains('SJDSWM40')) 'paste: a message for another job is refused and says both names'
+    $c = HumanPaste-Check -Text 'hello' -Pattern $pat -Expect '' -ExpectGroup 'job'
+    Assert-True ((-not $c['ok']) -and $c['fields'].Contains('count') -and $c['fields'].Contains('job')) 'paste: not the message -> refused, every group still present as ""'
+    Assert-Equal 'time|10:30:00' ((HumanPaste-Typed -Answer '10:30')['kind'] + '|' + (HumanPaste-Typed -Answer '10:30')['clock']) 'paste: a typed time replaces now'
+    Assert-Equal '09:05:00' (HumanPaste-Typed -Answer '905')['clock'] 'paste: 905 -> 09:05:00'
+    $kinds = @(foreach ($a in @('', 'k', 's', 'zz')) { (HumanPaste-Typed -Answer $a)['kind'] })
+    Assert-Equal 'enter|k|s|other' ($kinds -join '|') 'paste: Enter / k / s / anything else'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

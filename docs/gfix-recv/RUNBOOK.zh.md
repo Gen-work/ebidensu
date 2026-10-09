@@ -65,12 +65,12 @@ ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
 
 - 只读打开 WBS，筛出：`B=受信`、`G=修正後実施`、`P` 是「厳」/「厳←○○」/「○○→厳」、`AF`（最新計画 開始）= 今天。
   箭头规则和旧的 `OwnerFilter.ps1` 一样：「ニンヌ←厳」**不算**你的。
-- 只读打开 mapping.xlsx，拿到 W 名、时刻、文件数（同一个 job 有几行就是几个文件）。
-- **WBS 和 mapping.xlsx 不一致时会停下来问你**。用你给的 WBS 测过：MJDSJM40 在 WBS 里写的是「ニンヌ」，
-  所以只有 mapping 里有它。`Enter` = 两边的 job 都放进作业清单；`s` = 不改作业清单直接结束。
-- **WBS 有、但 mapping.xlsx 里一行都没有的 job 进不了作业清单**（W 名和 GFIX 时刻都在 mapping 里）。
-  这时会再停一次，列出这些 job：`Enter` = 只把有行的 job 放进清单，其他任何键 = 什么都不写。
-  把它们补进 mapping.xlsx（A=J名、B=W名、O=今天、P=时刻）后再跑一次 plan 即可（可重复执行）。
+- **作业清单只靠 WBS 就能建**：W 名 = J 名的第 5 个字母 J → W（SJDSJM40 → SJDSWM40）。
+  不合这个规则的名字会照抄并给出警告（warning）。
+- mapping.xlsx 只是补充：O 列（GFIX実行日）= 今天的行，会补上 GFIX 时刻和文件数；
+  只在 mapping 里、不在 WBS 里的 job（例：WBS 写「ニンヌ」的 MJDSJM40）也从这里进清单。
+  没补 mapping 也没关系：文件数显示 `-1`（不知道），时刻在 track 时从 Teams 消息里取。
+- WBS 和 mapping 的差别只**显示**（`setup/cmp` 那一行），不再停下来问。
 - 结果：`$W\gfixrecv.csv`（作业清单，用 Excel 打开也行）。用你的 WBS 和 mapping 模拟过：
   F/K/L/M/Q/RJDSWM40，6 个 job、时刻和 p1 完全一致。
 
@@ -89,26 +89,30 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 # 只跑一个：  -Only RJDSWM40
 ```
 
-每个 job（按 GFIX TIME 的顺序）：
+每个 job（按作业清单的顺序；顺序和领导的预定表不一样时，用 `-Only <W名>` 一个一个跑最省事）：
 
-1. **PREPARE 面板**：「Teams の『ジョブ:XXXが正常終了しました。』が来たら Enter」。
+1. **PASTE 面板**：Teams 里出现「ジョブ:XXXを実施します。(送信予定:n件)」时，**复制这条消息**（Ctrl+C），
+   回到控制台按 Enter。**按 Enter 的时刻 = 开始时刻**（GoAnywhere 的行按「开始 −2 ～ +13 分」来找）。
+   - 复制晚了：不要按 Enter，打领导预定表上的时刻，比如 `10:30`。
+   - 消息是别的 job 的：面板会写出两个名字，等你复制对的那条；`s` = 先跳过这个 job（留到下次），`k` = 不用消息、时刻 = 现在。
+2. **PREPARE 面板**：「Teams の『ジョブ:XXXが正常終了しました。』が来たら Enter」。
    reaction 你自己在 Teams 点。
-2. 自动：在 GoAnywhere 上执行 Ctrl+F「フィルタリングする」→ Esc → Tab×5 → Enter（**更新**，不按 F5），
-   直到出现预定时刻 −2 分 ～ +13 分之间任意一分钟的行 → 读文本 → 挑出这个 job 的行 → Receive 的 job 号。
+3. 自动：在 GoAnywhere 上执行 Ctrl+F「フィルタリングする」→ Esc → Tab×5 → Enter（**更新**，不按 F5），
+   直到出现开始时刻 −2 分 ～ +13 分之间任意一分钟的行 → 读文本 → 挑出这个 job 的行 → Receive 的 job 号。
    读完文本后会**点一下页面空白处**（`pages.goAnywhere.deselectAt`，默认 1700,900），取消 Ctrl+A 留下的全选
    （Edge 里按 Esc 取消不了），不然截图会是一片蓝。
-3. 自动：截取 GoAnywhere「上面那部分」（面板标题到这个 job 的行，就是 p4 的范围）。
-4. 自动：Jenkins 按 F5 → Ctrl+End → 读文本 → 找出在 Receive 时间段里放进 report 的 `F…csv`
+4. 自动：截取 GoAnywhere「上面那部分」（面板标题到这个 job 的行，就是 p4 的范围）。
+5. 自动：Jenkins 按 F5 → Ctrl+End → 读文本 → 找出在 Receive 时间段里放进 report 的 `F…csv`
    → 用 HTTP 直接下载到 `DATA\GFIX\<W名>\`（文件夹不存在会自动建）。
-5. 自动：列出 `DATA\GIFT\<J名>\*.csv` → 按「行数相同 + 到达顺序」配对 → 逐行比较内容。
+6. 自动：列出 `DATA\GIFT\<J名>\*.csv` → 按「行数相同 + 到达顺序」配对 → 逐行比较内容。
    配不上时会停下来问你（**不猜**）。
-6. 自动：每一对文件启动一次 DF.exe（窗口 1133×429，一屏正好 16 行）→ Ctrl+Home 截图；
+7. 自动：每一对文件启动一次 DF.exe（窗口 1133×429，一屏正好 16 行）→ Ctrl+Home 截图；
    超过 16 行的再 Ctrl+End 截一张 → 关掉 DF。
-7. **GATE**：内容一致就直接过；不一致或不确定会问你（`Enter` = ok / `n` = ng / `s` = 先跳过）。
-8. **SHARE 面板**：文字「OPEN側で確認できました。前後一致です。」+ GoAnywhere 图 + DF 图已经放进剪贴板
+8. **GATE**：内容一致就直接过；不一致或不确定会问你（`Enter` = ok / `n` = ng / `s` = 先跳过）。
+9. **SHARE 面板**：文字「OPEN側で確認できました。前後一致です。」+ GoAnywhere 图 + DF 图已经放进剪贴板
    → 点 Teams 的输入框 → **Ctrl+V** → 看一眼 → 发送 → 回到控制台按 Enter。
    多个文件时，DF 图会按顺序全部带上。
-9. 记录：`capture\gfix\<W名>\track.json`（后面 logs / evidence 用），作业清单 `track = ok`。
+10. 记录：`capture\gfix\<W名>\track.json`（后面 logs / evidence 用），作业清单 `track = ok`。
 
 **第一次跑请特别看这几处**（都在 `capture\gfix\<W名>\` 里）：
 

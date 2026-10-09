@@ -2971,6 +2971,80 @@
       "summary": "Ask the operator for a value (text, time, or the run time window) with a default",
       "tier": "core"
     },
+    "human.paste": {
+      "effects": "ui",
+      "example": {
+        "use": "human.paste",
+        "with": {
+          "expect": "{{item.Excel_NAME}}",
+          "message": "Copy the Teams start message of the job and press Enter",
+          "pattern": "\\u30B8\\u30E7\\u30D6[:\\uFF1A]\\s*(?<job>[A-Z0-9]+)"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        },
+        {
+          "id": "operator_skip",
+          "transient": false
+        }
+      ],
+      "file": "modules/human/human.paste.ps1",
+      "group": "human",
+      "id": "human.paste",
+      "idempotent": true,
+      "inputs": {
+        "expect": {
+          "default": "",
+          "desc": "value the expectGroup must have (full-width folded, case-insensitive); empty = any",
+          "type": "string"
+        },
+        "expectGroup": {
+          "default": "job",
+          "type": "string"
+        },
+        "message": {
+          "desc": "what to copy (shown on the panel)",
+          "required": true,
+          "type": "string"
+        },
+        "pattern": {
+          "desc": ".NET regex searched in the clipboard text; named groups become fields",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Under DryRun or without a console nobody is asked: source=auto, the time is now, fields are empty. Map operator_skip to policy skip in the workflow (onError.byFailure) so s skips the item without a second question.",
+      "outputs": {
+        "clock": {
+          "desc": "HH:mm:ss: when Enter was pressed, or the time typed",
+          "type": "string"
+        },
+        "date": {
+          "desc": "yyyy-MM-dd of that moment",
+          "type": "string"
+        },
+        "fields": {
+          "desc": "every named group of the pattern (\"\" when it did not match / no message)",
+          "type": "map"
+        },
+        "source": {
+          "desc": "now | typed | without | auto",
+          "type": "string"
+        },
+        "text": {
+          "desc": "the clipboard text used (\"\" when going on without one)",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Operator copies a chat message; read it from the clipboard, check it, note the time",
+      "tier": "core"
+    },
     "human.prepare": {
       "effects": "ui",
       "example": {
@@ -4740,6 +4814,65 @@
       "provides": [],
       "releases": [],
       "summary": "Compare the same fact from several sources; any disagreement is unknown",
+      "tier": "core"
+    },
+    "verify.derive_fields": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.derive_fields",
+        "with": {
+          "records": "{{steps.today.out.records}}",
+          "set": [
+            {
+              "from": "job",
+              "pattern": "^(.{4})J",
+              "replace": "${1}W",
+              "to": "Excel_NAME"
+            },
+            {
+              "to": "GFIX_DATE",
+              "value": "{{run.date}}"
+            }
+          ]
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.derive_fields.ps1",
+      "group": "verify",
+      "id": "verify.derive_fields",
+      "idempotent": true,
+      "inputs": {
+        "records": {
+          "desc": "records (excel.read_rows / verify.parse_text output)",
+          "required": true,
+          "type": "list"
+        },
+        "set": {
+          "desc": "@{ to; value } | @{ to; from } | @{ to; from; pattern; replace } (.NET regex, $1 / ${name} in replace), applied in order",
+          "required": true,
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "notes": "A rule naming a field the record lacks reads it as empty. A pattern that does not match copies the value unchanged and lists it in unchanged (a warning), so a name that does not follow the rule is visible instead of silently wrong.",
+      "outputs": {
+        "records": {
+          "desc": "copies of the input records with the fields set",
+          "type": "list"
+        },
+        "unchanged": {
+          "desc": "\"<to> <- <from>: <value>\" for every rewrite whose pattern did not match (the value was copied as is)",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Add fields to records: a constant, a copy, or a regex rewrite of another field",
       "tier": "core"
     },
     "verify.filter_records": {

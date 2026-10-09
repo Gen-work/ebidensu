@@ -1,10 +1,9 @@
 {
   "schema": 1,
   "id": "gfixRecv.plan",
-  "title": "GFIX受信: 今日やるジョブを WBS から拾い、mapping.xlsx の時刻と合わせて作業リスト (gfixrecv.csv) へ",
-  "version": "0.1.0",
+  "title": "GFIX受信: 今日やるジョブを WBS から拾って作業リスト (gfixrecv.csv) へ(mapping.xlsx に今日の行があれば時刻・ファイル数も)",
+  "version": "0.2.0",
   "profile": "gfix-recv",
-
   "vars": {
     "wbsSheet": "WBS",
     "wbsFirstRow": 7,
@@ -13,79 +12,241 @@
     "task": "修正後実施",
     "ownerPattern": "^\\s*厳\\s*($|←)|→\\s*厳\\s*$"
   },
-
-  "onError": { "policy": "ask" },
-
+  "onError": {
+    "policy": "ask"
+  },
   "setup": [
-    { "id": "load", "use": "table.load",
-      "with": { "path": "{{profile.worklist.file}}", "mustExist": false, "as": "wl" } },
-    { "id": "app", "use": "excel.ensure_app", "with": { "visible": false, "as": "xl" } },
-
-    { "id": "wbs", "use": "excel.open",
-      "with": { "app": "xl", "path": "{{profile.paths.wbs}}", "readOnly": true, "as": "wbs" } },
-    { "id": "today", "use": "excel.read_rows",
+    {
+      "id": "load",
+      "use": "table.load",
+      "with": {
+        "path": "{{profile.worklist.file}}",
+        "mustExist": false,
+        "as": "wl"
+      }
+    },
+    {
+      "id": "app",
+      "use": "excel.ensure_app",
+      "with": {
+        "visible": false,
+        "as": "xl"
+      }
+    },
+    {
+      "id": "wbs",
+      "use": "excel.open",
+      "with": {
+        "app": "xl",
+        "path": "{{profile.paths.wbs}}",
+        "readOnly": true,
+        "as": "wbs"
+      }
+    },
+    {
+      "id": "today",
+      "use": "excel.read_rows",
       "label": "WBS: 受信 / 修正後実施 / 担当が「厳」「厳←○○」「○○→厳」(OwnerFilter と同じ矢印ルール) / 最新計画の開始 = 今日",
-      "with": { "workbook": "wbs", "sheet": "{{vars.wbsSheet}}", "firstRow": "{{vars.wbsFirstRow}}",
-                "columns": { "job": "A", "side": "B", "task": "G", "owner": "P", "start": "AF" },
-                "dateFields": ["start"],
-                "where": [ { "field": "side", "op": "equals", "value": "{{vars.side}}" },
-                           { "field": "task", "op": "equals", "value": "{{vars.task}}" },
-                           { "field": "owner", "op": "matches", "value": "{{vars.ownerPattern}}" },
-                           { "field": "start", "op": "equals", "value": "{{run.date}}" } ],
-                "pluck": "job" } },
-    { "id": "wbsClose", "use": "excel.close", "with": { "workbook": "wbs" } },
-
-    { "id": "map", "use": "excel.open",
-      "with": { "app": "xl", "path": "{{profile.paths.mapping}}", "readOnly": true, "as": "map" } },
-    { "id": "rows", "use": "excel.read_rows",
-      "label": "mapping.xlsx: WBS の今日のジョブの行(1 ファイル 1 行)",
-      "with": { "workbook": "map", "sheet": "{{vars.mappingSheet}}", "firstRow": 2,
-                "columns": { "JOB": "A", "Excel_NAME": "B", "USER": "C", "RCVFILE": "D", "GFIX_DATE": "O", "GFIX_TIME": "P" },
-                "dateFields": ["GFIX_DATE"], "timeFields": ["GFIX_TIME"],
-                "where": [ { "field": "JOB", "op": "in", "value": "{{steps.today.out.plucked}}" } ],
-                "pluck": "JOB" } },
-    { "id": "mine", "use": "excel.read_rows",
-      "label": "mapping.xlsx: GFIX実行日 = 今日 の行(自分の予定表)",
-      "with": { "workbook": "map", "sheet": "{{vars.mappingSheet}}", "firstRow": 2,
-                "columns": { "JOB": "A", "Excel_NAME": "B", "USER": "C", "RCVFILE": "D", "GFIX_DATE": "O", "GFIX_TIME": "P" },
-                "dateFields": ["GFIX_DATE"], "timeFields": ["GFIX_TIME"],
-                "where": [ { "field": "GFIX_DATE", "op": "equals", "value": "{{run.date}}" } ],
-                "pluck": "JOB" } },
-    { "id": "mapClose", "use": "excel.close", "with": { "workbook": "map" } },
-
-    { "id": "cmp", "use": "verify.compare_sets",
-      "with": { "left": "{{steps.today.out.plucked}}", "right": "{{steps.mine.out.plucked}}",
-                "leftLabel": "WBS (today, yours)", "rightLabel": "mapping.xlsx (GFIX date = today)" } },
-    { "id": "gate", "use": "human.gate",
-      "label": "WBS と mapping.xlsx の食い違いを確認(Enter = 両方とも作業リストへ / s = 作業リストを変えずに終わる)",
-      "with": { "code": "{{steps.cmp.out.code}}", "askWhen": ["unknown"], "reason": "{{steps.cmp.out.reason}}",
-                "evidence": ["{{profile.paths.wbs}}", "{{profile.paths.mapping}}"] } },
-
-    { "id": "noRow", "use": "verify.compare_sets",
-      "label": "WBS の今日のジョブのうち mapping.xlsx に行がないもの(W名・GFIX時刻が分からないので作業リストに入れられない)",
-      "with": { "left": "{{steps.today.out.plucked}}", "right": "{{steps.rows.out.plucked}}",
-                "leftLabel": "WBS (today, yours)", "rightLabel": "mapping.xlsx (any date) -- NOT ADDED, no W name / GFIX time; add them to mapping.xlsx and run plan again" } },
-    { "id": "noRowGate", "use": "human.gate", "when": "steps.gate.out.action != skip",
-      "label": "mapping.xlsx に行がない WBS のジョブは作業リストに入らない(Enter = 行のあるジョブだけ作業リストへ / それ以外 = 何も書かずに終わる)",
-      "with": { "code": "{{steps.noRow.out.code}}", "askWhen": ["unknown"], "reason": "{{steps.noRow.out.reason}}",
-                "evidence": ["{{profile.paths.mapping}}"] } },
-
-    { "id": "upsertWbs", "use": "table.upsert", "when": "steps.noRowGate.out.code == ok",
-      "with": { "worklist": "wl", "rows": "{{steps.rows.out.records}}",
-                "fields": { "Excel_NAME": "Excel_NAME", "JOB": "JOB", "USER": "USER", "RCVFILE": "RCVFILE",
-                            "GFIX_DATE": "GFIX_DATE", "GFIX_TIME": "GFIX_TIME" },
-                "countAs": "FileCount", "overwrite": ["GFIX_DATE", "GFIX_TIME"],
-                "resetOnChange": { "watch": "GFIX_DATE", "clear": ["track", "logs", "evidence"] } } },
-    { "id": "upsertMine", "use": "table.upsert", "when": "steps.noRowGate.out.code == ok",
-      "with": { "worklist": "wl", "rows": "{{steps.mine.out.records}}",
-                "fields": { "Excel_NAME": "Excel_NAME", "JOB": "JOB", "USER": "USER", "RCVFILE": "RCVFILE",
-                            "GFIX_DATE": "GFIX_DATE", "GFIX_TIME": "GFIX_TIME" },
-                "countAs": "FileCount", "overwrite": ["GFIX_DATE", "GFIX_TIME"],
-                "resetOnChange": { "watch": "GFIX_DATE", "clear": ["track", "logs", "evidence"] } } }
+      "with": {
+        "workbook": "wbs",
+        "sheet": "{{vars.wbsSheet}}",
+        "firstRow": "{{vars.wbsFirstRow}}",
+        "columns": {
+          "job": "A",
+          "side": "B",
+          "task": "G",
+          "owner": "P",
+          "start": "AF"
+        },
+        "dateFields": [
+          "start"
+        ],
+        "where": [
+          {
+            "field": "side",
+            "op": "equals",
+            "value": "{{vars.side}}"
+          },
+          {
+            "field": "task",
+            "op": "equals",
+            "value": "{{vars.task}}"
+          },
+          {
+            "field": "owner",
+            "op": "matches",
+            "value": "{{vars.ownerPattern}}"
+          },
+          {
+            "field": "start",
+            "op": "equals",
+            "value": "{{run.date}}"
+          }
+        ],
+        "pluck": "job"
+      }
+    },
+    {
+      "id": "wbsClose",
+      "use": "excel.close",
+      "with": {
+        "workbook": "wbs"
+      }
+    },
+    {
+      "id": "derive",
+      "use": "verify.derive_fields",
+      "label": "WBS の J名 -> 作業リストの行: Excel_NAME = W名(5文字目 J -> W)、GFIX_DATE = 今日",
+      "with": {
+        "records": "{{steps.today.out.records}}",
+        "set": [
+          {
+            "to": "Excel_NAME",
+            "from": "job",
+            "pattern": "^(.{4})J",
+            "replace": "${1}W"
+          },
+          {
+            "to": "JOB",
+            "from": "job"
+          },
+          {
+            "to": "GFIX_DATE",
+            "value": "{{run.date}}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "map",
+      "use": "excel.open",
+      "with": {
+        "app": "xl",
+        "path": "{{profile.paths.mapping}}",
+        "readOnly": true,
+        "as": "map"
+      }
+    },
+    {
+      "id": "mine",
+      "use": "excel.read_rows",
+      "label": "mapping.xlsx: GFIX実行日 = 今日 の行(あれば時刻とファイル数を足す。WBS にないジョブもここから入る)",
+      "with": {
+        "workbook": "map",
+        "sheet": "{{vars.mappingSheet}}",
+        "firstRow": 2,
+        "columns": {
+          "JOB": "A",
+          "Excel_NAME": "B",
+          "USER": "C",
+          "RCVFILE": "D",
+          "GFIX_DATE": "O",
+          "GFIX_TIME": "P"
+        },
+        "dateFields": [
+          "GFIX_DATE"
+        ],
+        "timeFields": [
+          "GFIX_TIME"
+        ],
+        "where": [
+          {
+            "field": "GFIX_DATE",
+            "op": "equals",
+            "value": "{{run.date}}"
+          }
+        ],
+        "pluck": "JOB"
+      }
+    },
+    {
+      "id": "mapClose",
+      "use": "excel.close",
+      "with": {
+        "workbook": "map"
+      }
+    },
+    {
+      "id": "cmp",
+      "use": "verify.compare_sets",
+      "with": {
+        "left": "{{steps.today.out.plucked}}",
+        "right": "{{steps.mine.out.plucked}}",
+        "leftLabel": "WBS (today, yours)",
+        "rightLabel": "mapping.xlsx (GFIX date = today)"
+      },
+      "label": "WBS と mapping.xlsx の食い違い(参考表示だけ。止まらない)"
+    },
+    {
+      "id": "upsertPlan",
+      "use": "table.upsert",
+      "with": {
+        "worklist": "wl",
+        "rows": "{{steps.derive.out.records}}",
+        "fields": {
+          "Excel_NAME": "Excel_NAME",
+          "JOB": "JOB",
+          "GFIX_DATE": "GFIX_DATE"
+        },
+        "overwrite": [
+          "GFIX_DATE"
+        ],
+        "resetOnChange": {
+          "watch": "GFIX_DATE",
+          "clear": [
+            "track",
+            "logs",
+            "evidence"
+          ]
+        }
+      }
+    },
+    {
+      "id": "upsertMine",
+      "use": "table.upsert",
+      "with": {
+        "worklist": "wl",
+        "rows": "{{steps.mine.out.records}}",
+        "fields": {
+          "Excel_NAME": "Excel_NAME",
+          "JOB": "JOB",
+          "USER": "USER",
+          "RCVFILE": "RCVFILE",
+          "GFIX_DATE": "GFIX_DATE",
+          "GFIX_TIME": "GFIX_TIME"
+        },
+        "countAs": "FileCount",
+        "overwrite": [
+          "GFIX_DATE",
+          "GFIX_TIME"
+        ],
+        "resetOnChange": {
+          "watch": "GFIX_DATE",
+          "clear": [
+            "track",
+            "logs",
+            "evidence"
+          ]
+        }
+      },
+      "label": "mapping.xlsx の今日の行: GFIX時刻とファイル数で上書き"
+    }
   ],
-
   "teardown": [
-    { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
-    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "track" } }
+    {
+      "id": "quit",
+      "use": "excel.quit_app",
+      "with": {
+        "app": "xl"
+      }
+    },
+    {
+      "id": "status",
+      "use": "progress.status",
+      "with": {
+        "worklist": "wl",
+        "field": "track"
+      }
+    }
   ]
 }
