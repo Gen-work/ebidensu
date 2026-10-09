@@ -94,6 +94,16 @@
     timeout the list page is put back so r starts from it; every job prints
     what it is doing ([n/N] opening / waiting up to Ns ...) and q / Esc in
     the console stops the wait.
+  - **Foreground rule in the runner** (operator: "only the page that is
+    needed in front, the console otherwise, so I can do other things while
+    it runs"): before each call, a call's new `front` field (a window
+    session) is brought in front -- the GoAnywhere screenshot uses it --; a
+    step that needs `foreground` brings its own window; any other step
+    after one that put a window in front puts the console back (quietly).
+    The console is always in front when the run ends.
+  - JJMRWE6L: `fc /b` says the GIFT and GFIX files are byte-identical, so
+    the "ng" was not a real difference; the compare is per-file-encoding
+    now and names column + code points if it ever says ng again.
   - Back to the job list with the page's own return control (Tab Tab Enter,
     `pages.goAnywhere.jobLogBackKeys`), never the browser's Back: the list
     is a posted form and Alt+Left showed "resend the form?" (ERR_CACHE_MISS).

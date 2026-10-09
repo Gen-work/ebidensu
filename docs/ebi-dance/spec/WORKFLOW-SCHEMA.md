@@ -105,6 +105,7 @@ PowerShell 5.1 默认直接终止进程,不触发 `finally`;就算 runner 注册
 | `when` | 条件,见 §5 |
 | `onError` | 覆盖顶层策略 |
 | `label` | 可选,`ebi explain` 里显示的说明文字 |
+| `front` | 可选,一个 `window` 种类的 Session 名。runner 在调用前把那个窗口拉到前台——给**自己不带窗口、却要看屏幕**的 step 用(例:`screen.capture_region` 截某个页面)。见 `STEP-CONTRACT.md` §4 的前台规则 |
 
 ### 2.1 `id` 为什么是必填的(P0-R3)
 

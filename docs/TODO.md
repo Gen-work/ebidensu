@@ -13,11 +13,6 @@ file stays small. Designed-then-shelved work lives in
   (WS_EX_NOACTIVATE | WS_EX_TRANSPARENT) in a corner OUTSIDE every capture
   region, showing "item n/N - step - do not touch keyboard/mouse", hidden
   for the instant of a capture. Not started.
-- **gfix-recv: JJMRWE6L compared ng at line 1 while DF said 同一内容**
-  (2026-10-09). Both files start with the same Shift_JIS bytes; the
-  compare now names column + code points -- rerun that pair, or
-  `fc.exe /b` the two files, to see whether the files really differ.
-
 - **ProcessTime: ja-OCR digit 9<->3 -- DETERMINISTIC FIX SHIPPED (v2.21.0),
   measurement still open.** The confusion itself is now handled without
   guessing, by `TimeDigitVerify.ps1`: (a) a digit that makes its field

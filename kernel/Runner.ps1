@@ -585,6 +585,16 @@ function Invoke-EbiStepCall {
         return $ebiCall['rec']
     }
 
+    # -- foreground: only the window this step needs; the console otherwise --
+    if (-not $ebiCall['ctx']['DryRun']) {
+        $ebiCall['frontH'] = [IntPtr]::Zero
+        if ($Call.Contains('front') -and -not [string]::IsNullOrWhiteSpace([string]$Call['front'])) {
+            $ebiCall['frontS'] = $ebiCall['ctx']['Session'][[string]$Call['front']]
+            if ($null -ne $ebiCall['frontS']) { try { $ebiCall['frontH'] = ConvertTo-EbiHandle $ebiCall['frontS'] } catch { } }
+        }
+        Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (@($ebiCall['manifest']['needs']) -contains 'foreground')
+    }
+
     # -- call -----------------------------------------------------------------
     $ebiCall['ret'] = $null
     $ebiCall['threw'] = ''
@@ -985,6 +995,8 @@ function Invoke-EbiWorkflow {
                 elseif ($done['outcome'] -eq 'fail' -or $done['outcome'] -eq 'skip') { [void]$unrecovered.Add($done['last']) }
             }
         }
+
+        if (-not $dryRunFlag) { Restore-EbiConsoleWindow -Quiet; $global:EbiWindowOut = $false }   # the run is over: the console in front
 
         $result['steps'] = $records.ToArray()
         $result['items'] = $itemRecords.ToArray()

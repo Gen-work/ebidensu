@@ -49,10 +49,33 @@ function Save-EbiConsoleWindow {
     } catch { }
 }
 
+function Set-EbiWindowFront {
+    <#
+      The runner's foreground rule (office feedback 2026-10-09: "only the
+      page that is needed in front, the console otherwise, so I can do
+      other things while it runs"), called before every step:
+        -FrontHWnd  the call's "front" window (a session name the workflow
+                    gave, e.g. a screen capture that must see the page)
+                    -> bring it in front
+        -NeedsForeground  the step brings its own window -> leave it
+        otherwise   a window a previous step put in front -> console back
+      Never throws; a no-op off Windows.
+    #>
+    param([IntPtr]$FrontHWnd = [IntPtr]::Zero, [bool]$NeedsForeground = $false)
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    try {
+        if ($FrontHWnd -ne [IntPtr]::Zero) { [void](Set-EbiForeground -HWnd $FrontHWnd -SettleMs 300); return }
+        if ($NeedsForeground) { return }
+        if ($global:EbiWindowOut) { Restore-EbiConsoleWindow -Quiet; $global:EbiWindowOut = $false }
+    } catch { }
+}
+
 function Restore-EbiConsoleWindow {
     # Bring the remembered console back before reading an answer. The
     # first office run: after the browser steps the panel waited in a
-    # console hidden behind Edge. Best effort; never throws.
+    # console hidden behind Edge. Best effort; never throws. -Quiet: no
+    # blink, no beep (the runner putting the console back between steps).
+    param([switch]$Quiet)
     if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
     try {
         $h = $global:EbiConsoleHwnd
@@ -60,6 +83,7 @@ function Restore-EbiConsoleWindow {
         if ([EbiNative]::GetForegroundWindow() -ne $h) {
             $fg = Set-EbiForeground -HWnd $h -SettleMs 100
             # still behind: blink its taskbar button so it can be found
+            if ($Quiet) { return }
             if (-not $fg['ok']) { [void][EbiNative]::FlashWindow($h, $true) }
             try { [Console]::Beep(880, 120) } catch { }   # the console was behind: say a question is waiting
         }

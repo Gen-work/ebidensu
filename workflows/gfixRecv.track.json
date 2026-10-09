@@ -185,6 +185,7 @@
     {
       "id": "gaShot",
       "use": "screen.capture_region",
+      "front": "ga",
       "with": {
         "x": "{{steps.gaRegion.out.x}}",
         "y": "{{steps.gaRegion.out.y}}",

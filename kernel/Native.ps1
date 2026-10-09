@@ -128,7 +128,12 @@ function Set-EbiForeground {
         }
         [void][EbiNative]::SetForegroundWindow($HWnd)
         Start-Sleep -Milliseconds ([Math]::Max(50, $SettleMs))
-        if ([EbiNative]::GetForegroundWindow() -eq $HWnd) { return @{ ok = $true; message = '' } }
+        if ([EbiNative]::GetForegroundWindow() -eq $HWnd) {
+            # a window other than the operator's console is now in front: the
+            # runner puts the console back after this step (kernel/Gate.ps1)
+            $global:EbiWindowOut = ($null -eq $global:EbiConsoleHwnd -or $HWnd -ne $global:EbiConsoleHwnd)
+            return @{ ok = $true; message = '' }
+        }
     }
     return @{ ok = $false; message = ('the window did not come to the front (foreground is ' + [string][EbiNative]::GetForegroundWindow() + ')') }
 }
