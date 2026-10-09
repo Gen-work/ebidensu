@@ -79,6 +79,14 @@
     DF cuts a long title ("...F202610090033.cs]", office run 3: DF opened,
     no capture). The track closes every DF window before each start
     (`closeOthers`), so the only DF window is the new one.
+  - **file.compare said ng where DF said 同一内容** (JJMRWE6L, "first
+    difference at line 1"). Each file is now decoded in its ONE encoding
+    (`ConvertFrom-EbiTextBytes`: valid UTF-8 throughout, else Shift_JIS --
+    GIFT writes Shift_JIS, GFIX UTF-8), the characters CP932 and JIS-mapped
+    converters disagree on are folded (`ConvertTo-EbiJisNeutral`: minus,
+    wave dash, double bar, cent/pound/not, dash), and a remaining difference
+    names line, column and both code points. The exact cause on that pair
+    is not confirmed yet.
   - **Questions behind other windows**: the console is brought back with an
     input-queue attach as the last resort, its taskbar button blinks if even
     that fails, and a short beep says a question is waiting.

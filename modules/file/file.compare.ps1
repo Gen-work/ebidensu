@@ -1,8 +1,9 @@
 # modules/file/file.compare.ps1
 # Compare pairs of text files line by line, blind to CRLF vs LF (the
 # question a diff tool's "same content" answers, asked without the tool).
-# Both sides are decoded the same way, so two files with identical bytes
-# always compare equal whatever their encoding.
+# Each file is decoded in its own single encoding (UTF-8 if it is valid
+# UTF-8 throughout, else Shift_JIS) and the TEXT is compared: the GIFT side
+# writes Shift_JIS, the GFIX side UTF-8, and DF calls them the same content.
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')    # Resolve-EbiWorkPath
 . (Join-Path $PSScriptRoot '..\..\kernel\LogText.ps1')
@@ -24,7 +25,7 @@ $Manifest = @{
   }
   outputs    = @{
     code      = @{ type='string'; desc='ok (all identical) | ng (a pair differs) | unknown (no pairs, or a file missing)' }
-    results   = @{ type='list';   desc='@{ left; right; identical; firstDiff; leftLines; rightLines } per pair' }
+    results   = @{ type='list';   desc='@{ left; right; identical; firstDiff; leftLines; rightLines; leftEncoding; rightEncoding } per pair' }
     identical = @{ type='int';    desc='pairs that are identical' }
     reason    = @{ type='string' }
   }
@@ -51,13 +52,23 @@ function Invoke-Step {
             $code = 'unknown'; [void]$why.Add(('missing: ' + $(if (-not (Test-Path -LiteralPath $l)) { $l } else { $r })))
             [void]$res.Add(@{ left = $l; right = $r; identical = $false; firstDiff = 0; leftLines = 0; rightLines = 0 }); continue
         }
-        $a = (ConvertFrom-EbiMixedBytes -Bytes ([System.IO.File]::ReadAllBytes($l)))['text']
-        $b = (ConvertFrom-EbiMixedBytes -Bytes ([System.IO.File]::ReadAllBytes($r)))['text']
-        $c = Compare-EbiTextLines -Left $a -Right $b
-        if ([bool]$c['identical']) { $same++ } else { if ($code -eq 'ok') { $code = 'ng' }; [void]$why.Add(('{0} vs {1}: first difference at line {2} ({3} vs {4} lines)' -f (Split-Path $l -Leaf), (Split-Path $r -Leaf), $c['firstDiff'], $c['leftLines'], $c['rightLines'])) }
-        [void]$res.Add(@{ left = $l; right = $r; identical = [bool]$c['identical']; firstDiff = [int]$c['firstDiff']; leftLines = [int]$c['leftLines']; rightLines = [int]$c['rightLines'] })
+        # each file in its own single encoding (GIFT Shift_JIS, GFIX UTF-8):
+        # the TEXT is compared, as the diff tool's "same content" does
+        $da = ConvertFrom-EbiTextBytes -Bytes ([System.IO.File]::ReadAllBytes($l))
+        $db = ConvertFrom-EbiTextBytes -Bytes ([System.IO.File]::ReadAllBytes($r))
+        $c = Compare-EbiTextLines -Left (ConvertTo-EbiJisNeutral -Text $da['text']) -Right (ConvertTo-EbiJisNeutral -Text $db['text'])
+        $encNote = if ($da['encoding'] -ne $db['encoding']) { (' [' + $da['encoding'] + ' vs ' + $db['encoding'] + ']') } else { '' }
+        if (-not [bool]$c['identical']) {
+            # say exactly where: the line, the column, the two characters
+            $la = @(Get-EbiTextLines -Text $da['text']); $lb = @(Get-EbiTextLines -Text $db['text'])
+            $k = [int]$c['firstDiff'] - 1
+            $fd = Get-EbiFirstCharDiff -Left $(if ($k -lt $la.Count) { [string]$la[$k] } else { '' }) -Right $(if ($k -lt $lb.Count) { [string]$lb[$k] } else { '' })
+            if ([int]$fd['col'] -gt 0) { $encNote = $encNote + (' col ' + $fd['col'] + ': ' + $(if ($fd['left'] -ne '') { $fd['left'] } else { 'end' }) + ' vs ' + $(if ($fd['right'] -ne '') { $fd['right'] } else { 'end' })) }
+        }
+        if ([bool]$c['identical']) { $same++; if ($encNote -ne '') { [void]$why.Add(('{0} vs {1}: same text{2}' -f (Split-Path $l -Leaf), (Split-Path $r -Leaf), $encNote)) } } else { if ($code -eq 'ok') { $code = 'ng' }; [void]$why.Add(('{0} vs {1}: first difference at line {2} ({3} vs {4} lines){5}' -f (Split-Path $l -Leaf), (Split-Path $r -Leaf), $c['firstDiff'], $c['leftLines'], $c['rightLines'], $encNote)) }
+        [void]$res.Add(@{ left = $l; right = $r; identical = [bool]$c['identical']; firstDiff = [int]$c['firstDiff']; leftLines = [int]$c['leftLines']; rightLines = [int]$c['rightLines']; leftEncoding = $da['encoding']; rightEncoding = $db['encoding'] })
     }
     if ($Ctx['DryRun']) { return @{ ok = $true; code = 'ok'; results = $res.ToArray(); identical = 0; reason = 'dry run' } }
-    $reason = if ($why.Count -gt 0) { $why -join '; ' } else { ('' + $same + ' pair(s) identical') }
+    $reason = if ($code -eq 'ok') { ('' + $same + ' pair(s) identical' + $(if ($why.Count -gt 0) { ' -- ' + ($why -join '; ') } else { '' })) } elseif ($why.Count -gt 0) { $why -join '; ' } else { ('' + $same + ' pair(s) identical') }
     return @{ ok = $true; code = $code; results = $res.ToArray(); identical = $same; reason = $reason }
 }

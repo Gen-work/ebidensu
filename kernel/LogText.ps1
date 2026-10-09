@@ -369,6 +369,58 @@ function Select-EbiFilePairs {
     return @{ code = $code; pairs = $pairs.ToArray(); leftOver = $lo; rightOver = $ro; reason = $why }
 }
 
+function ConvertFrom-EbiTextBytes {
+    <#
+      PURE. A whole data file -> @{ text; encoding = utf8 | cp932 }. The
+      file is ONE encoding: valid UTF-8 throughout (BOM skipped) is UTF-8,
+      anything else is CP932. Unlike ConvertFrom-EbiMixedBytes (a log with
+      stray bytes), no line is decoded on its own -- a Shift_JIS line can
+      contain byte runs that are also valid UTF-8, and mixing would then
+      read the same content two ways. GFIX files are UTF-8 where the GIFT
+      side is Shift_JIS; a diff tool reads both as the same text.
+    #>
+    param([byte[]]$Bytes)
+    if ($null -eq $Bytes -or $Bytes.Length -eq 0) { return @{ text = ''; encoding = 'utf8' } }
+    $start = 0
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { $start = 3 }
+    try {
+        $t = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($Bytes, $start, $Bytes.Length - $start)
+        return @{ text = $t; encoding = 'utf8' }
+    } catch {
+        return @{ text = (Get-EbiCodePage -CodePage 932).GetString($Bytes); encoding = 'cp932' }
+    }
+}
+
+function ConvertTo-EbiJisNeutral {
+    <#
+      PURE. Fold the characters Shift_JIS <-> Unicode converters disagree on
+      (Windows CP932 vs JIS-mapped Java/ICU: U+FF0D vs U+2212 minus, U+FF5E
+      vs U+301C wave dash, U+2225 vs U+2016, U+FFE0/1/2 vs U+00A2/3/AC,
+      U+2015 vs U+2014) to one form, so a UTF-8 file converted on the GFIX
+      side reads as the same text as the GIFT side's Shift_JIS -- which is
+      what the diff tool, comparing in Shift_JIS, reports.
+    #>
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $map = @{ 0x2212 = 0xFF0D; 0x301C = 0xFF5E; 0x2016 = 0x2225; 0x00A2 = 0xFFE0; 0x00A3 = 0xFFE1; 0x00AC = 0xFFE2; 0x2014 = 0x2015 }
+    $sb = New-Object System.Text.StringBuilder($Text.Length)
+    foreach ($ch in $Text.ToCharArray()) { $c = [int]$ch; if ($map.ContainsKey($c)) { [void]$sb.Append([char]$map[$c]) } else { [void]$sb.Append($ch) } }
+    return $sb.ToString()
+}
+
+function Get-EbiFirstCharDiff {
+    # PURE. Where two lines first differ: @{ col (1-based, 0 = same); left; right } as U+XXXX ('' past the end).
+    param([string]$Left, [string]$Right)
+    $a = if ($null -eq $Left) { '' } else { $Left }; $b = if ($null -eq $Right) { '' } else { $Right }
+    $n = [Math]::Max($a.Length, $b.Length)
+    for ($i = 0; $i -lt $n; $i++) {
+        $ca = if ($i -lt $a.Length) { 'U+{0:X4}' -f [int]$a[$i] } else { '' }
+        $cb = if ($i -lt $b.Length) { 'U+{0:X4}' -f [int]$b[$i] } else { '' }
+        if ($ca -ne $cb) { return @{ col = ($i + 1); left = $ca; right = $cb } }
+    }
+    return @{ col = 0; left = ''; right = '' }
+}
+
 function Compare-EbiTextLines {
     <#
       PURE. Two texts line by line, blind to CRLF vs LF and to one final

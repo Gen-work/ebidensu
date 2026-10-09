@@ -741,7 +741,7 @@ Compare pairs of text files line by line; ok when every pair is identical
 | `code` | string | ok (all identical) \| ng (a pair differs) \| unknown (no pairs, or a file missing) |
 | `identical` | int | pairs that are identical |
 | `reason` | string |  |
-| `results` | list | @{ left; right; identical; firstDiff; leftLines; rightLines } per pair |
+| `results` | list | @{ left; right; identical; firstDiff; leftLines; rightLines; leftEncoding; rightEncoding } per pair |
 
 failures: `input_invalid` (not transient)
 

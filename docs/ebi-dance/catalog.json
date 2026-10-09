@@ -1921,7 +1921,7 @@
           "type": "string"
         },
         "results": {
-          "desc": "@{ left; right; identical; firstDiff; leftLines; rightLines } per pair",
+          "desc": "@{ left; right; identical; firstDiff; leftLines; rightLines; leftEncoding; rightEncoding } per pair",
           "type": "list"
         }
       },

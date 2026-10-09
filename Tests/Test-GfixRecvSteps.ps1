@@ -279,6 +279,25 @@ try {
     Assert-True ($gl['ok'] -and $gl['total'] -eq 1) 'gift: after the files are put in, r goes on'
     $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer 'k') -Default '10:30:25' -NowClock '14:56:48'
     Assert-True ($d['clock'] -eq '10:30:25' -and $d['source'] -eq 'without') 'paste: k on a row with a time keeps that time (the second office run took now and overwrote it)'
+
+    Write-Host '  -- GIFT Shift_JIS vs GFIX UTF-8 (office run 3: DF said same content, the compare said ng at line 1)'
+    $line1 = -join @([char]0xFF33, [char]0xFF33, ',', [char]0x8A08, [char]0x753B, [char]0x5206, [char]0x985E, ',', [char]0xFF33, [char]0xFF30, [char]0x90E8, [char]0x756A, [char]0x51E6, [char]0x7406)
+    $body = $line1 + "`r`nJ,35,322003T2 JE01`r`n"
+    $sj = Get-EbiCodePage -CodePage 932
+    $pg = Join-Path $tmp 'gift.csv'; $pf = Join-Path $tmp 'gfix.csv'
+    [System.IO.File]::WriteAllBytes($pg, $sj.GetBytes($body))
+    [System.IO.File]::WriteAllBytes($pf, (New-Object System.Text.UTF8Encoding($false)).GetBytes($body.Replace("`r`n", "`n")))
+    $cmp = Invoke-TestStep 'file.compare' @{ pairs = @(@{ left = $pg; right = $pf }) }
+    Assert-True ($cmp['code'] -eq 'ok' -and $cmp['reason'].Contains('cp932 vs utf8')) ('compare: the same text in Shift_JIS and UTF-8 is the same content, and the encodings are named: ' + $cmp['reason'])
+    $minusSj = $line1 + [char]0xFF0D + "1`r`n"; $minusU = $line1 + [char]0x2212 + "1`r`n"
+    [System.IO.File]::WriteAllBytes($pg, $sj.GetBytes($minusSj)); [System.IO.File]::WriteAllBytes($pf, (New-Object System.Text.UTF8Encoding($false)).GetBytes($minusU))
+    $cmp = Invoke-TestStep 'file.compare' @{ pairs = @(@{ left = $pg; right = $pf }) }
+    Assert-Equal 'ok' $cmp['code'] 'compare: U+FF0D (CP932 minus) vs U+2212 (JIS-mapped minus) is the same character to a Shift_JIS diff'
+    [System.IO.File]::WriteAllBytes($pf, (New-Object System.Text.UTF8Encoding($false)).GetBytes($line1 + 'X1' + "`r`n"))
+    $cmp = Invoke-TestStep 'file.compare' @{ pairs = @(@{ left = $pg; right = $pf }) }
+    Assert-True ($cmp['code'] -eq 'ng' -and $cmp['reason'].Contains('col 15: U+FF0D vs U+0058')) ('compare: a real difference names line, column and both characters: ' + $cmp['reason'])
+    $d1 = ConvertFrom-EbiTextBytes -Bytes $sj.GetBytes($body)
+    Assert-True ($d1['encoding'] -eq 'cp932' -and $d1['text'] -eq $body) 'compare: a Shift_JIS file decodes as one Shift_JIS text'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
