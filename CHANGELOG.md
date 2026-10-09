@@ -15,6 +15,14 @@
   (`-Include` is ignored with `-LiteralPath`) and flagged the profile's
   `wave.png` as corrupted; it filters by extension itself now.
 
+- **`<WorkDir>\ebi.local.json` saved by Notepad as "ANSI"** (Shift_JIS)
+  was read as UTF-8, so every Japanese segment of the share paths became
+  U+FFFD and `excel.open` reported the WBS as not found. The overlay now
+  falls back to CP932 when its bytes are not valid UTF-8 and prints a
+  warning (`Read-EbiJson -AllowCp932`; every other JSON stays UTF-8 only).
+- `excel.open` failures report the `readOnly` that was asked for (the gate
+  showed `readOnly: False` for a read-only open that never happened).
+
 ### Changed
 - **`Tests\Run-Tests.ps1`** shows a progress bar (phase, suite n/N, failures
   so far) and never stops to ask: it sets `EBI_NO_ASK=1`, which the gate

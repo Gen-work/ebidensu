@@ -41,10 +41,10 @@ function Invoke-Step {
     param($In, $Ctx)
     $p = Resolve-EbiWorkPath -PathValue ([string]$In['path']) -WorkDir ([string]$Ctx['WorkDir'])
     if ($Ctx['DryRun']) { $Ctx.Log.Info(('would open {0}{1}' -f $p, $(if ([bool]$In['readOnly']) { ' read-only' } else { '' }))); return @{ ok = $true; resource = $null; path = $p; name = (Split-Path -Path $p -Leaf); sheets = @(); readOnly = [bool]$In['readOnly'] } }
-    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = $p; path = $p; name = ''; sheets = @(); readOnly = $false } }
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = $p; path = $p; name = ''; sheets = @(); readOnly = [bool]$In['readOnly'] } }
     $wb = $null
     try { $wb = $In['app'].Workbooks.Open($p, 0, [bool]$In['readOnly']) }
-    catch { return @{ ok = $false; failure = 'open_failed'; message = $_.Exception.Message; path = $p; name = ''; sheets = @(); readOnly = $false } }
+    catch { return @{ ok = $false; failure = 'open_failed'; message = $_.Exception.Message; path = $p; name = ''; sheets = @(); readOnly = [bool]$In['readOnly'] } }
     $ro = $false
     try { $ro = [bool]$wb.ReadOnly } catch { }
     if ($ro -and -not [bool]$In['readOnly']) {

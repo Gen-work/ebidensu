@@ -81,8 +81,11 @@ function Read-EbiProfile {
     if (-not [string]::IsNullOrWhiteSpace($WorkDir)) {
         $local = Join-Path $WorkDir 'ebi.local.json'
         if (Test-Path -LiteralPath $local -PathType Leaf) {
-            $r = Read-EbiJson -Path $local
+            # hand-edited: tolerate Notepad's "ANSI" (Shift_JIS) save, but say so
+            $r = Read-EbiJson -Path $local -AllowCp932
             if (-not $r['ok']) { $result['message'] = $r['message']; $result['missing'] = $missing.ToArray(); return $result }
+            $result['localEncoding'] = $r['encoding']
+            if ($r['encoding'] -eq 'cp932') { Write-Host ('  [warn ] ' + $local + ' is not UTF-8; read it as Shift_JIS (CP932). Save it as UTF-8 to silence this.') -ForegroundColor Yellow }
             if ($r['value'] -is [System.Collections.IDictionary]) { $profile = Merge-EbiHashtable -Base $profile -Overlay $r['value']; $result['overlay'] = $true }
         }
     }
