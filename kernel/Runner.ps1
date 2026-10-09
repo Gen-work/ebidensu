@@ -588,11 +588,16 @@ function Invoke-EbiStepCall {
     # -- foreground: only the window this step needs; the console otherwise --
     if (-not $ebiCall['ctx']['DryRun']) {
         $ebiCall['frontH'] = [IntPtr]::Zero
+        $ebiCall['frontN'] = ''
         if ($Call.Contains('front') -and -not [string]::IsNullOrWhiteSpace([string]$Call['front'])) {
-            $ebiCall['frontS'] = $ebiCall['ctx']['Session'][[string]$Call['front']]
-            if ($null -ne $ebiCall['frontS']) { try { $ebiCall['frontH'] = ConvertTo-EbiHandle $ebiCall['frontS'] } catch { } }
+            $ebiCall['frontN'] = [string]$Call['front']
+            $ebiCall['frontH'] = Get-EbiSessionHandle -Entry $ebiCall['ctx']['Session'][$ebiCall['frontN']]
+            # an unresolved front would fall through to "console back" -- exactly the
+            # window the screenshot must not show (first evidence run, 10-09)
+            if ($ebiCall['frontH'] -eq [IntPtr]::Zero) { $ebiCall['ctx'].Log.Warn(('front "{0}" is not a registered window: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
         }
-        Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (@($ebiCall['manifest']['needs']) -contains 'foreground')
+        $ebiCall['frontOk'] = Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (@($ebiCall['manifest']['needs']) -contains 'foreground')
+        if ($ebiCall['frontH'] -ne [IntPtr]::Zero -and -not $ebiCall['frontOk']) { $ebiCall['ctx'].Log.Warn(('front "{0}" did not come to the front: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
     }
 
     # -- call -----------------------------------------------------------------

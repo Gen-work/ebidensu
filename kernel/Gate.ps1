@@ -59,15 +59,27 @@ function Set-EbiWindowFront {
                     -> bring it in front
         -NeedsForeground  the step brings its own window -> leave it
         otherwise   a window a previous step put in front -> console back
-      Never throws; a no-op off Windows.
+      Returns $false only when a front window was asked for and did not
+      come to the front. Never throws; a no-op ($true) off Windows.
     #>
     param([IntPtr]$FrontHWnd = [IntPtr]::Zero, [bool]$NeedsForeground = $false)
-    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return $true }
     try {
-        if ($FrontHWnd -ne [IntPtr]::Zero) { [void](Set-EbiForeground -HWnd $FrontHWnd -SettleMs 300); return }
-        if ($NeedsForeground) { return }
+        if ($FrontHWnd -ne [IntPtr]::Zero) { return [bool](Set-EbiForeground -HWnd $FrontHWnd -SettleMs 300)['ok'] }
+        if ($NeedsForeground) { return $true }
         if ($global:EbiWindowOut) { Restore-EbiConsoleWindow -Quiet; $global:EbiWindowOut = $false }
-    } catch { }
+    } catch { return ($FrontHWnd -eq [IntPtr]::Zero) }
+    return $true
+}
+
+function Get-EbiSessionHandle {
+    # PURE. The window handle of a $Ctx.Session entry (@{ kind; value; ... }
+    # -- the runner's own record, not the bare value a step receives) or of
+    # a bare value; Zero when there is none. 3560785 passed the whole entry
+    # to ConvertTo-EbiHandle, which turned every "front" into Zero.
+    param($Entry)
+    if ($Entry -is [System.Collections.IDictionary]) { if (-not $Entry.Contains('value')) { return [IntPtr]::Zero }; $Entry = $Entry['value'] }
+    try { return (ConvertTo-EbiHandle $Entry) } catch { return [IntPtr]::Zero }
 }
 
 function Restore-EbiConsoleWindow {

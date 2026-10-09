@@ -1,6 +1,13 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **The runner's `front` field never worked** (since the foreground rule):
+  it converted the whole `$Ctx.Session` entry (`@{ kind; value }`) to a
+  handle, got Zero, and fell through to "console back" -- so the console
+  was raised over the page right before every `front` screenshot (second
+  evidence run: still 2 ink rows). `Get-EbiSessionHandle` (Gate.ps1) reads
+  the entry's value; an unresolved front, or one that does not come to the
+  front, now prints a `[warn ]` instead of passing silently.
 - **`gfixRecv.evidence` boxed nothing on the Jenkins screenshot**
   (`screen.list_rects: not_found`, first evidence run, SJDSWM40). Two
   causes: `jkShot` had no `front`, so the foreground rule put the console

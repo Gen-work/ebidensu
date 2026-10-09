@@ -84,5 +84,14 @@ Assert-Equal 'n' (Invoke-EbiGateAsk -Question @{ kind = 'confirm'; section = 'ea
 Assert-Equal 'y' (Invoke-EbiGateAsk -Question @{ kind = 'confirm'; section = 'each'; id = 'rep'; use = 'x.y'; key = ''; group = ''; effects = 'destructive'; with = @{} } -DryRun $true) 'ask: confirm under DryRun is y'
 Assert-Equal 's' (Invoke-EbiGateAsk -Question @{ kind = 'error'; section = 'setup'; id = 'e'; use = 'x.y'; key = ''; group = ''; failure = 'boom'; message = 'm'; attempt = 1; transient = $false; policy = 'ask' } -DryRun $true) 'ask: error under DryRun is s'
 
+# ---------------------------------------------------------------- the "front" handle
+# $Ctx.Session holds @{ kind; value }: 3560785 converted the whole entry, so
+# every "front" came out Zero and the console was put back over the page
+# right before the screenshot (first evidence run, 10-09).
+Assert-Equal ([IntPtr]1234) (Get-EbiSessionHandle -Entry @{ kind = 'window'; value = [IntPtr]1234; registeredBy = 'jk' }) 'front: a session entry gives its value as the handle'
+Assert-Equal ([IntPtr]99) (Get-EbiSessionHandle -Entry 99) 'front: a bare value still works'
+Assert-Equal ([IntPtr]::Zero) (Get-EbiSessionHandle -Entry $null) 'front: an unregistered name is Zero'
+Assert-Equal ([IntPtr]::Zero) (Get-EbiSessionHandle -Entry @{ kind = 'window' }) 'front: an entry with no value is Zero'
+
 $rc = Complete-Tests
 exit $rc
