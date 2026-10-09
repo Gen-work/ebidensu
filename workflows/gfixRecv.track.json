@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -72,7 +72,8 @@
         "pattern": "{{profile.vocabulary.startPattern}}",
         "expect": "{{item.Excel_NAME}}",
         "expectGroup": "job",
-        "defaultClock": "{{item.GFIX_TIME}}"
+        "defaultClock": "{{item.GFIX_TIME}}",
+        "messageWithTime": "{{item.Excel_NAME}} 開始 {{item.GFIX_TIME}}: {{profile.vocabulary.messages.startConfirm}}"
       }
     },
     {
@@ -112,11 +113,13 @@
       "with": {
         "window": "ga",
         "containsAny": "{{steps.win.out.minuteTexts}}",
-        "deselectAt": "{{page.deselectAt}}",
         "refreshRecipe": "{{page.refreshRecipe}}",
         "timeoutSec": "{{page.timeoutSec}}",
         "pollMs": "{{page.pollMs}}",
-        "archiveTo": "{{vars.capture}}/{{item.keySafe}}/goanywhere.txt"
+        "archiveTo": "{{vars.capture}}/{{item.keySafe}}/goanywhere.txt",
+        "deselectRecipe": "{{page.deselectRecipe}}",
+        "expectPage": "{{page.fingerprint.ok}}",
+        "settledAfter": "{{steps.win.out.window.to}}"
       }
     },
     {
@@ -211,7 +214,8 @@
         "refreshRecipe": "{{profile.pages.jenkinsReport.refreshRecipe}}",
         "timeoutSec": "{{profile.pages.jenkinsReport.timeoutSec}}",
         "pollMs": "{{profile.pages.jenkinsReport.pollMs}}",
-        "archiveTo": "{{vars.capture}}/{{item.keySafe}}/jenkins.txt"
+        "archiveTo": "{{vars.capture}}/{{item.keySafe}}/jenkins.txt",
+        "expectPage": "{{profile.pages.jenkinsReport.fingerprint.ok}}"
       }
     },
     {
@@ -255,13 +259,37 @@
       }
     },
     {
+      "id": "giftNames",
+      "use": "verify.derive_fields",
+      "label": "GIFT 側のフォルダ名の候補: J名そのまま / 5文字目を M にした名前",
+      "with": {
+        "records": [
+          {
+            "job": "{{item.JOB}}"
+          }
+        ],
+        "set": [
+          {
+            "to": "m",
+            "from": "job",
+            "pattern": "^(.{4}).",
+            "replace": "${1}M"
+          }
+        ]
+      }
+    },
+    {
       "id": "gift",
       "use": "file.list",
       "with": {
         "dir": "{{profile.paths.bix}}/DATA/GIFT/{{item.JOB}}",
         "glob": "*.csv",
-        "countLines": true
-      }
+        "countLines": true,
+        "alsoDirs": [
+          "{{profile.paths.bix}}/DATA/GIFT/{{steps.giftNames.out.records.0.m}}"
+        ]
+      },
+      "label": "GIFT 側のファイル: DATA/GIFT/<J名>、無ければ <5文字目 M>。どちらも無ければ止まって聞く"
     },
     {
       "id": "pair",

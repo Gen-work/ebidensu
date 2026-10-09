@@ -32,6 +32,10 @@ public static class EbiNative {
     [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool FlashWindow(IntPtr hWnd, bool bInvert);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
@@ -108,6 +112,20 @@ function Set-EbiForeground {
         # just pressed Enter in keeps the lock); a key event from this
         # process lifts that refusal. Seen on the first office run.
         if ($try -gt 1) { [EbiNative]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [EbiNative]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero) }
+        if ($try -eq 3) {
+            # last try: share the input queue of the window in front for a
+            # moment -- the documented way to be allowed to change focus
+            $fgw = [EbiNative]::GetForegroundWindow()
+            $pidOut = [uint32]0
+            $fgThread = [EbiNative]::GetWindowThreadProcessId($fgw, [ref]$pidOut)
+            $me = [EbiNative]::GetCurrentThreadId()
+            if ($fgThread -ne 0 -and $fgThread -ne $me) {
+                [void][EbiNative]::AttachThreadInput($me, $fgThread, $true)
+                [void][EbiNative]::BringWindowToTop($HWnd)
+                [void][EbiNative]::SetForegroundWindow($HWnd)
+                [void][EbiNative]::AttachThreadInput($me, $fgThread, $false)
+            }
+        }
         [void][EbiNative]::SetForegroundWindow($HWnd)
         Start-Sleep -Milliseconds ([Math]::Max(50, $SettleMs))
         if ([EbiNative]::GetForegroundWindow() -eq $HWnd) { return @{ ok = $true; message = '' } }
@@ -338,11 +356,16 @@ function Invoke-EbiFindText {
     # some symbols), Esc to close the bar -- Chromium then leaves the focus
     # on the FIRST match (the active one while typing; an Enter here would
     # jump to the second) or the link it sits in.
+    # The box is EMPTIED before pasting: re-pasting the text already there
+    # starts no new search, Esc then left the focus where it was, and the
+    # Tabs of the recipe walked to another control (the first office run
+    # landed on a different page from the second refresh on).
     param([string]$Text)
     Set-EbiClipboardText -Text $Text
     Send-EbiKeys -Keys '^{f}' -WaitMs 300
     Send-EbiKeys -Keys '^a' -WaitMs 100
-    Send-EbiKeys -Keys '^v' -WaitMs 500
+    Send-EbiKeys -Keys '{BACKSPACE}' -WaitMs 250
+    Send-EbiKeys -Keys '^v' -WaitMs 600
     Send-EbiKeys -Keys '{ESC}' -WaitMs 300
 }
 

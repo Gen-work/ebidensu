@@ -57,7 +57,12 @@ function Restore-EbiConsoleWindow {
     try {
         $h = $global:EbiConsoleHwnd
         if ($null -eq $h -or $h -eq [IntPtr]::Zero) { return }
-        if ([EbiNative]::GetForegroundWindow() -ne $h) { [void](Set-EbiForeground -HWnd $h -SettleMs 100) }
+        if ([EbiNative]::GetForegroundWindow() -ne $h) {
+            $fg = Set-EbiForeground -HWnd $h -SettleMs 100
+            # still behind: blink its taskbar button so it can be found
+            if (-not $fg['ok']) { [void][EbiNative]::FlashWindow($h, $true) }
+            try { [Console]::Beep(880, 120) } catch { }   # the console was behind: say a question is waiting
+        }
     } catch { }
 }
 

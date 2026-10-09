@@ -51,6 +51,31 @@
 - **Questions waited behind the browser**: the runner remembers the console
   window at start and every gate panel brings it back before reading.
 
+- Second office run (all six jobs replayed from gfixrecv.csv times):
+  - **The GoAnywhere refresh walked to another page from the second refresh
+    on**: re-pasting the same text into the find box starts no new search,
+    so Esc left the focus where it was and the Tabs went elsewhere. The box
+    is emptied before pasting. The deselect CLICK after reading is gone for
+    GoAnywhere too (a find drops the selection instead; a fixed-pixel click
+    can hit a link off 100 % display scale).
+  - `browser.wait_for` stops at once with `wrong_page` when a read lacks the
+    page's own texts (`expectPage`) instead of pressing keys on a wrong page
+    for two minutes; a time window already over (`settledAfter`) is decided
+    by one read; q / Esc in the console stops the wait (Ctrl+C killed the
+    whole run).
+  - **DF captured an old DF window** left open: `screen.launch_capture`
+    never takes a window that was there before the start unless its title
+    shows this pair's file names.
+  - **GIFT folder**: `file.list alsoDirs`; the track tries DATA/GIFT/<J name>
+    then the same name with M as 5th character, and stops naming both when
+    neither exists.
+  - **Questions behind other windows**: the console is brought back with an
+    input-queue attach as the last resort, its taskbar button blinks if even
+    that fails, and a short beep says a question is waiting.
+  - The PASTE panel says "the row has a start time, Enter uses it" on a
+    rerun instead of the copy-the-Teams-message text; the setup panel is a
+    numbered checklist (and asks to close old DF windows).
+
 ### Added
 - `verify.derive_fields` (constant / copy / regex rewrite of a field on
   every record) and `human.paste` (clipboard message + regex + the moment);

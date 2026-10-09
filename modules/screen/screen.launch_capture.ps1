@@ -70,6 +70,31 @@ function ScreenLaunchCapture-Stem {
     return ('run{0}' -f $N)
 }
 
+function ScreenLaunchCapture-PickWindow {
+    <#
+      PURE. Which listed top window is the run just started? -> handle or 0.
+        Windows   @(@{ handle; title }) now on screen
+        Before    handles that matched the title BEFORE the start (an old
+                  diff window the operator left open must never be captured)
+        Title     the title fragment (DF - )
+        Names     file names the right window's title must show
+      A new window with every name > any new window > a window with every
+      name even if it was already there (a single-instance program that
+      reused its old window for the new pair) > 0.
+    #>
+    param($Windows, $Before, [string]$Title, $Names)
+    $cand = @(@($Windows) | Where-Object { [string]$_['title'] -ne '' -and ([string]$_['title']).IndexOf($Title, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 })
+    $names = @(@($Names) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    $hasAll = { param($t) foreach ($n in $names) { if (([string]$t).IndexOf([string]$n, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { return $false } }; return $true }
+    $old = @(@($Before) | ForEach-Object { [string]$_ })
+    $new = @($cand | Where-Object { $old -notcontains [string]$_['handle'] })
+    foreach ($w in $new) { if (& $hasAll $w['title']) { return $w['handle'] } }
+    if ($new.Count -gt 0 -and $names.Count -eq 0) { return $new[0]['handle'] }
+    if ($names.Count -gt 0) { foreach ($w in $cand) { if (& $hasAll $w['title']) { return $w['handle'] } } }
+    if ($new.Count -gt 0) { return $new[0]['handle'] }
+    return [IntPtr]::Zero
+}
+
 function Invoke-Step {
     param($In, $Ctx)
     $work = [string]$Ctx['WorkDir']
@@ -98,18 +123,23 @@ function Invoke-Step {
         $n++
         $stem = ScreenLaunchCapture-Stem -Set $s -Field ([string]$In['nameField']) -N $n
         $argList = @($fields | ForEach-Object { '"' + ([string]$s[$_]).Replace('"', '') + '"' })
+        $wt = [string]$In['windowTitle']
+        $names = @($fields | ForEach-Object { [System.IO.Path]::GetFileName([string]$s[$_]) })
+        $before = @()
+        if ($wt -ne '') { $before = @(Get-EbiTopWindows | Where-Object { ([string]$_['title']).IndexOf($wt, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 } | ForEach-Object { [string]$_['handle'] }) }
         $proc = $null
         try { $proc = Start-Process -FilePath $exe -ArgumentList $argList -PassThru }
         catch { return @{ ok = $false; failure = 'file_not_found'; message = $_.Exception.Message; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
         $h = [IntPtr]::Zero
         $deadline = (Get-Date).AddSeconds([Math]::Max(2, [int]$In['windowWaitSec']))
-        $wt = [string]$In['windowTitle']
         while ((Get-Date) -lt $deadline) {
             try { $proc.Refresh() } catch { }
             if (-not $proc.HasExited -and $proc.MainWindowHandle -ne [IntPtr]::Zero) { $h = $proc.MainWindowHandle; break }
             if ($wt -ne '') {
-                $cand = @(Get-EbiTopWindows | Where-Object { $_['title'].IndexOf($wt, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 })
-                if ($cand.Count -gt 0) { $h = $cand[0]['handle']; break }
+                # the started process showed no window (single instance): find
+                # the one showing THESE files, never an old one left open
+                $p = ScreenLaunchCapture-PickWindow -Windows @(Get-EbiTopWindows) -Before $before -Title $wt -Names $names
+                if ($p -ne [IntPtr]::Zero) { $h = $p; break }
             } elseif ($proc.HasExited) { break }
             Start-Sleep -Milliseconds 250
         }

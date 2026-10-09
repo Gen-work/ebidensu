@@ -50,7 +50,10 @@
       "x": 1700,
       "y": 900
     },
-    "_deselect_doc": "a blank point (window px) clicked after Ctrl+A/Ctrl+C so the screenshot is not all highlighted (Esc does not clear an Edge selection); below the list, maximized 1920x1080"
+    "_deselect_doc": "after Ctrl+A/Ctrl+C the selection is dropped with a find (only the small label stays selected) -- no click: a click at fixed pixels can land on a link when the display scale is not 100%. deselectAt is kept for reference, unused by the track.",
+    "deselectRecipe": [
+      "find:フィルタリングする"
+    ]
   },
   "jenkinsReport": {
     "role": "list",

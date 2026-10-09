@@ -44,7 +44,7 @@ $ctx = @{ WorkDir = $tmp; RunId = 'test'; Profile = $prof; Log = $log; DryRun = 
 $loaded = @{}
 foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
-                 'verify.derive_fields', 'human.paste')) {
+                 'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -252,6 +252,24 @@ try {
     Assert-True ($d['clock'] -eq '13:00:00' -and $d['needMessage']) 'paste: n overrides the row with NOW'
     $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer '10:30') -Default '11:45:29' -NowClock '13:00:00'
     Assert-True ($d['clock'] -eq '10:30:00' -and $d['source'] -eq 'typed' -and -not $d['needMessage']) 'paste: a typed time wins over the row'
+
+    Write-Host '  -- first office run of the track: DF window, GIFT folder, waiting'
+    $wins = @(@{ handle = '100'; title = 'DF - [C:\x\OLD1.csv  - C:\y\OLD2.csv]' }, @{ handle = '200'; title = 'DF - [C:\a\F202608310006.csv  - C:\b\F202610090033.csv]' }, @{ handle = '300'; title = 'Teams' })
+    Assert-Equal '200' ([string](ScreenLaunchCapture-PickWindow -Windows $wins -Before @('100') -Title 'DF - ' -Names @('F202608310006.csv', 'F202610090033.csv'))) 'df: the new window showing the pair, not the old one left open'
+    Assert-Equal '0' ([string][int](ScreenLaunchCapture-PickWindow -Windows @($wins[0], $wins[2]) -Before @('100') -Title 'DF - ' -Names @('F1.csv', 'F2.csv'))) 'df: only the old window there -> none (never capture it)'
+    $reused = @(@{ handle = '100'; title = 'DF - [C:\a\F1.csv  - C:\b\F2.csv]' })
+    Assert-Equal '100' ([string](ScreenLaunchCapture-PickWindow -Windows $reused -Before @('100') -Title 'DF - ' -Names @('F1.csv', 'F2.csv'))) 'df: a single-instance program that reused its window for THIS pair is taken'
+    Assert-True (BrowserWaitFor-IsPast -Iso '2000-01-01T00:00:00') 'wait: a window that ended long ago is settled (one read decides)'
+    Assert-True (-not (BrowserWaitFor-IsPast -Iso '2999-01-01T00:00:00') -and -not (BrowserWaitFor-IsPast -Iso '')) 'wait: a future window / none -> keep polling'
+    $giftRoot = Join-Path $tmp 'GIFT'
+    New-Item -ItemType Directory -Path (Join-Path $giftRoot 'JJMRME6F') -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path (Join-Path $giftRoot 'JJMRME6F') 'F1.csv'), "a`r`nb`r`n")
+    $gl = Invoke-TestStep 'file.list' @{ dir = (Join-Path $giftRoot 'JJMRJE6F'); alsoDirs = @((Join-Path $giftRoot 'JJMRME6F')); glob = '*.csv' }
+    Assert-True ($gl['ok'] -and $gl['total'] -eq 1 -and $gl['dir'].EndsWith('JJMRME6F')) 'gift: the J-name folder is missing -> the M-name one is listed'
+    $gl = Invoke-TestStep 'file.list' @{ dir = (Join-Path $giftRoot 'NONE1'); alsoDirs = @((Join-Path $giftRoot 'NONE2'), ($giftRoot + '/')); glob = '*.csv' }
+    Assert-True ((-not $gl['ok']) -and $gl['failure'] -eq 'file_not_found' -and $gl['message'].Contains('NONE1') -and $gl['message'].Contains('NONE2')) 'gift: neither folder -> stop and say every name tried (an unfilled name ending in / is never the GIFT root)'
+    $gn = Invoke-TestStep 'verify.derive_fields' @{ records = @(@{ job = 'JJMRJE6F' }); set = @(@{ to = 'm'; from = 'job'; pattern = '^(.{4}).'; replace = '${1}M' }) }
+    Assert-Equal 'JJMRME6F' $gn['records'][0]['m'] 'gift: the M-name candidate from the J name'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

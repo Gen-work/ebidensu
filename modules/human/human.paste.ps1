@@ -36,6 +36,7 @@ $Manifest = @{
     expect      = @{ type='string'; default=''; desc='value the expectGroup must have (full-width folded, case-insensitive); empty = any' }
     expectGroup = @{ type='string'; default='job' }
     defaultClock = @{ type='string'; default=''; desc='a start time already known (the worklist row): Enter takes it, n takes now' }
+    messageWithTime = @{ type='string'; default=''; desc='shown instead of message when defaultClock is set (the copy-the-message text does not fit a rerun)' }
   }
   outputs    = @{
     text    = @{ type='string'; desc='the clipboard text used ("" when going on without one)' }
@@ -140,7 +141,8 @@ function Invoke-Step {
         if ($dt['kind'] -eq 'time') { $default = [string]$dt['clock'] }
     }
     $head = New-Object System.Collections.ArrayList
-    [void]$head.Add([string]$In['message'])
+    $msg = if ($default -ne '' -and -not [string]::IsNullOrWhiteSpace([string]$In['messageWithTime'])) { [string]$In['messageWithTime'] } else { [string]$In['message'] }
+    [void]$head.Add($msg)
     if ($expect -ne '') { [void]$head.Add(('this item: ' + $expect + $(if ($default -ne '') { '   time on the row: ' + $default } else { '' }))) }
     $next = if ($default -ne '') {
         @(('Enter: start time = ' + $default + ' (the row in the worklist; the clipboard is only checked)'),

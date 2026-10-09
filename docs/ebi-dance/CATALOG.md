@@ -340,8 +340,11 @@ Poll the page text until it contains a string, or time out
 | `contains` | string |  | (empty) |  | the text that means the page is ready |
 | `containsAny` | list |  | [] |  | or: ready when ANY of these texts is there (e.g. every minute of a time window) |
 | `deselectAt` | map |  | {} |  | @{ x; y } window-relative blank point clicked after the last read, so the Ctrl+A selection does not show in a screenshot taken next |
+| `deselectRecipe` | list |  | [] |  | instead of deselectAt: keys run after the last read to drop the Ctrl+A selection without a click (e.g. find:<a label at the top>) |
+| `expectPage` | list |  | [] |  | texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes) |
 | `pollMs` | int |  | 800 |  | wait between reads |
 | `refreshRecipe` | list |  | [] |  | run before every read: find:<text> \| keys:<SendKeys> \| wait:<ms> (e.g. a refresh button the page needs) |
+| `settledAfter` | string |  | (empty) |  | ISO time after which the page cannot change any more (the end of the time window): when it is already past, one read decides -- no polling |
 | `timeoutSec` | int |  | 12 |  | give up after this many seconds |
 | `window` | session:window | yes |  |  | the window to read |
 
@@ -352,7 +355,7 @@ Poll the page text until it contains a string, or time out
 | `polls` | int |  |
 | `text` | string | the page text at the end (matched or not) |
 
-failures: `timeout` (transient), `foreground_lost` (transient), `archive_failed` (transient), `recipe_invalid` (not transient), `input_invalid` (not transient)
+failures: `timeout` (transient), `foreground_lost` (transient), `archive_failed` (transient), `recipe_invalid` (not transient), `input_invalid` (not transient), `wrong_page` (not transient)
 
 ```json
 {"id":"wait_for","use":"browser.wait_for","with":{"archiveTo":"capture/before_list/{{item.keySafe}}.txt","contains":"{{item.Correl_ID_S}}","timeoutSec":12,"window":"mainWindow"}}
@@ -890,6 +893,7 @@ List the files in a folder (size, time, optional line count) in order
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `alsoDirs` | list |  | [] |  | other names the folder may have, tried after dir (the first that has matching files wins, else the first that exists) |
 | `countLines` | bool |  | false |  | read each file and count its lines (CRLF / LF) |
 | `dir` | path | yes |  |  | relative: under the work dir |
 | `glob` | string |  | * |  |  |
@@ -898,6 +902,7 @@ List the files in a folder (size, time, optional line count) in order
 
 | output | type | desc |
 |--------|------|------|
+| `dir` | path | the folder actually listed (dir or one of alsoDirs) |
 | `files` | list | @{ name; path; size; modified (ISO); lines; order } in order |
 | `names` | list |  |
 | `paths` | list |  |
@@ -1988,6 +1993,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 | `expect` | string |  | (empty) |  | value the expectGroup must have (full-width folded, case-insensitive); empty = any |
 | `expectGroup` | string |  | job |  |  |
 | `message` | string | yes |  |  | what to copy (shown on the panel) |
+| `messageWithTime` | string |  | (empty) |  | shown instead of message when defaultClock is set (the copy-the-message text does not fit a rerun) |
 | `pattern` | string | yes |  |  | .NET regex searched in the clipboard text; named groups become fields |
 
 | output | type | desc |

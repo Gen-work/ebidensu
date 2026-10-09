@@ -784,6 +784,10 @@
         {
           "id": "input_invalid",
           "transient": false
+        },
+        {
+          "id": "wrong_page",
+          "transient": false
         }
       ],
       "file": "modules/browser/browser.wait_for.ps1",
@@ -811,6 +815,16 @@
           "desc": "@{ x; y } window-relative blank point clicked after the last read, so the Ctrl+A selection does not show in a screenshot taken next",
           "type": "map"
         },
+        "deselectRecipe": {
+          "default": [],
+          "desc": "instead of deselectAt: keys run after the last read to drop the Ctrl+A selection without a click (e.g. find:<a label at the top>)",
+          "type": "list"
+        },
+        "expectPage": {
+          "default": [],
+          "desc": "texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes)",
+          "type": "list"
+        },
         "pollMs": {
           "default": 800,
           "desc": "wait between reads",
@@ -820,6 +834,11 @@
           "default": [],
           "desc": "run before every read: find:<text> | keys:<SendKeys> | wait:<ms> (e.g. a refresh button the page needs)",
           "type": "list"
+        },
+        "settledAfter": {
+          "default": "",
+          "desc": "ISO time after which the page cannot change any more (the end of the time window): when it is already past, one read decides -- no polling",
+          "type": "string"
         },
         "timeoutSec": {
           "default": 12,
@@ -2310,6 +2329,11 @@
       "id": "file.list",
       "idempotent": true,
       "inputs": {
+        "alsoDirs": {
+          "default": [],
+          "desc": "other names the folder may have, tried after dir (the first that has matching files wins, else the first that exists)",
+          "type": "list"
+        },
         "countLines": {
           "default": false,
           "desc": "read each file and count its lines (CRLF / LF)",
@@ -2341,6 +2365,10 @@
       "needs": [],
       "notes": "order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way.",
       "outputs": {
+        "dir": {
+          "desc": "the folder actually listed (dir or one of alsoDirs)",
+          "type": "path"
+        },
         "files": {
           "desc": "@{ name; path; size; modified (ISO); lines; order } in order",
           "type": "list"
@@ -3013,6 +3041,11 @@
         "message": {
           "desc": "what to copy (shown on the panel)",
           "required": true,
+          "type": "string"
+        },
+        "messageWithTime": {
+          "default": "",
+          "desc": "shown instead of message when defaultClock is set (the copy-the-message text does not fit a rerun)",
           "type": "string"
         },
         "pattern": {
