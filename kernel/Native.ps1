@@ -29,7 +29,9 @@ public static class EbiNative {
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
@@ -90,18 +92,22 @@ function Set-EbiForeground {
       Bring the window to the front and VERIFY it is there. Returns
       @{ ok; message }. Restores a minimized window (and leaves a maximized
       one maximized); retries the
-      SetForegroundWindow once (Windows refuses it when another process
-      holds the foreground lock, and a second try after a short wait
-      usually goes through).
+      SetForegroundWindow twice, tapping Alt first (Windows refuses it
+      while another process holds the foreground lock).
     #>
     param([IntPtr]$HWnd, [int]$SettleMs = 300)
     [void](Get-EbiNative)
     if ($HWnd -eq [IntPtr]::Zero -or -not [EbiNative]::IsWindow($HWnd)) { return @{ ok = $false; message = 'the window handle is not a window (closed?)' } }
-    for ($try = 1; $try -le 2; $try++) {
+    for ($try = 1; $try -le 3; $try++) {
         # SW_RESTORE (9) only for a MINIMIZED window: on a maximized one it
         # would un-maximize it, and screen geometry measured on the maximized
         # window would land in the wrong place. Otherwise SW_SHOW (5).
         if ([EbiNative]::IsIconic($HWnd)) { [void][EbiNative]::ShowWindowAsync($HWnd, 9) } else { [void][EbiNative]::ShowWindowAsync($HWnd, 5) }
+        # Retries: tap Alt first. Windows refuses SetForegroundWindow to a
+        # process that did not get the last input (the console the operator
+        # just pressed Enter in keeps the lock); a key event from this
+        # process lifts that refusal. Seen on the first office run.
+        if ($try -gt 1) { [EbiNative]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [EbiNative]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero) }
         [void][EbiNative]::SetForegroundWindow($HWnd)
         Start-Sleep -Milliseconds ([Math]::Max(50, $SettleMs))
         if ([EbiNative]::GetForegroundWindow() -eq $HWnd) { return @{ ok = $true; message = '' } }
@@ -136,14 +142,27 @@ function Read-EbiPageText {
       put its window in front (Set-EbiForeground). Returns the text ('' when
       the clipboard came back empty).
     #>
-    param([int]$SelectWaitMs = 400, [int]$CopyWaitMs = 400)
+    param([int]$SelectWaitMs = 400, [int]$CopyWaitMs = 400, [int]$MaxCopyWaitMs = 8000)
     [void](Get-EbiNative)
     try { [System.Windows.Forms.Clipboard]::Clear() } catch { }
     Start-Sleep -Milliseconds 100
     Send-EbiKeys -Keys '^a' -WaitMs $SelectWaitMs
     Send-EbiKeys -Keys '^c' -WaitMs $CopyWaitMs
+    # A long page (a Jenkins file list of thousands of rows) takes the
+    # browser seconds to put on the clipboard: wait until the text is there
+    # and has stopped growing, up to MaxCopyWaitMs. The first office run
+    # read an empty clipboard seven times in a row after a fixed 400 ms.
+    $text = Get-EbiClipboardText
+    $deadline = (Get-Date).AddMilliseconds([Math]::Max(0, $MaxCopyWaitMs - $CopyWaitMs))
+    $last = -1
+    while ((Get-Date) -lt $deadline) {
+        if ($text.Length -gt 0 -and $text.Length -eq $last) { break }
+        $last = $text.Length
+        Start-Sleep -Milliseconds 300
+        $text = Get-EbiClipboardText
+    }
     Send-EbiKeys -Keys '{ESC}' -WaitMs 100
-    return (Get-EbiClipboardText)
+    return $text
 }
 
 function Invoke-EbiClick {

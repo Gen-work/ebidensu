@@ -35,6 +35,22 @@
   send count (kept in track.json). `s` skips the item (operator_skip ->
   policy skip). The "finished" Enter stays as the second prompt.
 
+- **The worklist is the place to set times**: `human.paste` takes the row's
+  `GFIX_TIME` on Enter (no message needed; `n` = now), a live start is
+  written back to `GFIX_TIME` (`saveTime`), and the track uses the row's
+  `GFIX_DATE` instead of the run date (time window, Jenkins date) -- so a
+  rerun, a whole day run afterwards, or an old day is an edit of
+  gfixrecv.csv.
+- **Jenkins page text read empty** seven times in a row on the first office
+  run: `Read-EbiPageText` waited a fixed 400 ms after Ctrl+C, too short for
+  a list of thousands of rows. It now waits until the clipboard holds the
+  text (up to 8 s).
+- **The first bring-to-front failed** (`foreground_lost` right after the
+  operator pressed Enter in the console): `Set-EbiForeground` tries three
+  times and taps Alt before a retry, which lifts Windows' foreground lock.
+- **Questions waited behind the browser**: the runner remembers the console
+  window at start and every gate panel brings it back before reading.
+
 ### Added
 - `verify.derive_fields` (constant / copy / regex rewrite of a field on
   every record) and `human.paste` (clipboard message + regex + the moment);

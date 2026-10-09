@@ -710,6 +710,7 @@ function Invoke-EbiWorkflow {
     )
 
     $dryRunFlag = [bool]$DryRun.IsPresent
+    if (-not $dryRunFlag) { Save-EbiConsoleWindow }   # kernel/Gate.ps1: questions bring this window back
     $resumeFlag = [bool]$Resume.IsPresent
     if ([string]::IsNullOrWhiteSpace($ModulesRoot)) { $ModulesRoot = Get-EbiDefaultModulesRoot }
     if ([string]::IsNullOrWhiteSpace($RunId))       { $RunId = New-EbiRunId }

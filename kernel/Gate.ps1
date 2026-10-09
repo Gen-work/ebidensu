@@ -31,7 +31,35 @@
 #                            Invoke-EbiDefaultAsk).
 # ============================================================
 
+. (Join-Path $PSScriptRoot 'Native.ps1')   # console window back to the front before a question
+
 function Get-EbiGateWidth { return 80 }
+
+function Save-EbiConsoleWindow {
+    # Remember the window the operator started the run from (the one in
+    # front right now: they just pressed Enter in it), so every question
+    # can bring it back after a step put a browser / DF / Excel in front.
+    # Windows only; never throws.
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    try {
+        [void](Get-EbiNative)
+        $h = [EbiNative]::GetForegroundWindow()
+        if ($h -eq [IntPtr]::Zero) { $h = [EbiNative]::GetConsoleWindow() }
+        $global:EbiConsoleHwnd = $h
+    } catch { }
+}
+
+function Restore-EbiConsoleWindow {
+    # Bring the remembered console back before reading an answer. The
+    # first office run: after the browser steps the panel waited in a
+    # console hidden behind Edge. Best effort; never throws.
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    try {
+        $h = $global:EbiConsoleHwnd
+        if ($null -eq $h -or $h -eq [IntPtr]::Zero) { return }
+        if ([EbiNative]::GetForegroundWindow() -ne $h) { [void](Set-EbiForeground -HWnd $h -SettleMs 100) }
+    } catch { }
+}
 
 function ConvertTo-EbiGateWrapped {
     # PURE. Wrap one text to at most $Width characters, breaking at spaces
@@ -169,6 +197,7 @@ function Show-EbiGate {
         return @{ action = $Auto; note = ''; auto = $true }
     }
     $read = if ($null -ne $Reader) { $Reader } else { { Read-Host } }
+    if ($null -eq $Reader) { Restore-EbiConsoleWindow }
     $tries = 0
     while ($true) {
         $tries++

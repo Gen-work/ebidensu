@@ -2996,6 +2996,11 @@
       "id": "human.paste",
       "idempotent": true,
       "inputs": {
+        "defaultClock": {
+          "default": "",
+          "desc": "a start time already known (the worklist row): Enter takes it, n takes now",
+          "type": "string"
+        },
         "expect": {
           "default": "",
           "desc": "value the expectGroup must have (full-width folded, case-insensitive); empty = any",
@@ -3032,7 +3037,7 @@
           "type": "map"
         },
         "source": {
-          "desc": "now | typed | without | auto",
+          "desc": "now | typed | worklist | without | auto",
           "type": "string"
         },
         "text": {

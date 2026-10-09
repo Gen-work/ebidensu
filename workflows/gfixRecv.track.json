@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -66,12 +66,24 @@
     {
       "id": "start",
       "use": "human.paste",
-      "label": "Teams の「ジョブ:XXXを実施します」をコピー -> その時刻 = 開始時刻",
+      "label": "開始時刻: 作業リストの GFIX_TIME(あれば Enter でそれ) / Teams の「実施します」をコピーして今 / 時刻を打つ",
       "with": {
         "message": "{{item.Excel_NAME}}: {{profile.vocabulary.messages.startPaste}}",
         "pattern": "{{profile.vocabulary.startPattern}}",
         "expect": "{{item.Excel_NAME}}",
-        "expectGroup": "job"
+        "expectGroup": "job",
+        "defaultClock": "{{item.GFIX_TIME}}"
+      }
+    },
+    {
+      "id": "saveTime",
+      "use": "table.set",
+      "when": "steps.start.out.source != worklist",
+      "label": "決まった開始時刻を作業リスト (gfixrecv.csv) の GFIX_TIME に書く: やり直しはそのまま Enter",
+      "with": {
+        "worklist": "wl",
+        "field": "GFIX_TIME",
+        "value": "{{steps.start.out.clock}}"
       }
     },
     {
@@ -86,7 +98,7 @@
       "id": "win",
       "use": "verify.time_window",
       "with": {
-        "date": "{{run.date}}",
+        "date": "{{item.GFIX_DATE}}",
         "clock": "{{steps.start.out.clock}}",
         "beforeMinutes": "{{page.windowBefore}}",
         "afterMinutes": "{{page.windowAfter}}"
@@ -179,12 +191,22 @@
       }
     },
     {
+      "id": "jkDay",
+      "use": "verify.time_window",
+      "label": "Jenkins の一覧に出る日付の形 (yyyy/MM/dd)",
+      "with": {
+        "date": "{{item.GFIX_DATE}}",
+        "clock": "{{steps.start.out.clock}}",
+        "format": "yyyy/MM/dd"
+      }
+    },
+    {
       "id": "jkText",
       "use": "browser.wait_for",
-      "label": "Jenkins を F5、今日のファイルが見えるまで",
+      "label": "Jenkins を F5、その日のファイルが見えるまで",
       "with": {
         "window": "jk",
-        "contains": "{{run.dateSlash}}",
+        "contains": "{{steps.jkDay.out.atText}}",
         "deselectAt": "{{profile.pages.jenkinsReport.deselectAt}}",
         "refreshRecipe": "{{profile.pages.jenkinsReport.refreshRecipe}}",
         "timeoutSec": "{{profile.pages.jenkinsReport.timeoutSec}}",
@@ -308,7 +330,7 @@
         "path": "{{vars.capture}}/{{item.keySafe}}/track.json",
         "data": {
           "key": "{{item.key}}",
-          "date": "{{run.date}}",
+          "date": "{{item.GFIX_DATE}}",
           "mmdd": "{{run.mmdd}}",
           "start": "{{steps.start.out.clock}}",
           "startSource": "{{steps.start.out.source}}",

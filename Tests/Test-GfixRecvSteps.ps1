@@ -242,8 +242,16 @@ try {
     Assert-True ((-not $c['ok']) -and $c['fields'].Contains('count') -and $c['fields'].Contains('job')) 'paste: not the message -> refused, every group still present as ""'
     Assert-Equal 'time|10:30:00' ((HumanPaste-Typed -Answer '10:30')['kind'] + '|' + (HumanPaste-Typed -Answer '10:30')['clock']) 'paste: a typed time replaces now'
     Assert-Equal '09:05:00' (HumanPaste-Typed -Answer '905')['clock'] 'paste: 905 -> 09:05:00'
-    $kinds = @(foreach ($a in @('', 'k', 's', 'zz')) { (HumanPaste-Typed -Answer $a)['kind'] })
-    Assert-Equal 'enter|k|s|other' ($kinds -join '|') 'paste: Enter / k / s / anything else'
+    $kinds = @(foreach ($a in @('', 'n', 'k', 's', 'zz')) { (HumanPaste-Typed -Answer $a)['kind'] })
+    Assert-Equal 'enter|n|k|s|other' ($kinds -join '|') 'paste: Enter / n / k / s / anything else'
+    $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer '') -Default '11:45:29' -NowClock '13:00:00'
+    Assert-True ($d['clock'] -eq '11:45:29' -and $d['source'] -eq 'worklist' -and -not $d['needMessage']) 'paste: Enter with a time on the row takes the row (a rerun / an old day needs no message)'
+    $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer '') -Default '' -NowClock '13:00:00'
+    Assert-True ($d['clock'] -eq '13:00:00' -and $d['source'] -eq 'now' -and $d['needMessage']) 'paste: Enter without one is NOW and needs the start message'
+    $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer 'n') -Default '11:45:29' -NowClock '13:00:00'
+    Assert-True ($d['clock'] -eq '13:00:00' -and $d['needMessage']) 'paste: n overrides the row with NOW'
+    $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer '10:30') -Default '11:45:29' -NowClock '13:00:00'
+    Assert-True ($d['clock'] -eq '10:30:00' -and $d['source'] -eq 'typed' -and -not $d['needMessage']) 'paste: a typed time wins over the row'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

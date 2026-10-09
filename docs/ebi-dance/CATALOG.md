@@ -1984,6 +1984,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `defaultClock` | string |  | (empty) |  | a start time already known (the worklist row): Enter takes it, n takes now |
 | `expect` | string |  | (empty) |  | value the expectGroup must have (full-width folded, case-insensitive); empty = any |
 | `expectGroup` | string |  | job |  |  |
 | `message` | string | yes |  |  | what to copy (shown on the panel) |
@@ -1994,7 +1995,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 | `clock` | string | HH:mm:ss: when Enter was pressed, or the time typed |
 | `date` | string | yyyy-MM-dd of that moment |
 | `fields` | map | every named group of the pattern ("" when it did not match / no message) |
-| `source` | string | now \| typed \| without \| auto |
+| `source` | string | now \| typed \| worklist \| without \| auto |
 | `text` | string | the clipboard text used ("" when going on without one) |
 
 failures: `operator_quit` (not transient), `operator_skip` (not transient)

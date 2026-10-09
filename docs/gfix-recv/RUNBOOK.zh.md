@@ -91,8 +91,16 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 
 每个 job（按作业清单的顺序；顺序和领导的预定表不一样时，用 `-Only <W名>` 一个一个跑最省事）：
 
+**作业清单 `gfixrecv.csv` 就是「表」**：`GFIX_DATE`（日期）和 `GFIX_TIME`（开始时刻）两列决定每个 job 用哪一天、哪个时刻去找。
+- 已经知道时刻（今天全部跑完了 / 重跑 / 补以前的某一天）：用记事本打开 `gfixrecv.csv`，把 `GFIX_TIME` 填上
+  （`10:30:25` 或 `10:30` 都行；以前的日期就把 `GFIX_DATE` 也改掉，`track` 列清空），然后 PASTE 面板直接按 Enter。
+  GoAnywhere 页面的日期范围要你自己改成那一天。
+- 实时跑的时候，用 Teams 消息决定的开始时刻会**自动写回** `GFIX_TIME`，所以出错后重跑直接 Enter 就是同一个时刻。
+- GoAnywhere 的「プロジェクト名」：JDS 和 JMR 的 job 混在一起跑时，把它清空（显示全部），或者每个 job 前切换。
+
 1. **PASTE 面板**：Teams 里出现「ジョブ:XXXを実施します。(送信予定:n件)」时，**复制这条消息**（Ctrl+C），
    回到控制台按 Enter。**按 Enter 的时刻 = 开始时刻**（GoAnywhere 的行按「开始 −2 ～ +13 分」来找）。
+   - 这一行已经有 `GFIX_TIME`：Enter = 用表里的时刻（不需要消息）；`n` = 用现在的时刻（要先复制消息）。
    - 复制晚了：不要按 Enter，打领导预定表上的时刻，比如 `10:30`。
    - 消息是别的 job 的：面板会写出两个名字，等你复制对的那条；`s` = 先跳过这个 job（留到下次），`k` = 不用消息、时刻 = 现在。
 2. **PREPARE 面板**：「Teams の『ジョブ:XXXが正常終了しました。』が来たら Enter」。
