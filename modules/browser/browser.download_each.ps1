@@ -34,7 +34,7 @@ $Manifest = @{
     timeoutSec   = @{ type='int';    default=60 }
     destDir      = @{ type='path';   required=$true }
     nameTemplate = @{ type='string'; default='{term}{ext}'; desc='{term} {ext} {name}: the destination file name' }
-    backKeys     = @{ type='string'; default='%{LEFT}'; desc='keys that return to the list; empty = stay' }
+    backKeys     = @{ type='string'; default='%{LEFT}'; desc='keys that return to the list; empty = stay. Use the page''s own return control when the list is a posted form (browser Back asks to resend it)' }
     backWaitMs   = @{ type='int';    default=2500 }
     skipExisting = @{ type='bool';   default=$true; desc='a term whose destination file already exists is not downloaded again' }
   }

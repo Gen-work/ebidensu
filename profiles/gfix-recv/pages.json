@@ -53,7 +53,8 @@
     "deselectRecipe": [
       "find:フィルタリングする"
     ],
-    "_jobLogRecipe_doc": "on the job page: find the 'download the job log' button and press Enter on it (office run: the find lands on the button itself; the two Tabs of the first guess walked past it). Override in ebi.local.json if the page changes."
+    "_jobLogRecipe_doc": "on the job page: find the 'download the job log' button and Enter on it; then jobLogBackKeys (Tab Tab Enter = the page's own return button) goes back to the list. NEVER the browser's Back (Alt+Left): the list is a posted form and Back shows 'resend the form?' (ERR_CACHE_MISS). Override either in ebi.local.json if the page changes.",
+    "jobLogBackKeys": "{TAB}{TAB}{ENTER}"
   },
   "jenkinsReport": {
     "role": "list",

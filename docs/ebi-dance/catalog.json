@@ -121,7 +121,7 @@
       "inputs": {
         "backKeys": {
           "default": "%{LEFT}",
-          "desc": "keys that return to the list; empty = stay",
+          "desc": "keys that return to the list; empty = stay. Use the page's own return control when the list is a posted form (browser Back asks to resend it)",
           "type": "string"
         },
         "backWaitMs": {

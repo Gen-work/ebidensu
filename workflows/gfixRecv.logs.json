@@ -63,7 +63,8 @@
       "label": "Receive のジョブ番号ごとにジョブログをダウンロード",
       "with": { "window": "ga", "terms": "{{steps.track.out.data.recvJobs}}",
                 "recipe": "{{page.jobLogRecipe}}", "glob": "*.log",
-                "destDir": "{{vars.jobLogDir}}", "nameTemplate": "{term}.log" } },
+                "destDir": "{{vars.jobLogDir}}", "nameTemplate": "{term}.log",
+                "backKeys": "{{page.jobLogBackKeys}}" } },
 
     { "id": "jobText", "use": "file.read_text",
       "with": { "paths": "{{steps.jobLogs.out.paths}}" } },

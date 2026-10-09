@@ -56,7 +56,7 @@ Per term: Ctrl+F it, open it, key a download, collect the file, go back
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
-| `backKeys` | string |  | %{LEFT} |  | keys that return to the list; empty = stay |
+| `backKeys` | string |  | %{LEFT} |  | keys that return to the list; empty = stay. Use the page's own return control when the list is a posted form (browser Back asks to resend it) |
 | `backWaitMs` | int |  | 2500 |  |  |
 | `destDir` | path | yes |  |  |  |
 | `downloadDir` | path |  | (empty) |  | where the browser saves; empty = the user's Downloads |

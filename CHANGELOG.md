@@ -94,6 +94,9 @@
     timeout the list page is put back so r starts from it; every job prints
     what it is doing ([n/N] opening / waiting up to Ns ...) and q / Esc in
     the console stops the wait.
+  - Back to the job list with the page's own return control (Tab Tab Enter,
+    `pages.goAnywhere.jobLogBackKeys`), never the browser's Back: the list
+    is a posted form and Alt+Left showed "resend the form?" (ERR_CACHE_MISS).
   - **Questions behind other windows**: the console is brought back with an
     input-queue attach as the last resort, its taskbar button blinks if even
     that fails, and a short beep says a question is waiting.

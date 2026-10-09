@@ -165,7 +165,7 @@ ebi.ps1 run workflows\gfixRecv.logs.json -WorkDir $W
 - 每个 Receive job 号：Ctrl+F 号码 → Enter → Ctrl+F「ジョブログをダウンロードする」→ Tab×2 → Enter
   → 等 Downloads 里出现文件 → 移到 `log\GFIX受信ログ\<号码>.log` → Alt+← 返回。
   **这一段的按键配方是按你的描述写的，第一次请盯着看**（`pages.goAnywhere.jobLogRecipe`）。
-  现在是：找到「ジョブログをダウンロードする」后直接 Enter。没下载下来的话，你手动下载，Downloads 里有带 job 号的文件，按 `r` 就会直接拿走它。
+  现在是：找到「ジョブログをダウンロードする」后直接 Enter 下载，然后 Tab×2 → Enter 用页面自己的按钮回到一览（不用浏览器的「返回」，那会出「フォームを再送信しますか?」）。没下载下来的话，你手动下载，Downloads 里有带 job 号的文件，按 `r` 就会直接拿走它。
 - 从 job log 里读出转送文件名（`JJPCRS12…`），写进 `capture\gfix\<W名>\logs.json`。
 
 ---
