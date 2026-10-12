@@ -57,6 +57,27 @@
 
 ---
 
+## 0.5 入口：`ebi.cmd` / `ebi.ps1 menu` / `ebi.ps1 status`（v2.24.0 起）
+
+下面第 1～4 节的四条 `run` 命令仍然是正本，但平时不用手打：
+
+- **看盘**：`ebi.ps1 status -WorkDir $W`。一屏：每本（Excel_NAME）一行，JOB / GFIX_DATE /
+  GFIX_TIME / FileCount，track / logs / evidence 三列判定（`ok` / `NG` / `-` 未做），
+  每列合计，没跑完的 run（`-Resume` 用的 id），以及 NEXT（先续跑、再清 NG、再是最早有行在等的阶段）
+  和「下一条该打的命令」。只读，不碰 CSV。
+- **入口**：仓库目录里双击 `ebi.cmd`（第一次带参数 `ebi.cmd C:\Users\<you>\work-BIX`，
+  之后记住在 `.ebi\menu.json`），或 `ebi.ps1 menu -WorkDir $W`。先显示上面的盘，再选：
+  `1`～`4` = plan / track / logs / evidence（track/logs/evidence 会再问一次 Excel_NAME，
+  回车 = 所有待做的行，`A,B` = 几本），`r` = 续跑没跑完的 run，`c` = 清掉某一行某一列的判定
+  （代替用记事本改 CSV），`s` = 重画，`d` = doctor，`q` = 退出。
+  选完它会**把那条 `ebi.ps1 run ...` 原样打印出来再执行**（子进程），跑完回到菜单。
+  选了前置没做完的阶段（比如 logs 还没 ok 就选 evidence）会先 `[WARN]` 提示，
+  workflow 本身也会拒绝（`file_not_found`）。
+- 只有一个 profile 的作业清单在 WorkDir 里时不用说 `-Profile`；有几个时加 `-Profile gfix-recv`。
+- README 里有脱敏数据录的截图和 GIF（「A receive day in one screen」）。
+
+---
+
 ## 1. 早上：`gfixRecv.plan`（今天做哪些）
 
 ```powershell

@@ -40,6 +40,23 @@ PowerShellで実装しました。処理の流れは次のとおりです。
 .\VerifyTool.ps1 -Phase Status
 ```
 
+### 事例：受信日を一画面に（ebi status / ebi menu）
+
+2 件目の業務（GFIX 受信確認）は、同じリポジトリのワークフローエンジン `ebi` 上で
+4 本の JSON ワークフロー（plan / track / logs / evidence）として動いています。
+初日の現場運用で分かったのは「手順書の長いコマンドを 4 回打ち、進捗はメモ帳で
+CSV を開いて読む」という手間でした。
+
+- `ebi status`：作業リスト CSV を一画面に。1 行 1 案件、各フェーズの判定、合計、
+  途中で止まった run、次に打つ 1 行。読み取り専用。
+- `ebi menu`（`ebi.cmd` をダブルクリック）：フェーズを選ぶと、手順書と同じ
+  `ebi.ps1 run ...` を表示してそのまま実行。判定のクリア（やり直し）もここから。
+
+![ebi status の画面](docs/images/gfix-recv-status.png)
+
+画像と下の GIF は架空データで録画したものです（詳細は英語節の
+[A receive day in one screen](#a-receive-day-in-one-screen) を参照）。
+
 ---
 
 ## English
@@ -102,6 +119,42 @@ Every phase is reachable from this menu, remembers its own settings between
 runs, and can be limited to specific jobs. Flags exist for scripting
 (`-Phase`, `-TargetIds`, `-DryRun`, …) — see [`docs/Operations.md`](docs/Operations.md) —
 but day to day you just run `.\VerifyTool.ps1` and answer prompts.
+
+### A receive day in one screen
+
+The second job this repository took on runs on its newer half, the
+declarative workflow engine `ebi` (`ebi.ps1`, `kernel/`, `modules/`,
+`workflows/`, `profiles/`): GFIX receive verification, four JSON workflows
+(morning `plan`, one `track` round per HOST job, end-of-day `logs`, the
+`evidence` workbook) over one worklist CSV. After the first full office day
+the operator was typing four long run lines from the runbook and reading
+progress by opening the CSV in Notepad. Two commands replaced both habits.
+
+**`ebi status`** is the read-only answer: one row per deliverable, the
+verdict of every phase, totals, the runs that stopped half-way, and the one
+line to run next.
+
+![ebi status: one row per deliverable, a verdict per phase, totals, unfinished runs, the next run line](docs/images/gfix-recv-status.png)
+
+**`ebi menu`** (or a double-click on `ebi.cmd`) is the entry point on top
+of it: pick a phase, optionally one job, and it prints and runs exactly the
+runbook line, so the runbook stays the source of truth. `r` resumes the
+unfinished run, `c` blanks one verdict for a redo instead of editing the
+CSV by hand, and a phase whose prerequisites are missing (evidence before
+logs) is shown but warned about before the workflow refuses it.
+
+![ebi menu: pick a phase and a job, the run line is printed and started, the dashboard is redrawn after](docs/images/gfix-recv-menu.gif)
+
+Nothing on that screen is project-specific code. The phases are the
+workflows that name the profile; their order is the order of their verdict
+columns in the profile's `worklist.json`; the columns shown are declared
+there too (`dashboard.columns`). A new job gets its own dashboard by
+writing its profile and workflows, not by touching `kernel/Dashboard.ps1`.
+
+*Recorded on PowerShell 7 in a Linux container with a fictional worklist
+(`XDEM*` jobs, operator `op1`), paths drawn as on the office PC. The run in
+the GIF is a dry run: every step prints what it would do; no browser, no
+Excel. Operator guide: [`docs/gfix-recv/RUNBOOK.zh.md`](docs/gfix-recv/RUNBOOK.zh.md).*
 
 ### The pipeline
 

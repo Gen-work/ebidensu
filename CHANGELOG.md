@@ -1,3 +1,47 @@
+## 2026-10-12 - gfix-recv: the day dashboard and one entry point (v2.24.0)
+
+### Added
+- **`ebi status`** -- the day in one read-only screen (80 columns, the
+  Gate.ps1 style) over the profile's worklist: one row per key with the
+  columns the profile asks for and the verdict of every phase (`ok` / `NG`
+  / `-`), totals per phase, the unfinished runs (`Find-EbiUnfinishedRuns`)
+  and a NEXT section -- resume first, then NG rows ("clear the cell and
+  rerun evidence"), then the earliest phase with rows waiting, then the
+  one `ebi.ps1 run ...` line to type. After the first full office day
+  (10/09, 10/12) the operator read progress by opening `gfixrecv.csv` in
+  Notepad; this replaces that.
+- **`ebi menu` + `ebi.cmd`** -- the entry point: the dashboard, then a
+  numbered phase list (`r` resume the unfinished run, `c` blank one row's
+  verdict for a redo, `s` redraw, `d` doctor, `q`). A phase asks for an
+  optional key list (`-Only`), warns about rows whose earlier phase is
+  not ok yet (evidence before logs -- the workflow refuses them itself),
+  then PRINTS the very same `ebi.ps1 run workflows\<x>.json -WorkDir ...`
+  line the runbook shows and runs it in a child PowerShell (ebi.ps1 calls
+  exit), coming back to the menu after. The last WorkDir / profile are
+  remembered in `.ebi/menu.json` next to ebi.ps1 (git-ignored), so the
+  double-click asks nothing. With no console (redirected stdin,
+  `EBI_NO_ASK=1`, DryRun) it draws once and quits.
+- **`kernel/Dashboard.ps1`** -- the pure halves (`Get-EbiDayPhases`,
+  `Get-EbiDashboardColumns`, `Get-EbiDashboardModel`, `-Totals`, `-Next`,
+  `Format-EbiDashboard`, `New-EbiRunCommand`, `Read-EbiMenuAnswer`,
+  `Get-EbiMenuPhaseWarnings`), the loader (`Read-EbiDashboard`), the one
+  write (`Clear-EbiWorklistVerdict`, atomic) and the loop
+  (`Invoke-EbiMenu`, reader and runner injectable). Nothing project-
+  specific: the phases are the workflows whose `profile` matches, ordered
+  by their `source.select.field`'s position among the worklist columns
+  (a workflow without a source -- plan -- first); the shown columns come
+  from the new optional `worklist.dashboard.columns` (gfix-recv: JOB,
+  GFIX_DATE, GFIX_TIME, FileCount), else every non-key non-verdict column
+  that fits. Wide (Japanese) characters count as two console cells when
+  the workflow titles are cut to 80. `Tests\Test-Dashboard.ps1` (106
+  checks, including `ebi.ps1 status` / `menu` in a child PowerShell).
+- **README: "A receive day in one screen"** -- the first ebi-dance case
+  with pictures: `docs/images/gfix-recv-status.png` and
+  `docs/images/gfix-recv-menu.gif`, recorded on PowerShell 7 in the Linux
+  CI container from a fictional worklist (`XDEM*` jobs, operator `op1`;
+  the run in the GIF is a dry run), paths drawn as on the office PC. The
+  Japanese section got a short pointer with the same picture.
+
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed

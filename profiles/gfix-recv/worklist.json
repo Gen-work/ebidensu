@@ -7,6 +7,10 @@
     "confirmedRules": [ { "kind": "fullwidth" }, { "kind": "case-insensitive" } ],
     "ambiguityPolicy": "listAndAsk"
   },
+  "dashboard": {
+    "_doc": "ebi status / ebi menu: the columns shown between the key and the verdict columns, in this order (else every non-key non-verdict column, as many as fit in 80 columns)",
+    "columns": ["JOB", "GFIX_DATE", "GFIX_TIME", "FileCount"]
+  },
   "columns": [
     { "name": "Excel_NAME", "role": "key" },
     { "name": "JOB", "role": "text", "default": "" },
