@@ -50,7 +50,7 @@
 
     { "id": "jobLog", "use": "excel.write_lines",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
-                "row": "{{steps.excelSnap.out.nextRow}}", "label": "{{profile.layout.evidence.labels.jobLog}}",
+                "row": "{{steps.excelSnap.out.nextRow}}", "label": "{{profile.layout.evidence.labels.jobLog}}", "labelBold": true,
                 "paths": "{{steps.logs.out.data.jobLogs}}",
                 "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
     { "id": "jobMark", "use": "excel.highlight",
@@ -67,7 +67,7 @@
     { "id": "recvLog", "use": "excel.write_lines",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
                 "row": "{{steps.jobLog.out.nextRow}}", "gapRows": 1,
-                "label": "{{profile.layout.evidence.labels.receiveLog}}",
+                "label": "{{profile.layout.evidence.labels.receiveLog}}", "labelBold": true,
                 "paths": ["{{steps.blocks.out.path}}"], "encoding": "utf8",
                 "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
     { "id": "recvMark", "use": "excel.highlight",

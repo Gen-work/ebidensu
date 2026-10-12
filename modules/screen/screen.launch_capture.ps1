@@ -29,7 +29,10 @@ $Manifest = @{
     nameField    = @{ type='string'; default='rightName'; desc='field naming the capture files (its file stem is used); blank = run number' }
     secondField  = @{ type='string'; default='long'; desc='field that is true when a second capture is wanted' }
     keysFirst    = @{ type='string'; default='^{HOME}'; desc='keys before the first capture (SendKeys syntax)' }
-    keysSecond   = @{ type='string'; default='^{END}'; desc='keys before the second capture' }
+    keysSecond   = @{ type='string'; default='^{END}'; desc='keys before the second capture (the END view)' }
+    screenLines  = @{ type='int';    default=0; desc='data lines one capture shows; > 0 switches to the line rule: lines <= screenLines one capture, <= 2 x screenLines the second capture after keysMid, more after keysSecond' }
+    linesField   = @{ type='string'; default='lines'; desc='field of each map holding its line count (the line rule)' }
+    keysMid      = @{ type='string'; default='^{HOME}{PGDN}'; desc='keys before the second capture of a file of screenLines+1 .. 2 x screenLines lines: the next page, so it starts at line screenLines+1' }
     saveDir      = @{ type='path';   required=$true }
     x            = @{ type='int';    default=40 }
     y            = @{ type='int';    default=40 }
@@ -61,6 +64,26 @@ function ScreenLaunchCapture-Shot {
     $v = Get-EbiWindowVisibleRect -HWnd $HWnd
     if (-not $v['ok']) { return @{ ok = $false; failure = 'no_window'; message = 'the window has no rectangle' } }
     return (Save-EbiScreenRegionPng -X $v['X'] -Y $v['Y'] -W $v['W'] -H $v['H'] -Dest $Dest)
+}
+
+function ScreenLaunchCapture-SecondPlan {
+    <#
+      PURE. Is there a second capture for this argument set, and with which
+      keys? @{ two; keys }. The line rule (screenLines > 0, 2026-10-12, the
+      reviewer's request): one capture shows screenLines lines; a file of up
+      to 2 x screenLines lines gets its second capture starting at line
+      screenLines+1 (keysMid: top, then one page down), a longer one the END
+      view (keysSecond). Without the rule: secondField decides, keysSecond.
+    #>
+    param($Set, [int]$ScreenLines, [string]$LinesField, [string]$SecondField, [string]$KeysMid, [string]$KeysSecond)
+    if ($ScreenLines -gt 0 -and $LinesField -ne '' -and $Set.Contains($LinesField) -and $null -ne $Set[$LinesField]) {
+        $n = [int]$Set[$LinesField]
+        if ($n -le $ScreenLines) { return @{ two = $false; keys = '' } }
+        if ($n -le (2 * $ScreenLines)) { return @{ two = $true; keys = $KeysMid } }
+        return @{ two = $true; keys = $KeysSecond }
+    }
+    $two = ($SecondField -ne '' -and $Set.Contains($SecondField) -and [bool]$Set[$SecondField])
+    return @{ two = $two; keys = $(if ($two) { $KeysSecond } else { '' }) }
 }
 
 function ScreenLaunchCapture-Stem {
@@ -110,7 +133,7 @@ function Invoke-Step {
         foreach ($s in $sets) {
             $n++
             $stem = ScreenLaunchCapture-Stem -Set $s -Field ([string]$In['nameField']) -N $n
-            $two = ([string]$In['secondField'] -ne '' -and $s.Contains([string]$In['secondField']) -and [bool]$s[[string]$In['secondField']])
+            $two = (ScreenLaunchCapture-SecondPlan -Set $s -ScreenLines ([int]$In['screenLines']) -LinesField ([string]$In['linesField']) -SecondField ([string]$In['secondField']) -KeysMid ([string]$In['keysMid']) -KeysSecond ([string]$In['keysSecond']))['two']
             $f = Join-Path $dir ($stem + '__first.png'); $l = if ($two) { Join-Path $dir ($stem + '__last.png') } else { '' }
             $Ctx.Log.Info(('would run {0} {1} and capture {2}{3}' -f $exe, (@($fields | ForEach-Object { '"' + [string]$s[$_] + '"' }) -join ' '), $f, $(if ($two) { ' + ' + $l } else { '' })))
             [void]$shots.Add(@{ first = $f; last = $l; name = $stem }); [void]$paths.Add($f); if ($two) { [void]$paths.Add($l) }
@@ -186,11 +209,11 @@ function Invoke-Step {
             if (-not $r['ok']) { return @{ ok = $false; failure = $(if ($r['failure'] -eq 'no_window') { 'no_window' } else { 'save_failed' }); message = $r['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
             [void]$paths.Add($first)
             $last = ''
-            $sf = [string]$In['secondField']
-            if ($sf -ne '' -and $s.Contains($sf) -and [bool]$s[$sf]) {
+            $plan2 = ScreenLaunchCapture-SecondPlan -Set $s -ScreenLines ([int]$In['screenLines']) -LinesField ([string]$In['linesField']) -SecondField ([string]$In['secondField']) -KeysMid ([string]$In['keysMid']) -KeysSecond ([string]$In['keysSecond'])
+            if ([bool]$plan2['two']) {
                 $fg = Set-EbiForeground -HWnd $h
                 if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
-                Send-EbiKeys -Keys ([string]$In['keysSecond']) -WaitMs ([int]$In['settleMs'])
+                Send-EbiKeys -Keys ([string]$plan2['keys']) -WaitMs ([int]$In['settleMs'])
                 $last = Join-Path $dir ($stem + '__last.png')
                 $r = ScreenLaunchCapture-Shot -HWnd $h -Dest $last
                 if (-not $r['ok']) { return @{ ok = $false; failure = 'save_failed'; message = $r['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }

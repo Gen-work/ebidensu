@@ -28,6 +28,7 @@ $Manifest = @{
     gapRows  = @{ type='int';    default=0; desc='blank rows left before row (row + gapRows is where writing starts)' }
     column   = @{ type='string'; default='B' }
     label    = @{ type='string'; default=''; desc='written at row; the lines start one row below' }
+    labelBold = @{ type='bool';  default=$false; desc='the label cell in bold (the lines stay plain)' }
     paths    = @{ type='list';   default=@(); desc='text files, concatenated in order' }
     lines    = @{ type='list';   default=@(); desc='more lines, after the files' }
     encoding = @{ type='string'; default='mixed'; enum=@('mixed', 'utf8', 'cp932') }
@@ -77,7 +78,10 @@ function Invoke-Step {
     if ($null -eq $ws) { return @{ ok = $false; failure = 'sheet_not_found'; message = ('no sheet "' + $In['sheet'] + '"'); labelRow = 0; firstRow = 0; lastRow = 0; nextRow = 0; written = 0 } }
     $col = ConvertTo-EbiColumnNumber ([string]$In['column'])
     try {
-        if ($label -ne '') { Set-EbiCellTextPlain -Cell $ws.Cells.Item($row, $col) -Text $label -FontName ([string]$In['fontName']) -FontSize ([double]$In['fontSize']) }
+        if ($label -ne '') {
+            Set-EbiCellTextPlain -Cell $ws.Cells.Item($row, $col) -Text $label -FontName ([string]$In['fontName']) -FontSize ([double]$In['fontSize'])
+            if ([bool]$In['labelBold']) { $ws.Cells.Item($row, $col).Font.Bold = $true }
+        }
         for ($i = 0; $i -lt $all.Count; $i++) {
             Set-EbiCellTextPlain -Cell $ws.Cells.Item($firstRow + $i, $col) -Text ([string]$all[$i]) -FontName ([string]$In['fontName']) -FontSize ([double]$In['fontSize'])
         }

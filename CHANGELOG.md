@@ -1,6 +1,14 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **Review feedback (10-12): DF pictures follow the 19-line rule; log labels bold.**
+  One DF picture shows 19 data lines (the HOST team's evidence does);
+  `screen.launch_capture` gains `screenLines` / `linesField` / `keysMid`:
+  <= 19 lines one picture, 20..38 a second picture starting at line 20
+  (Ctrl+Home, PgDn), more the END view (operator's recipe: End, PgUp,
+  Up x2). DF window 1133 x 485 (estimated from 429 = 16 lines and 449 =
+  17 lines; check the first capture). `excel.write_lines` takes
+  `labelBold`: the GFIX受信ログ / GFIXReceive.log labels are bold.
 - **Resume replayed workbook edits that were never saved.** An evidence
   item stopped before `excel.tidy` (the save) left the book on disk
   unchanged, but `-Resume` replayed `excelSnap` / `jobLog` / ... from the

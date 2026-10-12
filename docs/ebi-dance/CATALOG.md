@@ -568,9 +568,12 @@ Run a program per argument set, capture its window (and again after keys), close
 | `exe` | path | yes |  |  | the program |
 | `height` | int |  | 0 |  |  |
 | `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (SendKeys syntax) |
-| `keysSecond` | string |  | ^{END} |  | keys before the second capture |
+| `keysMid` | string |  | ^{HOME}{PGDN} |  | keys before the second capture of a file of screenLines+1 .. 2 x screenLines lines: the next page, so it starts at line screenLines+1 |
+| `keysSecond` | string |  | ^{END} |  | keys before the second capture (the END view) |
+| `linesField` | string |  | lines |  | field of each map holding its line count (the line rule) |
 | `nameField` | string |  | rightName |  | field naming the capture files (its file stem is used); blank = run number |
 | `saveDir` | path | yes |  |  |  |
+| `screenLines` | int |  | 0 |  | data lines one capture shows; > 0 switches to the line rule: lines <= screenLines one capture, <= 2 x screenLines the second capture after keysMid, more after keysSecond |
 | `secondField` | string |  | long |  | field that is true when a second capture is wanted |
 | `settleMs` | int |  | 1200 |  | wait after the window appears / after keys |
 | `width` | int |  | 0 |  | visible window width; 0 = leave as the program opens it |
@@ -1400,6 +1403,7 @@ Paste text lines (from files or a list) down a column, under an optional label
 | `fontSize` | int |  | 0 |  |  |
 | `gapRows` | int |  | 0 |  | blank rows left before row (row + gapRows is where writing starts) |
 | `label` | string |  | (empty) |  | written at row; the lines start one row below |
+| `labelBold` | bool |  | false |  | the label cell in bold (the lines stay plain) |
 | `lines` | list |  | [] |  | more lines, after the files |
 | `paths` | list |  | [] |  | text files, concatenated in order |
 | `row` | int | yes |  |  | first row to write (the label, when there is one) |

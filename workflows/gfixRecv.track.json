@@ -314,6 +314,9 @@
         "width": "{{profile.layout.df.width}}",
         "height": "{{profile.layout.df.height}}",
         "settleMs": "{{profile.layout.df.settleMs}}",
+        "screenLines": "{{profile.layout.df.screenLines}}",
+        "keysMid": "{{profile.layout.df.keysMid}}",
+        "keysSecond": "{{profile.layout.df.keysEnd}}",
         "windowTitle": "{{profile.layout.df.windowTitle}}",
         "saveDir": "{{vars.capture}}/{{item.keySafe}}/df",
         "closeOthers": true

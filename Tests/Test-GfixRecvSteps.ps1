@@ -307,6 +307,16 @@ try {
     $a = BrowserDownloadEach-Already -Dir $dlDir -Glob '*.log' -Term '1000004638518'
     Assert-True ($null -ne $a -and $a.Name -eq '1000004638518.log') 'joblog: the hand-downloaded file with the job number is taken'
     Assert-True ($null -eq (BrowserDownloadEach-Already -Dir $dlDir -Glob '*.log' -Term '1000004638521')) 'joblog: another job number is not'
+    # ---------------------------------------------------------------- DF 19-line rule (10-12 review)
+    $sp = { param($n) ScreenLaunchCapture-SecondPlan -Set @{ lines = $n; long = $true } -ScreenLines 19 -LinesField 'lines' -SecondField 'long' -KeysMid 'MID' -KeysSecond 'END' }
+    Assert-True (-not (& $sp 0)['two']) 'df rule: 0 lines -> one picture'
+    Assert-True (-not (& $sp 19)['two']) 'df rule: 19 lines -> one picture'
+    Assert-Equal 'MID' (& $sp 20)['keys'] 'df rule: 20 lines -> second picture from line 20 (keysMid)'
+    Assert-Equal 'MID' (& $sp 38)['keys'] 'df rule: 38 lines -> still keysMid'
+    Assert-Equal 'END' (& $sp 39)['keys'] 'df rule: 39 lines -> the END view'
+    $old = ScreenLaunchCapture-SecondPlan -Set @{ lines = 30; long = $true } -ScreenLines 0 -LinesField 'lines' -SecondField 'long' -KeysMid 'MID' -KeysSecond 'END'
+    Assert-True ($old['two'] -and $old['keys'] -eq 'END') 'df rule: off (screenLines 0) -> the long flag and keysSecond as before'
+
     # ---------------------------------------------------------------- home cell (10-12)
     $send = [string][char]0x9001 + [char]0x4FE1 + [char]0x21D2   # send-arrow sheet
     $recv = [string][char]0x53D7 + [char]0x4FE1 + [char]0x21D2   # receive-arrow sheet

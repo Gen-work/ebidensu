@@ -1780,6 +1780,11 @@
           "desc": "written at row; the lines start one row below",
           "type": "string"
         },
+        "labelBold": {
+          "default": false,
+          "desc": "the label cell in bold (the lines stay plain)",
+          "type": "bool"
+        },
         "lines": {
           "default": [],
           "desc": "more lines, after the files",
@@ -3921,9 +3926,19 @@
           "desc": "keys before the first capture (SendKeys syntax)",
           "type": "string"
         },
+        "keysMid": {
+          "default": "^{HOME}{PGDN}",
+          "desc": "keys before the second capture of a file of screenLines+1 .. 2 x screenLines lines: the next page, so it starts at line screenLines+1",
+          "type": "string"
+        },
         "keysSecond": {
           "default": "^{END}",
-          "desc": "keys before the second capture",
+          "desc": "keys before the second capture (the END view)",
+          "type": "string"
+        },
+        "linesField": {
+          "default": "lines",
+          "desc": "field of each map holding its line count (the line rule)",
           "type": "string"
         },
         "nameField": {
@@ -3934,6 +3949,11 @@
         "saveDir": {
           "required": true,
           "type": "path"
+        },
+        "screenLines": {
+          "default": 0,
+          "desc": "data lines one capture shows; > 0 switches to the line rule: lines <= screenLines one capture, <= 2 x screenLines the second capture after keysMid, more after keysSecond",
+          "type": "int"
         },
         "secondField": {
           "default": "long",
