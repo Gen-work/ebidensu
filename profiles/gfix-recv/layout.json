@@ -36,12 +36,12 @@
     "_glob_doc": "starts with J4 so the ~$ lock file Excel leaves next to an open workbook never matches"
   },
   "df": {
-    "_doc": "DF captures follow the 19-line rule (2026-10-12, reviewer feedback; the HOST team's evidence shows 19 lines a picture): one picture shows 19 data lines; a file of 20..38 lines gets a second picture starting at line 20 (keysMid: Ctrl+Home, PgDn); a longer one the END view (keysEnd, the operator's recipe: End, PgUp, Up x2). Wave between the two. Boxes on the second (or only) picture: the last line number (last band of dark ink in the line-number strip) and the 同一内容 cell of the status bar (bottom-right). height: 429 showed 16 lines, 449 showed 17, so about 18 px a line -> 485 for 19 -- CHECK the first capture shows lines 1..19 exactly and move height by 18 if not.",
+    "_doc": "DF captures follow the 19-line rule (2026-10-12, reviewer feedback; the HOST team's evidence shows 19 lines a picture): one picture shows 19 data lines; a file of 20..38 lines gets a second picture starting at line 20 (keysMid: Ctrl+Home, PgDn); a longer one the END view (keysEnd, the operator's recipe: End, PgUp, Down x2). Wave between the two. Boxes on the second (or only) picture: the last line number (last band of dark ink in the line-number strip) and the 同一内容 cell of the status bar (bottom-right). height: 429 showed 16 lines, 449 showed 17, so about 18 px a line -> 485 for 19 -- CHECK the first capture shows lines 1..19 exactly and move height by 18 if not.",
     "width": 1133,
     "height": 485,
     "screenLines": 19,
     "keysMid": "^{HOME}{PGDN}",
-    "keysEnd": "{END}{PGUP}{UP}{UP}",
+    "keysEnd": "{END}{PGUP}{DOWN}{DOWN}",
     "marks": [
       {
         "lastInk": {
