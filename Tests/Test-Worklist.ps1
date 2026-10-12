@@ -81,6 +81,12 @@ $r = Select-EbiWorklistRows -Rows $rows -Field 'nosuch' -PendingWhen '!= ok' -Sp
 Assert-Equal 5 $r['selected'] 'select: a missing column reads as blank, so everything is pending'
 $r = Select-EbiWorklistRows -Rows $rows -Field 'status' -PendingWhen 'always' -Spec $null -Only @('r1', 'r3') -KeyColumns @('id')
 Assert-Equal 'r1,r3' (@($r['rows'] | ForEach-Object { $_['id'] }) -join ',') 'select: Only keeps the named keys'
+# 10-12: "-Only 6C,6F,6K" ran one row and said nothing about the other two
+$r = Select-EbiWorklistRows -Rows $rows -Field 'plain' -PendingWhen '!= ok' -Spec $null -Only @('r0', 'r1', 'zz') -KeyColumns @('id')
+Assert-Equal 'r0' (@($r['rows'] | ForEach-Object { $_['id'] }) -join ',') 'select: Only + pending -> the pending one'
+Assert-Equal 'r1,zz' (@($r['onlySkipped'] | ForEach-Object { $_['key'] }) -join ',') 'select: the Only keys not taken are listed'
+Assert-True ([string]@($r['onlySkipped'])[0]['why'] -like '*not pending*plain = "ok"*') 'select: ... a done row says its value'
+Assert-True ([string]@($r['onlySkipped'])[1]['why'] -like '*not in the worklist*') 'select: ... an unknown key says so'
 $r = Select-EbiWorklistRows -Rows $rows -Field 'status' -PendingWhen 'always' -Spec $null
 Assert-True ([object]::ReferenceEquals($r['rows'][0], $rows[0])) 'select: the same row objects come back (a write through them reaches the table)'
 $r = Select-EbiWorklistRows -Rows @() -Field 'status' -PendingWhen 'always' -Spec $null

@@ -894,6 +894,7 @@ function Invoke-EbiWorkflow {
                 if ($limitValue -gt 0 -and $ordered.Count -gt $limitValue) { $ordered = @($ordered[0..($limitValue - 1)]) }
                 $result['selected'] = $ordered.Count
                 Write-Host ('  each: {0} of {1} row{2} selected' -f $ordered.Count, $selected['total'], $(if ($selected['total'] -eq 1) { '' } else { 's' })) -ForegroundColor Cyan
+                if ($selected.Contains('onlySkipped')) { foreach ($sk in @($selected['onlySkipped'])) { Write-Host ('    -Only {0}: {1}' -f $sk['key'], $sk['why']) -ForegroundColor Yellow } }
                 Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Tags $tagsBase -Action 'source' -Status 'ok' -Data @{ total = $selected['total']; selected = $ordered.Count; groupBy = $groupBy }
 
                 $groupOutputs = @{}    # group -> @{ stepId -> outputs } from once:group steps (this process)

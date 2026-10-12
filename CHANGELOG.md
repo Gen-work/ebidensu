@@ -1,6 +1,11 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **`-Only` said nothing about the keys it did not run** (10-12:
+  `-Only JJMRWE6C,JJMRWE6F,JJMRWE6K` -> "1 of 6 rows selected", then
+  `-Only JJMRWE6F,JJMRWE6K` -> 0, no reason). `Select-EbiWorklistRows`
+  returns `onlySkipped` and the runner prints each one: "not pending:
+  track = "ok" (clear the cell to redo it)" or "not in the worklist".
 - **A 0-byte transfer got no DF picture** (JJMRWE6C/6F/6K: GFIX
   `F202610090025.csv` 0 bytes, `pairs` empty, `dfShots` empty, evidence
   sheet without DF). `Select-EbiFilePairs` left a file whose line count
