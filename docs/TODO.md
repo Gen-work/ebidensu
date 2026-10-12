@@ -5,6 +5,33 @@ file stays small. Designed-then-shelved work lives in
 [`Parked-Ideas.md`](Parked-Ideas.md) instead; release history lives in
 [`../CHANGELOG.md`](../CHANGELOG.md).
 
+- **NEXT -- gfix-recv: a dashboard and one entry point for the receive day**
+  (2026-10-12, after the first full office day: plan / track / logs /
+  evidence all ran for real on 10/09 (6 workbooks) and 10/12 (4)). Today
+  the operator types four long `ebi.ps1 run workflows\gfixRecv.<x>.json
+  -WorkDir ... [-Only ...] [-Resume]` lines from the runbook and reads
+  progress by opening `gfixrecv.csv` in Notepad. Wanted:
+  (1) **dashboard** -- one ASCII screen (80 cols, the Gate.ps1 style) over
+  the worklist: one row per Excel_NAME with JOB, GFIX_DATE / GFIX_TIME,
+  FileCount and the track / logs / evidence verdicts, totals per column,
+  the unfinished runs (`Find-EbiUnfinishedRuns`) and the next thing to do
+  ("3 rows wait for track", "SJDSWM40 evidence ng -> clear and rerun");
+  read-only, built on `progress.status` / `Select-EbiWorklistRows`, so it
+  can also run as `ebi status` without a menu.
+  (2) **entry point** -- a menu (and a double-clickable .cmd) that asks
+  nothing it can read from `ebi.local.json` / the last run: pick a phase
+  (plan / track / logs / evidence / resume the unfinished run / clear one
+  row's verdict for a redo / doctor), optionally one Excel_NAME, then
+  runs the same `ebi.ps1 run` line and prints it, so the runbook commands
+  stay the source of truth. Clearing a verdict replaces "edit the CSV in
+  Notepad"; a phase whose inputs are missing (evidence before logs) is
+  shown but refused with the reason, as the workflows already do.
+  Constraints: ASCII .ps1, PS 5.1, no WinForms needed; nothing project-
+  specific in code (columns and phase list come from the profile /
+  workflows). Related open points from the same day, not part of this
+  card: the 478-byte SJDSWM40 download that compared "equal"
+  (file.compare), the untested PgDn / END DF keys, and the HOST-range
+  card below. Not started.
 - **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
   (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
   picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks
