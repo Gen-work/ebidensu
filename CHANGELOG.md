@@ -1,6 +1,11 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **DF rule corrected by the leader (10-12): 16 lines a picture.** <= 16
+  lines one picture; 17..32 the second after PgDn (from line 17); more
+  the END view (End, PgUp, Down x2). Window back to 1133 x 429. Workbooks
+  whose HOST pictures show 19 lines are an exception, checked by hand
+  for now.
 - **Review feedback (10-12): DF pictures follow the 19-line rule; log labels bold.**
   One DF picture shows 19 data lines (the HOST team's evidence does);
   `screen.launch_capture` gains `screenLines` / `linesField` / `keysMid`:
