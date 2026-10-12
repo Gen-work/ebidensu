@@ -144,7 +144,7 @@ function Invoke-EbiGrammarTune {
     $read = if ($null -ne $Reader) { $Reader } else { { Read-Host } }
     $saved = $false
     $noConsole = $false
-    if ($null -eq $Reader) { try { if ([Console]::IsInputRedirected) { $noConsole = $true } } catch { } }
+    if ($null -eq $Reader) { try { if ([Console]::IsInputRedirected) { $noConsole = $true } } catch { }; if ([string]$env:EBI_NO_ASK -eq '1') { $noConsole = $true } }
     while ($true) {
         $parsed = ConvertFrom-EbiGrammar -Text $Text -Grammar $g
         Write-Host ''

@@ -213,7 +213,23 @@ function Select-EbiWorklistRows {
         [void]$out.Add($row)
         if ($Limit -gt 0 -and $out.Count -ge $Limit) { break }
     }
-    return @{ ok = $true; rows = $out.ToArray(); message = ''; total = $total; selected = $out.Count }
+    # every -Only key that was NOT taken, and why (10-12: "-Only 6C,6F,6K"
+    # ran one row with no word about the other two -- they were done)
+    $onlySkipped = New-Object System.Collections.ArrayList
+    if ($null -ne $onlySet -and $onlySet.Count -gt 0) {
+        $taken = @{}
+        foreach ($row in $out) { $taken[(Get-EbiKeyDisplay -Item $row -KeyColumns $KeyColumns)] = $true }
+        foreach ($k in $onlySet) {
+            if ($taken.Contains($k)) { continue }
+            $hit = $null
+            foreach ($row in @($Rows)) { if ($null -ne $row -and (Get-EbiKeyDisplay -Item $row -KeyColumns $KeyColumns) -eq $k) { $hit = $row; break } }
+            if ($null -eq $hit) { [void]$onlySkipped.Add(@{ key = $k; why = 'not in the worklist' }); continue }
+            $v = ''
+            if ($Field -ne '' -and $hit.Contains($Field)) { $v = [string]$hit[$Field] }
+            [void]$onlySkipped.Add(@{ key = $k; why = ('not pending: ' + $Field + ' = "' + $v + '" (clear the cell to redo it)') })
+        }
+    }
+    return @{ ok = $true; rows = $out.ToArray(); message = ''; total = $total; selected = $out.Count; onlySkipped = $onlySkipped.ToArray() }
 }
 
 function Sort-EbiWorklistRows {

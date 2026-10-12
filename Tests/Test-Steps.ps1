@@ -189,6 +189,9 @@ $ret = & $rj['Invoke'] @{ path = 'capture/ABC123.meta.json' } (New-TestCtx)
 Assert-True ($ret['ok'] -and $ret['exists'] -and ($ret['data'] -is [hashtable]) -and $ret['data']['n'] -eq 2 -and @($ret['data']['list']).Count -eq 2) 'read_json: round trip as hashtable'
 $ret = & $rj['Invoke'] @{ path = 'capture/none.meta.json' } (New-TestCtx)
 Assert-True ($ret['ok'] -and -not $ret['exists'] -and $null -eq $ret['data'] -and @($ret['warnings']).Count -eq 1 -and $ret['warnings'][0]['code'] -eq 'not_found') 'read_json: missing file -> ok, data=null, warning'
+# 10-12: evidence ran for jobs with no track / logs yet and changed the real book before failing
+$ret = & $rj['Invoke'] @{ path = 'capture/none.meta.json'; mustExist = $true; missingHint = 'run track first' } (New-TestCtx)
+Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'file_not_found' -and [string]$ret['message'] -like '*run track first*') 'read_json: mustExist -> file_not_found with the hint'
 [System.IO.File]::WriteAllText((Join-Path $tmpRoot 'bad.json'), '{ not json')
 $ret = & $rj['Invoke'] @{ path = 'bad.json' } (New-TestCtx)
 Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'json_invalid') 'read_json: corrupt file is json_invalid'

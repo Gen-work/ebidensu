@@ -5,6 +5,61 @@ file stays small. Designed-then-shelved work lives in
 [`Parked-Ideas.md`](Parked-Ideas.md) instead; release history lives in
 [`../CHANGELOG.md`](../CHANGELOG.md).
 
+- **NEXT -- gfix-recv: a dashboard and one entry point for the receive day**
+  (2026-10-12, after the first full office day: plan / track / logs /
+  evidence all ran for real on 10/09 (6 workbooks) and 10/12 (4)). Today
+  the operator types four long `ebi.ps1 run workflows\gfixRecv.<x>.json
+  -WorkDir ... [-Only ...] [-Resume]` lines from the runbook and reads
+  progress by opening `gfixrecv.csv` in Notepad. Wanted:
+  (1) **dashboard** -- one ASCII screen (80 cols, the Gate.ps1 style) over
+  the worklist: one row per Excel_NAME with JOB, GFIX_DATE / GFIX_TIME,
+  FileCount and the track / logs / evidence verdicts, totals per column,
+  the unfinished runs (`Find-EbiUnfinishedRuns`) and the next thing to do
+  ("3 rows wait for track", "SJDSWM40 evidence ng -> clear and rerun");
+  read-only, built on `progress.status` / `Select-EbiWorklistRows`, so it
+  can also run as `ebi status` without a menu.
+  (2) **entry point** -- a menu (and a double-clickable .cmd) that asks
+  nothing it can read from `ebi.local.json` / the last run: pick a phase
+  (plan / track / logs / evidence / resume the unfinished run / clear one
+  row's verdict for a redo / doctor), optionally one Excel_NAME, then
+  runs the same `ebi.ps1 run` line and prints it, so the runbook commands
+  stay the source of truth. Clearing a verdict replaces "edit the CSV in
+  Notepad"; a phase whose inputs are missing (evidence before logs) is
+  shown but refused with the reason, as the workflows already do.
+  Constraints: ASCII .ps1, PS 5.1, no WinForms needed; nothing project-
+  specific in code (columns and phase list come from the profile /
+  workflows). Related open points from the same day, not part of this
+  card: the 478-byte SJDSWM40 download that compared "equal"
+  (file.compare), the untested PgDn / END DF keys, and the HOST-range
+  card below. Not started.
+- **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
+  (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
+  picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks
+  whose HOST pictures differ (e.g. 19 lines: FJODWCP2 shows 000001-000019
+  and 000878-000896) are adjusted BY HAND. Wanted: read each 送信データ
+  picture's first and last line number and give the DF pictures the same
+  ranges minus one (the HOST data has one header line the CSV does not:
+  HOST 1-17 -> DF 1-16, HOST pic 2 n..m -> DF n-1..m-1).
+  Feasibility (checked on FJODWCP2): the HOST pictures are fixed 562 x 428
+  emulator shots (24 x 80), line numbers in a fixed column at the left,
+  6 digits, green on black -> crop that column and OCR it with the
+  English recognizer (digits only; the ja recognizer reads 9 as 3), then
+  trust it only when the numbers are consecutive and their count equals
+  the count of text bands in the strip (screen.find_ink_rows); anything
+  else -> ask. Pieces still missing: (1) the strip's crop box (calibrate
+  once on the 562 x 428 shot); (2) DF row pitch on the office PC (429 px =
+  16 lines; measure 17/18/19 to size the window per picture); (3) a DF key
+  recipe that shows a given top line (Ctrl+Home + PgDn for the 2nd page,
+  the END view for the last; a middle range may need DF's line jump).
+  Not started.
+- **gfix-recv: a progress view the operator can see while the browser is
+  full screen** (office run feedback, 2026-10-09). During browser / DF
+  steps the console is behind Edge and the operator cannot tell whether to
+  wait or touch anything; bringing the console forward would send the
+  keys to it. Idea: a small topmost, non-activating, click-through window
+  (WS_EX_NOACTIVATE | WS_EX_TRANSPARENT) in a corner OUTSIDE every capture
+  region, showing "item n/N - step - do not touch keyboard/mouse", hidden
+  for the instant of a capture. Not started.
 - **ProcessTime: ja-OCR digit 9<->3 -- DETERMINISTIC FIX SHIPPED (v2.21.0),
   measurement still open.** The confusion itself is now handled without
   guessing, by `TimeDigitVerify.ps1`: (a) a digit that makes its field

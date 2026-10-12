@@ -1819,6 +1819,12 @@
 
 # P3 — 新工作实战(8 张)
 
+> **2026-10-08 进展**:第一个新工作 GFIX 受信(`profiles/gfix-recv` + `workflows/gfixRecv.*`)
+> 走完了 P3-01…P3-07 的云端部分:素材(操作员的样本证据簿、页面文本、日志)、访谈(对话里的
+> 流程说明)、profile + `ebi profile check` 全绿、workflow + `ebi lint` / `dryrun` 全绿。
+> **违背了 P3 的目标「全程不写 PowerShell」**:补了 32 个 step(多为 P4 卡片)——这是 P3 预期内
+> 的「抽象漏了就补」。P3-08(五级跑通)从 2026-10-09 办公 PC 开始。
+
 目标:**全程不写 PowerShell,只写 profile JSON + workflow JSON,搭起下一份工作的第一条流程。**
 做不到就说明抽象漏了 —— 补的 step 记入 catalog,这是正常的成长。
 
@@ -1862,6 +1868,14 @@
 > **以下 36 张不属于「能接新工作」的最小集**,按需推进。
 
 # P4 — Excel / 文件组(22 张)
+
+> **2026-10-08 进展(gfix-recv 首个新工作顺带)**:实现了 P4-01(四件套)、P4-06(write_cell
+> / write_lines)、P4-08 + P4-10 的画框半(excel.insert_pictures 带红框;remove_shapes 未做)、
+> P4-13(file.wait_for_download)、P4-14 的 move/copy(rename 由 move 兼任)、P4-19 的下载半
+> (file.download 走 HTTP;要点击的页面用 browser.download_each),外加卡片外的 excel.read_rows /
+> highlight / copy_picture / stack_plan / tidy、file.convert_encoding / read_text / list /
+> extract_blocks / compare 等(见 CHANGELOG v2.23.0)。卡片状态在办公 PC 冒烟(P4-22 的同类)之前
+> 不打 `[x]`。
 
 ### [ ] P4-01 excel 生命周期四件套 — 75min — 抄 `ExcelHelpers.ps1 New-ExcelApp/Open-Workbook/Close-Workbook/Close-ExcelApp`
   ⚠ (第五轮)是**四个 step**,不是一个:`excel.ensure_app`

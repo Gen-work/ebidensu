@@ -1,0 +1,48 @@
+2026-10-08 13:45:24           INFO      Start Date and Time: 2026-10-08 13:45:24
+2026-10-08 13:45:24           INFO      Job Number: 1000004619654
+2026-10-08 13:45:24           INFO      Project Name: /jpcusr/Receive/JDS_VER1_IF6000_001_SSH
+2026-10-08 13:45:24           INFO      Submitted By: JDS_VER1_IF6000_FTP
+2026-10-08 13:45:24           INFO      Submitted From: Trigger
+2026-10-08 13:45:24           INFO      System: hub02
+2026-10-08 13:45:24           INFO      GoAnywhere 7.8.4 running on Linux 4.18.0-240.10.1.el8_3.x86_64 (amd64)
+2026-10-08 13:45:24           INFO      Overriding variable 'CopiedFile' with value '/mnt/GoAnywhere/webdocs/jpcusr/Receive/JDS_VER1_IF6000_001_SSH/JJPCRS1220260706110052987442'
+2026-10-08 13:45:24           INFO      Overriding variable 'FileName' with value 'JJPCRS1220260706110052987442'
+2026-10-08 13:45:24           INFO      Overriding variable 'version' with value 'V2.0'
+2026-10-08 13:45:24           INFO      Executing project 'JDS_VER1_IF6000_001_SSH'
+2026-10-08 13:45:24           INFO      Project location: /mnt/GoAnywhere/projects/jpcusr/Receive/JDS_VER1_IF6000_001_SSH.xml
+2026-10-08 13:45:24           INFO      Executing module 'Main'
+2026-10-08 13:45:24           INFO      Executing task 'callProject 1.0'
+2026-10-08 13:45:24           INFO      Executing project '/99_gfixmodule/V2.0/module_t01' in current job.
+2026-10-08 13:45:24           INFO      Executing project 'module_t01'
+2026-10-08 13:45:24           INFO      Project location: /mnt/GoAnywhere/projects/99_gfixmodule/V2.0/module_t01.xml
+2026-10-08 13:45:24           INFO      Executing module 'Main'
+2026-10-08 13:45:24           INFO      Executing task 'sftp 1.0'
+2026-10-08 13:45:24           INFO      Connecting to 'host-a' at port '31789' as user 'svc-user'
+2026-10-08 13:45:24           INFO      Executing sub-task 'put'
+2026-10-08 13:45:24           INFO      Setting the data type to BINARY
+2026-10-08 13:45:24           INFO      Uploading '/mnt/GoAnywhere/webdocs/jpcusr/Receive/JDS_VER1_IF6000_001_SSH/JJPCRS1220260706110052987442' (869 bytes) to '/appl/JPC/JPCVer1/gfix/recv/JJPCRS1220260706110052987442'
+2026-10-08 13:45:24           INFO      File '/mnt/GoAnywhere/webdocs/jpcusr/Receive/JDS_VER1_IF6000_001_SSH/JJPCRS1220260706110052987442' successfully uploaded to '/appl/JPC/JPCVer1/gfix/recv/JJPCRS1220260706110052987442' (869 bytes)
+2026-10-08 13:45:24           INFO      1 files were uploaded successfully
+2026-10-08 13:45:24           INFO      Finished sub-task 'put'
+2026-10-08 13:45:24           INFO      Closed the FTP connection
+2026-10-08 13:45:24           INFO      Finished task 'sftp 1.0'
+2026-10-08 13:45:24           INFO      Executing task 'setVariable 2.0'
+2026-10-08 13:45:24           WARN      Variable 'subsequence_job_script' was replaced with '/appl/JPC/shell/GFIXReceive.sh                              JJPCRS1220260706110052987442'.
+2026-10-08 13:45:24           INFO      Finished task 'setVariable 2.0'
+2026-10-08 13:45:24           INFO      Executing task 'execSSH 1.0'
+2026-10-08 13:45:24           INFO      Connecting to 'host-a' at port '31789' as user 'svc-user'
+2026-10-08 13:45:24           INFO      Command: '/appl/JPC/shell/GFIXReceive.sh                              JJPCRS1220260706110052987442'
+2026-10-08 13:45:27           INFO      The Command executed successfully with return code '0'.
+2026-10-08 13:45:27           INFO      Closed the SSH connection
+2026-10-08 13:45:27           INFO      Finished task 'execSSH 1.0'
+2026-10-08 13:45:27           INFO      Executing task 'delete 1.0'
+2026-10-08 13:45:27           INFO      File '/mnt/GoAnywhere/webdocs/jpcusr/Receive/JDS_VER1_IF6000_001_SSH/JJPCRS1220260706110052987442' (869 bytes) was deleted.
+2026-10-08 13:45:27           INFO      1 object were deleted successfully
+2026-10-08 13:45:27           INFO      Finished task 'delete 1.0'
+2026-10-08 13:45:27           INFO      Finished module 'Main'
+2026-10-08 13:45:27           INFO      Finished project 'module_t01'
+2026-10-08 13:45:27           INFO      Project '/99_gfixmodule/V2.0/module_t01' completed normally. The job number is '1000004619654'.
+2026-10-08 13:45:27           INFO      Finished task 'callProject 1.0'
+2026-10-08 13:45:27           INFO      Finished module 'Main'
+2026-10-08 13:45:27           INFO      Finished project 'JDS_VER1_IF6000_001_SSH'
+2026-10-08 13:45:27           INFO      End Date and Time: 2026-10-08 13:45:27

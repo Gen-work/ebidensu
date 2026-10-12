@@ -19,7 +19,7 @@ $hostOpen = Join-Path (Join-Path $repoRoot 'profiles') 'host-open'
 Write-Host '  -- profiles/host-open'
 $p = Read-EbiProfile -Dir $hostOpen -WorkDir $tmpRoot
 Assert-True $p['ok'] ('host-open loads: ' + $p['message'])
-Assert-True (@($p['missing']).Count -eq 1 -and $p['missing'][0] -eq 'calibration') 'host-open: only calibration.json is absent (no fallback tier yet)'
+Assert-True ((@($p['missing']) -join ',') -eq 'calibration,paths') 'host-open: only calibration.json (no fallback tier yet) and paths.json (its locations live in the old VerifyConfig) are absent'
 $prof = $p['value']
 Assert-True ($prof['pages'].Count -eq 5 -and $prof['pages'].Contains('transferStatus') -and $prof['pages']['transferStatus']['role'] -eq 'list' -and $prof['pages']['hmResult']['role'] -eq 'record') 'host-open: the five pages of PROFILE-SCHEMA 3.0, keyed by page name'
 $s = Test-EbiProfileSchema -Profile $prof -Missing $p['missing']
@@ -80,6 +80,24 @@ $p2 = Read-EbiProfile -Dir $skel -WorkDir $tmpRoot
 Assert-True ($p2['ok'] -and $p2['value']['pages'].Contains('examplePage') -and $p2['value']['pages'].Contains('_doc')) 'new: the skeleton loads and carries _doc keys'
 $n2 = New-EbiProfileSkeleton -Dir $skel -Name 'newprof'
 Assert-True (-not $n2['ok']) 'new: refuses to overwrite'
+
+Write-Host '  -- ebi.local.json saved by Notepad as ANSI (Shift_JIS)'
+# "production control" in Japanese -- a real share-path segment, built from code points
+$jp = -join @([char]0x751F, [char]0x7523, [char]0x7BA1, [char]0x7406)
+$localDir = Join-Path $tmpRoot 'sjislocal'
+New-Item -ItemType Directory -Path $localDir -Force | Out-Null
+$cp932 = $null
+try { $cp932 = [System.Text.Encoding]::GetEncoding(932) } catch { [System.Text.Encoding]::RegisterProvider([System.Text.CodePagesEncodingProvider]::Instance); $cp932 = [System.Text.Encoding]::GetEncoding(932) }
+$localText = '{ "paths": { "wbs": "\\\\srv\\12_' + $jp + '\\WBS.xlsx" } }'
+[System.IO.File]::WriteAllBytes((Join-Path $localDir 'ebi.local.json'), $cp932.GetBytes($localText))
+$p3 = Read-EbiProfile -Dir $hostOpen -WorkDir $localDir
+Assert-True $p3['ok'] ('sjis local: loads: ' + $p3['message'])
+Assert-Equal 'cp932' $p3['localEncoding'] 'sjis local: read as CP932 (and said so)'
+Assert-Equal ('\\srv\12_' + $jp + '\WBS.xlsx') $p3['value']['paths']['wbs'] 'sjis local: the Japanese path segment survives'
+[System.IO.File]::WriteAllText((Join-Path $localDir 'ebi.local.json'), $localText, (New-Object System.Text.UTF8Encoding($false)))
+$p4 = Read-EbiProfile -Dir $hostOpen -WorkDir $localDir
+Assert-Equal 'utf8' $p4['localEncoding'] 'utf8 local: read as UTF-8'
+Assert-Equal $p3['value']['paths']['wbs'] $p4['value']['paths']['wbs'] 'utf8 local: same value either way'
 
 Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
 $failed = Complete-Tests

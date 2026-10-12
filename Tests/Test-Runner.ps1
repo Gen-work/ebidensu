@@ -104,6 +104,61 @@ $Manifest = @{
 function Invoke-Step { param($In, $Ctx) return @{ ok = $true; released = [int]$In['window'] } }
 '@
 
+# fake.wb*: an in-memory workbook (resume safety, 10-12). wbedit counts its
+# real runs; wbsave reports saved = true (a commit point); wbclose releases.
+Write-Fixture 'fake.wbopen.ps1' @'
+$Manifest = @{
+  id = 'fake.wbopen'; group = 'fake'; summary = 'fixture: open a workbook'; tier = 'core'
+  effects = 'ui'; needs = @(); provides = @('workbook'); releases = @(); idempotent = $true
+  inputs  = @{ name = @{ type='string'; required=$true } }
+  outputs = @{ name = @{ type='string' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='fake.wbopen'; with=@{ name='x'; as='wb' } }
+}
+function Invoke-Step { param($In, $Ctx) return @{ ok = $true; resource = 77; name = $In['name'] } }
+'@
+Write-Fixture 'fake.wbedit.ps1' @'
+$Manifest = @{
+  id = 'fake.wbedit'; group = 'fake'; summary = 'fixture: edit an open workbook'; tier = 'core'
+  effects = 'write'; needs = @(); provides = @(); releases = @(); idempotent = $false
+  inputs  = @{ workbook = @{ type='session'; sessionKind='workbook'; required=$true }; name = @{ type='string'; required=$true } }
+  outputs = @{ n = @{ type='int' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='fake.wbedit'; with=@{ workbook='wb'; name='x' } }
+}
+function Invoke-Step {
+    param($In, $Ctx)
+    $f = Join-Path $Ctx['WorkDir'] ('count-' + $In['name'] + '.txt')
+    $n = 0
+    if (Test-Path -LiteralPath $f) { $n = [int]([System.IO.File]::ReadAllText($f).Trim()) }
+    $n++
+    [System.IO.File]::WriteAllText($f, [string]$n)
+    return @{ ok = $true; n = $n }
+}
+'@
+Write-Fixture 'fake.wbsave.ps1' @'
+$Manifest = @{
+  id = 'fake.wbsave'; group = 'fake'; summary = 'fixture: save an open workbook'; tier = 'core'
+  effects = 'write'; needs = @(); provides = @(); releases = @(); idempotent = $true
+  inputs  = @{ workbook = @{ type='session'; sessionKind='workbook'; required=$true } }
+  outputs = @{ saved = @{ type='bool' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='fake.wbsave'; with=@{ workbook='wb' } }
+}
+function Invoke-Step { param($In, $Ctx) return @{ ok = $true; saved = $true } }
+'@
+Write-Fixture 'fake.wbclose.ps1' @'
+$Manifest = @{
+  id = 'fake.wbclose'; group = 'fake'; summary = 'fixture: close a workbook'; tier = 'core'
+  effects = 'write'; needs = @(); provides = @(); releases = @('workbook'); idempotent = $true
+  inputs  = @{ workbook = @{ type='session'; sessionKind='workbook'; required=$true } }
+  outputs = @{ closed = @{ type='bool' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='fake.wbclose'; with=@{ workbook='wb' } }
+}
+function Invoke-Step { param($In, $Ctx) return @{ ok = $true; closed = $true } }
+'@
+
 # fake.load: registers a worklist built from inline rows (what table.load
 # will do from a CSV, P1-24). The resource shape is kernel/Worklist.ps1's.
 Write-Fixture 'fake.load.ps1' @'
@@ -942,6 +997,29 @@ try {
     $other = New-PolicyWorkflow -Name 'other' -Each '[ { "id": "e", "use": "fake.item" } ]'
     $res = Invoke-EbiWorkflow -Path $other -WorkDir $work -ModulesRoot $modules -RunId 'r-p104-resume' -Profile $profile -Resume
     Assert-True ($res['failure'] -eq 'workflow_invalid' -and $res['message'] -like '*ran workflow "p104.resume", not "p104.other"*') 'resume: a different workflow cannot resume that run'
+
+    # -- resume with an in-memory workbook (10-12): an edit that was never saved runs again;
+    #    one a later step saved replays
+    Reset-Counters; Set-Answers @()
+    $twoRows = '[ { "Correl_ID_S": "A1", "JOB_NAME": "JOB_A", "status": "0" }, { "Correl_ID_S": "declared", "JOB_NAME": "JOB_B", "status": "0" } ]'
+    $wf = New-PolicyWorkflow -Name 'wbresume' -OnError '{ "policy": "fail" }' -Rows $twoRows `
+        -Each '[ { "id": "open",  "use": "fake.wbopen",  "with": { "name": "{{item.Correl_ID_S}}", "as": "wb" } },
+                 { "id": "edit",  "use": "fake.wbedit",  "with": { "workbook": "wb", "name": "w-{{item.Correl_ID_S}}" } },
+                 { "id": "work",  "use": "fake.fail",    "with": { "mode": "{{item.Correl_ID_S}}" } },
+                 { "id": "save",  "use": "fake.wbsave",  "with": { "workbook": "wb" } },
+                 { "id": "close", "use": "fake.wbclose", "with": { "workbook": "wb" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-wbresume' -Profile $profile -AskHandler $handler
+    Assert-Equal 'boom' $res['failure'] 'wb resume: run 1 failed on the second item, BEFORE its save'
+    $fixed = Write-Workflow 'wbresume.json' ([System.IO.File]::ReadAllText($wf).Replace('"Correl_ID_S": "declared"', '"Correl_ID_S": "A2"'))
+    # the ledger key of the failed item changes with the fix, so resume it under the same name: re-point the ledger
+    $lf = Get-EbiLedgerFile -WorkDir $work -RunId 'r-wbresume'
+    [System.IO.File]::WriteAllText($lf, ([System.IO.File]::ReadAllText($lf).Replace('declared / JOB_B', 'A2 / JOB_B')))
+    [System.IO.File]::WriteAllText((Join-Path $work 'count-w-A2.txt'), [System.IO.File]::ReadAllText((Join-Path $work 'count-w-declared.txt')))
+    $res = Invoke-EbiWorkflow -Path $fixed -WorkDir $work -ModulesRoot $modules -RunId 'r-wbresume' -Profile $profile -AskHandler $handler -Resume
+    Assert-True ($res['ok']) 'wb resume: run 2 completes'
+    Assert-Equal 1 (Get-Count 'w-A1') 'wb resume: A1 had saved -> its edit replayed, not re-run'
+    Assert-Equal 2 (Get-Count 'w-A2') 'wb resume: A2 never saved -> its edit RAN AGAIN on the re-opened book'
+    Assert-Equal 'replayed,ok' (@((Get-ItemRecs $res 'edit') | ForEach-Object { $_['status'] }) -join ',') 'wb resume: edit statuses: A1 replayed, A2 ok'
 
     # -- once: groupEnd fires once per group after its last item, also when that item was skipped by a policy
     Set-Answers @()

@@ -1,0 +1,27 @@
+{
+  "_doc": "GIFT -> GFIX receive verification (J4, OPEN side). Display names, the worklist's neutral column roles, and the fixed message texts the workflows post.",
+  "sides": {
+    "before": "GIFT",
+    "after": "GFIX"
+  },
+  "roles": {
+    "entry": "入口",
+    "form": "検索画面",
+    "record": "結果画面",
+    "list": "一覧",
+    "document": "帳票"
+  },
+  "columns": {
+    "group": "Excel_NAME",
+    "owner": "Owner",
+    "deliverable": "Excel_NAME"
+  },
+  "messages": {
+    "feedbackOk": "OPEN側で確認できました。前後一致です。",
+    "startPaste": "Teams で HOST の「ジョブ:<このジョブ>を実施します。(送信予定:n件)」をコピー(Ctrl+C)して Enter。押した時刻を開始時刻にします(遅れてコピーしたらリーダーの予定表の時刻を 10:30 のように打つ)",
+    "startConfirm": "作業リスト (gfixrecv.csv) にこのジョブの開始時刻があります。Enter = その時刻で進む(Teams のメッセージは要らない) / n = 今から実行(先に「実施します」をコピー) / 別の時刻なら 10:30 のように打つ",
+    "waitHost": "Teams で HOST の「ジョブ:<このジョブ>が正常終了しました。」が来たら Enter(リアクションは手で)",
+    "openPages": "準備: (1) GoAnywhere「完了したジョブ」を InPrivate ウィンドウで最大化(日付範囲 Today / プロジェクト名は空欄か今日のもの / 開始時間 ▼) (2) Jenkins の data/report を別ウィンドウで (3) 前に開いた DF のウィンドウは閉じる。できたら Enter"
+  },
+  "startPattern": "ジョブ\\s*[:：]\\s*(?<job>[A-Za-z0-9]+)\\s*を\\s*実施(?:.*?送信予定\\s*[:：]\\s*(?<count>\\d+)\\s*件)?"
+}

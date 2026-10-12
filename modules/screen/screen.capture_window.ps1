@@ -24,6 +24,7 @@ $Manifest = @{
   inputs     = @{
     window = @{ type='session'; sessionKind='window'; required=$true; desc='name of a registered window resource' }
     saveAs = @{ type='path';    required=$true;                        desc='PNG path; relative paths resolve under the work dir; parent dirs are created' }
+    bounds = @{ type='string';  default='window'; enum=@('window', 'visible'); desc='window = GetWindowRect (Windows 10 pads it with invisible borders, which the per-side crop then takes off); visible = the DWM frame bounds, no padding' }
   }
   outputs    = @{
     path   = @{ type='path'; desc='the file that was written (absolute)' }
@@ -55,7 +56,7 @@ function Invoke-Step {
     if ($hWnd -eq [IntPtr]::Zero) {
         return @{ ok = $false; failure = 'window_gone'; message = 'the window resource holds no handle' }
     }
-    $rect = Get-EbiWindowRect -HWnd $hWnd
+    $rect = if ([string]$In['bounds'] -eq 'visible') { Get-EbiWindowVisibleRect -HWnd $hWnd } else { Get-EbiWindowRect -HWnd $hWnd }
     if (-not $rect['ok']) {
         return @{ ok = $false; failure = 'window_gone'; message = ('the window has no rectangle ({0}x{1}); closed?' -f $rect['W'], $rect['H']); path = $dest; width = 0; height = 0 }
     }

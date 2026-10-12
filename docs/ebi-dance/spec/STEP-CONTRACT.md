@@ -533,7 +533,15 @@ runner 又可以在任何一步之后插进一个关卡(`onError.policy=ask`、
 "只有这一处安全",加错地方就把 correl id 敲进控制台。新设计不做这种
 编排:**每个发键 step 自己负责把自己的目标窗口拉到前台并核对**,
 `human.*` step 的 `effects` 定为 `ui`(它们占用前台和键盘),manifest
-`notes` 写明"返回后前台在控制台"。runner **不**替任何 step 恢复前台。
+`notes` 写明"返回后前台在控制台"。runner **不**替任何发键 step 恢复前台。
+
+**runner 的前台规则(2026-10-09 现场反馈:「只在需要时把页面放到前面,
+其余时间控制台在前,运行中我可以做别的事」)。** 每次调用前:调用写了
+`front`(WORKFLOW-SCHEMA §2)→ 把那个窗口拉到前台;step 声明了
+`foreground` → 不动(它自己拉);都不是、而上一个 step 把别的窗口拉到了
+前台 → 把控制台放回前台(不闪、不响)。run 结束(teardown 之后)控制台
+一定回到前台。这不违反上一段:发键 step 照旧自己拉、自己核对;runner
+只在「没有人需要那个窗口」时收回前台。
 `window` 这个种类不绑定浏览器:`browser.ensure` 按 `process` 输入(默认
 `msedge`)找主窗口,df.exe / Excel 窗口迁移时复用同一个 step 和种类。
 

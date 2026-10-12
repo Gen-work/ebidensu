@@ -31,6 +31,9 @@ profiles/<name>/
   calibration.json    降级层的阈值和有效期(用到 fallback 才需要)
   window.json         浏览器窗口尺寸 { width, height }(§8 示例的 `profile.window.*`;
                       机器差异用 `<WorkDir>/ebi.local.json` 的 `window` 覆盖,P2-05)
+  paths.json          本次作业的文件 / 文件夹 / URL 位置(`profile.paths.*`)。随仓库发布的
+                      只放占位值 —— 共享盘路径、内网 URL、个人目录都不进仓库(mask 闸门
+                      会拦),真实值写在 `<WorkDir>/ebi.local.json` 的 `paths` 里覆盖
   fixtures/           脱敏后的页面文本样本,用于单测
   ocr-truth/          OCR 校准样本(用到 fallback 才需要)
 ```

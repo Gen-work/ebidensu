@@ -50,8 +50,8 @@ function ConvertTo-StepDryRunWith {
     <#
       PURE. manifest -> @{ with; session } where with is example.with with
       every template replaced by a fixture, and session holds a fake
-      resource for every session input the example names (unless the
-      example carries 'as': a provides step registers its own).
+      resource for every session input the example names (a provides
+      step's own 'as' is not one of them: the runner registers that).
     #>
     param($Manifest, [string]$TmpRoot)
     $with = @{}
@@ -78,15 +78,16 @@ function ConvertTo-StepDryRunWith {
             default   { $with[$k] = 'fixture' }
         }
     }
+    # Every session input the example names gets a fake resource -- also
+    # on a provides step: excel.open both consumes an excelApp and
+    # registers a workbook under its own 'as'.
     $session = @{}
-    if (-not $with.Contains('as')) {
-        foreach ($k in $inputs.Keys) {
-            $spec = $inputs[$k]
-            if (-not ($spec -is [System.Collections.IDictionary]) -or [string]$spec['type'] -ne 'session' -or -not $with.Contains([string]$k)) { continue }
-            $kind = [string]$spec['sessionKind']
-            $value = switch ($kind) { 'window' { 4242 } 'worklist' { New-StepDryRunWorklist -TmpRoot $TmpRoot } default { @{ fake = $kind } } }
-            $session[[string]$with[[string]$k]] = @{ kind = $kind; value = $value; registeredBy = 'dryrun-harness' }
-        }
+    foreach ($k in $inputs.Keys) {
+        $spec = $inputs[$k]
+        if (-not ($spec -is [System.Collections.IDictionary]) -or [string]$spec['type'] -ne 'session' -or -not $with.Contains([string]$k)) { continue }
+        $kind = [string]$spec['sessionKind']
+        $value = switch ($kind) { 'window' { 4242 } 'worklist' { New-StepDryRunWorklist -TmpRoot $TmpRoot } default { @{ fake = $kind } } }
+        $session[[string]$with[[string]$k]] = @{ kind = $kind; value = $value; registeredBy = 'dryrun-harness' }
     }
     return @{ with = $with; session = $session }
 }

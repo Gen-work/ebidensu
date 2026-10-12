@@ -1,0 +1,160 @@
+GFIXReceiver START JJPCRS1220261002143343393761
+2026年 10月  2日 金曜日 14:33:48 JST
+java honda.jp.hm.common.framework.v1_0.messaging.batch.GIFTReceiver /appl/JPC/gfix/recv/JJPCRS1220261002143343393761
+[26/10/02 14:33:51:533 JST] jpcver1-batchssh-64f568574f-r962k           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : FileGIFTGetBLBean.execute() fileName : [/appl/JPC/gfix/recv/JJPCRS1220261002143343393761]
+[26/10/02 14:33:51:823 JST] jpcver1-batchssh-64f568574f-r962k           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : update count�F1
+[26/10/02 14:33:51:841 JST] jpcver1-batchssh-64f568574f-r962k           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : file stored : [/files/JPCVer/data/report/F202610020037.TXT]
+[26/10/02 14:33:51:882 JST] jpcver1-batchssh-64f568574f-r962k           DEBUG GCM SYSTEM GCMFileRelatedDAOImpl insertRelated [                        :in]             : update count�F1
+GFIXReceiver END JJPCRS1220261002143343393761
+2026年 10月  2日 金曜日 14:33:51 JST
+GFIXReceiver START JJPCRS1220260706110052987442
+2026年 10月  8日 木曜日 13:45:24 JST
+java honda.jp.hm.common.framework.v1_0.messaging.batch.GIFTReceiver /appl/JPC/gfix/recv/JJPCRS1220260706110052987442
+[26/10/08 13:45:24:947 JST]            INFO             HMMessageResources <init>       [                        :in]             : Initializing, config='ApplicationResources', returnNull=true
+[26/10/08 13:45:24:957 JST]            DEBUG            HMMessageResources debug        [                        :in]             : Loading message resources file [ApplicationResources_en.properties].
+[26/10/08 13:45:24:994 JST]            DEBUG            HMMessageResources debug        [                        :in]             : Loading message resources file [ApplicationResources_ja.properties].
+[26/10/08 13:45:25:086 JST]            DEBUG            HMMessageResources debug        [                        :in]             : Loading message resources file [ApplicationResources.properties].
+[26/10/08 13:45:25:095 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             ApplLogger         <clinit>     [                        :in]             : logger(undefined category):[honda.jp.hm.common.framework.v1_0.log.BaseLogger@6cdb48ec]
+[26/10/08 13:45:25:095 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       main         [                        :in]             : GIFTReceiver main start.
+[26/10/08 13:45:25:095 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       <init>       [                        :in]             : GIFTReceiver initial process start.
+[26/10/08 13:45:25:102 JST] jpcver1-batchssh-d69c7c4c9-l4v8g framework DEBUG FRM messaging PropertyManager    load         [                        :in]             : messaging.properties is loaded.
+[26/10/08 13:45:25:103 JST] jpcver1-batchssh-d69c7c4c9-l4v8g framework DEBUG FRM messaging PropertyManager    load         [                        :in]             : honda.jp.hm.common.framework.v1_0.messaging.MessageManager.properties is loaded.
+[26/10/08 13:45:25:104 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            MessageManager     <clinit>     [                        :in]             : MessageManager#static begin
+[26/10/08 13:45:25:105 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            MessageManager     <clinit>     [                        :in]             : MessageManager#static end
+[26/10/08 13:45:25:106 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       <init>       [                        :in]             : Can't get class name from batch.properties [key=7442.AppClass]
+[26/10/08 13:45:25:106 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       <init>       [                        :in]             : It retries it by using eight head digits of the file name. [key=RS12.AppClass]
+[26/10/08 13:45:25:107 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       <init>       [                        :in]             : fileName      = /appl/JPC/gfix/recv/JJPCRS1220260706110052987442
+[26/10/08 13:45:25:107 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       <init>       [                        :in]             : formatID      = RS12
+[26/10/08 13:45:25:107 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       <init>       [                        :in]             : renameMode    = false
+[26/10/08 13:45:25:107 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       <init>       [                        :in]             : execClassName = honda.jp.hm.gcm.system.file.control.batch.gift.FileGIFTGetBLBean
+[26/10/08 13:45:25:107 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       <init>       [                        :in]             : GIFTReceiver initial process end.
+[26/10/08 13:45:25:107 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       execute      [                        :in]             : GIFTReceiver execute process start.
+[26/10/08 13:45:25:387 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            GIFTReceiver       execute      [                        :in]             : Execute business logic with AbstractGIFTGetProcessor class.
+[26/10/08 13:45:27:570 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getBeanId    [                        :in] PCVCMN.0711D: ClassName�Fhonda.jp.hm.gcm.system.file.control.batch.gift.FileGIFTGetBLBean, FolderName:.batch.
+[26/10/08 13:45:27:570 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getBeanId    [                        :in]             : str --> control
+[26/10/08 13:45:27:570 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractGIFTGetProcessor setContextId [                        :in]             : contextId : control
+[26/10/08 13:45:27:571 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SqlMapBatchManager initialize   [                        :in]             : iBATIS_configPath(Default) : null
+[26/10/08 13:45:27:572 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : -------FileGIFTGetBLBean.execute(filename,formatID) START!!----------------
+[26/10/08 13:45:27:572 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:574 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : FileGIFTGetBLBean.execute() fileName : [/appl/JPC/gfix/recv/JJPCRS1220260706110052987442]
+[26/10/08 13:45:27:575 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : FileGIFTGetBLBean.execute() formatID : [RS12]
+[26/10/08 13:45:27:582 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            DataMixer          <clinit>     [                        :in]             : MessageManager#static begin
+[26/10/08 13:45:27:583 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            DataMixer          <clinit>     [                        :in]             : MessageManager#static end
+[26/10/08 13:45:27:587 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : The header was acquired.
+[26/10/08 13:45:27:588 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : Header job_id : [20260500037850    ]
+[26/10/08 13:45:27:590 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO  GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : Gift Header's APPL_KBN : [          ], set orgnl_cls_appl in GCMFileControlDTO.
+[26/10/08 13:45:27:590 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO  GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : Gift Header's MAKED_USER : [RJDSJM40], set file_crpn in GCMFileControlDTO.
+[26/10/08 13:45:27:597 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO  GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : Gift Header's KICK_DATE : [2026-05-15 22:15:52.730], set kick_date in GCMFileControlDTO.
+[26/10/08 13:45:27:597 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO  GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : Gift Header's FILE_SYUBETU : [JDS000000030], set subt_id_dlfl in GCMFileControlDTO.
+[26/10/08 13:45:27:597 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO  GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : set upd_user_id in GCMFileControlDTO. : [RJDSJM40]
+[26/10/08 13:45:27:598 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO  GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : Gift Header's FILE_NAME : []
+[26/10/08 13:45:27:598 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:600 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:600 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:603 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:603 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:623 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:624 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:676 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:678 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:679 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:686 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:686 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:695 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:696 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:696 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:702 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:705 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:705 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:708 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:710 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO  GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : Gift Header's EXTENSION : []
+[26/10/08 13:45:27:710 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : FileName:F202610080006.csv
+[26/10/08 13:45:27:710 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO  GCM SYSTEM FileGIFTGetBLBean  getFileData  [                        :in]             : Gift Header's COMMENT : []
+[26/10/08 13:45:27:711 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : file backup path : [/appl/JPC/gfix/recv/JJPCRS1220260706110052987442_back]
+[26/10/08 13:45:27:712 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : file body count : [5]
+[26/10/08 13:45:27:714 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:719 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:719 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:727 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:727 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:747 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:750 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:750 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:753 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileStorageServiceImpl existsFile   [                        :in]             : filePath : [/files/JPCVer/data/report/F202610080006.csv]
+[26/10/08 13:45:27:755 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:755 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:756 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:756 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:756 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : subt_id_dlfl : [JDS000000030]
+[26/10/08 13:45:27:756 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : file_no_dwld : [F202610080006]
+[26/10/08 13:45:27:757 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : orgnl_cls_appl : []
+[26/10/08 13:45:27:757 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : saksi_tstmp_file : [2026-05-15 22:15:52.730]
+[26/10/08 13:45:27:757 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : file_crpn : [RJDSJM40]
+[26/10/08 13:45:27:757 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : dwld_dttm_finl :[9999-12-31 23:59:59.999999]
+[26/10/08 13:45:27:757 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : file_path : [/files/JPCVer/data/report/F202610080006.csv]
+[26/10/08 13:45:27:757 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : file_namg : [F202610080006.csv]
+[26/10/08 13:45:27:757 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : file_cmnt_dwld : []
+[26/10/08 13:45:27:757 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : upd_user_id : [RJDSJM40]
+[26/10/08 13:45:27:758 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : file_size : [770]
+[26/10/08 13:45:27:761 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlDAOImpl insertFile   [                        :in]             : update count�F1
+[26/10/08 13:45:27:761 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:761 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlStorageServiceFSImpl storeFile    [                        :in]             : --- honda.jp.hm.gcm.system.file.control.GCMFileControlStorageServiceFSImpl#storeFile [START] ---
+[26/10/08 13:45:27:761 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : --- honda.jp.hm.gcm.system.file.control.GCMFileControlStorageServiceFSImpl#storeFile [START] ---
+[26/10/08 13:45:27:761 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : output path : [/files/JPCVer/data/report/F202610080006.csv]
+[26/10/08 13:45:27:761 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : create new file start. filepath : [/files/JPCVer/data/report/F202610080006.csv]
+[26/10/08 13:45:27:762 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : create new file end.
+[26/10/08 13:45:27:762 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : create new FileOutputStream start. filepath : [/files/JPCVer/data/report/F202610080006.csv]
+[26/10/08 13:45:27:763 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : create new FIleOutputStream end.
+[26/10/08 13:45:27:764 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : file stored : [/files/JPCVer/data/report/F202610080006.csv]
+[26/10/08 13:45:27:765 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileControlServiceImpl registerFile [                        :in]             : return fileNo : [F202610080006]
+[26/10/08 13:45:27:765 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : file was newly registered. fileNo : [F202610080006]
+[26/10/08 13:45:27:765 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:767 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:768 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:775 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:775 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:775 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileRelatedDAOImpl insertRelated [                        :in]             : upd_user_id : [RJDSJM40]
+[26/10/08 13:45:27:775 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileRelatedDAOImpl insertRelated [                        :in]             : job_id_hmfw : [20260500037850]
+[26/10/08 13:45:27:775 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileRelatedDAOImpl insertRelated [                        :in]             : subt_id_dlfl : [JDS000000030]
+[26/10/08 13:45:27:775 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileRelatedDAOImpl insertRelated [                        :in]             : file_no_dwld : [F202610080006]
+[26/10/08 13:45:27:780 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMFileRelatedDAOImpl insertRelated [                        :in]             : update count�F1
+[26/10/08 13:45:27:781 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:782 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:782 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:790 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:790 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:790 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM JobDAOImpl         changeStatusExit [                        :in]             : jobId :[20260500037850]
+[26/10/08 13:45:27:790 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM JobDAOImpl         changeStatusExit [                        :in]             : jobStatus :[8]
+[26/10/08 13:45:27:790 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM JobDAOImpl         changeStatusExit [                        :in]             : exitCd :[0]
+[26/10/08 13:45:27:809 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:809 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:809 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:809 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM JobDAOImpl         changeStatusExitFailedStart [                        :in]             : jobId :[20260500037850] - changeStatusExitFailedStart()
+[26/10/08 13:45:27:809 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM JobDAOImpl         changeStatusExitFailedStart [                        :in]             : jobStatus :[8]
+[26/10/08 13:45:27:810 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM JobDAOImpl         changeStatusExitFailedStart [                        :in]             : exitCd :[0]
+[26/10/08 13:45:27:810 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:810 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           ERROR GCM SYSTEM JobServiceImpl     changeStatus [                        :in]             : changeStatus failed. JOB_ID :[20260500037850]
+[26/10/08 13:45:27:811 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:813 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractServiceBase setContextId [                        :in]             : contextId --> gcm
+[26/10/08 13:45:27:813 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG            SpringUtil         getApplicationContext [                        :in]             : getApplicationContext(contextId) : gcm
+[26/10/08 13:45:27:818 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM DaoBase            init         [                        :in]             : connectionName : DEFAULT
+[26/10/08 13:45:27:818 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    prepare      [                        :in]             : AbstractSQLJDao.prepare() executed
+[26/10/08 13:45:27:818 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMRegTimeJobDAOImpl changeStatusExit [                        :in]             : jobId :[20260500037850]
+[26/10/08 13:45:27:818 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMRegTimeJobDAOImpl changeStatusExit [                        :in]             : jobStatus :[8]
+[26/10/08 13:45:27:818 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM GCMRegTimeJobDAOImpl changeStatusExit [                        :in]             : exitCd :[0]
+[26/10/08 13:45:27:823 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM AbstractSQLJDao    destroy      [                        :in]             : AbstractSQLJDao.destory() executed
+[26/10/08 13:45:27:824 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           ERROR GCM SYSTEM GCMRegTimeJobServiceImpl changeStatus [                        :in]             : changeStatus failed. JOB_ID :[20260500037850]
+[26/10/08 13:45:27:824 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : job_id does not exist.job_id : [20260500037850]
+path : /appl/JPC/gfix/recv/JJPCRS1220260706110052987442_back
+delete file : /appl/JPC/gfix/recv/JJPCRS1220260706110052987442
+[26/10/08 13:45:27:826 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           DEBUG GCM SYSTEM FileGIFTGetBLBean  execute      [                        :in]             : -------FileGIFTGetBLBean.execute(filename,formatID) END!!----------------
+[26/10/08 13:45:27:826 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       execute      [                        :in]             : status = 0
+[26/10/08 13:45:27:826 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       execute      [                        :in]             : Commit all connections.
+[26/10/08 13:45:27:827 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       execute      [                        :in]             : Close all connections.
+[26/10/08 13:45:27:827 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       execute      [                        :in]             : GIFTReceiver execute process end.
+[26/10/08 13:45:27:828 JST] jpcver1-batchssh-d69c7c4c9-l4v8g           INFO             GIFTReceiver       main         [                        :in]             : GIFTReceiver main end.
+GFIXReceiver END JJPCRS1220260706110052987442
+2026年 10月  8日 木曜日 13:45:27 JST
+GFIXReceiver START JJPCRS12DANGLING0000000000000
+2026年 10月  8日 x 23:59:00 JST
+[26/10/08 23:59:01:000 JST] x : started

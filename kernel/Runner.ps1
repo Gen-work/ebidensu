@@ -315,6 +315,7 @@ function Invoke-EbiDefaultAsk {
     $autoWhy = 'dry run'
     if (-not $auto) {
         try { if ([Console]::IsInputRedirected) { $auto = $true; $autoWhy = 'no console to ask' } } catch { }
+        if (-not $auto -and [string]$env:EBI_NO_ASK -eq '1') { $auto = $true; $autoWhy = 'EBI_NO_ASK' }
     }
     $where = if ([string]$Question['key'] -ne '') { $Question['section'] + '[' + $Question['key'] + ']/' + $Question['id'] } else { $Question['section'] + '/' + $Question['id'] }
     if ([string]$Question['kind'] -eq 'confirm') {
@@ -360,7 +361,20 @@ function Invoke-EbiStepWithPolicy {
         if ($null -ne $ebiPol['entry']) {
             $ebiPol['ledgerKey'] = Get-EbiLedgerKey -Item $Key -Group $LedgerGroup -Step $ebiPol['id']
             $ebiPol['resourceStep'] = ((@(Get-EbiManifestArray -Manifest $ebiPol['entry']['Manifest'] -Key 'provides')).Count -gt 0) -or ((@(Get-EbiManifestArray -Manifest $ebiPol['entry']['Manifest'] -Key 'releases')).Count -gt 0)
+            # an unsaved workbook edit is not replayed: the book was re-opened
+            # from disk without it (Get-EbiLastCommitIndex, Ledger.ps1)
+            $ebiPol['volatile'] = $false
             if ($State['ledgerDone'].Contains($ebiPol['ledgerKey']) -and -not $ebiPol['resourceStep']) {
+                $ebiPol['kinds'] = @((Get-EbiSessionInputs -Manifest $ebiPol['entry']['Manifest']).Values)
+                $ebiPol['eff'] = $(if ($ebiPol['entry']['Manifest'].Contains('effects')) { [string]$ebiPol['entry']['Manifest']['effects'] } else { '' })
+                if ($ebiPol['kinds'] -contains 'workbook' -and $ebiPol['eff'] -ne 'pure' -and $ebiPol['eff'] -ne 'read') {
+                    $ebiPol['calls'] = @($State['workflow']['each'])
+                    $ebiPol['commit'] = Get-EbiLastCommitIndex -Calls $ebiPol['calls'] -Done $State['ledgerDone'] -Item $Key -Group $Group
+                    if ((Get-EbiCallIndex -Calls $ebiPol['calls'] -Id $ebiPol['id']) -gt $ebiPol['commit']) { $ebiPol['volatile'] = $true }
+                }
+            }
+            if ($ebiPol['volatile']) { Write-EbiStepLine -Status 'info' -Section $Section -Id $ebiPol['id'] -Use $ebiPol['use'] -Key $Key -Detail 'in the ledger but never saved: runs again on the re-opened book' }
+            if ($State['ledgerDone'].Contains($ebiPol['ledgerKey']) -and -not $ebiPol['resourceStep'] -and -not $ebiPol['volatile']) {
                 $ebiPol['old'] = $State['ledgerDone'][$ebiPol['ledgerKey']]
                 $ebiPol['outputs'] = $(if ($ebiPol['old'].Contains('outputs') -and ($ebiPol['old']['outputs'] -is [hashtable])) { $ebiPol['old']['outputs'] } else { @{} })
                 $Steps[$ebiPol['id']] = $ebiPol['outputs']
@@ -584,6 +598,21 @@ function Invoke-EbiStepCall {
         return $ebiCall['rec']
     }
 
+    # -- foreground: only the window this step needs; the console otherwise --
+    if (-not $ebiCall['ctx']['DryRun']) {
+        $ebiCall['frontH'] = [IntPtr]::Zero
+        $ebiCall['frontN'] = ''
+        if ($Call.Contains('front') -and -not [string]::IsNullOrWhiteSpace([string]$Call['front'])) {
+            $ebiCall['frontN'] = [string]$Call['front']
+            $ebiCall['frontH'] = Get-EbiSessionHandle -Entry $ebiCall['ctx']['Session'][$ebiCall['frontN']]
+            # an unresolved front would fall through to "console back" -- exactly the
+            # window the screenshot must not show (first evidence run, 10-09)
+            if ($ebiCall['frontH'] -eq [IntPtr]::Zero) { $ebiCall['ctx'].Log.Warn(('front "{0}" is not a registered window: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
+        }
+        $ebiCall['frontOk'] = Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (@($ebiCall['manifest']['needs']) -contains 'foreground')
+        if ($ebiCall['frontH'] -ne [IntPtr]::Zero -and -not $ebiCall['frontOk']) { $ebiCall['ctx'].Log.Warn(('front "{0}" did not come to the front: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
+    }
+
     # -- call -----------------------------------------------------------------
     $ebiCall['ret'] = $null
     $ebiCall['threw'] = ''
@@ -709,6 +738,7 @@ function Invoke-EbiWorkflow {
     )
 
     $dryRunFlag = [bool]$DryRun.IsPresent
+    if (-not $dryRunFlag) { Save-EbiConsoleWindow }   # kernel/Gate.ps1: questions bring this window back
     $resumeFlag = [bool]$Resume.IsPresent
     if ([string]::IsNullOrWhiteSpace($ModulesRoot)) { $ModulesRoot = Get-EbiDefaultModulesRoot }
     if ([string]::IsNullOrWhiteSpace($RunId))       { $RunId = New-EbiRunId }
@@ -759,7 +789,8 @@ function Invoke-EbiWorkflow {
 
     # ---- run.json + ledger (resume) ------------------------------------------------
     $wfId = [string]$workflow['id']
-    $run = @{ runId = $RunId; startedAt = (Get-Date).ToString('o'); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
+    $ebiNow = Get-Date
+    $run = @{ runId = $RunId; startedAt = $ebiNow.ToString('o'); date = $ebiNow.ToString('yyyy-MM-dd'); dateSlash = $ebiNow.ToString('yyyy/MM/dd'); mmdd = $ebiNow.ToString('MMdd'); toolDir = (Split-Path $PSScriptRoot -Parent); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
     $timeWindowSeen = $run['timeWindow']
     $ledgerDone = @{}
     if ($resumeFlag) {
@@ -776,7 +807,7 @@ function Invoke-EbiWorkflow {
             Write-Host ('  [refused] {0}' -f $result['message']) -ForegroundColor Red
             return $result
         }
-        foreach ($k in @('startedAt', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k] -and ($k -ne 'timeWindow' -or $null -eq $run['timeWindow'])) { $run[$k] = $prevDoc[$k] } }
+        foreach ($k in @('startedAt', 'date', 'dateSlash', 'mmdd', 'operator', 'timeWindow')) { if ($prevDoc.Contains($k) -and $null -ne $prevDoc[$k] -and ($k -ne 'timeWindow' -or $null -eq $run['timeWindow'])) { $run[$k] = $prevDoc[$k] } }
         $timeWindowSeen = $run['timeWindow']
         $ledger = Read-EbiLedger -Path (Get-EbiLedgerFile -WorkDir $WorkDir -RunId $RunId)
         if (-not $ledger['ok']) {
@@ -876,6 +907,7 @@ function Invoke-EbiWorkflow {
                 if ($limitValue -gt 0 -and $ordered.Count -gt $limitValue) { $ordered = @($ordered[0..($limitValue - 1)]) }
                 $result['selected'] = $ordered.Count
                 Write-Host ('  each: {0} of {1} row{2} selected' -f $ordered.Count, $selected['total'], $(if ($selected['total'] -eq 1) { '' } else { 's' })) -ForegroundColor Cyan
+                if ($selected.Contains('onlySkipped')) { foreach ($sk in @($selected['onlySkipped'])) { Write-Host ('    -Only {0}: {1}' -f $sk['key'], $sk['why']) -ForegroundColor Yellow } }
                 Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Tags $tagsBase -Action 'source' -Status 'ok' -Data @{ total = $selected['total']; selected = $ordered.Count; groupBy = $groupBy }
 
                 $groupOutputs = @{}    # group -> @{ stepId -> outputs } from once:group steps (this process)
@@ -982,6 +1014,8 @@ function Invoke-EbiWorkflow {
                 elseif ($done['outcome'] -eq 'fail' -or $done['outcome'] -eq 'skip') { [void]$unrecovered.Add($done['last']) }
             }
         }
+
+        if (-not $dryRunFlag) { Restore-EbiConsoleWindow -Quiet; $global:EbiWindowOut = $false }   # the run is over: the console in front
 
         $result['steps'] = $records.ToArray()
         $result['items'] = $itemRecords.ToArray()

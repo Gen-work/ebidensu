@@ -38,3 +38,8 @@ mark_templates/*.png
 /.ebi/
 /run/
 /capture/
+
+# Test fixtures that ARE log files (sanitized samples; Tests/Test-LogText.ps1
+# and Tests/Test-GfixRecvSteps.ps1 read them). Without this the *.log rule
+# above kept them out of git and the suites failed on every fresh checkout.
+!/Tests/fixtures/**/*.log

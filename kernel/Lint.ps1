@@ -100,7 +100,7 @@ function Invoke-EbiLint {
     $vars = if ($Workflow.Contains('vars') -and ($Workflow['vars'] -is [System.Collections.IDictionary])) { $Workflow['vars'] } else { @{} }
     $source = if ($Workflow.Contains('source') -and ($Workflow['source'] -is [System.Collections.IDictionary])) { $Workflow['source'] } else { $null }
     $groupBy = if ($null -ne $source -and $source.Contains('groupBy') -and $null -ne $source['groupBy']) { [string]$source['groupBy'] } else { '' }
-    $runKeys = @('runId', 'startedAt', 'operator', 'workDir', 'timeWindow')
+    $runKeys = @('runId', 'startedAt', 'date', 'dateSlash', 'mmdd', 'toolDir', 'operator', 'workDir', 'timeWindow')
 
     # -- 2. profile-level facts -----------------------------------------------
     if (-not $hasProfile) {

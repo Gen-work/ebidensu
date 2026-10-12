@@ -14,7 +14,7 @@
 #  the next run must try it again.
 #
 #  run/<runId>/run.json      -- the run.* scope (runId / startedAt /
-#  operator / workDir / timeWindow) plus workflow id/version, the CLI
+#  date / dateSlash / mmdd / toolDir / operator / workDir / timeWindow) plus workflow id/version, the CLI
 #  arguments and the final result, written at start and at end
 #  (P0-R16). --resume restores run.* from it, so nothing is asked twice.
 #
@@ -92,12 +92,54 @@ function Read-EbiLedger {
     return @{ ok = $true; done = $done; count = $n; badLines = @($read['badLines']); message = $read['message'] }
 }
 
+function Get-EbiLastCommitIndex {
+    <#
+      PURE. Resume safety for in-memory resources (2026-10-12). A step that
+      edits an open workbook only becomes durable when a later step SAVES
+      it (outputs.saved = true: excel.tidy, excel.close save). Returns the
+      index in Calls (the workflow's "each" list) of the last step of this
+      item whose ledger record says saved = true, or -1. On resume, a
+      workbook-editing step AFTER that index must run again: the edit it
+      made was never saved, the re-opened book does not have it, and
+      replaying its outputs would leave a hole (an evidence book without
+      its Excel snap / log lines).
+    #>
+    param($Calls, $Done, [string]$Item, [string]$Group = '')
+    $last = -1
+    $i = 0
+    foreach ($c in @($Calls)) {
+        if ($c -is [System.Collections.IDictionary]) {
+            $once = if ($c.Contains('once')) { [string]$c['once'] } else { '' }
+            $k = if ($once -eq 'group' -or $once -eq 'groupEnd') { Get-EbiLedgerKey -Group $Group -Step ([string]$c['id']) } else { Get-EbiLedgerKey -Item $Item -Step ([string]$c['id']) }
+            if ($null -ne $Done -and $Done.Contains($k)) {
+                $rec = $Done[$k]
+                $o = if ($rec.Contains('outputs')) { $rec['outputs'] } else { $null }
+                if ($o -is [System.Collections.IDictionary] -and $o.Contains('saved') -and $o['saved'] -eq $true) { $last = $i }
+            }
+        }
+        $i++
+    }
+    return $last
+}
+
+function Get-EbiCallIndex {
+    # PURE. Position of the call with this id in Calls, or -1.
+    param($Calls, [string]$Id)
+    $i = 0
+    foreach ($c in @($Calls)) { if ($c -is [System.Collections.IDictionary] -and [string]$c['id'] -eq $Id) { return $i }; $i++ }
+    return -1
+}
+
 function Write-EbiRunFile {
     # run.json: the run.* scope + what was run and how. Atomic (Write-EbiJson).
     param([string]$WorkDir, [string]$RunId, [hashtable]$Run, [hashtable]$Workflow, [hashtable]$RunArgs, [bool]$Finished = $false, $Result = $null)
     $doc = @{
         runId      = $RunId
         startedAt  = $Run['startedAt']
+        date       = $Run['date']
+        dateSlash  = $Run['dateSlash']
+        mmdd       = $Run['mmdd']
+        toolDir    = $Run['toolDir']
         operator   = $Run['operator']
         workDir    = $Run['workDir']
         timeWindow = $Run['timeWindow']

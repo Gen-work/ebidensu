@@ -53,7 +53,10 @@ Write-Host '===== Check-Encoding =====' -ForegroundColor Green
 Write-Host ("  Root: {0}" -f $Root)
 Write-Host ''
 
-$files = @(Get-ChildItem -LiteralPath $Root -File -Recurse -Include '*.ps1','*.psd1','*.json','*.jsonl' -ErrorAction SilentlyContinue)
+# Filter by extension explicitly: Windows PowerShell 5.1 does not apply
+# -Include together with -LiteralPath, so every file (a profile's .png
+# asset too) was read as text and reported as corrupted.
+$files = @(Get-ChildItem -LiteralPath $Root -File -Recurse -ErrorAction SilentlyContinue | Where-Object { @('.ps1', '.psd1', '.json', '.jsonl') -contains $_.Extension.ToLower() })
 
 foreach ($f in $files) {
     $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
