@@ -30,9 +30,13 @@
 
   "each": [
     { "id": "track", "use": "file.read_json",
-      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json" } },
+      "label": "track の結果(無ければ証跡ブックを開く前に止まる)",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json", "mustExist": true,
+                "missingHint": "run gfixRecv.track for this job first (s = leave it pending)" } },
     { "id": "logs", "use": "file.read_json",
-      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/logs.json" } },
+      "label": "logs の結果(無ければ証跡ブックを開く前に止まる)",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/logs.json", "mustExist": true,
+                "missingHint": "run gfixRecv.logs for this job first (s = leave it pending)" } },
 
     { "id": "book", "use": "file.find",
       "with": { "dir": "{{profile.paths.bix}}", "glob": "{{profile.layout.evidence.glob}}", "expect": "one" } },

@@ -1,6 +1,12 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **evidence opened (and pasted into) the real book for jobs with no
+  track / logs yet** (10-12: today's 4 jobs, `track.json` missing ->
+  `excelSnap` already in the book, then `jobLog` failed). `file.read_json`
+  takes `mustExist` + `missingHint` (failure `file_not_found`); evidence
+  requires track.json and logs.json, logs requires track.json -- before
+  any workbook is opened.
 - **GFIX files downloaded gzip-compressed** (10-12: SJDSWM40 /
   YJDSWM40 `F2026100900xx.csv`, 770 bytes on Jenkins, saved as 478 bytes
   starting `1F 8B`; DF showed one garbage line, file.compare said ng).

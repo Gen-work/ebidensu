@@ -57,7 +57,8 @@
 
   "each": [
     { "id": "track", "use": "file.read_json",
-      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json" } },
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json", "mustExist": true,
+                "missingHint": "run gfixRecv.track for this job first (s = leave it pending)" } },
 
     { "id": "jobLogs", "use": "browser.download_each",
       "label": "Receive のジョブ番号ごとにジョブログをダウンロード",

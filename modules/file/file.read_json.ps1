@@ -20,6 +20,8 @@ $Manifest = @{
   idempotent = $true
   inputs     = @{
     path = @{ type='path'; required=$true; desc='the file; relative paths resolve under the work dir' }
+    mustExist = @{ type='bool'; default=$false; desc='a missing file is a failure (file_not_found) instead of data=null' }
+    missingHint = @{ type='string'; default=''; desc='what to do when the file is missing (shown with file_not_found)' }
   }
   outputs    = @{
     data   = @{ type='any';  desc='the parsed value (hashtables, not objects); null when the file is missing' }
@@ -28,6 +30,7 @@ $Manifest = @{
   }
   failures   = @(
     @{ id = 'json_invalid'; transient = $false }
+    @{ id = 'file_not_found'; transient = $false }
     @{ id = 'read_failed';  transient = $true  }
   )
   example    = @{ use = 'file.read_json'; with = @{ path = 'capture/before_transferStatus/{{item.keySafe}}.meta.json' } }
@@ -38,6 +41,7 @@ function Invoke-Step {
     $src = Resolve-EbiWorkPath -PathValue ([string]$In['path']) -WorkDir ([string]$Ctx['WorkDir'])
     $r = Read-EbiJson -Path $src
     if (-not $r['exists']) {
+        if ([bool]$In['mustExist']) { return @{ ok = $false; failure = 'file_not_found'; message = ('no file at ' + $src + $(if ([string]$In['missingHint'] -ne '') { ' -- ' + [string]$In['missingHint'] } else { '' })); data = $null; exists = $false; path = $src } }
         return @{ ok = $true; data = $null; exists = $false; path = $src; warnings = @( @{ code = 'not_found'; message = ('no file at ' + $src); data = @{} } ) }
     }
     if (-not $r['ok']) {

@@ -2496,6 +2496,10 @@
           "transient": false
         },
         {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
           "id": "read_failed",
           "transient": true
         }
@@ -2505,6 +2509,16 @@
       "id": "file.read_json",
       "idempotent": true,
       "inputs": {
+        "missingHint": {
+          "default": "",
+          "desc": "what to do when the file is missing (shown with file_not_found)",
+          "type": "string"
+        },
+        "mustExist": {
+          "default": false,
+          "desc": "a missing file is a failure (file_not_found) instead of data=null",
+          "type": "bool"
+        },
         "path": {
           "desc": "the file; relative paths resolve under the work dir",
           "required": true,

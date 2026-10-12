@@ -957,6 +957,8 @@ Read a JSON file; a missing file gives data=null and a warning
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `missingHint` | string |  | (empty) |  | what to do when the file is missing (shown with file_not_found) |
+| `mustExist` | bool |  | false |  | a missing file is a failure (file_not_found) instead of data=null |
 | `path` | path | yes |  |  | the file; relative paths resolve under the work dir |
 
 | output | type | desc |
@@ -965,7 +967,7 @@ Read a JSON file; a missing file gives data=null and a warning
 | `exists` | bool |  |
 | `path` | path |  |
 
-failures: `json_invalid` (not transient), `read_failed` (transient)
+failures: `json_invalid` (not transient), `file_not_found` (not transient), `read_failed` (transient)
 
 ```json
 {"id":"read_json","use":"file.read_json","with":{"path":"capture/before_transferStatus/{{item.keySafe}}.meta.json"}}
