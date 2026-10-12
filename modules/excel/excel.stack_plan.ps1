@@ -41,5 +41,10 @@ function Invoke-Step {
     param($In, $Ctx)
     $sets = @(@($In['sets']) | Where-Object { $_ -is [System.Collections.IDictionary] -and -not [string]::IsNullOrWhiteSpace([string]$_['first']) })
     $plan = @(New-EbiStackPlan -Sets $sets -Separator ([string]$In['separator']) -SeparatorColumn ([string]$In['separatorColumn']) -SeparatorRows ([int]$In['separatorRows']) -MarkRects @($In['markRects']) -GapRows ([int]$In['gapRows']) -Column ([string]$In['column']))
-    return @{ ok = $true; pictures = $plan; total = $plan.Count }
+    $out = @{ ok = $true; pictures = $plan; total = $plan.Count }
+    # an evidence sheet with no capture at all is never the intended result
+    # (a 0-byte transfer still gets its DF picture) -- say so instead of
+    # leaving the area silently empty
+    if ($plan.Count -eq 0) { $out['warnings'] = @(@{ code = 'no_pictures'; message = 'no capture to place: the track run left no DF picture for this item (re-run track for it)' }) }
+    return $out
 }

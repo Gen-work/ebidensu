@@ -330,7 +330,9 @@ function Select-EbiFilePairs {
         1. same count on both sides and every in-order pair has equal line
            counts -> 'ok', by order
         2. otherwise pair by line count where a count is unique on both
-           sides; anything left over -> 'unknown' with the leftovers listed
+           sides; as many files left over on each side -> those paired by
+           arrival order too, 'unknown' (every transfer gets its DF
+           picture); otherwise 'unknown' with the leftovers listed
       Never guesses between two files of the same line count out of order.
       Returns @{ code = ok|unknown; pairs = @(@{ left; right; lines });
       leftOver = @(names); rightOver = @(names); reason }.
@@ -364,9 +366,27 @@ function Select-EbiFilePairs {
     }
     $lo = @(foreach ($f in $l) { if (-not $usedL.Contains([string]$f['name'])) { [string]$f['name'] } })
     $ro = @(foreach ($f in $r) { if (-not $usedR.Contains([string]$f['name'])) { [string]$f['name'] } })
-    $code = if ($lo.Count -eq 0 -and $ro.Count -eq 0) { 'ok' } else { 'unknown' }
-    $why = if ($code -eq 'ok') { 'paired by unique line counts (arrival order disagreed)' } else { ('' + $lo.Count + ' left / ' + $ro.Count + ' right file(s) could not be paired by line count') }
-    return @{ code = $code; pairs = $pairs.ToArray(); leftOver = $lo; rightOver = $ro; reason = $why }
+    if ($lo.Count -eq 0 -and $ro.Count -eq 0) {
+        return @{ code = 'ok'; pairs = $pairs.ToArray(); leftOver = @(); rightOver = @(); reason = 'paired by unique line counts (arrival order disagreed)' }
+    }
+    if ($lo.Count -eq $ro.Count) {
+        # As many unpaired files on each side: pair them by arrival order
+        # anyway, as 'unknown'. Every transfer needs its DF picture -- a
+        # 0-byte GFIX file against a GIFT file of one empty line (or any
+        # other count mismatch) used to leave no pair, so no DF capture and
+        # an evidence book without one (10-09: JJMRWE6C/6F/6K). The
+        # mismatch is in the reason; file.compare and the gate decide.
+        $diff = New-Object System.Collections.ArrayList
+        $lf = @($l | Where-Object { $lo -contains [string]$_['name'] })
+        $rf = @($r | Where-Object { $ro -contains [string]$_['name'] })
+        for ($i = 0; $i -lt $lf.Count; $i++) {
+            $a = [int]$lf[$i]['lines']; $b = [int]$rf[$i]['lines']
+            [void]$pairs.Add(@{ left = [string]$lf[$i]['name']; right = [string]$rf[$i]['name']; lines = [Math]::Max($a, $b); byOrder = $true })
+            [void]$diff.Add(([string]$lf[$i]['name'] + ' ' + $a + ' line(s) / ' + [string]$rf[$i]['name'] + ' ' + $b))
+        }
+        return @{ code = 'unknown'; pairs = $pairs.ToArray(); leftOver = @(); rightOver = @(); reason = ('line counts differ, paired by arrival order: ' + ($diff -join '; ')) }
+    }
+    return @{ code = 'unknown'; pairs = $pairs.ToArray(); leftOver = $lo; rightOver = $ro; reason = ('' + $lo.Count + ' left / ' + $ro.Count + ' right file(s) could not be paired by line count') }
 }
 
 function ConvertFrom-EbiTextBytes {

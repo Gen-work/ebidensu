@@ -1,6 +1,14 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **A 0-byte transfer got no DF picture** (JJMRWE6C/6F/6K: GFIX
+  `F202610090025.csv` 0 bytes, `pairs` empty, `dfShots` empty, evidence
+  sheet without DF). `Select-EbiFilePairs` left a file whose line count
+  had no partner unpaired, so DF never ran. Now, when as many files are
+  left over on each side, they are paired by arrival order as `unknown`
+  (the reason names both line counts; the gate asks), so every transfer
+  is captured. `excel.stack_plan` warns `no_pictures` instead of leaving
+  the DF area silently empty.
 - **Every evidence save stood still on the office add-in's
   文書分類/機密区分の登録 window** (all 6 books, 2026-10-12: the run waited
   between `tidy` and the gate until the operator pressed Esc). `excel.tidy`

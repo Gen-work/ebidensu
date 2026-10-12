@@ -119,7 +119,16 @@ Assert-Equal 'B2' (@($p['pairs'] | Where-Object { $_['left'] -eq 'F202608270023.
 $R3 = @(@{ name = 'C1'; lines = 7; order = '1' }, @{ name = 'C2'; lines = 5; order = '2' })
 $p = Select-EbiFilePairs -Left $L -Right $R3
 Assert-Equal 'unknown' $p['code'] 'pairs: a count with no partner -> unknown'
-Assert-Equal 'C1' (@($p['rightOver']) -join ',') 'pairs: the leftover is named'
+Assert-Equal 2 @($p['pairs']).Count 'pairs: one leftover on each side is still paired (by arrival order) so it gets its DF picture'
+Assert-Equal 'C1' (@($p['pairs'] | Where-Object { $_['left'] -eq 'F202608270024.csv' })[0]['right']) 'pairs: the leftovers pair with each other'
+Assert-True ([string]$p['reason'] -like '*30 line(s)*7*') 'pairs: the reason names both line counts'
+# 10-09 JJMRWE6C: GIFT file of one empty line, GFIX file of 0 bytes -> no pair, no DF picture
+$p = Select-EbiFilePairs -Left @(@{ name = 'G.csv'; lines = 1; order = '1' }) -Right @(@{ name = 'F202610090025.csv'; lines = 0; order = '1' })
+Assert-Equal 'unknown' $p['code'] 'pairs: 1 line vs 0 bytes -> unknown (a person looks)'
+Assert-Equal 'F202610090025.csv' $p['pairs'][0]['right'] 'pairs: ... but still a pair, so DF captures it'
+$p = Select-EbiFilePairs -Left @(@{ name = 'G.csv'; lines = 0; order = '1' }) -Right @(@{ name = 'F.csv'; lines = 0; order = '1' })
+Assert-Equal 'ok' $p['code'] 'pairs: 0 bytes on both sides -> ok, one pair'
+Assert-Equal 1 @($p['pairs']).Count 'pairs: 0 vs 0 is a pair'
 $Ldup = @(@{ name = 'A'; lines = 5; order = '1' }, @{ name = 'B'; lines = 5; order = '2' })
 $Rdup = @(@{ name = 'X'; lines = 5; order = '1' })
 $p = Select-EbiFilePairs -Left $Ldup -Right $Rdup
