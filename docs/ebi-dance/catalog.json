@@ -1574,6 +1574,16 @@
           "desc": "sheet to leave active (name or 1-based index)",
           "type": "string"
         },
+        "cell": {
+          "default": "A1",
+          "desc": "the cell selected on every sheet",
+          "type": "string"
+        },
+        "cellFor": {
+          "default": {},
+          "desc": "sheet-name prefix -> cell, overriding cell for those sheets (e.g. A3 everywhere but the send / receive arrow sheets on A1)",
+          "type": "map"
+        },
         "dismissDialogs": {
           "default": [],
           "desc": "title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving",
@@ -1620,7 +1630,7 @@
       },
       "provides": [],
       "releases": [],
-      "summary": "Select A1 on every sheet, activate the first, report odd fonts, save",
+      "summary": "Select the home cell (A1 or per sheet) on every sheet, activate the first, report odd fonts, save",
       "tier": "core"
     },
     "excel.write_cell": {

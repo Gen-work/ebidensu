@@ -1,6 +1,15 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **GFIX files downloaded gzip-compressed** (10-12: SJDSWM40 /
+  YJDSWM40 `F2026100900xx.csv`, 770 bytes on Jenkins, saved as 478 bytes
+  starting `1F 8B`; DF showed one garbage line, file.compare said ng).
+  `file.download` asks .NET to undo any Content-Encoding and, as a second
+  guard, decompresses a body that starts with the gzip signature unless
+  the name is `.gz` (`FileDownload-Gunzip`).
+- **`excel.tidy` home cell**: `cell` + `cellFor` (sheet-name prefix ->
+  cell). gfix-recv leaves every sheet on A3, the 送信⇒ / 受信⇒ sheets on
+  A1 (`layout.evidence.homeCell` / `homeCellFor`).
 - **`-Only` said nothing about the keys it did not run** (10-12:
   `-Only JJMRWE6C,JJMRWE6F,JJMRWE6K` -> "1 of 6 rows selected", then
   `-Only JJMRWE6F,JJMRWE6K` -> 0, no reason). `Select-EbiWorklistRows`

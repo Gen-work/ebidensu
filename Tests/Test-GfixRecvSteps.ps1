@@ -44,7 +44,7 @@ $ctx = @{ WorkDir = $tmp; RunId = 'test'; Profile = $prof; Log = $log; DryRun = 
 $loaded = @{}
 foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
-                 'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each')) {
+                 'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -307,6 +307,32 @@ try {
     $a = BrowserDownloadEach-Already -Dir $dlDir -Glob '*.log' -Term '1000004638518'
     Assert-True ($null -ne $a -and $a.Name -eq '1000004638518.log') 'joblog: the hand-downloaded file with the job number is taken'
     Assert-True ($null -eq (BrowserDownloadEach-Already -Dir $dlDir -Glob '*.log' -Term '1000004638521')) 'joblog: another job number is not'
+    # ---------------------------------------------------------------- home cell (10-12)
+    $send = [string][char]0x9001 + [char]0x4FE1 + [char]0x21D2   # send-arrow sheet
+    $recv = [string][char]0x53D7 + [char]0x4FE1 + [char]0x21D2   # receive-arrow sheet
+    $homes = @{}; $homes[$send] = 'A1'; $homes[$recv] = 'A1'
+    Assert-Equal 'A3' (ExcelTidy-CellFor -Sheet 'GFIX' -Default 'A3' -Map $homes) 'tidy: an ordinary sheet gets the home cell'
+    Assert-Equal 'A1' (ExcelTidy-CellFor -Sheet ($send + 'X') -Default 'A3' -Map $homes) 'tidy: a sheet starting with a cellFor key gets its cell'
+    Assert-Equal 'A1' (ExcelTidy-CellFor -Sheet $recv -Default 'A3' -Map $homes) 'tidy: ... the receive sheet too'
+    Assert-Equal 'A1' (ExcelTidy-CellFor -Sheet 'x' -Default '' -Map $null) 'tidy: nothing configured -> A1'
+
+    # ---------------------------------------------------------------- gzip body (10-12)
+    # Jenkins sent a 770-byte CSV gzip-encoded; it was saved as 478 bytes
+    # starting 1F 8B, and DF / file.compare saw garbage
+    $csvText = "SS,Y`r`nbase,2026/05/15`r`n"
+    $plainBytes = [System.Text.Encoding]::ASCII.GetBytes($csvText)
+    $gzPath = Join-Path $tmp 'F202610090024.csv'
+    $ms = New-Object System.IO.MemoryStream
+    $gzw = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress, $true)
+    $gzw.Write($plainBytes, 0, $plainBytes.Length); $gzw.Dispose()
+    [System.IO.File]::WriteAllBytes($gzPath, $ms.ToArray())
+    Assert-True (FileDownload-Gunzip -Path $gzPath) 'download: a gzip body under a .csv name is decompressed'
+    Assert-Equal $csvText ([System.IO.File]::ReadAllText($gzPath)) 'download: ... back to the plain text'
+    Assert-True (-not (FileDownload-Gunzip -Path $gzPath)) 'download: plain text is left alone'
+    [System.IO.File]::WriteAllBytes((Join-Path $tmp 'a.gz'), $ms.ToArray())
+    Assert-True (-not (FileDownload-Gunzip -Path (Join-Path $tmp 'a.gz'))) 'download: a real .gz file is kept as it is'
+    [System.IO.File]::WriteAllBytes((Join-Path $tmp 'empty.csv'), [byte[]]@())
+    Assert-True (-not (FileDownload-Gunzip -Path (Join-Path $tmp 'empty.csv'))) 'download: a 0-byte file is left alone'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

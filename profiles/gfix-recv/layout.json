@@ -3,6 +3,9 @@
   "evidence": {
     "glob": "J4*_{{item.Excel_NAME}}.xlsx",
     "saveDialogs": ["機密区分の登録"],
+    "homeCell": "A3",
+    "homeCellFor": { "送信⇒": "A1", "受信⇒": "A1" },
+    "_homeCell_doc": "excel.tidy leaves every sheet scrolled to the top with homeCell selected; a sheet whose name starts with a homeCellFor key gets that cell instead (2026-10-12: A3, the 送信⇒ / 受信⇒ sheets A1).",
     "_saveDialogs_doc": "the office PC's document-classification add-in opens 文書分類/機密区分の登録 on every save and the run waits; excel.tidy answers a window whose title contains one of these with Esc (the operator's own answer). [] to answer it by hand.",
     "sheets": {
       "sendData": "送信データ",

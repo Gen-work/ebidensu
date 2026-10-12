@@ -11,7 +11,7 @@
 $Manifest = @{
   id         = 'excel.tidy'
   group      = 'excel'
-  summary    = 'Select A1 on every sheet, activate the first, report odd fonts, save'
+  summary    = 'Select the home cell (A1 or per sheet) on every sheet, activate the first, report odd fonts, save'
   tier       = 'core'
   effects    = 'write'
   needs      = @('excel')
@@ -26,6 +26,8 @@ $Manifest = @{
     fontName   = @{ type='string'; default='' }
     fontSize   = @{ type='int';    default=0 }
     dismissDialogs = @{ type='list'; default=@(); desc='title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving' }
+    cell       = @{ type='string'; default='A1'; desc='the cell selected on every sheet' }
+    cellFor    = @{ type='map';    default=@{}; desc='sheet-name prefix -> cell, overriding cell for those sheets (e.g. A3 everywhere but the send / receive arrow sheets on A1)' }
   }
   outputs    = @{
     sheets   = @{ type='int';  desc='sheets visited' }
@@ -36,6 +38,17 @@ $Manifest = @{
     @{ id = 'save_failed'; transient = $true }
   )
   example    = @{ use = 'excel.tidy'; with = @{ workbook = 'wb'; fontSheets = @('result'); fontName = 'MS Gothic'; fontSize = 10 } }
+}
+
+function ExcelTidy-CellFor {
+    # PURE. The cell to leave selected on a sheet: the first cellFor key the
+    # sheet name starts with wins, else Default ('' -> A1).
+    param([string]$Sheet, [string]$Default, $Map)
+    if ($Map -is [System.Collections.IDictionary]) {
+        foreach ($k in @($Map.Keys)) { if (-not [string]::IsNullOrEmpty([string]$k) -and $Sheet.StartsWith([string]$k, [System.StringComparison]::Ordinal)) { return [string]$Map[$k] } }
+    }
+    if ([string]::IsNullOrWhiteSpace($Default)) { return 'A1' }
+    return $Default
 }
 
 function Invoke-Step {
@@ -71,7 +84,7 @@ function Invoke-Step {
             $win = $wb.Application.ActiveWindow
             $win.ScrollRow = 1
             $win.ScrollColumn = 1
-            [void]$ws.Range('A1').Select()
+            [void]$ws.Range((ExcelTidy-CellFor -Sheet ([string]$ws.Name) -Default ([string]$In['cell']) -Map $In['cellFor'])).Select()
             $n++
         } catch { [void]$warn.Add(@{ code = 'sheet_not_reset'; message = ([string]$ws.Name + ': ' + $_.Exception.Message) }) }
     }

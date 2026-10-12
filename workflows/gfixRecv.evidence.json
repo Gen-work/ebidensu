@@ -115,7 +115,7 @@
                 "row": "{{profile.layout.evidence.compareFirstRow}}", "pictures": "{{steps.dfPlan.out.pictures}}", "tag": "df" } },
 
     { "id": "tidy", "use": "excel.tidy",
-      "with": { "workbook": "wb", "fontSheets": ["{{profile.layout.evidence.sheets.gfixResult}}"], "dismissDialogs": "{{profile.layout.evidence.saveDialogs}}",
+      "with": { "workbook": "wb", "fontSheets": ["{{profile.layout.evidence.sheets.gfixResult}}"], "dismissDialogs": "{{profile.layout.evidence.saveDialogs}}", "cell": "{{profile.layout.evidence.homeCell}}", "cellFor": "{{profile.layout.evidence.homeCellFor}}",
                 "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
 
     { "id": "look", "use": "human.gate",

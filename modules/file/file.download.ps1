@@ -45,6 +45,29 @@ $Manifest = @{
   notes      = 'An HTTP 404 is not_found (not transient): the file is not there. Anything else (timeout, 5xx, refused) is download_failed and may be retried. Nothing is downloaded when names is empty and url is blank -- that is input_invalid, not a silent success.'
 }
 
+function FileDownload-Gunzip {
+    # A file that arrived gzip-compressed although its name is not .gz
+    # (a proxy / server encoding the body): decompress it in place.
+    # Returns $true when it did. Bytes 1F 8B are the gzip signature; a
+    # real data file (CSV / text) never starts with them.
+    param([string]$Path, [string]$Name = '')
+    if ([string]::IsNullOrEmpty($Name)) { $Name = $Path }
+    if ($Name -match '\.(gz|tgz)$') { return $false }
+    $head = New-Object byte[] 2
+    $fs = [System.IO.File]::OpenRead($Path)
+    try { $n = $fs.Read($head, 0, 2) } finally { $fs.Dispose() }
+    if ($n -lt 2 -or $head[0] -ne 0x1F -or $head[1] -ne 0x8B) { return $false }
+    $out = $Path + '.gunzip'
+    $in = [System.IO.File]::OpenRead($Path)
+    try {
+        $gz = New-Object System.IO.Compression.GZipStream($in, [System.IO.Compression.CompressionMode]::Decompress)
+        $o = [System.IO.File]::Create($out)
+        try { $gz.CopyTo($o) } finally { $o.Dispose(); $gz.Dispose() }
+    } finally { $in.Dispose() }
+    Move-Item -LiteralPath $out -Destination $Path -Force
+    return $true
+}
+
 function FileDownload-Get {
     # One GET to a temp name, then the rename. @{ ok; failure; message; size }.
     param([string]$Url, [string]$Dest, [int]$TimeoutSec)
@@ -57,12 +80,16 @@ function FileDownload-Get {
         $req.UseDefaultCredentials = $true
         try { if ($null -ne $req.Proxy) { $req.Proxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials } } catch { }
         $req.Timeout = [Math]::Max(5, $TimeoutSec) * 1000
+        # 10-12: Jenkins answered gzip (770-byte CSV saved as 478 bytes
+        # starting 1F 8B); let .NET undo any Content-Encoding
+        try { $req.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate } catch { }
         $resp = $req.GetResponse()
         try {
             $in = $resp.GetResponseStream()
             $out = [System.IO.File]::Create($tmp)
             try { $in.CopyTo($out) } finally { $out.Dispose(); $in.Dispose() }
         } finally { $resp.Close() }
+        [void](FileDownload-Gunzip -Path $tmp -Name $Dest)
         if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Force }
         Move-Item -LiteralPath $tmp -Destination $Dest -Force
         return @{ ok = $true; failure = ''; message = ''; size = [int64](Get-Item -LiteralPath $Dest).Length }

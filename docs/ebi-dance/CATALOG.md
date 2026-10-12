@@ -1322,7 +1322,7 @@ failures: `input_invalid` (not transient)
 
 ### `excel.tidy`
 
-Select A1 on every sheet, activate the first, report odd fonts, save
+Select the home cell (A1 or per sheet) on every sheet, activate the first, report odd fonts, save
 
 - file: `modules/excel/excel.tidy.ps1`
 - effects: `write` / tier: `core` / idempotent: `true`
@@ -1331,6 +1331,8 @@ Select A1 on every sheet, activate the first, report odd fonts, save
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
 | `activate` | string |  | 1 |  | sheet to leave active (name or 1-based index) |
+| `cell` | string |  | A1 |  | the cell selected on every sheet |
+| `cellFor` | map |  | {} |  | sheet-name prefix -> cell, overriding cell for those sheets (e.g. A3 everywhere but the send / receive arrow sheets on A1) |
 | `dismissDialogs` | list |  | [] |  | title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving |
 | `fontName` | string |  | (empty) |  |  |
 | `fontSheets` | list |  | [] |  | sheets whose column-B text is checked against fontName / fontSize |
