@@ -5,6 +5,26 @@ file stays small. Designed-then-shelved work lives in
 [`Parked-Ideas.md`](Parked-Ideas.md) instead; release history lives in
 [`../CHANGELOG.md`](../CHANGELOG.md).
 
+- **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
+  (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
+  picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks
+  whose HOST pictures differ (e.g. 19 lines: FJODWCP2 shows 000001-000019
+  and 000878-000896) are adjusted BY HAND. Wanted: read each 送信データ
+  picture's first and last line number and give the DF pictures the same
+  ranges minus one (the HOST data has one header line the CSV does not:
+  HOST 1-17 -> DF 1-16, HOST pic 2 n..m -> DF n-1..m-1).
+  Feasibility (checked on FJODWCP2): the HOST pictures are fixed 562 x 428
+  emulator shots (24 x 80), line numbers in a fixed column at the left,
+  6 digits, green on black -> crop that column and OCR it with the
+  English recognizer (digits only; the ja recognizer reads 9 as 3), then
+  trust it only when the numbers are consecutive and their count equals
+  the count of text bands in the strip (screen.find_ink_rows); anything
+  else -> ask. Pieces still missing: (1) the strip's crop box (calibrate
+  once on the 562 x 428 shot); (2) DF row pitch on the office PC (429 px =
+  16 lines; measure 17/18/19 to size the window per picture); (3) a DF key
+  recipe that shows a given top line (Ctrl+Home + PgDn for the 2nd page,
+  the END view for the last; a middle range may need DF's line jump).
+  Not started.
 - **gfix-recv: a progress view the operator can see while the browser is
   full screen** (office run feedback, 2026-10-09). During browser / DF
   steps the console is behind Edge and the operator cannot tell whether to
