@@ -1574,6 +1574,11 @@
           "desc": "sheet to leave active (name or 1-based index)",
           "type": "string"
         },
+        "dismissDialogs": {
+          "default": [],
+          "desc": "title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving",
+          "type": "list"
+        },
         "fontName": {
           "default": "",
           "type": "string"

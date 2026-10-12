@@ -255,6 +255,78 @@ function Get-EbiTopWindows {
     return $out.ToArray()
 }
 
+function Start-EbiDialogWatch {
+    <#
+      Answer a modal dialog that pops up while THIS thread is blocked in a
+      COM call (Workbook.Save -> a document-classification add-in on the
+      office PC, 2026-10-12: the "document classification / confidentiality"
+      registration window waits for the operator
+      and the run stands still). A background runspace polls the top-level
+      windows; one whose title contains any of TitleParts is brought to the
+      front and gets Esc -- only once it IS the foreground window, so the
+      key never lands anywhere else. Stop-EbiDialogWatch ends it and says
+      what was answered. No TitleParts, or off Windows -> $null (no-op).
+    #>
+    param([string[]]$TitleParts = @(), [int]$PollMs = 300, [int]$TimeoutSec = 300)
+    $parts = @(@($TitleParts) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
+    if ($parts.Count -eq 0) { return $null }
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return $null }
+    [void](Get-EbiNative)   # the EbiNative type lives in the AppDomain: the runspace sees it
+    $sync = [hashtable]::Synchronized(@{ stop = $false; answered = (New-Object System.Collections.ArrayList); missed = (New-Object System.Collections.ArrayList) })
+    $script = {
+        param($Parts, $Sync, $PollMs, $TimeoutSec)
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        $done = @{}
+        while (-not $Sync['stop'] -and (Get-Date) -lt $deadline) {
+            foreach ($h in [EbiNative]::TopWindows()) {
+                if (-not [EbiNative]::IsWindowVisible($h)) { continue }
+                $t = [EbiNative]::TitleOf($h)
+                if ([string]::IsNullOrEmpty($t)) { continue }
+                $hit = $false
+                foreach ($p in $Parts) { if ($t.IndexOf($p, [System.StringComparison]::Ordinal) -ge 0) { $hit = $true; break } }
+                if (-not $hit) { continue }
+                $ok = $false
+                for ($try = 1; $try -le 3 -and -not $ok; $try++) {
+                    if ($try -gt 1) { [EbiNative]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [EbiNative]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero) }
+                    [void][EbiNative]::SetForegroundWindow($h)
+                    Start-Sleep -Milliseconds 150
+                    if ([EbiNative]::GetForegroundWindow() -eq $h) {
+                        [EbiNative]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero); [EbiNative]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)   # Esc
+                        $ok = $true
+                    }
+                }
+                $k = [string]$h
+                if ($ok) { [void]$Sync['answered'].Add($t) }
+                elseif (-not $done.Contains($k)) { [void]$Sync['missed'].Add($t) }
+                $done[$k] = $true
+                Start-Sleep -Milliseconds 500   # let it close before looking again
+            }
+            Start-Sleep -Milliseconds $PollMs
+        }
+    }
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript($script).AddArgument($parts).AddArgument($sync).AddArgument($PollMs).AddArgument($TimeoutSec)
+    $async = $ps.BeginInvoke()
+    return @{ ps = $ps; rs = $rs; async = $async; sync = $sync }
+}
+
+function Stop-EbiDialogWatch {
+    # End a Start-EbiDialogWatch. @{ answered = titles that got Esc; missed =
+    # titles seen but never brought to the front (the operator answered them) }.
+    param($Watch)
+    if ($null -eq $Watch) { return @{ answered = @(); missed = @() } }
+    $Watch['sync']['stop'] = $true
+    try { [void]$Watch['async'].AsyncWaitHandle.WaitOne(3000) } catch { }
+    try { $Watch['ps'].Stop() } catch { }
+    try { $Watch['ps'].Dispose() } catch { }
+    try { $Watch['rs'].Close(); $Watch['rs'].Dispose() } catch { }
+    $miss = @(@($Watch['sync']['missed']) | Where-Object { @($Watch['sync']['answered']) -notcontains $_ })
+    return @{ answered = @($Watch['sync']['answered']); missed = $miss }
+}
+
 function Set-EbiWindowState {
     # 'maximize' | 'restore' | 'minimize' (ShowWindowAsync 3 / 9 / 6).
     param([IntPtr]$HWnd, [string]$State, [int]$SettleMs = 400)

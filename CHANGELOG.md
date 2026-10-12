@@ -1,6 +1,15 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **Every evidence save stood still on the office add-in's
+  文書分類/機密区分の登録 window** (all 6 books, 2026-10-12: the run waited
+  between `tidy` and the gate until the operator pressed Esc). `excel.tidy`
+  takes `dismissDialogs` (title parts); while `Workbook.Save()` blocks, a
+  background runspace (`Start-/Stop-EbiDialogWatch`, Native.ps1) brings
+  such a window to the front and sends Esc -- only once it IS the
+  foreground, so the key cannot land elsewhere. Answered dialogs are
+  logged; one that never came to the front is a warning (the operator
+  answers it as before). gfix-recv: `layout.evidence.saveDialogs`.
 - **The runner's `front` field never worked** (since the foreground rule):
   it converted the whole `$Ctx.Session` entry (`@{ kind; value }`) to a
   handle, got Zero, and fell through to "console back" -- so the console

@@ -2,6 +2,8 @@
   "_doc": "The evidence workbook (J4検証資料(...)_<Excel_NAME>.xlsx), read off the delivered sample (QJDSWM39): sheet names, labels, font, highlight patterns, and where the DF / Jenkins boxes go.",
   "evidence": {
     "glob": "J4*_{{item.Excel_NAME}}.xlsx",
+    "saveDialogs": ["機密区分の登録"],
+    "_saveDialogs_doc": "the office PC's document-classification add-in opens 文書分類/機密区分の登録 on every save and the run waits; excel.tidy answers a window whose title contains one of these with Esc (the operator's own answer). [] to answer it by hand.",
     "sheets": {
       "sendData": "送信データ",
       "giftResult": "GIFT受信結果",

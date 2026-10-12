@@ -6,6 +6,7 @@
 # not change them: an odd font may be deliberate).
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Excel.ps1')
+. (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')   # Start/Stop-EbiDialogWatch around Save
 
 $Manifest = @{
   id         = 'excel.tidy'
@@ -24,6 +25,7 @@ $Manifest = @{
     fontSheets = @{ type='list';   default=@(); desc='sheets whose column-B text is checked against fontName / fontSize' }
     fontName   = @{ type='string'; default='' }
     fontSize   = @{ type='int';    default=0 }
+    dismissDialogs = @{ type='list'; default=@(); desc='title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving' }
   }
   outputs    = @{
     sheets   = @{ type='int';  desc='sheets visited' }
@@ -77,7 +79,12 @@ function Invoke-Step {
     if ($null -ne $first) { try { [void]$first.Activate() } catch { } }
     $saved = $false
     if ([bool]$In['save']) {
-        try { $wb.Save(); $saved = $true } catch { return @{ ok = $false; failure = 'save_failed'; message = $_.Exception.Message; sheets = $n; oddFonts = $odd; saved = $false; warnings = $warn.ToArray() } }
+        $watch = Start-EbiDialogWatch -TitleParts @($In['dismissDialogs'])
+        try { $wb.Save(); $saved = $true } catch { $err = $_.Exception.Message }
+        $seen = Stop-EbiDialogWatch $watch
+        foreach ($t in @($seen['answered'])) { $Ctx.Log.Info(('answered "{0}" with Esc while saving' -f $t)) }
+        foreach ($t in @($seen['missed'])) { [void]$warn.Add(@{ code = 'dialog_not_answered'; message = ('"' + $t + '" popped up while saving and could not be brought to the front') }) }
+        if (-not $saved) { return @{ ok = $false; failure = 'save_failed'; message = $err; sheets = $n; oddFonts = $odd; saved = $false; warnings = $warn.ToArray() } }
     }
     return @{ ok = $true; sheets = $n; oddFonts = $odd; saved = $saved; warnings = $warn.ToArray() }
 }
