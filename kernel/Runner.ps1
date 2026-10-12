@@ -361,7 +361,20 @@ function Invoke-EbiStepWithPolicy {
         if ($null -ne $ebiPol['entry']) {
             $ebiPol['ledgerKey'] = Get-EbiLedgerKey -Item $Key -Group $LedgerGroup -Step $ebiPol['id']
             $ebiPol['resourceStep'] = ((@(Get-EbiManifestArray -Manifest $ebiPol['entry']['Manifest'] -Key 'provides')).Count -gt 0) -or ((@(Get-EbiManifestArray -Manifest $ebiPol['entry']['Manifest'] -Key 'releases')).Count -gt 0)
+            # an unsaved workbook edit is not replayed: the book was re-opened
+            # from disk without it (Get-EbiLastCommitIndex, Ledger.ps1)
+            $ebiPol['volatile'] = $false
             if ($State['ledgerDone'].Contains($ebiPol['ledgerKey']) -and -not $ebiPol['resourceStep']) {
+                $ebiPol['kinds'] = @((Get-EbiSessionInputs -Manifest $ebiPol['entry']['Manifest']).Values)
+                $ebiPol['eff'] = $(if ($ebiPol['entry']['Manifest'].Contains('effects')) { [string]$ebiPol['entry']['Manifest']['effects'] } else { '' })
+                if ($ebiPol['kinds'] -contains 'workbook' -and $ebiPol['eff'] -ne 'pure' -and $ebiPol['eff'] -ne 'read') {
+                    $ebiPol['calls'] = @($State['workflow']['each'])
+                    $ebiPol['commit'] = Get-EbiLastCommitIndex -Calls $ebiPol['calls'] -Done $State['ledgerDone'] -Item $Key -Group $Group
+                    if ((Get-EbiCallIndex -Calls $ebiPol['calls'] -Id $ebiPol['id']) -gt $ebiPol['commit']) { $ebiPol['volatile'] = $true }
+                }
+            }
+            if ($ebiPol['volatile']) { Write-EbiStepLine -Status 'info' -Section $Section -Id $ebiPol['id'] -Use $ebiPol['use'] -Key $Key -Detail 'in the ledger but never saved: runs again on the re-opened book' }
+            if ($State['ledgerDone'].Contains($ebiPol['ledgerKey']) -and -not $ebiPol['resourceStep'] -and -not $ebiPol['volatile']) {
                 $ebiPol['old'] = $State['ledgerDone'][$ebiPol['ledgerKey']]
                 $ebiPol['outputs'] = $(if ($ebiPol['old'].Contains('outputs') -and ($ebiPol['old']['outputs'] -is [hashtable])) { $ebiPol['old']['outputs'] } else { @{} })
                 $Steps[$ebiPol['id']] = $ebiPol['outputs']

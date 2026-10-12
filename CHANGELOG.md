@@ -1,6 +1,14 @@
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
+- **Resume replayed workbook edits that were never saved.** An evidence
+  item stopped before `excel.tidy` (the save) left the book on disk
+  unchanged, but `-Resume` replayed `excelSnap` / `jobLog` / ... from the
+  ledger, so the re-opened book would have been saved without them. A
+  ledgered step that edits a `workbook` session (effects not pure/read)
+  and comes AFTER the item's last step with `saved = true` now runs again
+  (`Get-EbiLastCommitIndex`, Ledger.ps1); edits before a save still
+  replay. Unit + runner tests (the runner test fails without the fix).
 - **evidence opened (and pasted into) the real book for jobs with no
   track / logs yet** (10-12: today's 4 jobs, `track.json` missing ->
   `excelSnap` already in the book, then `jobLog` failed). `file.read_json`

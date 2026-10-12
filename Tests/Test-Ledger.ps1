@@ -67,5 +67,26 @@ try {
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+# ---------------------------------------------------------------- resume: unsaved workbook edits (10-12)
+$calls = @(
+    @{ id = 'open'; use = 'excel.open'; once = 'group' },
+    @{ id = 'snap'; use = 'excel.copy_picture' },
+    @{ id = 'tidy'; use = 'excel.tidy' },
+    @{ id = 'look'; use = 'human.gate' },
+    @{ id = 'close'; use = 'excel.close'; once = 'groupEnd' }
+)
+$doneNoSave = @{}
+$doneNoSave[(Get-EbiLedgerKey -Group 'B1' -Step 'open')] = @{ step = 'open'; outputs = @{} }
+$doneNoSave[(Get-EbiLedgerKey -Item 'B1' -Step 'snap')] = @{ step = 'snap'; outputs = @{ nextRow = 8 } }
+Assert-Equal -1 (Get-EbiLastCommitIndex -Calls $calls -Done $doneNoSave -Item 'B1' -Group 'B1') 'commit: nothing saved yet -> -1 (every edit re-runs)'
+$doneSaved = @{} + $doneNoSave
+$doneSaved[(Get-EbiLedgerKey -Item 'B1' -Step 'tidy')] = @{ step = 'tidy'; outputs = @{ saved = $true } }
+Assert-Equal 2 (Get-EbiLastCommitIndex -Calls $calls -Done $doneSaved -Item 'B1' -Group 'B1') 'commit: tidy saved -> its index (edits before it replay)'
+$doneOther = @{}
+$doneOther[(Get-EbiLedgerKey -Item 'B2' -Step 'tidy')] = @{ step = 'tidy'; outputs = @{ saved = $true } }
+Assert-Equal -1 (Get-EbiLastCommitIndex -Calls $calls -Done $doneOther -Item 'B1' -Group 'B1') 'commit: another item saving does not count'
+Assert-Equal 1 (Get-EbiCallIndex -Calls $calls -Id 'snap') 'call index: by id'
+Assert-Equal -1 (Get-EbiCallIndex -Calls $calls -Id 'nope') 'call index: unknown -> -1'
+
 $rc = Complete-Tests
 exit $rc
