@@ -34,6 +34,9 @@
     "pollMs": 3000,
     "windowBefore": 2,
     "windowAfter": 13,
+    "_near_doc": "the wider window browser.wait_for also watches (nearAny): a row this far outside windowBefore..windowAfter means the time typed is off, not the page late -- verify.nearest_time proposes that row's start and a gate asks.",
+    "nearBefore": 7,
+    "nearAfter": 18,
     "_crop_doc": "the 'part above' of the list for Teams (p4): panel title down to the job's rows. Pixels relative to the screen with the window MAXIMIZED on a 1920x1080 display (measured on the operator's full-screen capture). insetX/insetY undo the off-screen frame of a maximized window.",
     "crop": {
       "left": 590,

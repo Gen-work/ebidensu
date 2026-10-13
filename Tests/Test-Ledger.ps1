@@ -63,6 +63,15 @@ try {
     Assert-Equal 0 @(Find-EbiUnfinishedRuns -WorkDir $tmp).Count 'unfinished: a finished run is not listed'
     Assert-Equal 'True' ([string](Read-EbiRunFile -WorkDir $tmp -RunId 'r1')['value']['result']['ok']) 'run.json: the result is stored at the end'
     Assert-Equal 0 @(Find-EbiUnfinishedRuns -WorkDir (Join-Path $tmp 'nowhere')).Count 'unfinished: no run dir -> nothing, no throw'
+    # forget: the operator's d at the UNFINISHED RUN prompt marks them finished + abandoned
+    [void](Write-EbiRunFile -WorkDir $tmp -RunId 'r2' -Run $run -Workflow $wf -RunArgs @{})
+    [void](Write-EbiRunFile -WorkDir $tmp -RunId 'r3' -Run $run -Workflow $wf -RunArgs @{})
+    Assert-Equal 2 @(Find-EbiUnfinishedRuns -WorkDir $tmp).Count 'forget: two unfinished runs to start with'
+    $fg = Set-EbiRunsAbandoned -WorkDir $tmp -Runs @(Find-EbiUnfinishedRuns -WorkDir $tmp)
+    Assert-True ([bool]$fg['ok'] -and @($fg['forgotten']).Count -eq 2) 'forget: both marked'
+    Assert-Equal 0 @(Find-EbiUnfinishedRuns -WorkDir $tmp).Count 'forget: ... never offered again'
+    $r2 = (Read-EbiRunFile -WorkDir $tmp -RunId 'r2')['value']
+    Assert-True ([bool]$r2['finished'] -and [bool]$r2['abandoned'] -and [string]$r2['abandonedAt'] -ne '') 'forget: run.json says finished + abandoned (the folder is kept)'
 } finally {
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }

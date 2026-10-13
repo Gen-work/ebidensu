@@ -29,6 +29,8 @@ profiles/<name>/
   worklist.json       清单列 schema、主键、变体规则、checkpoint 位
   layout.json         工作簿位置、画框坐标(有 compose/annotate 才需要)
   calibration.json    降级层的阈值和有效期(用到 fallback 才需要)
+  operator.json       操作者:{ "owner": "" }——WBS 担当列里的名字,留空 = 不按担当过滤。
+                      仓库副本留空,名字只写在 <WorkDir>/ebi.local.json 的 operator.owner
   window.json         浏览器窗口尺寸 { width, height }(§8 示例的 `profile.window.*`;
                       机器差异用 `<WorkDir>/ebi.local.json` 的 `window` 覆盖,P2-05)
   paths.json          本次作业的文件 / 文件夹 / URL 位置(`profile.paths.*`)。随仓库发布的

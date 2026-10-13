@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -73,7 +73,18 @@
         "expect": "{{item.Excel_NAME}}",
         "expectGroup": "job",
         "defaultClock": "{{item.GFIX_TIME}}",
-        "messageWithTime": "{{item.Excel_NAME}} 開始 {{item.GFIX_TIME}}: {{profile.vocabulary.messages.startConfirm}}"
+        "messageWithTime": "{{item.Excel_NAME}} ({{item.GFIX_DATE}}) 開始 {{item.GFIX_TIME}}: {{profile.vocabulary.messages.startConfirm}}"
+      }
+    },
+    {
+      "id": "sendCounts",
+      "use": "verify.record_counts",
+      "label": "Teams の「送信予定:815件、46件」 -> ファイル数(= 期待する Receive 行 / ダウンロード数)",
+      "with": {
+        "text": "{{steps.start.out.fields.counts}}",
+        "label": "{{profile.vocabulary.messages.receivedCounts}}",
+        "unit": "{{profile.vocabulary.messages.countUnit}}",
+        "joiner": "{{profile.vocabulary.messages.countJoiner}}"
       }
     },
     {
@@ -107,12 +118,24 @@
       "label": "開始時刻 -2..+13 分(GoAnywhere の行をこの時間帯で拾う)"
     },
     {
+      "id": "wide",
+      "use": "verify.time_window",
+      "label": "その外側 ±5 分: 打った時刻がずれていた時に「近くの行」を見つける範囲",
+      "with": {
+        "date": "{{item.GFIX_DATE}}",
+        "clock": "{{steps.start.out.clock}}",
+        "beforeMinutes": "{{page.nearBefore}}",
+        "afterMinutes": "{{page.nearAfter}}"
+      }
+    },
+    {
       "id": "gaText",
       "use": "browser.wait_for",
       "label": "更新ボタンで GoAnywhere を更新し、予定時刻 -2..+13 分の行が出るまで待つ",
       "with": {
         "window": "ga",
         "containsAny": "{{steps.win.out.minuteTexts}}",
+        "nearAny": "{{steps.wide.out.minuteTexts}}",
         "refreshRecipe": "{{page.refreshRecipe}}",
         "timeoutSec": "{{page.timeoutSec}}",
         "pollMs": "{{page.pollMs}}",
@@ -131,6 +154,57 @@
       }
     },
     {
+      "id": "near",
+      "use": "verify.nearest_time",
+      "label": "時間帯に行が無かった時だけ: 一番近い行の開始時刻を提案(見つかっていればそのまま)",
+      "with": {
+        "found": "{{steps.gaText.out.found}}",
+        "date": "{{item.GFIX_DATE}}",
+        "clock": "{{steps.start.out.clock}}",
+        "records": "{{steps.gaRec.out.records}}",
+        "timeField": "{{page.timeField}}",
+        "withinMinutes": "{{page.nearBefore}}"
+      }
+    },
+    {
+      "id": "nearGate",
+      "use": "human.gate",
+      "label": "提案された時刻でよいか: Enter = その時刻で続行 / s = この行を飛ばす(正しい時刻を打って再実行)",
+      "with": {
+        "code": "{{steps.near.out.code}}",
+        "askWhen": [
+          "unknown"
+        ],
+        "reason": "{{steps.near.out.reason}}",
+        "evidence": [
+          "{{steps.gaText.out.path}}"
+        ],
+        "skipFails": true
+      }
+    },
+    {
+      "id": "saveTime2",
+      "use": "table.set",
+      "when": "steps.near.out.changed == true",
+      "label": "採用した時刻を GFIX_TIME に書き戻す",
+      "with": {
+        "worklist": "wl",
+        "field": "GFIX_TIME",
+        "value": "{{steps.near.out.clock}}"
+      }
+    },
+    {
+      "id": "winAt",
+      "use": "verify.time_window",
+      "label": "確定した開始時刻の -2..+13 分",
+      "with": {
+        "date": "{{item.GFIX_DATE}}",
+        "clock": "{{steps.near.out.clock}}",
+        "beforeMinutes": "{{page.windowBefore}}",
+        "afterMinutes": "{{page.windowAfter}}"
+      }
+    },
+    {
       "id": "mine",
       "use": "verify.filter_records",
       "label": "このジョブの行(Send + Receive)",
@@ -140,7 +214,7 @@
           {
             "field": "startTime",
             "op": "within",
-            "value": "{{steps.win.out.window}}"
+            "value": "{{steps.winAt.out.window}}"
           }
         ]
       }
@@ -164,7 +238,7 @@
         "padBeforeSec": 2,
         "padAfterSec": 10,
         "expect": "{{item.FileCount}}",
-        "expectFallback": "{{steps.start.out.fields.count}}"
+        "expectFallback": "{{steps.sendCounts.out.fileCount}}"
       }
     },
     {
@@ -201,7 +275,7 @@
       "label": "Jenkins の一覧に出る日付の形 (yyyy/MM/dd)",
       "with": {
         "date": "{{item.GFIX_DATE}}",
-        "clock": "{{steps.start.out.clock}}",
+        "clock": "{{steps.near.out.clock}}",
         "format": "yyyy/MM/dd"
       }
     },
@@ -248,7 +322,7 @@
         ],
         "pluck": "key",
         "expect": "{{item.FileCount}}",
-        "expectFallback": "{{steps.start.out.fields.count}}"
+        "expectFallback": "{{steps.sendCounts.out.fileCount}}"
       }
     },
     {
@@ -259,6 +333,18 @@
         "names": "{{steps.jkMine.out.plucked}}",
         "dir": "{{profile.paths.bix}}/DATA/GFIX/{{item.Excel_NAME}}",
         "countLines": true
+      }
+    },
+    {
+      "id": "recvCounts",
+      "use": "verify.record_counts",
+      "label": "届いたファイルの行数 vs Teams の件数(違えば warning、返信文には 行数(件数) で出す)",
+      "with": {
+        "text": "{{steps.start.out.fields.counts}}",
+        "files": "{{steps.dl.out.files}}",
+        "label": "{{profile.vocabulary.messages.receivedCounts}}",
+        "unit": "{{profile.vocabulary.messages.countUnit}}",
+        "joiner": "{{profile.vocabulary.messages.countJoiner}}"
       }
     },
     {
@@ -274,7 +360,7 @@
         "createIfMissing": true,
         "requireFiles": true,
         "expect": "{{item.FileCount}}",
-        "expectFallback": "{{steps.start.out.fields.count}}"
+        "expectFallback": "{{steps.sendCounts.out.fileCount}}"
       },
       "label": "GIFT 側のファイル: DATA/GIFT/<J名>、無ければ <W名>。どちらも無ければ <J名> のフォルダを作って止まる(ファイルを入れて r)。複数ファイルのジョブは数が合わないと警告"
     },
@@ -353,11 +439,15 @@
           "key": "{{item.key}}",
           "date": "{{item.GFIX_DATE}}",
           "mmdd": "{{run.mmdd}}",
-          "start": "{{steps.start.out.clock}}",
+          "start": "{{steps.near.out.clock}}",
+          "startGiven": "{{steps.start.out.clock}}",
+          "startProposed": "{{steps.near.out.changed}}",
           "startSource": "{{steps.start.out.source}}",
           "startMessage": "{{steps.start.out.text}}",
-          "sendCount": "{{steps.start.out.fields.count}}",
-          "window": "{{steps.win.out.window}}",
+          "sendCounts": "{{steps.sendCounts.out.expected}}",
+          "receivedCountsText": "{{steps.recvCounts.out.text}}",
+          "countsMatched": "{{steps.recvCounts.out.matched}}",
+          "window": "{{steps.winAt.out.window}}",
           "goAnywhereRows": "{{steps.mine.out.records}}",
           "recvJobs": "{{steps.recv.out.plucked}}",
           "span": "{{steps.recv.out.span}}",
@@ -379,7 +469,7 @@
       "when": "steps.gate.out.code == ok",
       "with": {
         "lines": [
-          "{{profile.vocabulary.messages.feedbackOk}}"
+          "{{profile.vocabulary.messages.feedbackOk}}{{steps.recvCounts.out.suffix}}"
         ],
         "images": [
           "{{steps.gaShot.out.path}}",
@@ -416,7 +506,10 @@
       "use": "progress.status",
       "with": {
         "worklist": "wl",
-        "field": "track"
+        "field": "track",
+        "next": [
+          "ebi.ps1 run workflows\\gfixRecv.logs.json -WorkDir {{run.workDir}}   (当日中に! 翌日ログは bk へ移る)"
+        ]
       }
     }
   ]

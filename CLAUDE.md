@@ -206,7 +206,7 @@ profiles/               per-project data: page bindings, decision rules, schemas
                         (legacy column names + verdict.values codes) / window /
                         fixtures with expected.json. mask-dictionary.json holds
                         the mask-lite words and allow patterns (P2-08).
-                        gfix-recv/ (P3): paths.json placeholders; real ones in ebi.local.json.
+                        gfix-recv/ (P3): paths.json placeholders + operator.json { owner } blank; real ones in ebi.local.json.
 
   -- shared dot-source libraries (no param(); ASCII source; no BOM) --
 MappingStore.ps1        single source of truth for mapping_<Owner>.csv: read/filter/

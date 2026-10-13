@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-71 step(s) in 9 group(s).
+74 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,7 +13,7 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
 | excel | `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.quit_app`, `excel.read_rows`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.pair_files`, `verify.parse_text`, `verify.time_window` |
+| verify | `verify.assert`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
 | human | `human.choose`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint` |
@@ -342,6 +342,7 @@ Poll the page text until it contains a string, or time out
 | `deselectAt` | map |  | {} |  | @{ x; y } window-relative blank point clicked after the last read, so the Ctrl+A selection does not show in a screenshot taken next |
 | `deselectRecipe` | list |  | [] |  | instead of deselectAt: keys run after the last read to drop the Ctrl+A selection without a click (e.g. find:<a label at the top>) |
 | `expectPage` | list |  | [] |  | texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes) |
+| `nearAny` | list |  | [] |  | texts of a WIDER window: when the deadline passes without a contains / containsAny hit but one of these is on the page, the step returns ok with found = false (a later step proposes the nearby row) instead of failing with timeout -- the operator typed a time that is off, not a page that is late |
 | `pollMs` | int |  | 800 |  | wait between reads |
 | `refreshRecipe` | list |  | [] |  | run before every read: find:<text> \| keys:<SendKeys> \| wait:<ms> (e.g. a refresh button the page needs) |
 | `settledAfter` | string |  | (empty) |  | ISO time after which the page cannot change any more (the end of the time window): when it is already past, one read decides -- no polling |
@@ -351,6 +352,7 @@ Poll the page text until it contains a string, or time out
 | output | type | desc |
 |--------|------|------|
 | `elapsedMs` | int |  |
+| `found` | bool | true when contains / containsAny matched; false only on the nearAny way out |
 | `path` | path | where the text was archived, or empty |
 | `polls` | int |  |
 | `text` | string | the page text at the end (matched or not) |
@@ -855,7 +857,7 @@ failures: `file_not_found` (transient), `not_found` (transient), `write_failed` 
 {"id":"extract_blocks","use":"file.extract_blocks","with":{"blockKeys":"{{steps.names.out.plucked}}","markers":["file stored"],"paths":["log/GFIXReceive/{{run.mmdd}}.log"],"saveTo":"capture/gfix/{{item.keySafe}}.receive.txt"}}
 ```
 
-Notes: not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete).
+Notes: not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete). Two transfers logged at the same time interleave (START A, START B, END A, END B): their blocks overlap and are written ONCE as one span in log order (block_interleaved), never cut at the other START.
 
 ### `file.find`
 
@@ -1240,7 +1242,7 @@ failures: `file_not_found` (transient), `read_only` (transient), `open_failed` (
 {"id":"open","use":"excel.open","with":{"app":"xl","as":"wb","path":"{{vars.evidenceDir}}/{{item.Excel_NAME}}.xlsx"}}
 ```
 
-Notes: read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).
+Notes: read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry; the failure names who holds it when Excel's ~$ lock file next to the workbook says. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).
 
 ### `excel.quit_app`
 
@@ -1813,6 +1815,67 @@ failures: `record_not_found` (transient), `ambiguous` (not transient)
 
 Notes: record_not_found is transient: the row is usually still arriving. The key input is a raw column value ({{item.<col>}}), not {{item.key}}, unless the records carry the composite key in one field.
 
+### `verify.nearest_time`
+
+When the expected time is not on the page, propose the nearest row's time (a gate confirms)
+
+- file: `modules/verify/verify.nearest_time.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `clock` | string | yes |  |  | the start time given (HH:mm[:ss]) |
+| `date` | string | yes |  |  | yyyy-MM-dd of the clock |
+| `found` | bool |  | true |  | browser.wait_for found: true = the window matched, keep the clock as is |
+| `records` | list |  | [] |  | the page rows (verify.parse_text records) to look through |
+| `timeField` | string |  | startTime |  |  |
+| `withinMinutes` | int |  | 5 |  | a row this close counts as "near"; farther rows are still offered, flagged |
+
+| output | type | desc |
+|--------|------|------|
+| `changed` | bool | true when the nearest row's time replaced the given clock |
+| `clock` | string | HH:mm:ss to go on with: the given clock, or the nearest row's time |
+| `code` | string | ok (kept) \| unknown (changed: a person confirms) |
+| `near` | bool | true when the nearest row is within withinMinutes |
+| `nearest` | map | the nearest record ({} when none) |
+| `offsetMinutes` | int | nearest - given, in whole minutes (0 when none) |
+| `reason` | string | what was proposed and how far it is from the time given |
+
+failures: `parse_error` (not transient)
+
+```json
+{"id":"nearest_time","use":"verify.nearest_time","with":{"clock":"{{steps.start.out.clock}}","date":"{{item.GFIX_DATE}}","found":"{{steps.wait.out.found}}","records":"{{steps.rec.out.records}}"}}
+```
+
+Notes: Never silent: a changed clock comes back as code unknown so the workflow's human.gate asks (Enter = use it, s = skip and rerun with the right time). Rows whose time field does not parse are ignored.
+
+### `verify.owner_pattern`
+
+Build the WBS owner-cell regex for one operator (empty owner = everyone)
+
+- file: `modules/verify/verify.owner_pattern.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `owner` | string |  | (empty) |  | the operator as the WBS writes it (e.g. a family name); empty = no owner filter |
+
+| output | type | desc |
+|--------|------|------|
+| `everyone` | bool | true when owner is empty: the plan takes every owner's rows |
+| `owner` | string | the owner, trimmed |
+| `pattern` | string | regex for an excel.read_rows where { op: matches }: the name alone, name<-other, other->name; "" (matches every cell) when owner is empty |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"owner_pattern","use":"verify.owner_pattern","with":{"owner":"{{profile.operator.owner}}"}}
+```
+
+Notes: The arrows are the full-width ones the WBS uses (U+2190 / U+2192). An owner that contains regex characters is escaped.
+
 ### `verify.pair_files`
 
 Pair two file lists by line count and arrival order
@@ -1871,6 +1934,41 @@ failures: `grammar_invalid` (not transient), `no_records` (transient)
 ```
 
 Notes: no_records is transient: the usual cause is a page still loading. A labeled grammar always yields one record; a label it could not find is a warning (label_missing) with the field blank, and verify.assert's present/empty rules decide what that means.
+
+### `verify.record_counts`
+
+Parse the per-file record counts of a start message; compare with the files' line counts
+
+- file: `modules/verify/verify.record_counts.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `files` | list |  | [] |  | file.download / file.list files (lines per file, arrival order); empty = parse only |
+| `headerLines` | int |  | 1 |  | a file may have this many lines more than its record count (a header) |
+| `joiner` | string |  | ,  |  | between the counts in text |
+| `label` | string |  | (empty) |  | text before the counts in suffix (e.g. the words for "received data:") |
+| `text` | string |  | (empty) |  | the counts as the message writes them (numbers, any separators, a unit after each); empty = no message |
+| `unit` | string |  | (empty) |  | text after each count (the message's counter word) |
+
+| output | type | desc |
+|--------|------|------|
+| `actual` | list | line count of each file given, in order |
+| `expected` | list | the counts in the message, in order |
+| `fileCount` | int | how many files the message names; -1 when no message |
+| `matched` | bool | every file agrees with its count (true when there is nothing to compare) |
+| `reason` | string |  |
+| `suffix` | string | " (" + label + text + ")" ready to append to a reply; "" when no message |
+| `text` | string | per file: "<count><unit>", or "<lines><unit>(<count><unit>)" when the file disagrees; the message's counts alone when no files were given |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"record_counts","use":"verify.record_counts","with":{"files":"{{steps.dl.out.files}}","text":"{{steps.start.out.fields.counts}}"}}
+```
+
+Notes: A disagreement is a warning (count_disagree), never a failure: the line compare decides whether the files are right; this only says what the reply should show.
 
 ### `verify.time_window`
 
@@ -1951,6 +2049,7 @@ Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
 | `evidence` | any |  | (empty) |  | a path, or a list of paths / values, to look at |
 | `key` | string |  | (empty) |  | which item; empty = the current item |
 | `reason` | string |  | (empty) |  | why (verify.assert's reason), shown on the panel |
+| `skipFails` | bool |  | false |  | true: the operator's s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time) |
 
 | output | type | desc |
 |--------|------|------|
@@ -1958,7 +2057,7 @@ Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
 | `code` | string | ok \| ng \| unknown \| empty -- what flow.checkpoint should write |
 | `note` | string | free text typed with m |
 
-failures: `operator_quit` (not transient)
+failures: `operator_quit` (not transient), `operator_skip` (not transient)
 
 ```json
 {"id":"gate","use":"human.gate","with":{"askWhen":["unknown"],"code":"{{steps.verdict.out.code}}","evidence":"{{steps.shot.out.path}}","reason":"{{steps.verdict.out.reason}}"}}
@@ -2130,6 +2229,7 @@ Print done / pending / ng counts per field as an ASCII table
 |-------|------|----------|---------|------|------|
 | `field` | string |  | (empty) |  | one field; empty = every verdict / bitmask column the profile declares |
 | `groupBy` | string |  | (empty) |  | also count per value of this column |
+| `next` | list |  | [] |  | lines printed under the table as "next:" -- the command to run next, so the operator never looks it up (templates allowed: {{run.workDir}}) |
 | `worklist` | session:worklist | yes |  |  |  |
 
 | output | type | desc |

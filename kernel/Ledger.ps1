@@ -159,6 +159,29 @@ function Read-EbiRunFile {
     return (Read-EbiJson -Path (Get-EbiRunFile -WorkDir $WorkDir -RunId $RunId))
 }
 
+function Set-EbiRunsAbandoned {
+    <#
+      Mark run.json documents finished (abandoned = true, abandonedAt) so
+      Find-EbiUnfinishedRuns stops offering them -- the operator's "d"
+      (forget) at the UNFINISHED RUN prompt: a run from another day that
+      will never be resumed. Nothing else in run/<runId>/ is touched.
+      Returns @{ ok; forgotten = @(runIds); message }.
+    #>
+    param([string]$WorkDir, $Runs)
+    $done = New-Object System.Collections.ArrayList
+    foreach ($doc in @($Runs)) {
+        if (-not ($doc -is [System.Collections.IDictionary]) -or [string]::IsNullOrWhiteSpace([string]$doc['runId'])) { continue }
+        $doc['finished'] = $true
+        $doc['abandoned'] = $true
+        $doc['abandonedAt'] = (Get-Date).ToString('o')
+        $doc['updatedAt'] = (Get-Date).ToString('o')
+        $w = Write-EbiJson -Path (Get-EbiRunFile -WorkDir $WorkDir -RunId ([string]$doc['runId'])) -Value $doc
+        if (-not $w['ok']) { return @{ ok = $false; forgotten = $done.ToArray(); message = $w['message'] } }
+        [void]$done.Add([string]$doc['runId'])
+    }
+    return @{ ok = $true; forgotten = $done.ToArray(); message = '' }
+}
+
 function Find-EbiUnfinishedRuns {
     <#
       Every run/<runId>/run.json under WorkDir with finished = false,

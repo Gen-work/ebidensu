@@ -825,6 +825,11 @@
           "desc": "texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes)",
           "type": "list"
         },
+        "nearAny": {
+          "default": [],
+          "desc": "texts of a WIDER window: when the deadline passes without a contains / containsAny hit but one of these is on the page, the step returns ok with found = false (a later step proposes the nearby row) instead of failing with timeout -- the operator typed a time that is off, not a page that is late",
+          "type": "list"
+        },
         "pollMs": {
           "default": 800,
           "desc": "wait between reads",
@@ -858,6 +863,10 @@
       "outputs": {
         "elapsedMs": {
           "type": "int"
+        },
+        "found": {
+          "desc": "true when contains / containsAny matched; false only on the nearAny way out",
+          "type": "bool"
         },
         "path": {
           "desc": "where the text was archived, or empty",
@@ -1301,7 +1310,7 @@
       "needs": [
         "excel"
       ],
-      "notes": "read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).",
+      "notes": "read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry; the failure names who holds it when Excel's ~$ lock file next to the workbook says. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).",
       "outputs": {
         "name": {
           "type": "string"
@@ -2223,7 +2232,7 @@
         }
       },
       "needs": [],
-      "notes": "not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete).",
+      "notes": "not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete). Two transfers logged at the same time interleave (START A, START B, END A, END B): their blocks overlap and are written ONCE as one span in log order (block_interleaved), never cut at the other START.",
       "outputs": {
         "blocks": {
           "desc": "@{ key; source; complete; lines } per block, in output order",
@@ -2922,6 +2931,10 @@
         {
           "id": "operator_quit",
           "transient": false
+        },
+        {
+          "id": "operator_skip",
+          "transient": false
         }
       ],
       "file": "modules/human/human.gate.ps1",
@@ -2955,6 +2968,11 @@
           "default": "",
           "desc": "why (verify.assert's reason), shown on the panel",
           "type": "string"
+        },
+        "skipFails": {
+          "default": false,
+          "desc": "true: the operator's s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose \"no\" makes the rest of the item pointless (a proposed start time)",
+          "type": "bool"
         }
       },
       "needs": [],
@@ -3377,6 +3395,11 @@
           "default": "",
           "desc": "also count per value of this column",
           "type": "string"
+        },
+        "next": {
+          "default": [],
+          "desc": "lines printed under the table as \"next:\" -- the command to run next, so the operator never looks it up (templates allowed: {{run.workDir}})",
+          "type": "list"
         },
         "worklist": {
           "required": true,
@@ -5214,6 +5237,141 @@
       "summary": "Find the record for a key; newest / first / ask on several",
       "tier": "core"
     },
+    "verify.nearest_time": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.nearest_time",
+        "with": {
+          "clock": "{{steps.start.out.clock}}",
+          "date": "{{item.GFIX_DATE}}",
+          "found": "{{steps.wait.out.found}}",
+          "records": "{{steps.rec.out.records}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "parse_error",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.nearest_time.ps1",
+      "group": "verify",
+      "id": "verify.nearest_time",
+      "idempotent": true,
+      "inputs": {
+        "clock": {
+          "desc": "the start time given (HH:mm[:ss])",
+          "required": true,
+          "type": "string"
+        },
+        "date": {
+          "desc": "yyyy-MM-dd of the clock",
+          "required": true,
+          "type": "string"
+        },
+        "found": {
+          "default": true,
+          "desc": "browser.wait_for found: true = the window matched, keep the clock as is",
+          "type": "bool"
+        },
+        "records": {
+          "default": [],
+          "desc": "the page rows (verify.parse_text records) to look through",
+          "type": "list"
+        },
+        "timeField": {
+          "default": "startTime",
+          "type": "string"
+        },
+        "withinMinutes": {
+          "default": 5,
+          "desc": "a row this close counts as \"near\"; farther rows are still offered, flagged",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "Never silent: a changed clock comes back as code unknown so the workflow's human.gate asks (Enter = use it, s = skip and rerun with the right time). Rows whose time field does not parse are ignored.",
+      "outputs": {
+        "changed": {
+          "desc": "true when the nearest row's time replaced the given clock",
+          "type": "bool"
+        },
+        "clock": {
+          "desc": "HH:mm:ss to go on with: the given clock, or the nearest row's time",
+          "type": "string"
+        },
+        "code": {
+          "desc": "ok (kept) | unknown (changed: a person confirms)",
+          "type": "string"
+        },
+        "near": {
+          "desc": "true when the nearest row is within withinMinutes",
+          "type": "bool"
+        },
+        "nearest": {
+          "desc": "the nearest record ({} when none)",
+          "type": "map"
+        },
+        "offsetMinutes": {
+          "desc": "nearest - given, in whole minutes (0 when none)",
+          "type": "int"
+        },
+        "reason": {
+          "desc": "what was proposed and how far it is from the time given",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "When the expected time is not on the page, propose the nearest row's time (a gate confirms)",
+      "tier": "core"
+    },
+    "verify.owner_pattern": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.owner_pattern",
+        "with": {
+          "owner": "{{profile.operator.owner}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.owner_pattern.ps1",
+      "group": "verify",
+      "id": "verify.owner_pattern",
+      "idempotent": true,
+      "inputs": {
+        "owner": {
+          "default": "",
+          "desc": "the operator as the WBS writes it (e.g. a family name); empty = no owner filter",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "The arrows are the full-width ones the WBS uses (U+2190 / U+2192). An owner that contains regex characters is escaped.",
+      "outputs": {
+        "everyone": {
+          "desc": "true when owner is empty: the plan takes every owner's rows",
+          "type": "bool"
+        },
+        "owner": {
+          "desc": "the owner, trimmed",
+          "type": "string"
+        },
+        "pattern": {
+          "desc": "regex for an excel.read_rows where { op: matches }: the name alone, name<-other, other->name; \"\" (matches every cell) when owner is empty",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Build the WBS owner-cell regex for one operator (empty owner = everyone)",
+      "tier": "core"
+    },
     "verify.pair_files": {
       "effects": "pure",
       "example": {
@@ -5338,6 +5496,93 @@
       "provides": [],
       "releases": [],
       "summary": "Parse page text into records with a delimited / labeled / columns / regex grammar",
+      "tier": "core"
+    },
+    "verify.record_counts": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.record_counts",
+        "with": {
+          "files": "{{steps.dl.out.files}}",
+          "text": "{{steps.start.out.fields.counts}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.record_counts.ps1",
+      "group": "verify",
+      "id": "verify.record_counts",
+      "idempotent": true,
+      "inputs": {
+        "files": {
+          "default": [],
+          "desc": "file.download / file.list files (lines per file, arrival order); empty = parse only",
+          "type": "list"
+        },
+        "headerLines": {
+          "default": 1,
+          "desc": "a file may have this many lines more than its record count (a header)",
+          "type": "int"
+        },
+        "joiner": {
+          "default": ", ",
+          "desc": "between the counts in text",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "desc": "text before the counts in suffix (e.g. the words for \"received data:\")",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "desc": "the counts as the message writes them (numbers, any separators, a unit after each); empty = no message",
+          "type": "string"
+        },
+        "unit": {
+          "default": "",
+          "desc": "text after each count (the message's counter word)",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "A disagreement is a warning (count_disagree), never a failure: the line compare decides whether the files are right; this only says what the reply should show.",
+      "outputs": {
+        "actual": {
+          "desc": "line count of each file given, in order",
+          "type": "list"
+        },
+        "expected": {
+          "desc": "the counts in the message, in order",
+          "type": "list"
+        },
+        "fileCount": {
+          "desc": "how many files the message names; -1 when no message",
+          "type": "int"
+        },
+        "matched": {
+          "desc": "every file agrees with its count (true when there is nothing to compare)",
+          "type": "bool"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "suffix": {
+          "desc": "\" (\" + label + text + \")\" ready to append to a reply; \"\" when no message",
+          "type": "string"
+        },
+        "text": {
+          "desc": "per file: \"<count><unit>\", or \"<lines><unit>(<count><unit>)\" when the file disagrees; the message's counts alone when no files were given",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Parse the per-file record counts of a start message; compare with the files' line counts",
       "tier": "core"
     },
     "verify.time_window": {
