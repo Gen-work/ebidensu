@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-74 step(s) in 9 group(s).
+76 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,10 +13,10 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
 | excel | `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.quit_app`, `excel.read_rows`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
 | human | `human.choose`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
-| flow | `flow.checkpoint` |
+| flow | `flow.checkpoint`, `flow.require` |
 
 ## browser
 
@@ -1659,6 +1659,36 @@ failures: `rules_invalid` (not transient)
 
 Notes: A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails. A within rule whose value is null or an empty map (no run.timeWindow given) holds: an absent window is not a failed check.
 
+### `verify.assert_each`
+
+Run a rule table over every record; the worst verdict wins (ng > unknown > ok)
+
+- file: `modules/verify/verify.assert_each.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `keyField` | string |  | key |  | field named in the reason for a record that failed |
+| `records` | list | yes |  |  | the records to judge (verify.filter_records / parse_text output) |
+| `rules` | map | yes |  |  | { rules: [ { field, op, value?, else, message } ], default: ok } -- the verify.assert shape |
+
+| output | type | desc |
+|--------|------|------|
+| `code` | string | ok \| ng \| unknown: the worst verdict over the records (ok when there are none) |
+| `failed` | list | @{ key; code; reason; record } per record that did not pass, in list order |
+| `failedCount` | int |  |
+| `judged` | int | records judged |
+| `reason` | string | the first failing record's key and its rule message; "" when ok |
+
+failures: `rules_invalid` (not transient)
+
+```json
+{"id":"assert_each","use":"verify.assert_each","with":{"records":"{{steps.mine.out.records}}","rules":"{{profile.rules.goAnywhereJob}}"}}
+```
+
+Notes: An empty list is ok (nothing failed) -- pair it with a filter step that fails not_found when the rows are missing. The same rule table as verify.assert, so a profile keeps one vocabulary of rules.
+
 ### `verify.compare_sets`
 
 Compare two lists as sets; ok when they hold the same values
@@ -2273,3 +2303,30 @@ failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_
 ```
 
 Notes: value must be a logical verdict (ok / ng / unknown / empty); a stored code is refused (value_invalid) so a workflow cannot hard-wire the profile's encoding.
+
+### `flow.require`
+
+Fail with not_met unless a value equals what the rest of the item needs
+
+- file: `modules/flow/flow.require.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `equals` | string |  | ok |  | what it must be (text, case-sensitive) |
+| `message` | string |  | (empty) |  | why the item cannot go on; shown with the actual value |
+| `value` | string |  | (empty) |  | the value to check (a template) |
+
+| output | type | desc |
+|--------|------|------|
+| `met` | bool |  |
+| `value` | string | the value as seen |
+
+failures: `not_met` (not transient)
+
+```json
+{"id":"require","use":"flow.require","with":{"equals":"ok","message":"the track judged this job ng: nothing to collect","value":"{{steps.track.out.data.verdict}}"}}
+```
+
+Notes: Pair it with onError.byFailure.not_met = skip in the workflow; under DryRun the check always passes (a dry run has no real values).

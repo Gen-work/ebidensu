@@ -45,7 +45,7 @@ $loaded = @{}
 foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
                  'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy',
-                 'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open')) {
+                 'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open', 'verify.assert_each', 'flow.require')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -349,6 +349,38 @@ try {
     Assert-True ([bool]$far['changed'] -and -not [bool]$far['near'] -and $far['reason'] -like '*farther than 5 min*') 'near: a row far away is still proposed, flagged as far'
     $nothing = Invoke-TestStep 'verify.nearest_time' @{ found = $false; date = '2026-10-08'; clock = '10:45:20'; records = @() }
     Assert-True ((-not [bool]$nothing['changed']) -and $nothing['clock'] -eq '10:45:20') 'near: no rows at all -> the clock is kept'
+
+    # ---- a FAILED job on the OPEN side (10-13 JJDSWM41): the status icon is not in
+    # the page text; the operator adds the view's resolved column, which reads No
+    # on the failed row only
+    $rsText = [System.IO.File]::ReadAllText((Join-Path $fx 'goanywhere-list-resolved.sample.txt'))
+    $rs = Invoke-TestStep 'verify.parse_text' @{ text = $rsText; grammar = $prof['grammar']['goAnywhere'] }
+    Assert-Equal 6 $rs['recordCount'] 'resolved: the page with the extra column parses (6 rows)'
+    Assert-Equal 'No' (@($rs['records'] | Where-Object { $_['key'] -eq '1000004712517' })[0]['resolved']) 'resolved: the failed row reads No'
+    Assert-Equal '' (@($rs['records'] | Where-Object { $_['key'] -eq '1000004712355' })[0]['resolved']) 'resolved: a good row is blank'
+    Assert-Equal 12 $rec['recordCount'] 'resolved: the OLD page without the column still parses every row (optionalTail)'
+    Assert-Equal '' $rec['records'][0]['resolved'] 'resolved: ... with resolved blank'
+    $w45 = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-13'; clock = '10:45:20'; beforeMinutes = 2; afterMinutes = 13 }
+    $m45 = Invoke-TestStep 'verify.filter_records' @{ records = $rs['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $w45['window'] }) }
+    $hs = Invoke-TestStep 'verify.assert_each' @{ records = $m45['records']; rules = $prof['rules']['goAnywhereJob'] }
+    Assert-Equal 'ng' $hs['code'] 'failed job: the 10:45 job has a Send row with resolved = No -> ng'
+    Assert-True ($hs['reason'] -like '1000004712517:*' -and $hs['failedCount'] -eq 1 -and $hs['judged'] -eq 1) ('failed job: the reason names the row: ' + $hs['reason'])
+    $w11 = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-13'; clock = '11:00:27'; beforeMinutes = 2; afterMinutes = 13 }
+    $m11 = Invoke-TestStep 'verify.filter_records' @{ records = $rs['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $w11['window'] }) }
+    $hs2 = Invoke-TestStep 'verify.assert_each' @{ records = $m11['records']; rules = $prof['rules']['goAnywhereJob'] }
+    Assert-True ($hs2['code'] -eq 'ok' -and $hs2['judged'] -eq 4 -and $hs2['failedCount'] -eq 0 -and $hs2['reason'] -eq '') 'good job: 2 Send + 2 Receive rows, none unresolved -> ok'
+    $hs3 = Invoke-TestStep 'verify.assert_each' @{ records = @(); rules = $prof['rules']['goAnywhereJob'] }
+    Assert-Equal 'ok' $hs3['code'] 'assert_each: no records -> ok'
+    $hsMix = Invoke-TestStep 'verify.assert_each' @{ records = @(@{ key = 'a'; resolved = '' }, @{ key = 'b'; resolved = 'No' }, @{ key = 'c'; resolved = 'No' }); rules = $prof['rules']['goAnywhereJob'] }
+    Assert-True ($hsMix['code'] -eq 'ng' -and $hsMix['failedCount'] -eq 2 -and $hsMix['reason'] -like 'b:*(+1 more)') 'assert_each: several failing rows -> the first named, the rest counted'
+    $hsBad = Invoke-TestStep 'verify.assert_each' @{ records = @(); rules = @{ rules = 'x' } }
+    Assert-True ((-not $hsBad['ok']) -and $hsBad['failure'] -eq 'rules_invalid') 'assert_each: a broken rule table is rules_invalid'
+    $rq = Invoke-TestStep 'flow.require' @{ value = 'ok'; equals = 'ok'; message = 'm' }
+    Assert-True ([bool]$rq['ok'] -and [bool]$rq['met']) 'require: ok passes'
+    $rq2 = Invoke-TestStep 'flow.require' @{ value = 'ng'; equals = 'ok'; message = 'the track judged this job ng' }
+    Assert-True ((-not $rq2['ok']) -and $rq2['failure'] -eq 'not_met' -and $rq2['message'] -like 'the track judged this job ng (value: "ng"*') 'require: ng is not_met with the reason and the value'
+    $rq3 = Invoke-TestStep 'flow.require' @{ value = ''; equals = 'ok' }
+    Assert-True ((-not $rq3['ok']) -and $rq3['failure'] -eq 'not_met') 'require: an empty value (no track.json field) is not_met too'
 
     # ---- verify.owner_pattern: the WBS owner cell (name, name<-other, other->name)
     $gen = [string][char]0x53B3                     # the operator's name as the WBS writes it

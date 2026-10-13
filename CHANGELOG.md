@@ -43,6 +43,23 @@ logs). The operator's seven findings, each with a test:
   `count_disagree`. track.json keeps `sendCounts` / `receivedCountsText` /
   `countsMatched`. (Finding 7.)
 
+- **A job that failed on the OPEN side stops the track at once and says
+  so** (10/13 JJDSWM41: GoAnywhere showed its Send row with a red status
+  icon, and the HOST team was told by hand). The icon is not in the page
+  text, so the operator adds the view's 解決済み (resolved) column, which
+  reads `No` on a failed row and blank elsewhere: the grammar gains a
+  `resolved` field (`optionalTail` 1 in the delimited parser, so pages and
+  archives without the column still parse), the page fingerprint requires
+  the column (never blind), and the new `verify.assert_each` runs the rule
+  table `rules.goAnywhereJob` over the job's rows: any `No` is `ng`. Then
+  the Jenkins read, download, compare and DF steps are skipped, the Teams
+  reply is 「OPEN側で異常終了でした。」+ the row + the GoAnywhere picture
+  only, and the row is checkpointed `track = ng`. `logs` / `evidence` open
+  with the new `flow.require` (a value that is not what the item needs ->
+  `not_met` -> the item is skipped with one line) so a failed job is
+  passed over instead of failing step by step. gfixRecv.track 0.8.0, logs
+  / evidence 0.3.0.
+
 ### Fixed
 - **Two transfers logged at the same time** (JJDSWM10: START A, START B,
   END A, END B) cut block A at START B (`block_incomplete`) and left END A

@@ -32,5 +32,18 @@
         "message": "the transfer file name does not look like JJPCRS..."
       }
     ]
+  },
+  "goAnywhereJob": {
+    "_doc": "verify.assert_each over this job's GoAnywhere rows (Send + Receive): a row whose resolved column reads No failed on the OPEN side (red status icon) -> ng.",
+    "default": "ok",
+    "rules": [
+      {
+        "field": "resolved",
+        "op": "notEquals",
+        "value": "No",
+        "else": "ng",
+        "message": "GoAnywhere shows this row unresolved (解決済み = No): the job failed on the OPEN side"
+      }
+    ]
   }
 }

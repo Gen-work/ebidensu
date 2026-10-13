@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -220,25 +220,12 @@
       }
     },
     {
-      "id": "recv",
-      "use": "verify.filter_records",
-      "label": "Receive の行 = GFIX に着いたファイル",
+      "id": "hostStatus",
+      "use": "verify.assert_each",
+      "label": "このジョブの行に 解決済み = No があれば OPEN 側で異常終了(ステータスの赤いアイコンはテキストに出ない)",
       "with": {
         "records": "{{steps.mine.out.records}}",
-        "where": [
-          {
-            "field": "folder",
-            "op": "equals",
-            "value": "{{page.receiveFolder}}"
-          }
-        ],
-        "pluck": "key",
-        "spanFrom": "startTime",
-        "spanTo": "endTime",
-        "padBeforeSec": 2,
-        "padAfterSec": 10,
-        "expect": "{{item.FileCount}}",
-        "expectFallback": "{{steps.sendCounts.out.fileCount}}"
+        "rules": "{{profile.rules.goAnywhereJob}}"
       }
     },
     {
@@ -270,7 +257,31 @@
       }
     },
     {
+      "id": "recv",
+      "use": "verify.filter_records",
+      "when": "steps.hostStatus.out.code == ok",
+      "label": "Receive の行 = GFIX に着いたファイル",
+      "with": {
+        "records": "{{steps.mine.out.records}}",
+        "where": [
+          {
+            "field": "folder",
+            "op": "equals",
+            "value": "{{page.receiveFolder}}"
+          }
+        ],
+        "pluck": "key",
+        "spanFrom": "startTime",
+        "spanTo": "endTime",
+        "padBeforeSec": 2,
+        "padAfterSec": 10,
+        "expect": "{{item.FileCount}}",
+        "expectFallback": "{{steps.sendCounts.out.fileCount}}"
+      }
+    },
+    {
       "id": "jkDay",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.time_window",
       "label": "Jenkins の一覧に出る日付の形 (yyyy/MM/dd)",
       "with": {
@@ -281,6 +292,7 @@
     },
     {
       "id": "jkText",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "browser.wait_for",
       "label": "Jenkins を F5、その日のファイルが見えるまで",
       "with": {
@@ -296,6 +308,7 @@
     },
     {
       "id": "jkRec",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.parse_text",
       "with": {
         "text": "{{steps.jkText.out.text}}",
@@ -304,6 +317,7 @@
     },
     {
       "id": "jkMine",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.filter_records",
       "label": "Receive の時間帯に report に置かれたファイル",
       "with": {
@@ -327,6 +341,7 @@
     },
     {
       "id": "dl",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "file.download",
       "with": {
         "baseUrl": "{{profile.paths.jenkinsReportUrl}}",
@@ -337,6 +352,7 @@
     },
     {
       "id": "recvCounts",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.record_counts",
       "label": "届いたファイルの行数 vs Teams の件数(違えば warning、返信文には 行数(件数) で出す)",
       "with": {
@@ -349,6 +365,7 @@
     },
     {
       "id": "gift",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "file.list",
       "with": {
         "dir": "{{profile.paths.bix}}/DATA/GIFT/{{item.JOB}}",
@@ -366,6 +383,7 @@
     },
     {
       "id": "pair",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.pair_files",
       "with": {
         "left": "{{steps.gift.out.files}}",
@@ -375,6 +393,7 @@
     },
     {
       "id": "pairGate",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "human.gate",
       "with": {
         "code": "{{steps.pair.out.code}}",
@@ -390,6 +409,7 @@
     },
     {
       "id": "cmp",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "file.compare",
       "label": "ペアごとに行比較。複数ファイルで全ペア不一致でも、各 GIFT ファイルと同内容の GFIX ファイルが一つずつあれば並べ直して比較し直す(到着順と名前順が違っただけ)",
       "with": {
@@ -399,6 +419,7 @@
     },
     {
       "id": "df",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "screen.launch_capture",
       "with": {
         "exe": "{{profile.paths.dfExe}}",
@@ -416,6 +437,7 @@
     },
     {
       "id": "gate",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "human.gate",
       "with": {
         "code": "{{steps.cmp.out.code}}",
@@ -448,6 +470,8 @@
           "receivedCountsText": "{{steps.recvCounts.out.text}}",
           "countsMatched": "{{steps.recvCounts.out.matched}}",
           "window": "{{steps.winAt.out.window}}",
+          "hostStatus": "{{steps.hostStatus.out.code}}",
+          "hostStatusReason": "{{steps.hostStatus.out.reason}}",
           "goAnywhereRows": "{{steps.mine.out.records}}",
           "recvJobs": "{{steps.recv.out.plucked}}",
           "span": "{{steps.recv.out.span}}",
@@ -481,6 +505,24 @@
       }
     },
     {
+      "id": "shareFail",
+      "use": "human.share",
+      "when": "steps.hostStatus.out.code == ng",
+      "label": "異常終了: 「OPEN側で異常終了でした。」+ GoAnywhere の図だけを Teams へ(ダウンロード / DF はしない)",
+      "with": {
+        "lines": [
+          "{{profile.vocabulary.messages.feedbackNg}}",
+          "{{steps.hostStatus.out.reason}}"
+        ],
+        "images": [
+          "{{steps.gaShot.out.path}}"
+        ],
+        "mode": "{{profile.layout.share.mode}}",
+        "where": "{{profile.layout.share.where}}",
+        "maxWidth": "{{profile.layout.share.maxWidth}}"
+      }
+    },
+    {
       "id": "checkpoint",
       "use": "flow.checkpoint",
       "when": "steps.gate.out.action != skip",
@@ -491,12 +533,22 @@
       }
     },
     {
+      "id": "checkpointFail",
+      "use": "flow.checkpoint",
+      "when": "steps.hostStatus.out.code == ng",
+      "with": {
+        "worklist": "wl",
+        "field": "track",
+        "value": "ng"
+      }
+    },
+    {
       "id": "event",
       "use": "progress.event",
       "with": {
         "action": "tracked",
         "status": "ok",
-        "message": "{{steps.gate.out.code}} {{steps.cmp.out.reason}} / teams: {{steps.share.out.action}}"
+        "message": "{{steps.gate.out.code}} {{steps.cmp.out.reason}} / host: {{steps.hostStatus.out.code}} {{steps.hostStatus.out.reason}} / teams: {{steps.share.out.action}} {{steps.shareFail.out.action}}"
       }
     }
   ],

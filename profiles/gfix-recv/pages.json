@@ -3,13 +3,15 @@
     "role": "list",
     "label": "GoAnywhere 完了したジョブ",
     "url": "",
-    "openHint": "GoAnywhere 監査ログ > ジョブログ > 完了したジョブ。日付範囲: Today、プロジェクト名で絞り込み、開始時間 ▼(新しい順)",
+    "openHint": "GoAnywhere 監査ログ > ジョブログ > 完了したジョブ。日付範囲: Today、プロジェクト名で絞り込み、開始時間 ▼(新しい順)、列に「解決済み」を追加(異常終了の行だけ No)",
     "windowTitle": "GoAnywhere",
     "fingerprint": {
       "ok": [
         "完了したジョブ",
-        "ジョブ番号"
+        "ジョブ番号",
+        "解決済み"
       ],
+      "_ok_doc": "解決済み (resolved) is a column the operator adds to the view; without it a failed job (red icon, not in the text) cannot be told from a good one, so a page without the column is the wrong page.",
       "loading": [],
       "empty": [
         "表示中 0"

@@ -97,10 +97,14 @@ function ConvertFrom-EbiDelimitedText {
             $probe = if ($rwField -ge 0 -and $rwField -lt $parts.Count) { ([string]$parts[$rwField]).Trim() } else { '' }
             if ($probe -notmatch $rwRegex) { $ok = $false }
         }
-        if ($ok -and $parts.Count -lt $fields.Count) { $ok = $false }
+        # optionalTail: the last N fields may be missing from a row (a column
+        # the operator adds to the view, e.g. GoAnywhere's resolved column):
+        # such a row still parses, the missing fields blank
+        $optTail = if ($Grammar.Contains('optionalTail') -and $null -ne $Grammar['optionalTail']) { [Math]::Max(0, [int]$Grammar['optionalTail']) } else { 0 }
+        if ($ok -and $parts.Count -lt ($fields.Count - $optTail)) { $ok = $false }
         if (-not $ok) { [void]$unrec.Add(@{ line = $n; text = $line }); continue }
         $rec = @{}
-        for ($i = 0; $i -lt $fields.Count; $i++) { $rec[$fields[$i]] = ([string]$parts[$i]).Trim() }
+        for ($i = 0; $i -lt $fields.Count; $i++) { $rec[$fields[$i]] = $(if ($i -lt $parts.Count) { ([string]$parts[$i]).Trim() } else { '' }) }
         # lastNonEmpty: a page whose rows sometimes carry an extra empty cell
         # (the HM abend row) keeps its key as the LAST non-empty cell, the
         # way ConvertFrom-HmPageText read it; the field named here takes it.

@@ -87,6 +87,8 @@ ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
 
 - GoAnywhere：InPrivate 窗口，「完了したジョブ」，日付範囲 Today、プロジェクト名 JDS、開始時間 ▼。
   **最大化**，显示器 1920×1080、缩放 100%。截给 Teams 的那块图是按这个尺寸量的坐标。
+  **列里加上「解決済み」**（詳細 ▼ 的列选择）：ステータス 那个红叉图标复制不进文字，但 解決済み 列在异常终了的行上是 `No`、其他行空白，
+  工具靠它判断 job 有没有在 OPEN 侧失败。没加这一列的页面会被当成「不是那个页面」停下（wrong_page），加上再 `r`。
 - Jenkins data/report：另开一个**普通窗口**（不要和 GoAnywhere 放同一个窗口的不同标签页）。工具会把它调成 1410×807。
 
 ```powershell
@@ -136,6 +138,9 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 7. 自动：每一对文件启动一次 DF.exe（窗口 1133×429，一屏正好 16 行）→ Ctrl+Home 截图；
    超过 16 行的再 Ctrl+End 截一张 → 关掉 DF。
 8. **GATE**：内容一致就直接过；不一致或不确定会问你（`Enter` = ok / `n` = ng / `s` = 先跳过）。
+   **OPEN 侧异常终了**（10/13 的 JJDSWM41：GoAnywhere 的 Send 行红叉、解決済み = No）：读完这个 job 的行、截完 GoAnywhere 的图就**停在这里**——
+   不下载、不比较、不开 DF；SHARE 面板的文字变成「OPEN側で異常終了でした。」+ 哪一行 No，只带 GoAnywhere 一张图，贴到 Teams 让他们知道；
+   作业清单 `track = ng`。之后 logs / evidence 碰到这行会自己跳过（「track judged this job ng: nothing to collect」），HOST 侧重跑后把 `track` 清空再跑一次就行。
 9. **SHARE 面板**：文字「OPEN側で確認できました。前後一致です。 (受信データ:815件、46件)」+ GoAnywhere 图 + DF 图已经放进剪贴板。
    括号里是 Teams 消息里的件数，逐文件和下载文件的行数核过（允许多 1 行表头、0 件 = 空文件或 1 个空行）；对不上的文件写成 `行数件(消息件数件)`，
    例 `0件(2件)、1件(4件)`，并在末尾 warnings 里报 `count_disagree`——这不是判定，判定还是逐行比较。没有消息（k 跳过）就不带括号。

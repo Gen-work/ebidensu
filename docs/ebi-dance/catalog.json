@@ -2846,6 +2846,59 @@
       "summary": "Write the verdict (or a named bit) for the current item and flush",
       "tier": "core"
     },
+    "flow.require": {
+      "effects": "pure",
+      "example": {
+        "use": "flow.require",
+        "with": {
+          "equals": "ok",
+          "message": "the track judged this job ng: nothing to collect",
+          "value": "{{steps.track.out.data.verdict}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "not_met",
+          "transient": false
+        }
+      ],
+      "file": "modules/flow/flow.require.ps1",
+      "group": "flow",
+      "id": "flow.require",
+      "idempotent": true,
+      "inputs": {
+        "equals": {
+          "default": "ok",
+          "desc": "what it must be (text, case-sensitive)",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "desc": "why the item cannot go on; shown with the actual value",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "desc": "the value to check (a template)",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Pair it with onError.byFailure.not_met = skip in the workflow; under DryRun the check always passes (a dry run has no real values).",
+      "outputs": {
+        "met": {
+          "type": "bool"
+        },
+        "value": {
+          "desc": "the value as seen",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Fail with not_met unless a value equals what the rest of the item needs",
+      "tier": "core"
+    },
     "human.choose": {
       "effects": "ui",
       "example": {
@@ -4832,6 +4885,70 @@
       "provides": [],
       "releases": [],
       "summary": "Run a rule table over a record: ok / ng / unknown plus the message",
+      "tier": "core"
+    },
+    "verify.assert_each": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.assert_each",
+        "with": {
+          "records": "{{steps.mine.out.records}}",
+          "rules": "{{profile.rules.goAnywhereJob}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "rules_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.assert_each.ps1",
+      "group": "verify",
+      "id": "verify.assert_each",
+      "idempotent": true,
+      "inputs": {
+        "keyField": {
+          "default": "key",
+          "desc": "field named in the reason for a record that failed",
+          "type": "string"
+        },
+        "records": {
+          "desc": "the records to judge (verify.filter_records / parse_text output)",
+          "required": true,
+          "type": "list"
+        },
+        "rules": {
+          "desc": "{ rules: [ { field, op, value?, else, message } ], default: ok } -- the verify.assert shape",
+          "required": true,
+          "type": "map"
+        }
+      },
+      "needs": [],
+      "notes": "An empty list is ok (nothing failed) -- pair it with a filter step that fails not_found when the rows are missing. The same rule table as verify.assert, so a profile keeps one vocabulary of rules.",
+      "outputs": {
+        "code": {
+          "desc": "ok | ng | unknown: the worst verdict over the records (ok when there are none)",
+          "type": "string"
+        },
+        "failed": {
+          "desc": "@{ key; code; reason; record } per record that did not pass, in list order",
+          "type": "list"
+        },
+        "failedCount": {
+          "type": "int"
+        },
+        "judged": {
+          "desc": "records judged",
+          "type": "int"
+        },
+        "reason": {
+          "desc": "the first failing record's key and its rule message; \"\" when ok",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Run a rule table over every record; the worst verdict wins (ng > unknown > ok)",
       "tier": "core"
     },
     "verify.compare_sets": {

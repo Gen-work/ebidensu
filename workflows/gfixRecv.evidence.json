@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -15,7 +15,7 @@
     "orderBy": "GFIX_TIME"
   },
 
-  "onError": { "policy": "ask" },
+  "onError": { "policy": "ask", "byFailure": { "not_met": { "policy": "skip" } } },
 
   "setup": [
     { "id": "load", "use": "table.load",
@@ -33,6 +33,10 @@
       "label": "track の結果(無ければ証跡ブックを開く前に止まる)",
       "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json", "mustExist": true,
                 "missingHint": "run gfixRecv.track for this job first (s = leave it pending)" } },
+    { "id": "trackOk", "use": "flow.require",
+      "label": "track が ng(OPEN 側で異常終了)の行には証跡を作らない: この行を飛ばす",
+      "with": { "value": "{{steps.track.out.data.verdict}}", "equals": "ok",
+                "message": "the track judged this job ng (failed on the OPEN side): no evidence to build" } },
     { "id": "logs", "use": "file.read_json",
       "label": "logs の結果(無ければ証跡ブックを開く前に止まる)",
       "with": { "path": "{{vars.capture}}/{{item.keySafe}}/logs.json", "mustExist": true,

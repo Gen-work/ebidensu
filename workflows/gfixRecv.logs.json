@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.logs",
   "title": "GFIX受信: 一日の終わりにログを集める(GFIXReceive.log / Unzip / GoAnywhere 一覧・ジョブログ / Jenkins 一覧)",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
 
@@ -14,7 +14,7 @@
     "orderBy": "GFIX_TIME"
   },
 
-  "onError": { "policy": "ask" },
+  "onError": { "policy": "ask", "byFailure": { "not_met": { "policy": "skip" } } },
 
   "setup": [
     { "id": "load", "use": "table.load",
@@ -59,6 +59,10 @@
     { "id": "track", "use": "file.read_json",
       "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json", "mustExist": true,
                 "missingHint": "run gfixRecv.track for this job first (s = leave it pending)" } },
+    { "id": "trackOk", "use": "flow.require",
+      "label": "track が ng(OPEN 側で異常終了)の行は集めるものが無い: この行を飛ばす",
+      "with": { "value": "{{steps.track.out.data.verdict}}", "equals": "ok",
+                "message": "the track judged this job ng (failed on the OPEN side): no Receive job, nothing to collect" } },
 
     { "id": "jobLogs", "use": "browser.download_each",
       "label": "Receive のジョブ番号ごとにジョブログをダウンロード",
