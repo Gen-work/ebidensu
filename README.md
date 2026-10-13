@@ -14,13 +14,13 @@ PowerShell ツールです。対象 PC は Windows 10/11 + PowerShell 5.1 + Exce
 
 受信ジョブ 1 件ごとに、SE が手でやっていたこと：
 
-1. GoAnywhere「完了したジョブ」で該当行を探す → スクリーンショット
-2. Jenkins の data/report から受信ファイルを探してダウンロード
-3. DF で GIFT 側と GFIX 側のファイルを比較 → スクリーンショット
+1. 転送基盤の管理画面（完了ジョブ一覧）で該当行を探す → スクリーンショット
+2. 配信サーバのファイル一覧から受信ファイルを探してダウンロード
+3. 差分ツールで移行前（Before）と移行後（After）のファイルを比較 → スクリーンショット
 4. 証跡 Excel にジョブログを **1 行 1 セル** で貼る → 該当行を **黄色** に塗る（幅も揃える）
-5. GFIXReceive.log から該当ブロックだけ抜き出して貼る → 黄色
-6. Jenkins のスクリーンショットを貼り、受信ファイルの行に **赤枠**
-7. DF キャプチャを貼り、最終行番号と「同一内容」に赤枠
+5. 受信バッチのログから該当ブロックだけ抜き出して貼る → 黄色
+6. ファイル一覧のスクリーンショットを貼り、受信ファイルの行に **赤枠**
+7. 差分ツールのキャプチャを貼り、最終行番号と「一致」に赤枠
 8. 進捗を CSV に記録、レビュー依頼
 
 1 件あたり約 0.3 人日。黄色の幅がずれる、赤枠が 1 行ずれる、貼り忘れ――
@@ -28,22 +28,23 @@ PowerShell ツールです。対象 PC は Windows 10/11 + PowerShell 5.1 + Exce
 
 ### After：1 コマンドで証跡ブックができる
 
-![自動で作られた GFIX受信結果 シート：ジョブログの貼り付け、黄色マーカー、Jenkins 画面への赤枠（架空データ）](docs/images/gfix-recv-evidence-sheet1.png)
+![自動で作られた After受信結果 シート：ジョブログの貼り付け、黄色マーカー、ファイル一覧画面への赤枠（架空データ）](docs/images/gfix-recv-evidence-sheet1.png)
 
-ジョブログの貼り付け、黄色マーカー（幅は文字数 ÷ 3 列で計算）、GFIXReceive.log の
-START..END 抜き出し、Jenkins 画面の挿入と受信ファイル行への赤枠――ここまでを
+ジョブログの貼り付け、黄色マーカー（幅は文字数 ÷ 3 列で計算）、受信バッチログの
+START..END 抜き出し、ファイル一覧画面の挿入と受信ファイル行への赤枠――ここまでを
 ツールが行い、SE は最後に Excel を目で見て Enter を押すだけです。
 
-![左：内部システムの画面、右：証跡 Excel。絞り込み → 該当行の特定とキャプチャ → ジョブログ取得 → Excel へ自動貼り付け → 該当行が黄色に → 幅の拡大 → Jenkins 行の赤枠（架空データ・模擬画面）](docs/images/gfix-recv-zoom.gif)
+![左：内部システムの画面、右：証跡 Excel。絞り込み → 該当行の特定とキャプチャ → ジョブログ取得 → Excel へ自動貼り付け → 該当行が黄色に → 幅の拡大 → ファイル一覧行の赤枠（架空データ・模擬画面）](docs/images/gfix-recv-zoom.gif)
 
 左が内部システム（模擬）、右が証跡 Excel（模擬）。絞り込み・該当行の特定・キャプチャ・
 ジョブログの取得・貼り付け・黄色・赤枠まで、人がキーボードに触るところはありません。
 
 ![毎ジョブの 3 画面から、証跡 Excel が埋まるまで（架空データ・模擬画面）](docs/images/gfix-recv-evidence.gif)
 
-![GIFTデータvsGFIXデータ シート：DF キャプチャと、最終行番号・「同一内容」への赤枠](docs/images/gfix-recv-evidence-sheet2.png)
+![Before-After比較 シート：差分ツールのキャプチャと、最終行番号・「一致」への赤枠](docs/images/gfix-recv-evidence-sheet2.png)
 
-> 画像はすべて **架空データ・模擬画面** です（社内画面や実際の証跡は載せていません）。
+> 画像はすべて **架空データ・模擬画面** です。画面の名前、ジョブ名、ファイル名、ログの書式も
+> 実案件とは別のものに置き換えてあります（社内画面や実際の証跡は載せていません）。
 > CI 環境（Linux, PowerShell 7）には Excel がないため、Excel を操作する実装と
 > **同じ純粋関数**（黄色の幅 `Get-EbiHighlightEndColumn`、赤枠の位置
 > `Get-EbiListEntryRects` / `Resolve-EbiAnchoredRect`、ログの切り出し
@@ -118,19 +119,20 @@ declarative workflow engine `ebi` (`ebi.ps1`, `kernel/`, `modules/`,
 `workflows/`, `profiles/`): GFIX receive verification. Per received job the
 operator used to screenshot three internal pages, paste a job log into the
 evidence workbook one line per cell, paint the right lines yellow (at the
-right width), cut the matching block out of a batch log, paste a Jenkins
+right width), cut the matching block out of a batch log, paste a file-list
 screenshot and draw a red box on the received file's row, then do the same
-for the DF file comparison. That is now one command and a final glance.
+for the diff-tool comparison. That is now one command and a final glance.
 
-![The GFIX受信結果 sheet as the tool fills it: job log pasted, yellow marks, GFIXReceive.log block, Jenkins screenshot with the red box (fictional data)](docs/images/gfix-recv-evidence-sheet1.png)
+![The After受信結果 sheet as the tool fills it: job log pasted, yellow marks, receiver log block, file-list screenshot with the red box (fictional data)](docs/images/gfix-recv-evidence-sheet1.png)
 
-![Left: the internal page, right: the evidence workbook. Filter, find the row, snap, get the job log, paste it, the target lines turn yellow, zoom on the width, the Jenkins red box (fictional data, mock pages)](docs/images/gfix-recv-zoom.gif)
+![Left: the internal page, right: the evidence workbook. Filter, find the row, snap, get the job log, paste it, the target lines turn yellow, zoom on the width, the file-list red box (fictional data, mock pages)](docs/images/gfix-recv-zoom.gif)
 
 ![From the three internal pages to the filled workbook (fictional data, mock pages)](docs/images/gfix-recv-evidence.gif)
 
-![The GIFTデータvsGFIXデータ sheet: the DF capture with boxes on the last line number and the 同一内容 cell](docs/images/gfix-recv-evidence-sheet2.png)
+![The Before-After比較 sheet: the diff-tool capture with boxes on the last line number and the 一致 cell](docs/images/gfix-recv-evidence-sheet2.png)
 
-*Every picture is fictional data on mock pages. The CI container has no
+*Every picture is fictional data on mock pages, with the page names, job
+names, file names and log formats changed from the real site's. The CI container has no
 Excel, so the pictures are drawn in HTML from the output of the same pure
 functions the Excel steps call: `Get-EbiHighlightEndColumn` for the yellow
 width (characters / 3 columns, measured on the delivered sample),
@@ -355,24 +357,25 @@ end of day →  Export-DailyPatch.ps1  → clipboard → commit from home
 
 ### 之前的重复劳动
 
-每接收一个作业，SE 要手工做：在 GoAnywhere 里找到那一行并截图；在 Jenkins 的
-文件一览里找到接收文件并下载；用 DF 比较 GIFT 侧和 GFIX 侧的文件并截图；把作业日志
-**一行一格**贴进证据 Excel，把关键行**涂黄**（宽度还得对齐）；从 GFIXReceive.log 里
-只抠出这一次传输的块再贴、再涂黄；贴 Jenkins 截图并在接收文件那一行**画红框**；贴 DF
-截图并在最后一行行号和「同一内容」上画红框；最后在 CSV 里记进度。每件约 0.3 人日，
+每接收一个作业，SE 要手工做：在传输平台的管理页面里找到那一行并截图；在分发服务器的
+文件一览里找到接收文件并下载；用差分工具比较迁移前（Before）和迁移后（After）的文件并截图；把作业日志
+**一行一格**贴进证据 Excel，把关键行**涂黄**（宽度还得对齐）；从接收批处理的日志里
+只抠出这一次传输的块再贴、再涂黄；贴文件一览截图并在接收文件那一行**画红框**；贴差分
+截图并在最后一行行号和「一致」上画红框；最后在 CSV 里记进度。每件约 0.3 人日，
 而评审打回来的，多半就是黄条宽度、红框错行、漏贴这些。
 
 ### 之后：一条命令生成证据工作簿
 
-![工具自动填好的 GFIX受信結果 工作表：日志、黄标、Jenkins 截图上的红框（虚构数据）](docs/images/gfix-recv-evidence-sheet1.png)
+![工具自动填好的 After受信結果 工作表：日志、黄标、文件一览截图上的红框（虚构数据）](docs/images/gfix-recv-evidence-sheet1.png)
 
-![左：内部系统页面，右：证据 Excel。筛选 → 定位行并截图 → 取作业日志 → 自动贴入 Excel → 目标行变黄 → 放大看宽度 → Jenkins 行红框（虚构数据、模拟页面）](docs/images/gfix-recv-zoom.gif)
+![左：内部系统页面，右：证据 Excel。筛选 → 定位行并截图 → 取作业日志 → 自动贴入 Excel → 目标行变黄 → 放大看宽度 → 文件一览行红框（虚构数据、模拟页面）](docs/images/gfix-recv-zoom.gif)
 
 ![从三个内部系统页面到填好的 Excel（虚构数据、模拟页面）](docs/images/gfix-recv-evidence.gif)
 
-![GIFTデータvsGFIXデータ 工作表：DF 截图，以及最后一行行号和「同一内容」上的红框](docs/images/gfix-recv-evidence-sheet2.png)
+![Before-After比較 工作表：差分工具截图，以及最后一行行号和「一致」上的红框](docs/images/gfix-recv-evidence-sheet2.png)
 
-> 所有图片都是**虚构数据和模拟页面**。CI 环境（Linux、PowerShell 7）没有 Excel，
+> 所有图片都是**虚构数据和模拟页面**，页面名、作业名、文件名、日志格式也都换成了与实际现场
+> 不同的写法。CI 环境（Linux、PowerShell 7）没有 Excel，
 > 所以图是用 HTML 画的，但黄条宽度、红框位置、日志切块都来自操作 Excel 的实现
 > 所调用的**同一批纯函数**（`Get-EbiHighlightEndColumn`、`Get-EbiListEntryRects`、
 > `Resolve-EbiAnchoredRect`、`Get-EbiLogBlocks`）。
