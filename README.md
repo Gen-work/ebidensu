@@ -34,6 +34,11 @@ PowerShell ツールです。対象 PC は Windows 10/11 + PowerShell 5.1 + Exce
 START..END 抜き出し、Jenkins 画面の挿入と受信ファイル行への赤枠――ここまでを
 ツールが行い、SE は最後に Excel を目で見て Enter を押すだけです。
 
+![左：内部システムの画面、右：証跡 Excel。絞り込み → 該当行の特定とキャプチャ → ジョブログ取得 → Excel へ自動貼り付け → 該当行が黄色に → 幅の拡大 → Jenkins 行の赤枠（架空データ・模擬画面）](docs/images/gfix-recv-zoom.gif)
+
+左が内部システム（模擬）、右が証跡 Excel（模擬）。絞り込み・該当行の特定・キャプチャ・
+ジョブログの取得・貼り付け・黄色・赤枠まで、人がキーボードに触るところはありません。
+
 ![毎ジョブの 3 画面から、証跡 Excel が埋まるまで（架空データ・模擬画面）](docs/images/gfix-recv-evidence.gif)
 
 ![GIFTデータvsGFIXデータ シート：DF キャプチャと、最終行番号・「同一内容」への赤枠](docs/images/gfix-recv-evidence-sheet2.png)
@@ -118,6 +123,8 @@ screenshot and draw a red box on the received file's row, then do the same
 for the DF file comparison. That is now one command and a final glance.
 
 ![The GFIX受信結果 sheet as the tool fills it: job log pasted, yellow marks, GFIXReceive.log block, Jenkins screenshot with the red box (fictional data)](docs/images/gfix-recv-evidence-sheet1.png)
+
+![Left: the internal page, right: the evidence workbook. Filter, find the row, snap, get the job log, paste it, the target lines turn yellow, zoom on the width, the Jenkins red box (fictional data, mock pages)](docs/images/gfix-recv-zoom.gif)
 
 ![From the three internal pages to the filled workbook (fictional data, mock pages)](docs/images/gfix-recv-evidence.gif)
 
@@ -358,6 +365,8 @@ end of day →  Export-DailyPatch.ps1  → clipboard → commit from home
 ### 之后：一条命令生成证据工作簿
 
 ![工具自动填好的 GFIX受信結果 工作表：日志、黄标、Jenkins 截图上的红框（虚构数据）](docs/images/gfix-recv-evidence-sheet1.png)
+
+![左：内部系统页面，右：证据 Excel。筛选 → 定位行并截图 → 取作业日志 → 自动贴入 Excel → 目标行变黄 → 放大看宽度 → Jenkins 行红框（虚构数据、模拟页面）](docs/images/gfix-recv-zoom.gif)
 
 ![从三个内部系统页面到填好的 Excel（虚构数据、模拟页面）](docs/images/gfix-recv-evidence.gif)
 
