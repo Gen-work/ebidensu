@@ -35,12 +35,21 @@
   that fits. Wide (Japanese) characters count as two console cells when
   the workflow titles are cut to 80. `Tests\Test-Dashboard.ps1` (106
   checks, including `ebi.ps1 status` / `menu` in a child PowerShell).
-- **README: "A receive day in one screen"** -- the first ebi-dance case
-  with pictures: `docs/images/gfix-recv-status.png` and
-  `docs/images/gfix-recv-menu.gif`, recorded on PowerShell 7 in the Linux
-  CI container from a fictional worklist (`XDEM*` jobs, operator `op1`;
-  the run in the GIF is a dry run), paths drawn as on the office PC. The
-  Japanese section got a short pointer with the same picture.
+- **README rewritten around the pain point, Japanese first, then English,
+  then Chinese.** The first picture is now the evidence workbook as the
+  tool fills it (`docs/images/gfix-recv-evidence-sheet1.png`: job log one
+  line per cell, yellow marks, the GFIXReceive.log block, the Jenkins
+  screenshot with the red box on the received file's row), then a GIF from
+  the three internal pages to the filled sheets
+  (`gfix-recv-evidence.gif`) and the DF sheet (`...-sheet2.png`). All of
+  it is fictional data on mock pages (GoAnywhere list, Jenkins data/report,
+  DF window drawn in HTML); the CI container has no Excel, so the sheets
+  are HTML drawn from the output of the SAME pure functions the Excel steps
+  call (`Get-EbiHighlightEndColumn`, `Get-EbiListEntryRects`,
+  `Resolve-EbiAnchoredRect`, `Get-EbiLogBlocks`) on the shipped
+  `profiles/gfix-recv` layout. The dashboard pictures
+  (`gfix-recv-status.png`, `gfix-recv-menu.gif`, PowerShell 7, a dry run)
+  come second.
 
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 

@@ -1,61 +1,88 @@
 # VerifyTool
 
-[日本語](#日本語) | [English](#english)
+[日本語](#日本語) | [English](#english) | [中文](#中文)
 
 ---
 
 ## 日本語
 
-ファイル転送基盤（GIFT→GFIX）移行案件で、証跡（エビデンス）取得作業を自動化するCLIツールです。
+ファイル転送基盤（GIFT→GFIX）移行案件で、証跡（エビデンス）作成を自動化する
+PowerShell ツールです。対象 PC は Windows 10/11 + PowerShell 5.1 + Excel 2019
+のみ、追加インストールなし。実案件で日々使っています。
 
-### 背景
+### 毎回の手作業（Before）
 
-移行案件では、HM/MQ/Jenkinsの画面をキャプチャしてExcelに貼り付け、該当セルに赤枠を引き、進捗をCSVで管理する証跡作成作業を手作業で行っていました。1件あたり約0.3人日かかっていました。
+受信ジョブ 1 件ごとに、SE が手でやっていたこと：
 
-### 解決方法
+1. GoAnywhere「完了したジョブ」で該当行を探す → スクリーンショット
+2. Jenkins の data/report から受信ファイルを探してダウンロード
+3. DF で GIFT 側と GFIX 側のファイルを比較 → スクリーンショット
+4. 証跡 Excel にジョブログを **1 行 1 セル** で貼る → 該当行を **黄色** に塗る（幅も揃える）
+5. GFIXReceive.log から該当ブロックだけ抜き出して貼る → 黄色
+6. Jenkins のスクリーンショットを貼り、受信ファイルの行に **赤枠**
+7. DF キャプチャを貼り、最終行番号と「同一内容」に赤枠
+8. 進捗を CSV に記録、レビュー依頼
 
-PowerShellで実装しました。処理の流れは次のとおりです。
+1 件あたり約 0.3 人日。黄色の幅がずれる、赤枠が 1 行ずれる、貼り忘れ――
+レビューで戻ってくるのは、たいていこの手作業の部分でした。
 
-- 対象画面（HM/MQ/Jenkins）をキャプチャ
-- エビデンス用Excelに画像を挿入
-- 該当セルに赤枠を描画
-- 完了状態をCSVマッピングファイルに記録
+### After：1 コマンドで証跡ブックができる
+
+![自動で作られた GFIX受信結果 シート：ジョブログの貼り付け、黄色マーカー、Jenkins 画面への赤枠（架空データ）](docs/images/gfix-recv-evidence-sheet1.png)
+
+ジョブログの貼り付け、黄色マーカー（幅は文字数 ÷ 3 列で計算）、GFIXReceive.log の
+START..END 抜き出し、Jenkins 画面の挿入と受信ファイル行への赤枠――ここまでを
+ツールが行い、SE は最後に Excel を目で見て Enter を押すだけです。
+
+![毎ジョブの 3 画面から、証跡 Excel が埋まるまで（架空データ・模擬画面）](docs/images/gfix-recv-evidence.gif)
+
+![GIFTデータvsGFIXデータ シート：DF キャプチャと、最終行番号・「同一内容」への赤枠](docs/images/gfix-recv-evidence-sheet2.png)
+
+> 画像はすべて **架空データ・模擬画面** です（社内画面や実際の証跡は載せていません）。
+> CI 環境（Linux, PowerShell 7）には Excel がないため、Excel を操作する実装と
+> **同じ純粋関数**（黄色の幅 `Get-EbiHighlightEndColumn`、赤枠の位置
+> `Get-EbiListEntryRects` / `Resolve-EbiAnchoredRect`、ログの切り出し
+> `Get-EbiLogBlocks`）が出した計算結果を、そのまま HTML で描いています。
+
+### 一日の流れを一画面に（ebi status / ebi menu）
+
+受信日は 4 本のワークフロー（朝の plan、HOST ジョブごとの track、夕方の logs、
+最後の evidence）で回します。`ebi status` は作業リスト CSV を一画面にまとめ
+（1 行 1 案件、各フェーズの判定、合計、途中で止まった run、次に打つ 1 行）、
+`ebi menu`（`ebi.cmd` をダブルクリック）はフェーズを選ぶと手順書と同じ
+`ebi.ps1 run ...` を表示してそのまま実行します。
+
+![ebi status の画面](docs/images/gfix-recv-status.png)
 
 ### 結果
 
-1件あたりの作業時間が0.3人日から0.1人日未満へ短縮しました（同僚に確認した見積りによる）。
+1 件あたりの作業時間が 0.3 人日から 0.1 人日未満へ短縮しました（同僚に確認した
+見積りによる）。レビューで戻る理由だった「幅」「行ずれ」「貼り忘れ」は、計算で
+決まる部分になりました。
 
 ### 設計上の判断
 
 「動くツール」と「現場に根づくツール」は別だと考え、以下を意識しました。
 
 - **段階的な確認モード**: 最初から全自動にはせず、判定結果を都度確認できるモードを用意しました。誤検知を早期に発見できないと、利用者が結果を信用できなくなるためです。
-- **カスタマイズの余地**: 枠の位置や文言を設定ファイルで調整できるようにし、案件ごとの違いや仕様変更に対応できる構成にしました。
+- **分からないときは止まる**: 画面の文字と突き合わせて「違うページ」「該当行なし」「行数が合わない」を検知したら、推測せずに人に聞きます。監査用の証跡なので、自信のある誤りは無回答より悪い。
+- **カスタマイズの余地**: 枠の位置、黄色にする行のパターン、シート名や文言は profile（JSON）側にあり、案件ごとの違いや仕様変更に対応できる構成にしました。
 - **利用者に使ってもらうまで**: 導入前に既存の手作業と結果を突き合わせ、差分がないことを確認したうえで展開しました。
 
 ### 使い方
 
 ```powershell
+# 初代ツール（HM / MQ / Jenkins の証跡、メニュー式）
 .\VerifyTool.ps1
 .\VerifyTool.ps1 -Phase Status
+
+# ワークフローエンジン（GFIX 受信日）
+.\ebi.ps1 status -WorkDir C:\work\today      # 一画面の進捗
+.\ebi.ps1 menu                               # 入口（ebi.cmd のダブルクリックと同じ）
+.\ebi.ps1 run workflows\gfixRecv.evidence.json -WorkDir C:\work\today -Only XDEMWM05
 ```
 
-### 事例：受信日を一画面に（ebi status / ebi menu）
-
-2 件目の業務（GFIX 受信確認）は、同じリポジトリのワークフローエンジン `ebi` 上で
-4 本の JSON ワークフロー（plan / track / logs / evidence）として動いています。
-初日の現場運用で分かったのは「手順書の長いコマンドを 4 回打ち、進捗はメモ帳で
-CSV を開いて読む」という手間でした。
-
-- `ebi status`：作業リスト CSV を一画面に。1 行 1 案件、各フェーズの判定、合計、
-  途中で止まった run、次に打つ 1 行。読み取り専用。
-- `ebi menu`（`ebi.cmd` をダブルクリック）：フェーズを選ぶと、手順書と同じ
-  `ebi.ps1 run ...` を表示してそのまま実行。判定のクリア（やり直し）もここから。
-
-![ebi status の画面](docs/images/gfix-recv-status.png)
-
-画像と下の GIF は架空データで録画したものです（詳細は英語節の
-[A receive day in one screen](#a-receive-day-in-one-screen) を参照）。
+手順書：[`docs/gfix-recv/RUNBOOK.zh.md`](docs/gfix-recv/RUNBOOK.zh.md)（中国語）。
 
 ---
 
@@ -78,6 +105,30 @@ can stop and resume at any point.
 It runs on a locked-down Windows remote desktop with **PowerShell 5.1 and Excel
 2019 and nothing else installed** — no runtime, no package manager, no
 third-party library.
+
+### What the evidence looks like
+
+The second job this repository took on runs on its newer half, the
+declarative workflow engine `ebi` (`ebi.ps1`, `kernel/`, `modules/`,
+`workflows/`, `profiles/`): GFIX receive verification. Per received job the
+operator used to screenshot three internal pages, paste a job log into the
+evidence workbook one line per cell, paint the right lines yellow (at the
+right width), cut the matching block out of a batch log, paste a Jenkins
+screenshot and draw a red box on the received file's row, then do the same
+for the DF file comparison. That is now one command and a final glance.
+
+![The GFIX受信結果 sheet as the tool fills it: job log pasted, yellow marks, GFIXReceive.log block, Jenkins screenshot with the red box (fictional data)](docs/images/gfix-recv-evidence-sheet1.png)
+
+![From the three internal pages to the filled workbook (fictional data, mock pages)](docs/images/gfix-recv-evidence.gif)
+
+![The GIFTデータvsGFIXデータ sheet: the DF capture with boxes on the last line number and the 同一内容 cell](docs/images/gfix-recv-evidence-sheet2.png)
+
+*Every picture is fictional data on mock pages. The CI container has no
+Excel, so the pictures are drawn in HTML from the output of the same pure
+functions the Excel steps call: `Get-EbiHighlightEndColumn` for the yellow
+width (characters / 3 columns, measured on the delivered sample),
+`Get-EbiListEntryRects` / `Resolve-EbiAnchoredRect` for the red boxes,
+`Get-EbiLogBlocks` for the START..END cut.*
 
 ### What it looks like
 
@@ -122,39 +173,25 @@ but day to day you just run `.\VerifyTool.ps1` and answer prompts.
 
 ### A receive day in one screen
 
-The second job this repository took on runs on its newer half, the
-declarative workflow engine `ebi` (`ebi.ps1`, `kernel/`, `modules/`,
-`workflows/`, `profiles/`): GFIX receive verification, four JSON workflows
-(morning `plan`, one `track` round per HOST job, end-of-day `logs`, the
-`evidence` workbook) over one worklist CSV. After the first full office day
-the operator was typing four long run lines from the runbook and reading
-progress by opening the CSV in Notepad. Two commands replaced both habits.
+The day is four JSON workflows (morning `plan`, one `track` round per HOST
+job, end-of-day `logs`, the `evidence` workbook) over one worklist CSV.
+After the first full office day the operator was typing four long run lines
+from the runbook and reading progress by opening the CSV in Notepad.
 
 **`ebi status`** is the read-only answer: one row per deliverable, the
 verdict of every phase, totals, the runs that stopped half-way, and the one
-line to run next.
+line to run next. **`ebi menu`** (or a double-click on `ebi.cmd`) picks a
+phase, optionally one job, prints exactly the runbook line and runs it; `r`
+resumes the unfinished run, `c` blanks one verdict for a redo.
 
 ![ebi status: one row per deliverable, a verdict per phase, totals, unfinished runs, the next run line](docs/images/gfix-recv-status.png)
 
-**`ebi menu`** (or a double-click on `ebi.cmd`) is the entry point on top
-of it: pick a phase, optionally one job, and it prints and runs exactly the
-runbook line, so the runbook stays the source of truth. `r` resumes the
-unfinished run, `c` blanks one verdict for a redo instead of editing the
-CSV by hand, and a phase whose prerequisites are missing (evidence before
-logs) is shown but warned about before the workflow refuses it.
-
 ![ebi menu: pick a phase and a job, the run line is printed and started, the dashboard is redrawn after](docs/images/gfix-recv-menu.gif)
 
-Nothing on that screen is project-specific code. The phases are the
-workflows that name the profile; their order is the order of their verdict
-columns in the profile's `worklist.json`; the columns shown are declared
-there too (`dashboard.columns`). A new job gets its own dashboard by
-writing its profile and workflows, not by touching `kernel/Dashboard.ps1`.
-
-*Recorded on PowerShell 7 in a Linux container with a fictional worklist
-(`XDEM*` jobs, operator `op1`), paths drawn as on the office PC. The run in
-the GIF is a dry run: every step prints what it would do; no browser, no
-Excel. Operator guide: [`docs/gfix-recv/RUNBOOK.zh.md`](docs/gfix-recv/RUNBOOK.zh.md).*
+Nothing on that screen is project-specific code: the phases are the
+workflows that name the profile, their order is the order of their verdict
+columns in the profile's `worklist.json`, the columns shown are declared
+there too. Operator guide: [`docs/gfix-recv/RUNBOOK.zh.md`](docs/gfix-recv/RUNBOOK.zh.md).
 
 ### The pipeline
 
@@ -301,3 +338,50 @@ office PC  →  Pack-LlmContext.ps1    → clipboard → paste into an LLM sessi
 LLM        →  XML patch or git diff  → clipboard → Apply-LlmPatch.ps1 → local files
 end of day →  Export-DailyPatch.ps1  → clipboard → commit from home
 ```
+
+---
+
+## 中文
+
+一个 PowerShell 工具，自动化文件传输平台迁移（GIFT→GFIX）项目里的「证据」制作。
+目标机器只有 Windows 10/11 + PowerShell 5.1 + Excel 2019，不能装任何东西。实际项目每天在用。
+
+### 之前的重复劳动
+
+每接收一个作业，SE 要手工做：在 GoAnywhere 里找到那一行并截图；在 Jenkins 的
+文件一览里找到接收文件并下载；用 DF 比较 GIFT 侧和 GFIX 侧的文件并截图；把作业日志
+**一行一格**贴进证据 Excel，把关键行**涂黄**（宽度还得对齐）；从 GFIXReceive.log 里
+只抠出这一次传输的块再贴、再涂黄；贴 Jenkins 截图并在接收文件那一行**画红框**；贴 DF
+截图并在最后一行行号和「同一内容」上画红框；最后在 CSV 里记进度。每件约 0.3 人日，
+而评审打回来的，多半就是黄条宽度、红框错行、漏贴这些。
+
+### 之后：一条命令生成证据工作簿
+
+![工具自动填好的 GFIX受信結果 工作表：日志、黄标、Jenkins 截图上的红框（虚构数据）](docs/images/gfix-recv-evidence-sheet1.png)
+
+![从三个内部系统页面到填好的 Excel（虚构数据、模拟页面）](docs/images/gfix-recv-evidence.gif)
+
+![GIFTデータvsGFIXデータ 工作表：DF 截图，以及最后一行行号和「同一内容」上的红框](docs/images/gfix-recv-evidence-sheet2.png)
+
+> 所有图片都是**虚构数据和模拟页面**。CI 环境（Linux、PowerShell 7）没有 Excel，
+> 所以图是用 HTML 画的，但黄条宽度、红框位置、日志切块都来自操作 Excel 的实现
+> 所调用的**同一批纯函数**（`Get-EbiHighlightEndColumn`、`Get-EbiListEntryRects`、
+> `Resolve-EbiAnchoredRect`、`Get-EbiLogBlocks`）。
+
+### 一天的进度在一屏里
+
+接收日由 4 条 JSON 工作流组成（早上 plan、每个 HOST 作业一轮 track、傍晚 logs、
+最后 evidence）。`ebi status` 把作业清单 CSV 汇成一屏（一行一本、每阶段判定、合计、
+没跑完的 run、下一条该打的命令）；`ebi menu`（双击 `ebi.cmd`）选阶段后原样打印并执行
+runbook 里那行 `ebi.ps1 run ...`。
+
+![ebi status](docs/images/gfix-recv-status.png)
+
+### 结果与取舍
+
+每件从 0.3 人日降到 0.1 人日以下（同事估算）。设计上：不一上来就全自动，先有逐条确认
+的模式；页面文字对不上、找不到行、行数不符时停下来问人而不是猜（这是审计用证据，
+自信的错误比没答案更糟）；框的位置、涂黄的模式、工作表名都放在 profile（JSON）里，
+换项目改数据不改代码；上线前把工具产出和既有手工结果逐一比对过。
+
+操作手册：[`docs/gfix-recv/RUNBOOK.zh.md`](docs/gfix-recv/RUNBOOK.zh.md)。
