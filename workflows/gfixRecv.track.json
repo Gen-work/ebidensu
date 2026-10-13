@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.5.0",
+  "version": "0.8.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -73,7 +73,18 @@
         "expect": "{{item.Excel_NAME}}",
         "expectGroup": "job",
         "defaultClock": "{{item.GFIX_TIME}}",
-        "messageWithTime": "{{item.Excel_NAME}} 開始 {{item.GFIX_TIME}}: {{profile.vocabulary.messages.startConfirm}}"
+        "messageWithTime": "{{item.Excel_NAME}} ({{item.GFIX_DATE}}) 開始 {{item.GFIX_TIME}}: {{profile.vocabulary.messages.startConfirm}}"
+      }
+    },
+    {
+      "id": "sendCounts",
+      "use": "verify.record_counts",
+      "label": "Teams の「送信予定:815件、46件」 -> ファイル数(= 期待する Receive 行 / ダウンロード数)",
+      "with": {
+        "text": "{{steps.start.out.fields.counts}}",
+        "label": "{{profile.vocabulary.messages.receivedCounts}}",
+        "unit": "{{profile.vocabulary.messages.countUnit}}",
+        "joiner": "{{profile.vocabulary.messages.countJoiner}}"
       }
     },
     {
@@ -107,12 +118,24 @@
       "label": "開始時刻 -2..+13 分(GoAnywhere の行をこの時間帯で拾う)"
     },
     {
+      "id": "wide",
+      "use": "verify.time_window",
+      "label": "その外側 ±5 分: 打った時刻がずれていた時に「近くの行」を見つける範囲",
+      "with": {
+        "date": "{{item.GFIX_DATE}}",
+        "clock": "{{steps.start.out.clock}}",
+        "beforeMinutes": "{{page.nearBefore}}",
+        "afterMinutes": "{{page.nearAfter}}"
+      }
+    },
+    {
       "id": "gaText",
       "use": "browser.wait_for",
       "label": "更新ボタンで GoAnywhere を更新し、予定時刻 -2..+13 分の行が出るまで待つ",
       "with": {
         "window": "ga",
         "containsAny": "{{steps.win.out.minuteTexts}}",
+        "nearAny": "{{steps.wide.out.minuteTexts}}",
         "refreshRecipe": "{{page.refreshRecipe}}",
         "timeoutSec": "{{page.timeoutSec}}",
         "pollMs": "{{page.pollMs}}",
@@ -131,6 +154,57 @@
       }
     },
     {
+      "id": "near",
+      "use": "verify.nearest_time",
+      "label": "時間帯に行が無かった時だけ: 一番近い行の開始時刻を提案(見つかっていればそのまま)",
+      "with": {
+        "found": "{{steps.gaText.out.found}}",
+        "date": "{{item.GFIX_DATE}}",
+        "clock": "{{steps.start.out.clock}}",
+        "records": "{{steps.gaRec.out.records}}",
+        "timeField": "{{page.timeField}}",
+        "withinMinutes": "{{page.nearBefore}}"
+      }
+    },
+    {
+      "id": "nearGate",
+      "use": "human.gate",
+      "label": "提案された時刻でよいか: Enter = その時刻で続行 / s = この行を飛ばす(正しい時刻を打って再実行)",
+      "with": {
+        "code": "{{steps.near.out.code}}",
+        "askWhen": [
+          "unknown"
+        ],
+        "reason": "{{steps.near.out.reason}}",
+        "evidence": [
+          "{{steps.gaText.out.path}}"
+        ],
+        "skipFails": true
+      }
+    },
+    {
+      "id": "saveTime2",
+      "use": "table.set",
+      "when": "steps.near.out.changed == true",
+      "label": "採用した時刻を GFIX_TIME に書き戻す",
+      "with": {
+        "worklist": "wl",
+        "field": "GFIX_TIME",
+        "value": "{{steps.near.out.clock}}"
+      }
+    },
+    {
+      "id": "winAt",
+      "use": "verify.time_window",
+      "label": "確定した開始時刻の -2..+13 分",
+      "with": {
+        "date": "{{item.GFIX_DATE}}",
+        "clock": "{{steps.near.out.clock}}",
+        "beforeMinutes": "{{page.windowBefore}}",
+        "afterMinutes": "{{page.windowAfter}}"
+      }
+    },
+    {
       "id": "mine",
       "use": "verify.filter_records",
       "label": "このジョブの行(Send + Receive)",
@@ -140,30 +214,18 @@
           {
             "field": "startTime",
             "op": "within",
-            "value": "{{steps.win.out.window}}"
+            "value": "{{steps.winAt.out.window}}"
           }
         ]
       }
     },
     {
-      "id": "recv",
-      "use": "verify.filter_records",
-      "label": "Receive の行 = GFIX に着いたファイル",
+      "id": "hostStatus",
+      "use": "verify.assert_each",
+      "label": "このジョブの行に 解決済み = No があれば OPEN 側で異常終了(ステータスの赤いアイコンはテキストに出ない)",
       "with": {
         "records": "{{steps.mine.out.records}}",
-        "where": [
-          {
-            "field": "folder",
-            "op": "equals",
-            "value": "{{page.receiveFolder}}"
-          }
-        ],
-        "pluck": "key",
-        "spanFrom": "startTime",
-        "spanTo": "endTime",
-        "padBeforeSec": 2,
-        "padAfterSec": 10,
-        "expect": "{{item.FileCount}}"
+        "rules": "{{profile.rules.goAnywhereJob}}"
       }
     },
     {
@@ -179,7 +241,7 @@
         "firstRowTop": "{{page.crop.firstRowTop}}",
         "rowHeight": "{{page.crop.rowHeight}}",
         "first": "{{steps.mine.out.first}}",
-        "rows": "{{steps.mine.out.matched}}"
+        "rows": "{{steps.mine.out.extent}}"
       }
     },
     {
@@ -195,17 +257,42 @@
       }
     },
     {
+      "id": "recv",
+      "use": "verify.filter_records",
+      "when": "steps.hostStatus.out.code == ok",
+      "label": "Receive の行 = GFIX に着いたファイル",
+      "with": {
+        "records": "{{steps.mine.out.records}}",
+        "where": [
+          {
+            "field": "folder",
+            "op": "equals",
+            "value": "{{page.receiveFolder}}"
+          }
+        ],
+        "pluck": "key",
+        "spanFrom": "startTime",
+        "spanTo": "endTime",
+        "padBeforeSec": 2,
+        "padAfterSec": 10,
+        "expect": "{{item.FileCount}}",
+        "expectFallback": "{{steps.sendCounts.out.fileCount}}"
+      }
+    },
+    {
       "id": "jkDay",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.time_window",
       "label": "Jenkins の一覧に出る日付の形 (yyyy/MM/dd)",
       "with": {
         "date": "{{item.GFIX_DATE}}",
-        "clock": "{{steps.start.out.clock}}",
+        "clock": "{{steps.near.out.clock}}",
         "format": "yyyy/MM/dd"
       }
     },
     {
       "id": "jkText",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "browser.wait_for",
       "label": "Jenkins を F5、その日のファイルが見えるまで",
       "with": {
@@ -221,6 +308,7 @@
     },
     {
       "id": "jkRec",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.parse_text",
       "with": {
         "text": "{{steps.jkText.out.text}}",
@@ -229,6 +317,7 @@
     },
     {
       "id": "jkMine",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.filter_records",
       "label": "Receive の時間帯に report に置かれたファイル",
       "with": {
@@ -246,11 +335,13 @@
           }
         ],
         "pluck": "key",
-        "expect": "{{item.FileCount}}"
+        "expect": "{{item.FileCount}}",
+        "expectFallback": "{{steps.sendCounts.out.fileCount}}"
       }
     },
     {
       "id": "dl",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "file.download",
       "with": {
         "baseUrl": "{{profile.paths.jenkinsReportUrl}}",
@@ -260,7 +351,21 @@
       }
     },
     {
+      "id": "recvCounts",
+      "when": "steps.hostStatus.out.code == ok",
+      "use": "verify.record_counts",
+      "label": "届いたファイルの行数 vs Teams の件数(違えば warning、返信文には 行数(件数) で出す)",
+      "with": {
+        "text": "{{steps.start.out.fields.counts}}",
+        "files": "{{steps.dl.out.files}}",
+        "label": "{{profile.vocabulary.messages.receivedCounts}}",
+        "unit": "{{profile.vocabulary.messages.countUnit}}",
+        "joiner": "{{profile.vocabulary.messages.countJoiner}}"
+      }
+    },
+    {
       "id": "gift",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "file.list",
       "with": {
         "dir": "{{profile.paths.bix}}/DATA/GIFT/{{item.JOB}}",
@@ -270,12 +375,15 @@
           "{{profile.paths.bix}}/DATA/GIFT/{{item.Excel_NAME}}"
         ],
         "createIfMissing": true,
-        "requireFiles": true
+        "requireFiles": true,
+        "expect": "{{item.FileCount}}",
+        "expectFallback": "{{steps.sendCounts.out.fileCount}}"
       },
-      "label": "GIFT 側のファイル: DATA/GIFT/<J名>、無ければ <W名>。どちらも無ければ <J名> のフォルダを作って止まる(ファイルを入れて r)"
+      "label": "GIFT 側のファイル: DATA/GIFT/<J名>、無ければ <W名>。どちらも無ければ <J名> のフォルダを作って止まる(ファイルを入れて r)。複数ファイルのジョブは数が合わないと警告"
     },
     {
       "id": "pair",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "verify.pair_files",
       "with": {
         "left": "{{steps.gift.out.files}}",
@@ -285,6 +393,7 @@
     },
     {
       "id": "pairGate",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "human.gate",
       "with": {
         "code": "{{steps.pair.out.code}}",
@@ -300,17 +409,21 @@
     },
     {
       "id": "cmp",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "file.compare",
+      "label": "ペアごとに行比較。複数ファイルで全ペア不一致でも、各 GIFT ファイルと同内容の GFIX ファイルが一つずつあれば並べ直して比較し直す(到着順と名前順が違っただけ)",
       "with": {
-        "pairs": "{{steps.pair.out.pairs}}"
+        "pairs": "{{steps.pair.out.pairs}}",
+        "repairByContent": true
       }
     },
     {
       "id": "df",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "screen.launch_capture",
       "with": {
         "exe": "{{profile.paths.dfExe}}",
-        "argSets": "{{steps.pair.out.pairs}}",
+        "argSets": "{{steps.cmp.out.pairs}}",
         "width": "{{profile.layout.df.width}}",
         "height": "{{profile.layout.df.height}}",
         "settleMs": "{{profile.layout.df.settleMs}}",
@@ -324,6 +437,7 @@
     },
     {
       "id": "gate",
+      "when": "steps.hostStatus.out.code == ok",
       "use": "human.gate",
       "with": {
         "code": "{{steps.cmp.out.code}}",
@@ -347,17 +461,25 @@
           "key": "{{item.key}}",
           "date": "{{item.GFIX_DATE}}",
           "mmdd": "{{run.mmdd}}",
-          "start": "{{steps.start.out.clock}}",
+          "start": "{{steps.near.out.clock}}",
+          "startGiven": "{{steps.start.out.clock}}",
+          "startProposed": "{{steps.near.out.changed}}",
           "startSource": "{{steps.start.out.source}}",
           "startMessage": "{{steps.start.out.text}}",
-          "sendCount": "{{steps.start.out.fields.count}}",
-          "window": "{{steps.win.out.window}}",
+          "sendCounts": "{{steps.sendCounts.out.expected}}",
+          "receivedCountsText": "{{steps.recvCounts.out.text}}",
+          "countsMatched": "{{steps.recvCounts.out.matched}}",
+          "window": "{{steps.winAt.out.window}}",
+          "hostStatus": "{{steps.hostStatus.out.code}}",
+          "hostStatusReason": "{{steps.hostStatus.out.reason}}",
           "goAnywhereRows": "{{steps.mine.out.records}}",
           "recvJobs": "{{steps.recv.out.plucked}}",
           "span": "{{steps.recv.out.span}}",
           "jenkinsFiles": "{{steps.jkMine.out.plucked}}",
           "gfixFiles": "{{steps.dl.out.paths}}",
-          "pairs": "{{steps.pair.out.pairs}}",
+          "pairs": "{{steps.cmp.out.pairs}}",
+          "pairsAsListed": "{{steps.pair.out.pairs}}",
+          "repaired": "{{steps.cmp.out.repaired}}",
           "compare": "{{steps.cmp.out.results}}",
           "dfShots": "{{steps.df.out.shots}}",
           "goAnywhereShot": "{{steps.gaShot.out.path}}",
@@ -371,11 +493,29 @@
       "when": "steps.gate.out.code == ok",
       "with": {
         "lines": [
-          "{{profile.vocabulary.messages.feedbackOk}}"
+          "{{profile.vocabulary.messages.feedbackOk}}{{steps.recvCounts.out.suffix}}"
         ],
         "images": [
           "{{steps.gaShot.out.path}}",
           "{{steps.df.out.paths}}"
+        ],
+        "mode": "{{profile.layout.share.mode}}",
+        "where": "{{profile.layout.share.where}}",
+        "maxWidth": "{{profile.layout.share.maxWidth}}"
+      }
+    },
+    {
+      "id": "shareFail",
+      "use": "human.share",
+      "when": "steps.hostStatus.out.code == ng",
+      "label": "異常終了: 「OPEN側で異常終了でした。」+ GoAnywhere の図だけを Teams へ(ダウンロード / DF はしない)",
+      "with": {
+        "lines": [
+          "{{profile.vocabulary.messages.feedbackNg}}",
+          "{{steps.hostStatus.out.reason}}"
+        ],
+        "images": [
+          "{{steps.gaShot.out.path}}"
         ],
         "mode": "{{profile.layout.share.mode}}",
         "where": "{{profile.layout.share.where}}",
@@ -393,12 +533,22 @@
       }
     },
     {
+      "id": "checkpointFail",
+      "use": "flow.checkpoint",
+      "when": "steps.hostStatus.out.code == ng",
+      "with": {
+        "worklist": "wl",
+        "field": "track",
+        "value": "ng"
+      }
+    },
+    {
       "id": "event",
       "use": "progress.event",
       "with": {
         "action": "tracked",
         "status": "ok",
-        "message": "{{steps.gate.out.code}} {{steps.cmp.out.reason}} / teams: {{steps.share.out.action}}"
+        "message": "{{steps.gate.out.code}} {{steps.cmp.out.reason}} / host: {{steps.hostStatus.out.code}} {{steps.hostStatus.out.reason}} / teams: {{steps.share.out.action}} {{steps.shareFail.out.action}}"
       }
     }
   ],
@@ -408,7 +558,10 @@
       "use": "progress.status",
       "with": {
         "worklist": "wl",
-        "field": "track"
+        "field": "track",
+        "next": [
+          "ebi.ps1 run workflows\\gfixRecv.logs.json -WorkDir {{run.workDir}}   (当日中に! 翌日ログは bk へ移る)"
+        ]
       }
     }
   ]

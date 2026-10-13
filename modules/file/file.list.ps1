@@ -25,6 +25,8 @@ $Manifest = @{
     orderBy    = @{ type='string'; default='name'; enum=@('name', 'time') }
     countLines = @{ type='bool';   default=$false; desc='read each file and count its lines (CRLF / LF)' }
     mustExist  = @{ type='bool';   default=$true; desc='false: a missing folder lists as empty' }
+    expect     = @{ type='int';    default=-1; desc='how many files should be there (the job''s FileCount); -1 = any number. A different count is a warning (count_mismatch), not a failure: the pairing step decides' }
+    expectFallback = @{ type='string'; default=''; desc='count used when expect is -1 (the Teams message''s send count); blank or not a number = none' }
   }
   outputs    = @{
     files = @{ type='list'; desc='@{ name; path; size; modified (ISO); lines; order } in order' }
@@ -38,7 +40,16 @@ $Manifest = @{
     @{ id = 'no_files';       transient = $true  }
   )
   example    = @{ use = 'file.list'; with = @{ dir = 'DATA/GIFT/{{item.JOB}}'; glob = '*.csv'; countLines = $true } }
-  notes      = 'order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way.'
+  notes      = 'order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way. A job of several files is one folder with several files: expect says how many are wanted, so a missing second file is named here, before pairing.'
+}
+
+function FileList-Expect {
+    # PURE. Expect when 0 or more, else a numeric Fallback, else -1.
+    param([int]$Expect, [string]$Fallback)
+    if ($Expect -ge 0) { return $Expect }
+    $t = if ($null -eq $Fallback) { '' } else { $Fallback.Trim() }
+    if ($t -match '^\d+$') { return [int]$t }
+    return -1
 }
 
 function Invoke-Step {
@@ -74,5 +85,10 @@ function Invoke-Step {
     }
     if ($dir -ne [string]$tried[0]) { $Ctx.Log.Info(('listed ' + $dir + ' (not ' + $tried[0] + ')')) }
     if ($files.Count -eq 0 -and [bool]$In['requireFiles'] -and -not $Ctx['DryRun']) { return @{ ok = $false; failure = 'no_files'; message = ('no ' + $glob + ' file in ' + $dir + ' -- put the files in, then r'); files = @(); names = @(); paths = @(); total = 0; dir = $dir } }
-    return @{ ok = $true; files = $files.ToArray(); names = @($files | ForEach-Object { $_['name'] }); paths = @($files | ForEach-Object { $_['path'] }); total = $files.Count; dir = $dir }
+    $out = @{ ok = $true; files = $files.ToArray(); names = @($files | ForEach-Object { $_['name'] }); paths = @($files | ForEach-Object { $_['path'] }); total = $files.Count; dir = $dir }
+    $want = FileList-Expect -Expect ([int]$In['expect']) -Fallback ([string]$In['expectFallback'])
+    if ($want -ge 0 -and $files.Count -ne $want) {
+        $out['warnings'] = @(@{ code = 'count_mismatch'; message = ('expected ' + $want + ' ' + $glob + ' file(s) in ' + $dir + ', found ' + $files.Count + $(if ($files.Count -lt $want) { ' -- put the missing file(s) in and r on the next stop, or go on and the pairing decides' } else { '' })); data = @{ expected = $want; found = $files.Count; dir = $dir } })
+    }
+    return $out
 }

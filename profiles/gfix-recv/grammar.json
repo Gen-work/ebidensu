@@ -11,7 +11,8 @@
       "startTime",
       "endTime",
       "seconds",
-      "method"
+      "method",
+      "resolved"
     ],
     "rowWhen": {
       "field": "key",
@@ -21,7 +22,9 @@
       "^.{0,3}$",
       "^(GoAnywhere|システム名|hub\\d+|監査ログ|グローバルログ|サーチ|サービスログ|トリガログ|トリガー|ジョブログ|完了したジョブ|ファイル監査|フィルタリングする|日付範囲|プロジェクト名|詳細|更新|ui-button|表示中|©|AS2|AS4|FTP|FTPS|GoDrive|GoFast|HTTPS|PeSIT|SFTP|アンチウイルス|家|言語|ワークフロー|報告|ヘルプ)",
       "^ジョブ番号\\t"
-    ]
+    ],
+    "optionalTail": 1,
+    "_resolved_doc": "resolved = the view's 解決済み column (the operator adds it: 詳細 > columns). The status icon is not in the page text; a FAILED job reads No here, every other row blank. optionalTail 1: a page without the column still parses (resolved blank) -- pages.goAnywhere.fingerprint.ok requires the column so the check is never blind."
   },
   "jenkinsReport": {
     "parser": "regex",

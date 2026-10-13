@@ -29,6 +29,7 @@
 
    ```json
    {
+     "operator": { "owner": "厳" },
      "paths": {
        "bix": "<共享盘>\\...\\REQ-000xxxxx_GIFT廃止対応\\40.J4\\08.BIX",
        "wbs": "<共享盘>\\...\\REQ-000xxxxx_GIFT廃止対応\\00.管理\\【GIFT廃止対応】WBS.xlsx",
@@ -43,6 +44,8 @@
    ```
 
    JSON 里的 `\` 要写成 `\\`。填好真实值的版本，聊天里会直接给你。
+   `operator.owner` 是 WBS 担当列里你的名字（规则同 OwnerFilter：「厳」「厳←○○」「○○→厳」算你的）；
+   **留空 = 不按担当过滤，当天所有人的 job 都进清单**（plan 开头会提示一句）。仓库里的 `profiles/gfix-recv/operator.json` 是空的，名字只写在本机。
 
 4. 确认 `mapping.xlsx` 在 WorkDir 里，并且 O 列（GFIX実行日）和 P 列（GFIX TIME）是今天的值。
 
@@ -63,8 +66,10 @@
 ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
 ```
 
-- 只读打开 WBS，筛出：`B=受信`、`G=修正後実施`、`P` 是「厳」/「厳←○○」/「○○→厳」、`AF`（最新計画 開始）= 今天。
-  箭头规则和旧的 `OwnerFilter.ps1` 一样：「ニンヌ←厳」**不算**你的。
+- 只读打开 WBS，筛出：`B=受信`、`G=修正後実施`、`P` 是「<owner>」/「<owner>←○○」/「○○→<owner>」、`AF`（最新計画 開始）= 今天。
+  owner 来自 `ebi.local.json` 的 `operator.owner`；箭头规则和旧的 `OwnerFilter.ps1` 一样：「ニンヌ←厳」**不算**你的。owner 留空就不过滤。
+- 跑完表格下面直接印 **next:** 下一条命令（track / logs / evidence 也一样），不用翻手册。
+- 开头出现 UNFINISHED RUN 面板（以前某天没跑完的 run）：`d` = 把它们标成 abandoned、以后不再问（`run\<id>\` 文件夹还在），然后开新 run；`n` 只是这次跳过、下次还会问。
 - **作业清单只靠 WBS 就能建**：W 名 = J 名的第 5 个字母 J → W（SJDSJM40 → SJDSWM40）。
   不合这个规则的名字会照抄并给出警告（warning）。
 - mapping.xlsx 只是补充：O 列（GFIX実行日）= 今天的行，会补上 GFIX 时刻和文件数；
@@ -82,6 +87,8 @@ ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
 
 - GoAnywhere：InPrivate 窗口，「完了したジョブ」，日付範囲 Today、プロジェクト名 JDS、開始時間 ▼。
   **最大化**，显示器 1920×1080、缩放 100%。截给 Teams 的那块图是按这个尺寸量的坐标。
+  **列里加上「解決済み」**（詳細 ▼ 的列选择）：ステータス 那个红叉图标复制不进文字，但 解決済み 列在异常终了的行上是 `No`、其他行空白，
+  工具靠它判断 job 有没有在 OPEN 侧失败。没加这一列的页面会被当成「不是那个页面」停下（wrong_page），加上再 `r`。
 - Jenkins data/report：另开一个**普通窗口**（不要和 GoAnywhere 放同一个窗口的不同标签页）。工具会把它调成 1410×807。
 
 ```powershell
@@ -108,6 +115,12 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 
 1. **PASTE 面板**：Teams 里出现「ジョブ:XXXを実施します。(送信予定:n件)」时，**复制这条消息**（Ctrl+C），
    回到控制台按 Enter。**按 Enter 的时刻 = 开始时刻**（GoAnywhere 的行按「开始 −2 ～ +13 分」来找）。
+   面板上会写这一行的日期：`YJDSWM40 (2026-10-09) 開始 10:45:20` 这种是**以前某天**留下的 pending 行，不是今天的，`s` 跳过（或 `-Only` 只跑今天的）。
+   消息里的「送信予定:815件、46件」会被读成**两个文件**（件数按文件逐个列），用来核对 Receive 行数、下载数和 GIFT 文件夹里的文件数；
+   和 mapping 的 `FileCount` 不同时报 `expect_disagree`。
+   **打的时刻偏了**（比如打成 10:45 而 job 实际 10:15 跑的）：以前会一直刷到超时再问 r/s/q。现在等到超时时如果页面上有**附近**（窗口外再 ±5 分）的行，
+   会弹一个 GATE：「10:45:20 没有行；页面上最近的行 10:15:52（−29 分），Enter = 用这个时刻继续 / s = 跳过这行、打对时刻再跑」。
+   Enter 之后采用的时刻写回 `GFIX_TIME`。连附近都没有（job 真的还没出来）照旧 r 再等。
    - 这一行已经有 `GFIX_TIME`：Enter = 用表里的时刻（不需要消息）；`n` = 用现在的时刻（要先复制消息）。
    - 复制晚了：不要按 Enter，打领导预定表上的时刻，比如 `10:30`。
    - 消息是别的 job 的：面板会写出两个名字，等你复制对的那条；`s` = 先跳过这个 job（留到下次），`k` = 不用消息、时刻 = 现在。
@@ -125,7 +138,12 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 7. 自动：每一对文件启动一次 DF.exe（窗口 1133×429，一屏正好 16 行）→ Ctrl+Home 截图；
    超过 16 行的再 Ctrl+End 截一张 → 关掉 DF。
 8. **GATE**：内容一致就直接过；不一致或不确定会问你（`Enter` = ok / `n` = ng / `s` = 先跳过）。
-9. **SHARE 面板**：文字「OPEN側で確認できました。前後一致です。」+ GoAnywhere 图 + DF 图已经放进剪贴板
+   **OPEN 侧异常终了**（10/13 的 JJDSWM41：GoAnywhere 的 Send 行红叉、解決済み = No）：读完这个 job 的行、截完 GoAnywhere 的图就**停在这里**——
+   不下载、不比较、不开 DF；SHARE 面板的文字变成「OPEN側で異常終了でした。」+ 哪一行 No，只带 GoAnywhere 一张图，贴到 Teams 让他们知道；
+   作业清单 `track = ng`。之后 logs / evidence 碰到这行会自己跳过（「track judged this job ng: nothing to collect」），HOST 侧重跑后把 `track` 清空再跑一次就行。
+9. **SHARE 面板**：文字「OPEN側で確認できました。前後一致です。 (受信データ:815件、46件)」+ GoAnywhere 图 + DF 图已经放进剪贴板。
+   括号里是 Teams 消息里的件数，逐文件和下载文件的行数核过（允许多 1 行表头、0 件 = 空文件或 1 个空行）；对不上的文件写成 `行数件(消息件数件)`，
+   例 `0件(2件)、1件(4件)`，并在末尾 warnings 里报 `count_disagree`——这不是判定，判定还是逐行比较。没有消息（k 跳过）就不带括号。
    → 点 Teams 的输入框 → **Ctrl+V** → 看一眼 → 发送 → 回到控制台按 Enter。
    多个文件时，DF 图会按顺序全部带上。
 10. 记录：`capture\gfix\<W名>\track.json`（后面 logs / evidence 用），作业清单 `track = ok`。
@@ -147,6 +165,35 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 { "layout": { "share": { "mode": "sequence" } },
   "pages": { "goAnywhere": { "crop": { "top": 140 } } } }
 ```
+
+### 2b. 一个 job 两个以上文件（FileCount = 2；10/13 第一次：JJDSJM10 ×2、JJDSJM51 ×2）
+
+mapping.xlsx 里同一个 job 有几行，作业清单的 `FileCount` 就是几（plan 合并成一行）。整条链都是按「一个 job、n 个文件」写的，
+但 10/13 之前没有真跑过 n ≥ 2，这次要盯的地方：
+
+- **开始**：Teams 消息里的「送信予定:n件」也会读出来。它和 `FileCount` 不一致时出警告 `expect_disagree`（以 `FileCount` 为准）；
+  `FileCount` 是 `-1`（mapping 里没这一行）时就用消息里的 n 来核对。
+- **GoAnywhere**：要等到这个 job 的 **2 行 Receive** 都出现（少一行是警告 `count_mismatch`，不是错误；第二行还没出来就 `r` 再等）。
+  截图从这个 job 的第一行截到最后一行（中间夹着别的 job 的行也一起带上），不再只数「匹配到的行数」。
+- **Jenkins / 下载**：Receive 时间段里的 `F…csv` 应该也是 2 个，全部下载到 `DATA\GFIX\<W名>\`。
+- **GIFT 侧**：`DATA\GIFT\<J名>\` 里要放 **2 个** 文件。少了会先警告「expected 2, found 1」，接着配对那一步会停下来问（1 左 / 2 右配不上）：
+  把缺的文件放进去，`r`。
+- **配对**：行数相同 + 到达顺序。GIFT 侧的「到达顺序」其实是**文件名顺序**（ALOC9002 → ALOC9004），GFIX 侧是 `F+时刻` 的顺序。
+  两个文件行数一样、而 HOST 发送的顺序和文件名顺序不同时，两对都会比出「不一致」——这不是数据问题，是配错了对。
+  现在 `file.compare` 会在这种情况下**按内容重配**：每个 GIFT 文件恰好能找到一个内容完全相同的 GFIX 文件、而且不重复，才重配并重新比较；
+  结果 ok，但会在运行末尾的 warnings 里列出「re-paired … by content」，`track.json` 里 `repaired` = 重配的对数、
+  `pairsAsListed` = 原来的配法。找不到唯一匹配（比如两个 GIFT 文件内容一样、或者真有一个文件不一致）就**不动**，照旧 ng 停下来问你。
+- **DF**：每一对各开一次 DF、各截一张（>16 行再一张），窗口标题要同时含两边的文件名才截。Teams 的粘贴里 DF 图按配对顺序全部带上。
+- **logs**：2 个 Receive job 号各下载一份 job log → `log\GFIX受信ログ\<号码>.log` ×2；两份里各读出一个转送文件名（带微秒时刻，不会重名）。
+- **evidence**：
+  - `GFIX受信ログ` 下面两份 job log **连着贴、中间不空行**（样本里就是这样）；黄色标记每份各一组。
+  - `GFIXReceive.log` 下面两个转送文件的 START…END 块按日志顺序连着贴。两个转送**同时**跑时日志是交错的
+    （START A、START B、END A、END B——10/13 的 JJDSWM10 就是）：每块从自己的 START 切到自己的 END，重叠部分只写一次，
+    末尾 warnings 里是 `block_interleaved`（信息），不再是 `block_incomplete`。
+  - Jenkins 截图：两个文件各一个红框；两行紧挨着时合成一个框（和你手工画的一样）。
+  - `GIFTデータvsGFIXデータ`：DF 图按配对顺序往下排，**每对之间空一行**，每对的最后一张图上画「最后一行行号」和「同一内容」两个框。
+    这一条是推断（样本里没有多文件的这张表），第一本做完请对一眼。
+  - B3 = 送信データ!A3 是 IF 名（JJPCRS12），一本一个，两个文件也一样——10/13 的 JJDSWM10 实物确认过，不用补。
 
 ---
 
@@ -178,6 +225,9 @@ ebi.ps1 run workflows\gfixRecv.evidence.json -WorkDir $W -Only LJDSWM40
 
 **先拿一本复制件试**（把 `paths.bix` 临时指向一个本地复制文件夹）。插图这一步不可重复执行（not idempotent），
 跑两次会插两遍。
+
+工作簿被别人打开着时，`open` 会失败并写出**是谁**（读 Excel 放在旁边的 `~$J4検証資料…xlsx` 锁文件里的用户名）：
+「J4検証資料(...)_JJDSWM10.xlsx opened read-only -- JP0xxxxx has it open. Ask them to close it, then r」。锁文件读不到名字时照旧只说 read-only。
 
 GFIX受信結果（按样本 QJDSWM39 的版式）：
 
@@ -217,7 +267,11 @@ GIFTデータvsGFIXデータ：
 | 假设 | 依据 | 改哪里 |
 |---|---|---|
 | GIFT 侧文件夹 = J 名（RJDSJM40），GFIX 侧 = W 名（RJDSWM40） | 你的描述 | workflow 里的 `DATA/GIFT/{{item.JOB}}` |
-| 一个 job 的文件数 = mapping.xlsx 里这个 job 的行数 | mapping 里 JJDSJM51 有 2 行 | 不一致只是警告（warning） |
+| 一个 job 的文件数 = mapping.xlsx 里这个 job 的行数（Teams 消息的「送信予定:n件」做交叉核对） | mapping 里 JJDSJM10、JJDSJM51 各 2 行 | 不一致只是警告（warning）；两边都知道且不同时报 `expect_disagree` |
+| 两个文件行数相同、配错对时，按内容重配不算猜 | 「前後一致」= 内容逐行相同；DF 标题里有两边文件名，证据自描述 | 不想要就把 track 里 `cmp` 的 `repairByContent` 改成 false |
+| 多文件的 GIFTデータvsGFIXデータ：每对之间空一行，B3 只写一个 IF 名 | 10/13 JJDSWM10 实物：4 张 DF 图 + 2 条波浪线、B3 = JJPCRS12，通过 | `excel.stack_plan` 的 `gapRows` |
+| 打错的开始时刻：页面上最近的行就是这个 job | 10/13 打 10:45 实为 10:15；gate 让你确认，不自动采用 | `pages.goAnywhere.nearBefore/nearAfter`（±5 分之外的提议会标「farther」） |
+| Teams 消息的件数 = 每文件一个数，文件行数 = 件数或件数+1（表头），0 件 = 空文件或一个空行 | 10/13「815件、46件」对两份文件 | `verify.record_counts` 的 `headerLines` |
 | 「今天的」= WBS 的 AF 列（最新計画 開始） | 修正後実施 那行 AF=AG | `gfixRecv.plan.json` 的 columns |
 | GoAnywhere 的行按开始时间从新到旧排 | p3 的 ▼ | 不是的话截图会多带别的行（会出 warning） |
 | Jenkins 的文件时间 = 落盘时间，落在 Receive 开始 −2 秒 ～ 结束 +10 秒之间 | 1008 的实际数据（13:45:24–27 → 13:45:27） | `padBeforeSec` / `padAfterSec` |

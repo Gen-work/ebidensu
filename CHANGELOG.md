@@ -1,3 +1,123 @@
+## 2026-10-13 - gfix-recv: the first two-file day's feedback (v2.24.0)
+
+The old build (6c28e94) ran the whole 10/13 day, two-file jobs included
+(JJDSWM10: 2 Receive rows, 2 downloads, 2 pairs, 4 DF pictures, 2 job
+logs). The operator's seven findings, each with a test:
+
+### Added
+- **`verify.owner_pattern` + `profiles/<p>/operator.json`**: the plan's
+  owner filter is a setting, not a regex in the workflow. `operator.owner`
+  (set per machine in `ebi.local.json`) becomes the WBS owner-cell regex
+  (name / name<-other / other->name, the OwnerFilter rule); EMPTY = no
+  filter, every owner's rows of the day, said out loud at the start.
+  `gfixRecv.plan` 0.3.0. (Finding 1.)
+- **A start time that is off no longer polls to the timeout twice.**
+  `browser.wait_for` takes `nearAny` (the minutes of a wider window) and
+  reports `found`: when the deadline passes without the job's window but a
+  nearby minute is on the page, it returns instead of failing;
+  `verify.nearest_time` (new, pure) proposes the nearest row's start time
+  with its offset, and a `human.gate` asks (Enter = go on with it and write
+  it back to `GFIX_TIME`, s = skip the item -- `human.gate` gains
+  `skipFails`, so s really leaves the item). A page with no nearby row still
+  times out as before (r = read again). `pages.goAnywhere.nearBefore /
+  nearAfter` (7 / 18 min = the window +-5). (Finding 2.)
+- **`excel.open` names who holds the workbook**: Excel's `~$<name>.xlsx`
+  owner file next to a workbook opened read-only is read for the user name
+  (UTF-16, else ANSI) and the failure says "JP0xxxxx has it open; ask them
+  to close it, then r". (Finding 3.)
+- **`d` at the UNFINISHED RUN prompt** forgets the listed runs
+  (`Set-EbiRunsAbandoned`: run.json finished + abandoned, the folder kept)
+  so runs from other days stop being offered every morning. (Finding 4.)
+- **`progress.status` prints `next:`** -- each of the four workflows ends
+  with the command to run next (track after plan, logs after track with
+  the same-day reminder, evidence after logs). (Finding 5.)
+- **`verify.record_counts`**: the start message's per-file counts
+  (`送信予定:815件、46件`, `startPattern` group `counts`) give the number of
+  files to expect (`expectFallback` for the Receive rows, the Jenkins
+  files and the GIFT folder -- before, the first number, 815, would have
+  been taken for a file count) and, once the files are downloaded, are held
+  against each file's line count (equal, or one header line more, or an
+  empty transfer as an empty file / one empty line). The Teams reply now
+  ends with ` (受信データ:815件、46件)`; a file that disagrees shows
+  `lines件(count件)` (`0件(2件)、1件(4件)`) and the run warns
+  `count_disagree`. track.json keeps `sendCounts` / `receivedCountsText` /
+  `countsMatched`. (Finding 7.)
+
+- **A job that failed on the OPEN side stops the track at once and says
+  so** (10/13 JJDSWM41: GoAnywhere showed its Send row with a red status
+  icon, and the HOST team was told by hand). The icon is not in the page
+  text, so the operator adds the view's 解決済み (resolved) column, which
+  reads `No` on a failed row and blank elsewhere: the grammar gains a
+  `resolved` field (`optionalTail` 1 in the delimited parser, so pages and
+  archives without the column still parse), the page fingerprint requires
+  the column (never blind), and the new `verify.assert_each` runs the rule
+  table `rules.goAnywhereJob` over the job's rows: any `No` is `ng`. Then
+  the Jenkins read, download, compare and DF steps are skipped, the Teams
+  reply is 「OPEN側で異常終了でした。」+ the row + the GoAnywhere picture
+  only, and the row is checkpointed `track = ng`. `logs` / `evidence` open
+  with the new `flow.require` (a value that is not what the item needs ->
+  `not_met` -> the item is skipped with one line) so a failed job is
+  passed over instead of failing step by step. gfixRecv.track 0.8.0, logs
+  / evidence 0.3.0.
+
+### Fixed
+- **Two transfers logged at the same time** (JJDSWM10: START A, START B,
+  END A, END B) cut block A at START B (`block_incomplete`) and left END A
+  inside block B. `Get-EbiLogBlocks` runs each block to its OWN END past
+  other STARTs (a START with no END still closes before the next START);
+  `file.extract_blocks` writes overlapping blocks once as one span in log
+  order and warns `block_interleaved` instead. The sheet content for
+  10/13 is unchanged (the span was already contiguous); the flags are now
+  right. (Finding 6.)
+- The PASTE panel shows the row's date (`YJDSWM40 (2026-10-09) 開始
+  10:45:20`), so a pending row left from another day is recognisable.
+  `excel.insert_pictures`' `box_not_placed` says a 0-line listing has no
+  last line to box (the 0-byte transfer case). `gfixRecv.track` 0.7.0.
+- Closed from the 10/13 workbooks: the compare sheet's B3 is one IF name
+  per workbook (JJPCRS12) for two files too, and the DF stack (picture,
+  wave, picture per pair, one blank row between) matches; the TODO card is
+  dropped, the runbook says so.
+
+## 2026-10-13 - gfix-recv: a job of several files, checked before the first FileCount = 2 day (v2.23.2)
+
+The 10/13 receive day is the first with two-file jobs (JJDSJM10 x2, JJDSJM51
+x2 in mapping.xlsx). The chain was written for n files per job but had only
+ever run with one; these are the places a second file would have surprised
+the operator, each with a unit test on a two-file fixture.
+
+### Fixed
+- **The GoAnywhere screenshot could stop short of a two-file job's rows.**
+  `screen.row_region` was given `matched` (how many rows this job has) from
+  `first`; a row of another job between the first Receive and the second
+  pushed the last one out of the picture. `verify.filter_records` now also
+  reports `last` and `extent` (first..last, other rows included) and the
+  track captures `extent` rows.
+- **Two files of equal length paired in the wrong order read as two
+  mismatches.** The GIFT side is listed by file name, the GFIX side by
+  arrival (`F` + time); when the HOST sent them in the other order every
+  pair differed although every file arrived intact, and the operator was
+  asked to judge two DF pictures full of differences. `file.compare` takes
+  `repairByContent`: when pairs differ and each differing GIFT file has
+  exactly ONE identical GFIX file among the differing ones (no file claimed
+  twice), the pairs are re-wired and compared again; the result is ok with
+  a `repaired_by_content` warning in the run summary, the moves in the
+  reason, and `repaired` / `pairs` (with `repairedFrom`) in the outputs.
+  Two identical GIFT files, or a file that matches nothing, are never
+  re-paired (that would be a guess): the ng stands and the gate asks as
+  before. The track's DF step and track.json now take the pairs from
+  `file.compare` (`pairsAsListed` keeps the original pairing).
+- **The Teams message's send count was read and then ignored.**
+  `verify.filter_records` and `file.list` take `expectFallback`: the
+  message's `送信予定:n件` stands in for a worklist row whose `FileCount` is
+  -1 (no mapping.xlsx row), and when both are known and differ an
+  `expect_disagree` warning says so (`FileCount` wins). `file.list` gains
+  `expect`: a GIFT folder with one file of two is named right there
+  (`count_mismatch`, a warning -- the pairing step still decides).
+- `gfixRecv.track` 0.6.0 wires the three; `RUNBOOK.zh.md` section 2b
+  walks a two-file job through plan / track / logs / evidence and marks the
+  one thing still unknown (the compare sheet's B3 holds one IF name; a
+  送信データ with two is adjusted by hand until a sample shows the layout).
+
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed

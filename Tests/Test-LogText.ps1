@@ -63,6 +63,14 @@ Assert-Equal 1 $dang.Count 'blocks: a START without END is still returned'
 Assert-True (-not [bool]$dang[0]['complete']) 'blocks: ... flagged incomplete'
 $miss = Get-EbiLogBlocks -Lines $lines -StartPattern $sp -EndPattern $ep -Keys @('NOPE') -AfterEnd 1
 Assert-Equal 'NOPE' (@($miss['missing']) -join ',') 'blocks: a key with no block is reported missing'
+# interleaved transfers (10-13): START A, START B, END A, END B -- each block runs to ITS end
+$il = @('X START A', 'a1', 'X START B', 'b1', 'X END A', 'd1', 'b2', 'X END B', 'd2', 'X START D', 'dangling', 'X START E', 'X END E', 'd3')
+$ilb = Get-EbiLogBlocks -Lines $il -StartPattern $sp -EndPattern $ep -AfterEnd 1
+Assert-Equal 'A,B,D,E' (@($ilb['blocks'] | ForEach-Object { $_['key'] }) -join ',') 'blocks: a START inside another block still opens its own block'
+Assert-Equal '0-5|2-8' (@($ilb['blocks'] | Select-Object -First 2 | ForEach-Object { '' + $_['start'] + '-' + $_['end'] }) -join '|') 'blocks: A = START A..END A + date (past START B), B = START B..END B + date (overlapping)'
+Assert-True ([bool]$ilb['blocks'][0]['complete'] -and [bool]$ilb['blocks'][1]['complete']) 'blocks: both interleaved blocks are complete'
+$dd = @($ilb['blocks'] | Where-Object { $_['key'] -eq 'D' })[0]
+Assert-True ((-not [bool]$dd['complete']) -and $dd['end'] -eq 10) 'blocks: a START with no END still closes before the next START'
 
 # ---------------------------------------------------------------- line hits
 $hits = @(Find-EbiLineHits -Lines $blk['lines'] -Patterns @('FileGIFTGetBLBean\.execute\(\) fileName', 'file stored'))

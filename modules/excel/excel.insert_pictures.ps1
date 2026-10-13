@@ -123,7 +123,7 @@ function Invoke-Step {
             foreach ($spec in @($e['rects'])) {
                 if (-not ($spec -is [System.Collections.IDictionary])) { continue }
                 $ir = ExcelInsertPictures-ImageRect -Spec $spec -Path $e['path'] -W $iw -H $ih
-                if ($null -eq $ir) { [void]$warn.Add(@{ code = 'box_not_placed'; message = ('no ink found for a box on ' + $e['path']) }); continue }
+                if ($null -eq $ir) { [void]$warn.Add(@{ code = 'box_not_placed'; message = ('no ink found for a box on ' + $e['path'] + ' (a listing with no lines has no last line to box -- expected for a 0-byte transfer)') }); continue }
                 $sr = ConvertTo-EbiSheetRect -PicLeft $pl -PicTop $ptop -PicWidth $pw -PicHeight $ph -ImageWidth $iw -ImageHeight $ih -Rect $ir
                 $k++
                 $nm = if ($tag -ne '') { ('verifyMark_{0}_{1}_{2}' -f $tag, $n, $k) } else { '' }

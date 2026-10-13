@@ -41,7 +41,29 @@ $Manifest = @{
     @{ id = 'write_failed';   transient = $true  }
   )
   example    = @{ use = 'file.extract_blocks'; with = @{ paths = @('log/GFIXReceive/{{run.mmdd}}.log'); blockKeys = '{{steps.names.out.plucked}}'; markers = @('file stored'); saveTo = 'capture/gfix/{{item.keySafe}}.receive.txt' } }
-  notes      = 'not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete).'
+  notes      = 'not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete). Two transfers logged at the same time interleave (START A, START B, END A, END B): their blocks overlap and are written ONCE as one span in log order (block_interleaved), never cut at the other START.'
+}
+
+function FileExtractBlocks-Spans {
+    <#
+      PURE. Blocks of ONE log (start / end line indexes) -> merged spans
+      @{ start; end; keys } in log order: ranges that overlap or touch
+      become one span, so interleaved transfers are written once.
+    #>
+    param($Blocks)
+    $sorted = @(@($Blocks) | Sort-Object -Property @{ Expression = { [int]$_['start'] } }, @{ Expression = { [int]$_['end'] } })
+    $spans = New-Object System.Collections.ArrayList
+    foreach ($b in $sorted) {
+        $st = [int]$b['start']; $en = [int]$b['end']
+        if ($spans.Count -gt 0 -and $st -le ([int]$spans[$spans.Count - 1]['end'] + 1)) {
+            $last = $spans[$spans.Count - 1]
+            if ($en -gt [int]$last['end']) { $last['end'] = $en }
+            $last['keys'] = @(@($last['keys']) + @([string]$b['key']))
+            continue
+        }
+        [void]$spans.Add(@{ start = $st; end = $en; keys = @([string]$b['key']) })
+    }
+    return $spans.ToArray()
 }
 
 function FileExtractBlocks-Decode {
@@ -65,9 +87,12 @@ function Invoke-Step {
     $found = New-Object System.Collections.ArrayList
     $warn = New-Object System.Collections.ArrayList
     $seen = @{}
+    $linesOf = @{}
     foreach ($s in $present) {
         $text = FileExtractBlocks-Decode -Bytes ([System.IO.File]::ReadAllBytes($s)) -Encoding ([string]$In['encoding'])
-        $r = Get-EbiLogBlocks -Lines @(Get-EbiTextLines -Text $text) -StartPattern ([string]$In['startPattern']) -EndPattern ([string]$In['endPattern']) -Keys $keys -AfterEnd ([int]$In['afterEnd'])
+        $srcLines = @(Get-EbiTextLines -Text $text)
+        $linesOf[$s] = $srcLines
+        $r = Get-EbiLogBlocks -Lines $srcLines -StartPattern ([string]$In['startPattern']) -EndPattern ([string]$In['endPattern']) -Keys $keys -AfterEnd ([int]$In['afterEnd'])
         foreach ($b in @($r['blocks'])) {
             if ($seen.Contains([string]$b['key'])) { [void]$warn.Add(@{ code = 'block_repeated'; message = ('key ' + $b['key'] + ' also has a block in ' + $s + ' (kept the first)') }); continue }
             $seen[[string]$b['key']] = $true
@@ -82,8 +107,18 @@ function Invoke-Step {
     $info = New-Object System.Collections.ArrayList
     foreach ($b in $found) {
         if (-not [bool]$b['complete']) { [void]$warn.Add(@{ code = 'block_incomplete'; message = ('block ' + $b['key'] + ' has no END line') }) }
-        foreach ($l in @($b['lines'])) { [void]$all.Add([string]$l) }
-        [void]$info.Add(@{ key = [string]$b['key']; source = [string]$b['source']; complete = [bool]$b['complete']; lines = @($b['lines']).Count })
+        [void]$info.Add(@{ key = [string]$b['key']; source = [string]$b['source']; complete = [bool]$b['complete']; lines = @($b['lines']).Count; start = [int]$b['start']; end = [int]$b['end'] })
+    }
+    # write each log's blocks as merged spans, in log order: overlapping
+    # (interleaved) blocks come out once
+    foreach ($s in $present) {
+        $mine = @($found | Where-Object { [string]$_['source'] -eq $s })
+        if ($mine.Count -eq 0) { continue }
+        foreach ($sp in @(FileExtractBlocks-Spans -Blocks $mine)) {
+            if (@($sp['keys']).Count -gt 1) { [void]$warn.Add(@{ code = 'block_interleaved'; message = ('blocks ' + (@($sp['keys']) -join ' / ') + ' overlap in ' + (Split-Path $s -Leaf) + ' (transfers logged at the same time): written once as lines ' + ([int]$sp['start'] + 1) + '..' + ([int]$sp['end'] + 1)) }) }
+            $src = $linesOf[$s]
+            for ($li = [int]$sp['start']; $li -le [int]$sp['end']; $li++) { [void]$all.Add([string]$src[$li]) }
+        }
     }
     $lines = [string[]]$all.ToArray()
     $marks = @(foreach ($h in @(Find-EbiLineHits -Lines $lines -Patterns @(@($In['markers']) | ForEach-Object { [string]$_ }))) { @{ line = ([int]$h['index'] + 1); pattern = [int]$h['pattern']; text = [string]$h['text'] } })

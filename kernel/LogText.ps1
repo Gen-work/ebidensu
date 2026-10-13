@@ -167,8 +167,12 @@ function Get-EbiLogBlocks {
         Keys: keep only blocks whose key is one of these (empty = all).
         AfterEnd: lines after the END line that still belong to the block
           (the date stamp the shell prints after END).
-      A START with no END before the next START (or the end of the log)
-      closes there and is flagged complete=$false -- reported, not dropped.
+      Two transfers can run at once, so blocks INTERLEAVE (START A, START B,
+      END A, END B -- 2026-10-13 JJDSWM10): a block runs from its START to
+      ITS OWN END, past any other START in between, and overlaps the other
+      block (the caller merges overlapping ranges when it writes them out).
+      A START whose END never comes closes before the next START (or at the
+      end of the log) and is flagged complete=$false -- reported, not dropped.
       Returns @{ blocks = @( @{ key; start; end; complete; lines } ...);
       missing = keys asked for but not found } (start/end are 0-based).
     #>
@@ -186,24 +190,27 @@ function Get-EbiLogBlocks {
         $key = $m.Groups['key'].Value
         $startAt = $i
         $endAt = -1
+        $nextStart = -1
         $j = $i + 1
         while ($j -lt $n) {
             $me = $rxE.Match([string]$Lines[$j])
             if ($me.Success -and $me.Groups['key'].Value -eq $key) { $endAt = $j; break }
-            if ($rxS.Match([string]$Lines[$j]).Success) { break }
+            if ($nextStart -lt 0 -and $rxS.Match([string]$Lines[$j]).Success) { $nextStart = $j }
             $j++
         }
         $complete = ($endAt -ge 0)
         if ($complete) {
             $last = [Math]::Min($n - 1, $endAt + [Math]::Max(0, $AfterEnd))
         } else {
-            $last = $j - 1
+            $last = $(if ($nextStart -ge 0) { $nextStart - 1 } else { $n - 1 })
         }
         if ($want.Count -eq 0 -or $want.Contains($key)) {
             $slice = @($Lines[$startAt..$last])
             [void]$blocks.Add(@{ key = $key; start = $startAt; end = $last; complete = $complete; lines = $slice })
         }
-        $i = $last + 1
+        # the next block starts at the next START line, which may sit INSIDE
+        # this block (interleaved transfers) -- never skip to this block's end
+        $i = $startAt + 1
     }
     $found = @{}
     foreach ($b in $blocks) { $found[[string]$b['key']] = $true }
