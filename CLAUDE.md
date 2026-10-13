@@ -188,17 +188,20 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         for `ebi profile check/new/diff`), GrammarTune.ps1
                         (`ebi grammar tune`), Mask.ps1 (mask-lite rules;
                         `ebi mask check`, run first by Tests\Run-Tests.ps1).
+                        Dashboard.ps1 (`ebi status` / `ebi menu`: phases = the
+                        workflows naming the profile, in worklist.json verdict-
+                        column order; the menu runs ebi.ps1 in a CHILD PowerShell).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
                         gfixRecv.*.json: GFIX receive day (docs/gfix-recv/RUNBOOK.zh.md).
 ebi.ps1                 ebi-dance CLI entry (P1-10, P2): help [<step>] / lint /
-                        explain / dryrun / run (-Resume [-RunId], -Only,
-                        -Operator, -Limit, -Var k=v, -Profile, -TimeWindow
-                        "from..to") / doctor / catalog / profile check|new|
-                        diff / mask check / grammar tune. Exit 0 ok, 1
-                        failed, 2 usage, 3 cancelled.
-                        Has param(): call via -File or &, never dot-source.
+                        explain / dryrun / run (-Resume [-RunId], -Only, -Operator,
+                        -Limit, -Var k=v, -Profile, -TimeWindow "from..to") /
+                        doctor / catalog / profile check|new|diff / mask check /
+                        grammar tune / status (day dashboard) / menu (entry point;
+                        ebi.cmd double-clicks into it). Exit 0 ok, 1 failed,
+                        2 usage, 3 cancelled. Has param(): -File or &, never dot-source.
 profiles/               per-project data: page bindings, decision rules, schemas.
                         host-open/ (P2-01/P2-04): the current work as data --
                         vocabulary / pages (5 pages by page name) / grammar +
@@ -671,7 +674,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
 `Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
 `Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`, `Rules.ps1`, `ProfileCheck.ps1`,
-`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`, `Dashboard.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`, `StepDryRun.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.
@@ -848,9 +851,8 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 
 ## Known issues / open points
 
-- **Not yet run on Windows/Excel**: this refactor was authored in a Linux cloud
-  env without PowerShell or Excel. Run `Tests\Run-Tests.ps1`, then smoke-test
-  ReplaceGift/Gfix/Df and DfSnap on a copy before trusting them in production.
+- **Cloud-authored changes are static-checked only**: run `Tests\Run-Tests.ps1`
+  on Windows, then smoke-test the touched phase on a copy before production.
 - **Align full branching** needs two domain facts: which FROM_sys/TO_sys literals
   mean "Host" (set `Align.HostSystemTypes` in VerifyConfig), and confirmation of
   the per-migration-type sheet sets in `AlignCompare.ps1`. Until then Align uses
@@ -858,8 +860,6 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
 - **Align recv sheets are never synced** — recv sheets hold operator-captured evidence;
   only the host-team-managed send sheets are fetched from J4.
 - **Align -Apply** syncs values + formats (Range.Copy) and is experimental.
-- JenkinsSnap.ps1 matches the known-good repo logic (real Common.ps1 helpers); the
-  earlier `Get-EdgeHwnd`/`Capture-Window` phantom-function risk is resolved.
 
 ## TODOs
 

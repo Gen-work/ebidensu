@@ -10,6 +10,13 @@
 #    ebi.ps1 doctor                            PS version, Excel COM, Edge, encoding
 #    ebi.ps1 catalog                           regenerate docs/ebi-dance/CATALOG.md + catalog.json
 #    ebi.ps1 profile check|new|diff ...        PROFILE-SCHEMA 10 (P2-09)
+#    ebi.ps1 status  [-Profile <name>]         the day dashboard: one row per
+#                                              worklist key, the verdict of every
+#                                              phase, totals, unfinished runs, next
+#    ebi.ps1 menu    [-Profile <name>]         the entry point: dashboard + pick a
+#                                              phase / resume / clear a verdict /
+#                                              doctor; runs the printed run line
+#                                              (ebi.cmd double-clicks into it)
 #
 #  run / dryrun options:
 #    -WorkDir <dir>        default: the current directory
@@ -73,6 +80,8 @@ function Show-EbiUsage {
     Write-Host '  ebi.ps1 profile diff  <a> <b>      what still differs between two profiles'
     Write-Host '  ebi.ps1 mask check [<file|dir>]    sensitive-text gate over profiles/**/fixtures, profiles JSON, workflows'
     Write-Host '  ebi.ps1 grammar tune <text.txt> -Profile <name> -Var page=<page>   interactive parser debugger; s saves grammar + fixture'
+    Write-Host '  ebi.ps1 status  [-Profile <name>]  the day dashboard (read-only): rows, verdicts, totals, unfinished runs, next'
+    Write-Host '  ebi.ps1 menu    [-Profile <name>]  the entry point: dashboard + pick a phase / resume / clear a verdict / doctor'
     Write-Host '  common: -WorkDir <dir> (default .)  -Profile <name|dir> (default: the workflow''s "profile")'
     Write-Host ''
 }
@@ -235,6 +244,28 @@ if ($cmd -eq 'mask') {
     foreach ($l in @(Format-EbiMaskReport -Result $res -RepoRoot $PSScriptRoot)) { Write-Host $l -ForegroundColor $(if ($l -like '*[[]MASK]*') { 'Red' } elseif ($res['ok']) { 'Green' } else { 'Red' }) }
     if ($res['ok']) { exit 0 }
     exit 1
+}
+
+if ($cmd -eq 'status' -or $cmd -eq 'menu') {
+    . (Join-Path (Join-Path $PSScriptRoot 'kernel') 'Dashboard.ps1')
+    # The menu remembers the last WorkDir / profile (.ebi/menu.json next to
+    # ebi.ps1, ignored by git), so a double-click on ebi.cmd asks nothing.
+    $remembered = Read-EbiMenuState -ToolDir $PSScriptRoot
+    $wd = if (-not [string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir } elseif ($cmd -eq 'menu' -and [string]$remembered['workDir'] -ne '' -and (Test-Path -LiteralPath $remembered['workDir'])) { [string]$remembered['workDir'] } else { (Get-Location).ProviderPath }
+    if (-not (Test-Path -LiteralPath $wd -PathType Container)) { Write-Host ('[ERROR] work dir not found: ' + $wd) -ForegroundColor Red; exit 2 }
+    $wd = (Resolve-Path -LiteralPath $wd).ProviderPath
+    $pn = if (-not [string]::IsNullOrWhiteSpace($Profile)) { $Profile } elseif ($cmd -eq 'menu') { [string]$remembered['profile'] } else { '' }
+    if ($cmd -eq 'status') {
+        $d = Read-EbiDashboard -ToolDir $PSScriptRoot -WorkDir $wd -ProfileName $pn -Operator $Operator
+        if (-not $d['ok']) { Write-Host ('[ERROR] ' + $d['message']) -ForegroundColor Red; exit 2 }
+        Write-Host ''
+        Write-EbiDashboardLines -Lines $d['lines']
+        Write-Host ''
+        exit 0
+    }
+    $m = Invoke-EbiMenu -ToolDir $PSScriptRoot -WorkDir $wd -ProfileName $pn -Operator $Operator -DryRun $dryRunFlag
+    if (-not $m['ok']) { Write-Host ('[ERROR] ' + $m['message']) -ForegroundColor Red; exit 2 }
+    exit 0
 }
 
 if ($cmd -eq 'profile') {
