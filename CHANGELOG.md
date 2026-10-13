@@ -39,9 +39,13 @@
   then Chinese.** The first picture is now the evidence workbook as the
   tool fills it (`docs/images/gfix-recv-evidence-sheet1.png`: job log one
   line per cell, yellow marks, the GFIXReceive.log block, the Jenkins
-  screenshot with the red box on the received file's row), then a GIF from
-  the three internal pages to the filled sheets
-  (`gfix-recv-evidence.gif`) and the DF sheet (`...-sheet2.png`). All of
+  screenshot with the red box on the received file's row), then a
+  side-by-side GIF (`gfix-recv-zoom.gif`: left the internal page, right
+  the workbook -- filter, find the row, snap, get the job log, paste it
+  line by line, the target lines turn yellow, a zoom on the computed
+  width, the Jenkins red box), a GIF from the three internal pages to the
+  filled sheets (`gfix-recv-evidence.gif`) and the DF sheet
+  (`...-sheet2.png`). All of
   it is fictional data on mock pages (GoAnywhere list, Jenkins data/report,
   DF window drawn in HTML); the CI container has no Excel, so the sheets
   are HTML drawn from the output of the SAME pure functions the Excel steps
