@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -163,7 +163,8 @@
         "spanTo": "endTime",
         "padBeforeSec": 2,
         "padAfterSec": 10,
-        "expect": "{{item.FileCount}}"
+        "expect": "{{item.FileCount}}",
+        "expectFallback": "{{steps.start.out.fields.count}}"
       }
     },
     {
@@ -179,7 +180,7 @@
         "firstRowTop": "{{page.crop.firstRowTop}}",
         "rowHeight": "{{page.crop.rowHeight}}",
         "first": "{{steps.mine.out.first}}",
-        "rows": "{{steps.mine.out.matched}}"
+        "rows": "{{steps.mine.out.extent}}"
       }
     },
     {
@@ -246,7 +247,8 @@
           }
         ],
         "pluck": "key",
-        "expect": "{{item.FileCount}}"
+        "expect": "{{item.FileCount}}",
+        "expectFallback": "{{steps.start.out.fields.count}}"
       }
     },
     {
@@ -270,9 +272,11 @@
           "{{profile.paths.bix}}/DATA/GIFT/{{item.Excel_NAME}}"
         ],
         "createIfMissing": true,
-        "requireFiles": true
+        "requireFiles": true,
+        "expect": "{{item.FileCount}}",
+        "expectFallback": "{{steps.start.out.fields.count}}"
       },
-      "label": "GIFT 側のファイル: DATA/GIFT/<J名>、無ければ <W名>。どちらも無ければ <J名> のフォルダを作って止まる(ファイルを入れて r)"
+      "label": "GIFT 側のファイル: DATA/GIFT/<J名>、無ければ <W名>。どちらも無ければ <J名> のフォルダを作って止まる(ファイルを入れて r)。複数ファイルのジョブは数が合わないと警告"
     },
     {
       "id": "pair",
@@ -301,8 +305,10 @@
     {
       "id": "cmp",
       "use": "file.compare",
+      "label": "ペアごとに行比較。複数ファイルで全ペア不一致でも、各 GIFT ファイルと同内容の GFIX ファイルが一つずつあれば並べ直して比較し直す(到着順と名前順が違っただけ)",
       "with": {
-        "pairs": "{{steps.pair.out.pairs}}"
+        "pairs": "{{steps.pair.out.pairs}}",
+        "repairByContent": true
       }
     },
     {
@@ -310,7 +316,7 @@
       "use": "screen.launch_capture",
       "with": {
         "exe": "{{profile.paths.dfExe}}",
-        "argSets": "{{steps.pair.out.pairs}}",
+        "argSets": "{{steps.cmp.out.pairs}}",
         "width": "{{profile.layout.df.width}}",
         "height": "{{profile.layout.df.height}}",
         "settleMs": "{{profile.layout.df.settleMs}}",
@@ -357,7 +363,9 @@
           "span": "{{steps.recv.out.span}}",
           "jenkinsFiles": "{{steps.jkMine.out.plucked}}",
           "gfixFiles": "{{steps.dl.out.paths}}",
-          "pairs": "{{steps.pair.out.pairs}}",
+          "pairs": "{{steps.cmp.out.pairs}}",
+          "pairsAsListed": "{{steps.pair.out.pairs}}",
+          "repaired": "{{steps.cmp.out.repaired}}",
           "compare": "{{steps.cmp.out.results}}",
           "dfShots": "{{steps.df.out.shots}}",
           "goAnywhereShot": "{{steps.gaShot.out.path}}",

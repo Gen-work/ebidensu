@@ -27,11 +27,14 @@ $Manifest = @{
     padBeforeSec = @{ type='int'; default=0; desc='span.from moved this much earlier' }
     padAfterSec  = @{ type='int'; default=0; desc='span.to moved this much later' }
     expect    = @{ type='int';    default=-1; desc='how many records should match; -1 = any number. A different count is a warning, not a failure' }
+    expectFallback = @{ type='string'; default=''; desc='count used when expect is -1 (e.g. the send count read off the Teams message); blank or not a number = none. When both are known and differ, a warning (expect_disagree) says so and expect wins' }
   }
   outputs    = @{
     records = @{ type='list'; desc='the kept records, in list order' }
     indexes = @{ type='list'; desc='their 1-based positions in the input list' }
     first   = @{ type='int';  desc='position of the first kept record; 0 when none' }
+    last    = @{ type='int';  desc='position of the last kept record; 0 when none' }
+    extent  = @{ type='int';  desc='last - first + 1: the run of list rows from the first kept record to the last (a screen region must cover them all, even when other rows sit between); 0 when none' }
     matched = @{ type='int' }
     plucked = @{ type='list'; desc='the pluck field of each kept record' }
     span    = @{ type='map';  desc='@{ from; to } ISO, empty map when spanFrom is blank or nothing matched' }
@@ -41,7 +44,24 @@ $Manifest = @{
     @{ id = 'not_found';     transient = $true  }
   )
   example    = @{ use = 'verify.filter_records'; with = @{ records = '{{steps.rec.out.records}}'; where = @(@{ field = 'folder'; op = 'equals'; value = '/in' }); pluck = 'key' } }
-  notes      = 'not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output).'
+  notes      = 'not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot.'
+}
+
+function VerifyFilterRecords-Expect {
+    <#
+      PURE. The count to check against: Expect when it is 0 or more, else
+      Fallback when that is a number (the Teams message's send count stands
+      in for a worklist row with no mapping.xlsx row, FileCount -1).
+      Returns @{ expect; source = expect | fallback | none; disagree }:
+      disagree is true when both are known and differ (expect wins).
+    #>
+    param([int]$Expect, [string]$Fallback)
+    $fb = -1
+    $t = if ($null -eq $Fallback) { '' } else { $Fallback.Trim() }
+    if ($t -match '^\d+$') { $fb = [int]$t }
+    if ($Expect -ge 0) { return @{ expect = $Expect; source = 'expect'; disagree = ($fb -ge 0 -and $fb -ne $Expect); fallback = $fb } }
+    if ($fb -ge 0) { return @{ expect = $fb; source = 'fallback'; disagree = $false; fallback = $fb } }
+    return @{ expect = -1; source = 'none'; disagree = $false; fallback = $fb }
 }
 
 function Invoke-Step {
@@ -53,7 +73,7 @@ function Invoke-Step {
     foreach ($c in $conds) {
         $i++
         if (-not ($c -is [System.Collections.IDictionary]) -or -not $c.Contains('field') -or -not $c.Contains('op') -or -not ($ops -contains [string]$c['op'])) {
-            return @{ ok = $false; failure = 'rules_invalid'; message = ('condition ' + $i + ' needs field and op (one of ' + ($ops -join ', ') + ')'); records = @(); indexes = @(); first = 0; matched = 0; plucked = @(); span = @{} }
+            return @{ ok = $false; failure = 'rules_invalid'; message = ('condition ' + $i + ' needs field and op (one of ' + ($ops -join ', ') + ')'); records = @(); indexes = @(); first = 0; last = 0; extent = 0; matched = 0; plucked = @(); span = @{} }
         }
     }
     $kept = New-Object System.Collections.ArrayList
@@ -78,14 +98,22 @@ function Invoke-Step {
         }
     }
     $first = if ($idx.Count -gt 0) { [int]$idx[0] } else { 0 }
-    $out = @{ ok = $true; records = $kept.ToArray(); indexes = $idx.ToArray(); first = $first; matched = $kept.Count; plucked = $values; span = $span }
+    $last = if ($idx.Count -gt 0) { [int]$idx[$idx.Count - 1] } else { 0 }
+    $extent = if ($idx.Count -gt 0) { $last - $first + 1 } else { 0 }
+    $out = @{ ok = $true; records = $kept.ToArray(); indexes = $idx.ToArray(); first = $first; last = $last; extent = $extent; matched = $kept.Count; plucked = $values; span = $span }
     if ($kept.Count -eq 0) {
         if ($Ctx['DryRun']) { return $out }
         $out['ok'] = $false; $out['failure'] = 'not_found'; $out['message'] = ('none of ' + $records.Count + ' record(s) matched ' + $conds.Count + ' condition(s)')
         return $out
     }
-    if ([int]$In['expect'] -ge 0 -and $kept.Count -ne [int]$In['expect']) {
-        $out['warnings'] = @(@{ code = 'count_mismatch'; message = ('expected ' + $In['expect'] + ' record(s), matched ' + $kept.Count); data = @{ expected = [int]$In['expect']; matched = $kept.Count } })
+    $ex = VerifyFilterRecords-Expect -Expect ([int]$In['expect']) -Fallback ([string]$In['expectFallback'])
+    $warn = New-Object System.Collections.ArrayList
+    if ([bool]$ex['disagree']) {
+        [void]$warn.Add(@{ code = 'expect_disagree'; message = ('expect says ' + $ex['expect'] + ' record(s), the fallback count says ' + $ex['fallback'] + ' (worklist FileCount vs the Teams message?) -- checking against ' + $ex['expect']); data = @{ expected = [int]$ex['expect']; fallback = [int]$ex['fallback'] } })
     }
+    if ([int]$ex['expect'] -ge 0 -and $kept.Count -ne [int]$ex['expect']) {
+        [void]$warn.Add(@{ code = 'count_mismatch'; message = ('expected ' + $ex['expect'] + ' record(s)' + $(if ($ex['source'] -eq 'fallback') { ' (from the fallback count)' } else { '' }) + ', matched ' + $kept.Count); data = @{ expected = [int]$ex['expect']; matched = $kept.Count; source = [string]$ex['source'] } })
+    }
+    if ($warn.Count -gt 0) { $out['warnings'] = $warn.ToArray() }
     return $out
 }

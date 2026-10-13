@@ -148,6 +148,34 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
   "pages": { "goAnywhere": { "crop": { "top": 140 } } } }
 ```
 
+### 2b. 一个 job 两个以上文件（FileCount = 2；10/13 第一次：JJDSJM10 ×2、JJDSJM51 ×2）
+
+mapping.xlsx 里同一个 job 有几行，作业清单的 `FileCount` 就是几（plan 合并成一行）。整条链都是按「一个 job、n 个文件」写的，
+但 10/13 之前没有真跑过 n ≥ 2，这次要盯的地方：
+
+- **开始**：Teams 消息里的「送信予定:n件」也会读出来。它和 `FileCount` 不一致时出警告 `expect_disagree`（以 `FileCount` 为准）；
+  `FileCount` 是 `-1`（mapping 里没这一行）时就用消息里的 n 来核对。
+- **GoAnywhere**：要等到这个 job 的 **2 行 Receive** 都出现（少一行是警告 `count_mismatch`，不是错误；第二行还没出来就 `r` 再等）。
+  截图从这个 job 的第一行截到最后一行（中间夹着别的 job 的行也一起带上），不再只数「匹配到的行数」。
+- **Jenkins / 下载**：Receive 时间段里的 `F…csv` 应该也是 2 个，全部下载到 `DATA\GFIX\<W名>\`。
+- **GIFT 侧**：`DATA\GIFT\<J名>\` 里要放 **2 个** 文件。少了会先警告「expected 2, found 1」，接着配对那一步会停下来问（1 左 / 2 右配不上）：
+  把缺的文件放进去，`r`。
+- **配对**：行数相同 + 到达顺序。GIFT 侧的「到达顺序」其实是**文件名顺序**（ALOC9002 → ALOC9004），GFIX 侧是 `F+时刻` 的顺序。
+  两个文件行数一样、而 HOST 发送的顺序和文件名顺序不同时，两对都会比出「不一致」——这不是数据问题，是配错了对。
+  现在 `file.compare` 会在这种情况下**按内容重配**：每个 GIFT 文件恰好能找到一个内容完全相同的 GFIX 文件、而且不重复，才重配并重新比较；
+  结果 ok，但会在运行末尾的 warnings 里列出「re-paired … by content」，`track.json` 里 `repaired` = 重配的对数、
+  `pairsAsListed` = 原来的配法。找不到唯一匹配（比如两个 GIFT 文件内容一样、或者真有一个文件不一致）就**不动**，照旧 ng 停下来问你。
+- **DF**：每一对各开一次 DF、各截一张（>16 行再一张），窗口标题要同时含两边的文件名才截。Teams 的粘贴里 DF 图按配对顺序全部带上。
+- **logs**：2 个 Receive job 号各下载一份 job log → `log\GFIX受信ログ\<号码>.log` ×2；两份里各读出一个转送文件名（带微秒时刻，不会重名）。
+- **evidence**：
+  - `GFIX受信ログ` 下面两份 job log **连着贴、中间不空行**（样本里就是这样）；黄色标记每份各一组。
+  - `GFIXReceive.log` 下面两个转送文件的 START…END 块按日志顺序连着贴。
+  - Jenkins 截图：两个文件各一个红框；两行紧挨着时合成一个框（和你手工画的一样）。
+  - `GIFTデータvsGFIXデータ`：DF 图按配对顺序往下排，**每对之间空一行**，每对的最后一张图上画「最后一行行号」和「同一内容」两个框。
+    这一条是推断（样本里没有多文件的这张表），第一本做完请对一眼。
+  - **B3 = 送信データ!A3 只会写一个 IF 名**。如果 送信データ 对两个文件分别列了两个 IF 名（A3 和下面某一格），第二个要你手动补——
+    我不知道 HOST 侧两文件的版式，看到了告诉我，再把它做进去。
+
 ---
 
 ## 3. 傍晚（当天！）：`gfixRecv.logs`
@@ -217,7 +245,9 @@ GIFTデータvsGFIXデータ：
 | 假设 | 依据 | 改哪里 |
 |---|---|---|
 | GIFT 侧文件夹 = J 名（RJDSJM40），GFIX 侧 = W 名（RJDSWM40） | 你的描述 | workflow 里的 `DATA/GIFT/{{item.JOB}}` |
-| 一个 job 的文件数 = mapping.xlsx 里这个 job 的行数 | mapping 里 JJDSJM51 有 2 行 | 不一致只是警告（warning） |
+| 一个 job 的文件数 = mapping.xlsx 里这个 job 的行数（Teams 消息的「送信予定:n件」做交叉核对） | mapping 里 JJDSJM10、JJDSJM51 各 2 行 | 不一致只是警告（warning）；两边都知道且不同时报 `expect_disagree` |
+| 两个文件行数相同、配错对时，按内容重配不算猜 | 「前後一致」= 内容逐行相同；DF 标题里有两边文件名，证据自描述 | 不想要就把 track 里 `cmp` 的 `repairByContent` 改成 false |
+| 多文件的 GIFTデータvsGFIXデータ：每对之间空一行，B3 只写一个 IF 名 | 样本里没有多文件的这张表 | `excel.stack_plan` 的 `gapRows`；B3 看到实物再改 |
 | 「今天的」= WBS 的 AF 列（最新計画 開始） | 修正後実施 那行 AF=AG | `gfixRecv.plan.json` 的 columns |
 | GoAnywhere 的行按开始时间从新到旧排 | p3 的 ▼ | 不是的话截图会多带别的行（会出 warning） |
 | Jenkins 的文件时间 = 落盘时间，落在 Receive 开始 −2 秒 ～ 结束 +10 秒之间 | 1008 的实际数据（13:45:24–27 → 13:45:27） | `padBeforeSec` / `padAfterSec` |

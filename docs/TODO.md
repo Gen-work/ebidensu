@@ -32,6 +32,15 @@ file stays small. Designed-then-shelved work lives in
   card: the 478-byte SJDSWM40 download that compared "equal"
   (file.compare), the untested PgDn / END DF keys, and the HOST-range
   card below. Not started.
+- **gfix-recv: the compare sheet for a job of several files** (2026-10-13,
+  the first FileCount = 2 day). `gfixRecv.evidence` writes B3 = 送信データ!A3
+  (one IF name) and stacks the DF pictures of every pair with one blank row
+  between (`excel.stack_plan` gapRows) -- the stacking is an inference, the
+  delivered sample QJDSWM39 has one file. Open: does 送信データ list a second
+  IF name for the second file (and where), and does the reviewer want one
+  B3 per pair? Decide from the first two-file workbook (JJDSWM10 /
+  JJDSWM51) and, if so, give `excel.stack_plan` a per-set label row read
+  from 送信データ. Until then the second name is typed by hand (RUNBOOK 2b).
 - **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
   (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
   picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks

@@ -1921,13 +1921,18 @@
           "required": true,
           "type": "list"
         },
+        "repairByContent": {
+          "default": false,
+          "desc": "when pairs differ, re-pair the differing files by content: a left file goes with the ONE differing right file identical to it. Only when every differing left finds exactly one such right and no right is claimed twice; anything else keeps the pairs and the ng. Several files of one job arrive in an order the file names need not follow",
+          "type": "bool"
+        },
         "rightField": {
           "default": "right",
           "type": "string"
         }
       },
       "needs": [],
-      "notes": "A difference is a verdict (ng), not a failure: the workflow decides (human.gate). firstDiff is 1-based.",
+      "notes": "A difference is a verdict (ng), not a failure: the workflow decides (human.gate). firstDiff is 1-based. repairByContent never invents a match: a re-pairing is reported (repaired, a repaired_by_content warning, the reason) and only happens when the content proves it.",
       "outputs": {
         "code": {
           "desc": "ok (all identical) | ng (a pair differs) | unknown (no pairs, or a file missing)",
@@ -1937,8 +1942,16 @@
           "desc": "pairs that are identical",
           "type": "int"
         },
+        "pairs": {
+          "desc": "the pairs as compared: the input pairs, re-paired when repairByContent moved a right file (every other field of a pair is kept, so the DF step can take this list)",
+          "type": "list"
+        },
         "reason": {
           "type": "string"
+        },
+        "repaired": {
+          "desc": "pairs whose right file was changed by repairByContent (0 = the input pairing)",
+          "type": "int"
         },
         "results": {
           "desc": "@{ left; right; identical; firstDiff; leftLines; rightLines; leftEncoding; rightEncoding } per pair",
@@ -2373,6 +2386,16 @@
           "required": true,
           "type": "path"
         },
+        "expect": {
+          "default": -1,
+          "desc": "how many files should be there (the job's FileCount); -1 = any number. A different count is a warning (count_mismatch), not a failure: the pairing step decides",
+          "type": "int"
+        },
+        "expectFallback": {
+          "default": "",
+          "desc": "count used when expect is -1 (the Teams message's send count); blank or not a number = none",
+          "type": "string"
+        },
         "glob": {
           "default": "*",
           "type": "string"
@@ -2397,7 +2420,7 @@
         }
       },
       "needs": [],
-      "notes": "order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way.",
+      "notes": "order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way. A job of several files is one folder with several files: expect says how many are wanted, so a missing second file is named here, before pairing.",
       "outputs": {
         "dir": {
           "desc": "the folder actually listed (dir or one of alsoDirs)",
@@ -5021,6 +5044,11 @@
           "desc": "how many records should match; -1 = any number. A different count is a warning, not a failure",
           "type": "int"
         },
+        "expectFallback": {
+          "default": "",
+          "desc": "count used when expect is -1 (e.g. the send count read off the Teams message); blank or not a number = none. When both are known and differ, a warning (expect_disagree) says so and expect wins",
+          "type": "string"
+        },
         "padAfterSec": {
           "default": 0,
           "desc": "span.to moved this much later",
@@ -5058,8 +5086,12 @@
         }
       },
       "needs": [],
-      "notes": "not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output).",
+      "notes": "not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot.",
       "outputs": {
+        "extent": {
+          "desc": "last - first + 1: the run of list rows from the first kept record to the last (a screen region must cover them all, even when other rows sit between); 0 when none",
+          "type": "int"
+        },
         "first": {
           "desc": "position of the first kept record; 0 when none",
           "type": "int"
@@ -5067,6 +5099,10 @@
         "indexes": {
           "desc": "their 1-based positions in the input list",
           "type": "list"
+        },
+        "last": {
+          "desc": "position of the last kept record; 0 when none",
+          "type": "int"
         },
         "matched": {
           "type": "int"

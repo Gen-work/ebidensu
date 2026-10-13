@@ -125,6 +125,80 @@ try {
     $cmp2 = Invoke-TestStep 'file.compare' @{ pairs = $pair['pairs'] }
     Assert-Equal 'ng' $cmp2['code'] 'track: one changed line -> ng'
     Assert-True ($cmp2['reason'] -match 'line 7') 'track: ... and the reason names the line'
+    Assert-Equal 0 $cmp2['repaired'] 'track: without repairByContent the pairing is never touched'
+    Assert-Equal 'F202610080002.csv' $cmp2['pairs'][1]['rightName'] 'track: ... and pairs echoes the input'
+
+    # ---- several files of one job (10-13: JJDSJM10 x2, JJDSJM51 x2), the
+    # first FileCount = 2 day. The GIFT side is named by the operator, the
+    # GFIX side by arrival (F + timestamp); when both files have the same
+    # line count the pairing follows the names, which may not be the order
+    # the HOST sent them: every pair differs although every file arrived.
+    $mFirst = @(foreach ($i in 1..12) { ('M' + $i + ',' + ($i * 7)) }) -join "`r`n"
+    $mSecond = @(foreach ($i in 1..12) { ('N' + $i + ',' + ($i * 3)) }) -join "`r`n"
+    $giftDir2 = Join-Path $tmp 'DATA/GIFT/JJDSJM51'; $gfixDir2 = Join-Path $tmp 'DATA/GFIX/JJDSWM51'
+    New-Item -ItemType Directory -Path $giftDir2, $gfixDir2 -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $giftDir2 'ALOC9002.csv'), $mFirst)
+    [System.IO.File]::WriteAllText((Join-Path $giftDir2 'ALOC9004.csv'), $mSecond)
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130001.csv'), $mSecond)   # the second GIFT file arrived first
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130002.csv'), $mFirst)
+    $gift2 = Invoke-TestStep 'file.list' @{ dir = $giftDir2; glob = '*.csv'; countLines = $true; expect = 2 }
+    Assert-True (-not $gift2.Contains('warnings') -or @($gift2['warnings']).Count -eq 0) 'multi: two GIFT files expected, two found: no warning'
+    $gift2w = Invoke-TestStep 'file.list' @{ dir = $giftDir2; glob = '*.csv'; countLines = $true; expect = 3 }
+    Assert-Equal 'count_mismatch' $gift2w['warnings'][0]['code'] 'multi: FileCount 3 but two files -> count_mismatch warning, not a failure'
+    Assert-True ([bool]$gift2w['ok'] -and $gift2w['warnings'][0]['message'] -match 'expected 3 .* found 2') 'multi: ... naming expected and found'
+    $gift2f = Invoke-TestStep 'file.list' @{ dir = $giftDir2; glob = '*.csv'; countLines = $true; expect = -1; expectFallback = '2' }
+    Assert-True (-not $gift2f.Contains('warnings') -or @($gift2f['warnings']).Count -eq 0) 'multi: FileCount unknown, the Teams count (2) stands in: no warning'
+    $gift2g = Invoke-TestStep 'file.list' @{ dir = $giftDir2; glob = '*.csv'; countLines = $true; expect = -1; expectFallback = '' }
+    Assert-True (-not $gift2g.Contains('warnings') -or @($gift2g['warnings']).Count -eq 0) 'multi: no count known at all: nothing to check'
+    $gfix2 = Invoke-TestStep 'file.list' @{ dir = $gfixDir2; glob = '*.csv'; countLines = $true }
+    $pair2 = Invoke-TestStep 'verify.pair_files' @{ left = $gift2['files']; right = $gfix2['files']; longOver = 16 }
+    Assert-Equal 'ok' $pair2['code'] 'multi: same line counts -> paired by name order (ALOC9002 with the first arrival)'
+    $cmpA = Invoke-TestStep 'file.compare' @{ pairs = $pair2['pairs'] }
+    Assert-Equal 'ng' $cmpA['code'] 'multi: compared as named, both pairs differ'
+    $cmpB = Invoke-TestStep 'file.compare' @{ pairs = $pair2['pairs']; repairByContent = $true }
+    Assert-Equal 'ok' $cmpB['code'] 'multi: repairByContent: each GIFT file has exactly one identical GFIX file -> re-paired, ok'
+    Assert-Equal 2 $cmpB['repaired'] 'multi: ... two pairs re-paired'
+    Assert-Equal 'F202610130002.csv' $cmpB['pairs'][0]['rightName'] 'multi: ALOC9002 now goes with the file that holds its content'
+    Assert-Equal 'F202610130001.csv' $cmpB['pairs'][0]['repairedFrom'] 'multi: ... and remembers which file it was listed with'
+    Assert-Equal 'ALOC9002.csv' $cmpB['pairs'][0]['leftName'] 'multi: the left side and every other field stay'
+    Assert-Equal 12 $cmpB['pairs'][0]['lines'] 'multi: the line count stays (same on both sides by construction)'
+    Assert-Equal 'repaired_by_content' $cmpB['warnings'][0]['code'] 'multi: the re-pairing is a warning in the run summary'
+    Assert-True ($cmpB['reason'] -match 'ALOC9002.csv <- F202610130002.csv \(was F202610130001.csv\)') ('multi: the reason names the move: ' + $cmpB['reason'])
+    Assert-Equal 2 $cmpB['identical'] 'multi: the second pass compared the new pairs'
+    # not provable: the second GFIX file is damaged -> no re-pairing, ng as compared
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130002.csv'), $mFirst.Replace('M3,21', 'M3,22'))
+    $cmpC = Invoke-TestStep 'file.compare' @{ pairs = $pair2['pairs']; repairByContent = $true }
+    Assert-Equal 'ng' $cmpC['code'] 'multi: one GIFT file matches no GFIX file -> no re-pairing, ng'
+    Assert-Equal 0 $cmpC['repaired'] 'multi: ... nothing moved'
+    Assert-Equal 'F202610130001.csv' $cmpC['pairs'][0]['rightName'] 'multi: ... pairs are the input pairs'
+    # not provable either: two identical GIFT files (the same data set sent twice) -> a guess, refused
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130002.csv'), $mSecond)
+    $cmpD = Invoke-TestStep 'file.compare' @{ pairs = $pair2['pairs']; repairByContent = $true }
+    Assert-Equal 'ng' $cmpD['code'] 'multi: ALOC9002 matches nothing, ALOC9004 matches both -> refused, ng'
+    Assert-Equal 0 $cmpD['repaired'] 'multi: ... nothing moved'
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130002.csv'), $mFirst)
+    # a single pair never re-pairs (nothing to swap with)
+    $cmpE = Invoke-TestStep 'file.compare' @{ pairs = @($pair2['pairs'][0]); repairByContent = $true }
+    Assert-Equal 'ng' $cmpE['code'] 'multi: one differing pair alone stays ng'
+
+    # the GoAnywhere rows of a two-file job: Send, Receive, Receive (and
+    # whatever else ran in the window between them) -- the screenshot must
+    # run from the first matched row to the last, not count matched rows
+    $gaRows = @(@{ key = '1'; folder = '/jpcusr/Receive'; t = 'x' }, @{ key = '2'; folder = '/other'; t = 'x' }, @{ key = '3'; folder = '/jpcusr/Receive'; t = 'x' }, @{ key = '4'; folder = '/jpcusr/Send'; t = 'x' })
+    $rv = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key' }
+    Assert-Equal '2|1|3|3' ('' + $rv['matched'] + '|' + $rv['first'] + '|' + $rv['last'] + '|' + $rv['extent']) 'multi: two Receive rows with another job between: matched 2, rows 1..3, extent 3'
+    Assert-Equal '2|1|2|2' ('' + $mine['matched'] + '|' + $mine['first'] + '|' + $mine['last'] + '|' + $mine['extent']) 'track: one job, two adjacent rows: extent = matched'
+    Assert-Equal '0|0' ('' + $none['last'] + '|' + $none['extent']) 'track: nothing matched: last / extent 0'
+    $rvF = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; expect = -1; expectFallback = '2' }
+    Assert-True (-not $rvF.Contains('warnings') -or @($rvF['warnings']).Count -eq 0) 'multi: FileCount unknown, Teams says 2, 2 Receive rows: no warning'
+    $rvG = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; expect = -1; expectFallback = '3' }
+    Assert-Equal 'count_mismatch' $rvG['warnings'][0]['code'] 'multi: Teams says 3, 2 Receive rows: count_mismatch (from the fallback count)'
+    Assert-True ($rvG['warnings'][0]['message'] -match 'fallback') 'multi: ... and the message says the count came from the fallback'
+    $rvH = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; expect = 2; expectFallback = '3' }
+    Assert-Equal 'expect_disagree' $rvH['warnings'][0]['code'] 'multi: mapping says 2, Teams says 3 -> expect_disagree, checked against 2'
+    Assert-Equal 1 @($rvH['warnings']).Count 'multi: ... and 2 rows match the 2, so no count_mismatch on top'
+    $rvI = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; expect = 2; expectFallback = 'abc' }
+    Assert-True (-not $rvI.Contains('warnings') -or @($rvI['warnings']).Count -eq 0) 'multi: a non-numeric fallback (no Teams message) is ignored'
 
     # ============================================================ logs
     $job = Invoke-TestStep 'file.read_text' @{ paths = @((Join-Path $fx 'job-1000004619654.log')) }

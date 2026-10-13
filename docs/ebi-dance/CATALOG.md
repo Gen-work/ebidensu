@@ -737,13 +737,16 @@ Compare pairs of text files line by line; ok when every pair is identical
 |-------|------|----------|---------|------|------|
 | `leftField` | string |  | left |  |  |
 | `pairs` | list | yes |  |  | @{ left; right } paths (verify.pair_files output) |
+| `repairByContent` | bool |  | false |  | when pairs differ, re-pair the differing files by content: a left file goes with the ONE differing right file identical to it. Only when every differing left finds exactly one such right and no right is claimed twice; anything else keeps the pairs and the ng. Several files of one job arrive in an order the file names need not follow |
 | `rightField` | string |  | right |  |  |
 
 | output | type | desc |
 |--------|------|------|
 | `code` | string | ok (all identical) \| ng (a pair differs) \| unknown (no pairs, or a file missing) |
 | `identical` | int | pairs that are identical |
+| `pairs` | list | the pairs as compared: the input pairs, re-paired when repairByContent moved a right file (every other field of a pair is kept, so the DF step can take this list) |
 | `reason` | string |  |
+| `repaired` | int | pairs whose right file was changed by repairByContent (0 = the input pairing) |
 | `results` | list | @{ left; right; identical; firstDiff; leftLines; rightLines; leftEncoding; rightEncoding } per pair |
 
 failures: `input_invalid` (not transient)
@@ -752,7 +755,7 @@ failures: `input_invalid` (not transient)
 {"id":"compare","use":"file.compare","with":{"pairs":"{{steps.pair.out.pairs}}"}}
 ```
 
-Notes: A difference is a verdict (ng), not a failure: the workflow decides (human.gate). firstDiff is 1-based.
+Notes: A difference is a verdict (ng), not a failure: the workflow decides (human.gate). firstDiff is 1-based. repairByContent never invents a match: a re-pairing is reported (repaired, a repaired_by_content warning, the reason) and only happens when the content proves it.
 
 ### `file.convert_encoding`
 
@@ -901,6 +904,8 @@ List the files in a folder (size, time, optional line count) in order
 | `countLines` | bool |  | false |  | read each file and count its lines (CRLF / LF) |
 | `createIfMissing` | bool |  | false |  | no candidate exists: create dir (so the operator can drop the files in) and stop with no_files |
 | `dir` | path | yes |  |  | relative: under the work dir |
+| `expect` | int |  | -1 |  | how many files should be there (the job's FileCount); -1 = any number. A different count is a warning (count_mismatch), not a failure: the pairing step decides |
+| `expectFallback` | string |  | (empty) |  | count used when expect is -1 (the Teams message's send count); blank or not a number = none |
 | `glob` | string |  | * |  |  |
 | `mustExist` | bool |  | true |  | false: a missing folder lists as empty |
 | `orderBy` | string |  | name | name, time |  |
@@ -920,7 +925,7 @@ failures: `file_not_found` (not transient), `no_files` (transient)
 {"id":"list","use":"file.list","with":{"countLines":true,"dir":"DATA/GIFT/{{item.JOB}}","glob":"*.csv"}}
 ```
 
-Notes: order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way.
+Notes: order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way. A job of several files is one folder with several files: expect says how many are wanted, so a missing second file is named here, before pairing.
 
 ### `file.move`
 
@@ -1747,6 +1752,7 @@ Keep the records matching every condition; positions, plucked values, time span
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
 | `expect` | int |  | -1 |  | how many records should match; -1 = any number. A different count is a warning, not a failure |
+| `expectFallback` | string |  | (empty) |  | count used when expect is -1 (e.g. the send count read off the Teams message); blank or not a number = none. When both are known and differ, a warning (expect_disagree) says so and expect wins |
 | `padAfterSec` | int |  | 0 |  | span.to moved this much later |
 | `padBeforeSec` | int |  | 0 |  | span.from moved this much earlier |
 | `pluck` | string |  | (empty) |  | field whose value of every kept record goes to plucked |
@@ -1757,8 +1763,10 @@ Keep the records matching every condition; positions, plucked values, time span
 
 | output | type | desc |
 |--------|------|------|
+| `extent` | int | last - first + 1: the run of list rows from the first kept record to the last (a screen region must cover them all, even when other rows sit between); 0 when none |
 | `first` | int | position of the first kept record; 0 when none |
 | `indexes` | list | their 1-based positions in the input list |
+| `last` | int | position of the last kept record; 0 when none |
 | `matched` | int |  |
 | `plucked` | list | the pluck field of each kept record |
 | `records` | list | the kept records, in list order |
@@ -1770,7 +1778,7 @@ failures: `rules_invalid` (not transient), `not_found` (transient)
 {"id":"filter_records","use":"verify.filter_records","with":{"pluck":"key","records":"{{steps.rec.out.records}}","where":[{"field":"folder","op":"equals","value":"/in"}]}}
 ```
 
-Notes: not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output).
+Notes: not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot.
 
 ### `verify.match_record`
 

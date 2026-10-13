@@ -1,3 +1,43 @@
+## 2026-10-13 - gfix-recv: a job of several files, checked before the first FileCount = 2 day (v2.23.2)
+
+The 10/13 receive day is the first with two-file jobs (JJDSJM10 x2, JJDSJM51
+x2 in mapping.xlsx). The chain was written for n files per job but had only
+ever run with one; these are the places a second file would have surprised
+the operator, each with a unit test on a two-file fixture.
+
+### Fixed
+- **The GoAnywhere screenshot could stop short of a two-file job's rows.**
+  `screen.row_region` was given `matched` (how many rows this job has) from
+  `first`; a row of another job between the first Receive and the second
+  pushed the last one out of the picture. `verify.filter_records` now also
+  reports `last` and `extent` (first..last, other rows included) and the
+  track captures `extent` rows.
+- **Two files of equal length paired in the wrong order read as two
+  mismatches.** The GIFT side is listed by file name, the GFIX side by
+  arrival (`F` + time); when the HOST sent them in the other order every
+  pair differed although every file arrived intact, and the operator was
+  asked to judge two DF pictures full of differences. `file.compare` takes
+  `repairByContent`: when pairs differ and each differing GIFT file has
+  exactly ONE identical GFIX file among the differing ones (no file claimed
+  twice), the pairs are re-wired and compared again; the result is ok with
+  a `repaired_by_content` warning in the run summary, the moves in the
+  reason, and `repaired` / `pairs` (with `repairedFrom`) in the outputs.
+  Two identical GIFT files, or a file that matches nothing, are never
+  re-paired (that would be a guess): the ng stands and the gate asks as
+  before. The track's DF step and track.json now take the pairs from
+  `file.compare` (`pairsAsListed` keeps the original pairing).
+- **The Teams message's send count was read and then ignored.**
+  `verify.filter_records` and `file.list` take `expectFallback`: the
+  message's `送信予定:n件` stands in for a worklist row whose `FileCount` is
+  -1 (no mapping.xlsx row), and when both are known and differ an
+  `expect_disagree` warning says so (`FileCount` wins). `file.list` gains
+  `expect`: a GIFT folder with one file of two is named right there
+  (`count_mismatch`, a warning -- the pairing step still decides).
+- `gfixRecv.track` 0.6.0 wires the three; `RUNBOOK.zh.md` section 2b
+  walks a two-file job through plan / track / logs / evidence and marks the
+  one thing still unknown (the compare sheet's B3 holds one IF name; a
+  送信データ with two is adjusted by hand until a sample shows the layout).
+
 ## 2026-10-09 - gfix-recv: first office-PC test run fixes (v2.23.1)
 
 ### Fixed
