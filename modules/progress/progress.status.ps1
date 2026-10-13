@@ -20,6 +20,7 @@ $Manifest = @{
     worklist = @{ type='session'; sessionKind='worklist'; required=$true }
     field    = @{ type='string'; default=''; desc='one field; empty = every verdict / bitmask column the profile declares' }
     groupBy  = @{ type='string'; default=''; desc='also count per value of this column' }
+    next     = @{ type='list';   default=@(); desc='lines printed under the table as "next:" -- the command to run next, so the operator never looks it up (templates allowed: {{run.workDir}})' }
   }
   outputs    = @{
     lines   = @{ type='list'; desc='the rendered table' }
@@ -120,5 +121,12 @@ function Invoke-Step {
     Write-Host ''
     Write-Host ('  worklist: ' + $rows.Count + ' row(s)' + $(if ([string]$wl['path'] -ne '') { '  ' + [string]$wl['path'] } else { '' })) -ForegroundColor Cyan
     foreach ($l in $lines) { Write-Host ('  ' + $l) }
+    $next = @(@($In['next']) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
+    if ($next.Count -gt 0) {
+        Write-Host ''
+        $k = 0
+        foreach ($nx in $next) { $k++; Write-Host ('  ' + $(if ($k -eq 1) { 'next: ' } else { '      ' }) + $nx) -ForegroundColor Green }
+        $lines = @($lines) + @('') + @($next | ForEach-Object { 'next: ' + $_ })
+    }
     return @{ ok = $true; lines = $lines; summary = $summary; warnings = $warnings }
 }

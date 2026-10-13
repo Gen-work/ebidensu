@@ -44,7 +44,8 @@ $ctx = @{ WorkDir = $tmp; RunId = 'test'; Profile = $prof; Log = $log; DryRun = 
 $loaded = @{}
 foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
-                 'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy')) {
+                 'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy',
+                 'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open', 'verify.assert_each', 'flow.require')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -125,6 +126,80 @@ try {
     $cmp2 = Invoke-TestStep 'file.compare' @{ pairs = $pair['pairs'] }
     Assert-Equal 'ng' $cmp2['code'] 'track: one changed line -> ng'
     Assert-True ($cmp2['reason'] -match 'line 7') 'track: ... and the reason names the line'
+    Assert-Equal 0 $cmp2['repaired'] 'track: without repairByContent the pairing is never touched'
+    Assert-Equal 'F202610080002.csv' $cmp2['pairs'][1]['rightName'] 'track: ... and pairs echoes the input'
+
+    # ---- several files of one job (10-13: JJDSJM10 x2, JJDSJM51 x2), the
+    # first FileCount = 2 day. The GIFT side is named by the operator, the
+    # GFIX side by arrival (F + timestamp); when both files have the same
+    # line count the pairing follows the names, which may not be the order
+    # the HOST sent them: every pair differs although every file arrived.
+    $mFirst = @(foreach ($i in 1..12) { ('M' + $i + ',' + ($i * 7)) }) -join "`r`n"
+    $mSecond = @(foreach ($i in 1..12) { ('N' + $i + ',' + ($i * 3)) }) -join "`r`n"
+    $giftDir2 = Join-Path $tmp 'DATA/GIFT/JJDSJM51'; $gfixDir2 = Join-Path $tmp 'DATA/GFIX/JJDSWM51'
+    New-Item -ItemType Directory -Path $giftDir2, $gfixDir2 -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $giftDir2 'ALOC9002.csv'), $mFirst)
+    [System.IO.File]::WriteAllText((Join-Path $giftDir2 'ALOC9004.csv'), $mSecond)
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130001.csv'), $mSecond)   # the second GIFT file arrived first
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130002.csv'), $mFirst)
+    $gift2 = Invoke-TestStep 'file.list' @{ dir = $giftDir2; glob = '*.csv'; countLines = $true; expect = 2 }
+    Assert-True (-not $gift2.Contains('warnings') -or @($gift2['warnings']).Count -eq 0) 'multi: two GIFT files expected, two found: no warning'
+    $gift2w = Invoke-TestStep 'file.list' @{ dir = $giftDir2; glob = '*.csv'; countLines = $true; expect = 3 }
+    Assert-Equal 'count_mismatch' $gift2w['warnings'][0]['code'] 'multi: FileCount 3 but two files -> count_mismatch warning, not a failure'
+    Assert-True ([bool]$gift2w['ok'] -and $gift2w['warnings'][0]['message'] -match 'expected 3 .* found 2') 'multi: ... naming expected and found'
+    $gift2f = Invoke-TestStep 'file.list' @{ dir = $giftDir2; glob = '*.csv'; countLines = $true; expect = -1; expectFallback = '2' }
+    Assert-True (-not $gift2f.Contains('warnings') -or @($gift2f['warnings']).Count -eq 0) 'multi: FileCount unknown, the Teams count (2) stands in: no warning'
+    $gift2g = Invoke-TestStep 'file.list' @{ dir = $giftDir2; glob = '*.csv'; countLines = $true; expect = -1; expectFallback = '' }
+    Assert-True (-not $gift2g.Contains('warnings') -or @($gift2g['warnings']).Count -eq 0) 'multi: no count known at all: nothing to check'
+    $gfix2 = Invoke-TestStep 'file.list' @{ dir = $gfixDir2; glob = '*.csv'; countLines = $true }
+    $pair2 = Invoke-TestStep 'verify.pair_files' @{ left = $gift2['files']; right = $gfix2['files']; longOver = 16 }
+    Assert-Equal 'ok' $pair2['code'] 'multi: same line counts -> paired by name order (ALOC9002 with the first arrival)'
+    $cmpA = Invoke-TestStep 'file.compare' @{ pairs = $pair2['pairs'] }
+    Assert-Equal 'ng' $cmpA['code'] 'multi: compared as named, both pairs differ'
+    $cmpB = Invoke-TestStep 'file.compare' @{ pairs = $pair2['pairs']; repairByContent = $true }
+    Assert-Equal 'ok' $cmpB['code'] 'multi: repairByContent: each GIFT file has exactly one identical GFIX file -> re-paired, ok'
+    Assert-Equal 2 $cmpB['repaired'] 'multi: ... two pairs re-paired'
+    Assert-Equal 'F202610130002.csv' $cmpB['pairs'][0]['rightName'] 'multi: ALOC9002 now goes with the file that holds its content'
+    Assert-Equal 'F202610130001.csv' $cmpB['pairs'][0]['repairedFrom'] 'multi: ... and remembers which file it was listed with'
+    Assert-Equal 'ALOC9002.csv' $cmpB['pairs'][0]['leftName'] 'multi: the left side and every other field stay'
+    Assert-Equal 12 $cmpB['pairs'][0]['lines'] 'multi: the line count stays (same on both sides by construction)'
+    Assert-Equal 'repaired_by_content' $cmpB['warnings'][0]['code'] 'multi: the re-pairing is a warning in the run summary'
+    Assert-True ($cmpB['reason'] -match 'ALOC9002.csv <- F202610130002.csv \(was F202610130001.csv\)') ('multi: the reason names the move: ' + $cmpB['reason'])
+    Assert-Equal 2 $cmpB['identical'] 'multi: the second pass compared the new pairs'
+    # not provable: the second GFIX file is damaged -> no re-pairing, ng as compared
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130002.csv'), $mFirst.Replace('M3,21', 'M3,22'))
+    $cmpC = Invoke-TestStep 'file.compare' @{ pairs = $pair2['pairs']; repairByContent = $true }
+    Assert-Equal 'ng' $cmpC['code'] 'multi: one GIFT file matches no GFIX file -> no re-pairing, ng'
+    Assert-Equal 0 $cmpC['repaired'] 'multi: ... nothing moved'
+    Assert-Equal 'F202610130001.csv' $cmpC['pairs'][0]['rightName'] 'multi: ... pairs are the input pairs'
+    # not provable either: two identical GIFT files (the same data set sent twice) -> a guess, refused
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130002.csv'), $mSecond)
+    $cmpD = Invoke-TestStep 'file.compare' @{ pairs = $pair2['pairs']; repairByContent = $true }
+    Assert-Equal 'ng' $cmpD['code'] 'multi: ALOC9002 matches nothing, ALOC9004 matches both -> refused, ng'
+    Assert-Equal 0 $cmpD['repaired'] 'multi: ... nothing moved'
+    [System.IO.File]::WriteAllText((Join-Path $gfixDir2 'F202610130002.csv'), $mFirst)
+    # a single pair never re-pairs (nothing to swap with)
+    $cmpE = Invoke-TestStep 'file.compare' @{ pairs = @($pair2['pairs'][0]); repairByContent = $true }
+    Assert-Equal 'ng' $cmpE['code'] 'multi: one differing pair alone stays ng'
+
+    # the GoAnywhere rows of a two-file job: Send, Receive, Receive (and
+    # whatever else ran in the window between them) -- the screenshot must
+    # run from the first matched row to the last, not count matched rows
+    $gaRows = @(@{ key = '1'; folder = '/jpcusr/Receive'; t = 'x' }, @{ key = '2'; folder = '/other'; t = 'x' }, @{ key = '3'; folder = '/jpcusr/Receive'; t = 'x' }, @{ key = '4'; folder = '/jpcusr/Send'; t = 'x' })
+    $rv = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key' }
+    Assert-Equal '2|1|3|3' ('' + $rv['matched'] + '|' + $rv['first'] + '|' + $rv['last'] + '|' + $rv['extent']) 'multi: two Receive rows with another job between: matched 2, rows 1..3, extent 3'
+    Assert-Equal '2|1|2|2' ('' + $mine['matched'] + '|' + $mine['first'] + '|' + $mine['last'] + '|' + $mine['extent']) 'track: one job, two adjacent rows: extent = matched'
+    Assert-Equal '0|0' ('' + $none['last'] + '|' + $none['extent']) 'track: nothing matched: last / extent 0'
+    $rvF = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; expect = -1; expectFallback = '2' }
+    Assert-True (-not $rvF.Contains('warnings') -or @($rvF['warnings']).Count -eq 0) 'multi: FileCount unknown, Teams says 2, 2 Receive rows: no warning'
+    $rvG = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; expect = -1; expectFallback = '3' }
+    Assert-Equal 'count_mismatch' $rvG['warnings'][0]['code'] 'multi: Teams says 3, 2 Receive rows: count_mismatch (from the fallback count)'
+    Assert-True ($rvG['warnings'][0]['message'] -match 'fallback') 'multi: ... and the message says the count came from the fallback'
+    $rvH = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; expect = 2; expectFallback = '3' }
+    Assert-Equal 'expect_disagree' $rvH['warnings'][0]['code'] 'multi: mapping says 2, Teams says 3 -> expect_disagree, checked against 2'
+    Assert-Equal 1 @($rvH['warnings']).Count 'multi: ... and 2 rows match the 2, so no count_mismatch on top'
+    $rvI = Invoke-TestStep 'verify.filter_records' @{ records = $gaRows; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; expect = 2; expectFallback = 'abc' }
+    Assert-True (-not $rvI.Contains('warnings') -or @($rvI['warnings']).Count -eq 0) 'multi: a non-numeric fallback (no Teams message) is ignored'
 
     # ============================================================ logs
     $job = Invoke-TestStep 'file.read_text' @{ paths = @((Join-Path $fx 'job-1000004619654.log')) }
@@ -232,14 +307,129 @@ try {
     $yotei = -join @([char]0x9001, [char]0x4FE1, [char]0x4E88, [char]0x5B9A); $ken = [string][char]0x4EF6
     $msgOk = $kana + ':' + $jobW + $wo + $jisshi + '(' + $yotei + ':6' + $ken + ')'
     $c = HumanPaste-Check -Text $msgOk -Pattern $pat -Expect $jobW -ExpectGroup 'job'
-    Assert-True ($c['ok'] -and $c['fields']['job'] -eq $jobW -and $c['fields']['count'] -eq '6') ('paste: the Teams start message gives job + send count: ' + $c['reason'])
+    Assert-True ($c['ok'] -and $c['fields']['job'] -eq $jobW -and $c['fields']['counts'] -eq ('6' + $ken)) ('paste: the Teams start message gives job + send count: ' + $c['reason'])
     $msgFw = $kana + [char]0xFF1A + (-join ($jobW.ToCharArray() | ForEach-Object { [char]([int]$_ + 0xFEE0) })) + $wo + $jisshi
     $c = HumanPaste-Check -Text $msgFw -Pattern $pat -Expect $jobW -ExpectGroup 'job'
-    Assert-True ($c['ok'] -and $c['fields']['count'] -eq '') 'paste: full-width colon / letters fold; no send count -> count is "" (still templatable)'
+    Assert-True ($c['ok'] -and $c['fields']['counts'] -eq '') 'paste: full-width colon / letters fold; no send count -> counts is "" (still templatable)'
+    # 10-13 JJDSWM10: two files -> two counts in one message
+    $ten = [string][char]0x3001
+    $msg2 = $kana + ':JJDSWM10' + $wo + $jisshi + '(' + $yotei + ':815' + $ken + $ten + '46' + $ken + ')' + "`r`n2 more lines"
+    $c = HumanPaste-Check -Text $msg2 -Pattern $pat -Expect 'JJDSWM10' -ExpectGroup 'job'
+    Assert-True ($c['ok'] -and $c['fields']['counts'] -eq ('815' + $ken + $ten + '46' + $ken)) ('paste: a two-file message keeps the whole count list: ' + $c['fields']['counts'])
+
+    # ---- verify.record_counts: the list -> file count; files -> the reply text
+    $rc = Invoke-TestStep 'verify.record_counts' @{ text = $c['fields']['counts']; unit = $ken; joiner = $ten; label = 'recv:' }
+    Assert-Equal '815,46|2' ((@($rc['expected']) -join ',') + '|' + $rc['fileCount']) 'counts: 815, 46 -> two files'
+    Assert-Equal ('815' + $ken + $ten + '46' + $ken) $rc['text'] 'counts: without files the text is the message''s counts'
+    Assert-Equal (' (recv:815' + $ken + $ten + '46' + $ken + ')') $rc['suffix'] 'counts: the reply suffix'
+    $rc0 = Invoke-TestStep 'verify.record_counts' @{ text = ''; unit = $ken }
+    Assert-Equal '-1|' ('' + $rc0['fileCount'] + '|' + $rc0['suffix']) 'counts: no message -> fileCount -1, no suffix'
+    $filesOk = @(@{ name = 'F1.csv'; lines = 816 }, @{ name = 'F2.csv'; lines = 46 })
+    $rc1 = Invoke-TestStep 'verify.record_counts' @{ text = $c['fields']['counts']; files = $filesOk; unit = $ken; joiner = $ten; label = 'recv:' }
+    Assert-True ([bool]$rc1['matched'] -and $rc1['text'] -eq ('815' + $ken + $ten + '46' + $ken)) 'counts: a header line more (816 vs 815) still agrees; text shows the message counts'
+    Assert-True (-not $rc1.Contains('warnings') -or @($rc1['warnings']).Count -eq 0) 'counts: ... no warning'
+    $filesNg = @(@{ name = 'F1.csv'; lines = 0 }, @{ name = 'F2.csv'; lines = 1 })
+    $rc2 = Invoke-TestStep 'verify.record_counts' @{ text = ('2' + $ken + $ten + '4' + $ken); files = $filesNg; unit = $ken; joiner = $ten; label = 'recv:' }
+    Assert-Equal ('0' + $ken + '(2' + $ken + ')' + $ten + '1' + $ken + '(4' + $ken + ')') $rc2['text'] 'counts: a file that disagrees shows lines(message count) -- the operator''s example'
+    Assert-True ((-not [bool]$rc2['matched']) -and $rc2['warnings'][0]['code'] -eq 'count_disagree') 'counts: ... and warns count_disagree'
+    $rc3 = Invoke-TestStep 'verify.record_counts' @{ text = ('0' + $ken); files = @(@{ name = 'F.csv'; lines = 1 }); unit = $ken }
+    Assert-True ([bool]$rc3['matched']) 'counts: an empty transfer may be one empty line'
+    $rc4 = Invoke-TestStep 'verify.record_counts' @{ text = ('5' + $ken); files = $filesOk; unit = $ken; joiner = $ten }
+    Assert-True ((-not [bool]$rc4['matched']) -and $rc4['text'] -like ('*' + $ken + '(?)')) 'counts: more files than counts -> the extra file shows (?)'
+
+    # ---- verify.nearest_time: the typed time was off, rows are on the page
+    $keep = Invoke-TestStep 'verify.nearest_time' @{ found = $true; date = '2026-10-08'; clock = '13:20:00'; records = $rec['records'] }
+    Assert-True ($keep['clock'] -eq '13:20:00' -and -not [bool]$keep['changed'] -and $keep['code'] -eq 'ok') 'near: the window matched -> the clock is kept'
+    $nr = Invoke-TestStep 'verify.nearest_time' @{ found = $false; date = '2026-10-08'; clock = '13:40:00'; records = $rec['records']; withinMinutes = 7 }
+    Assert-True ([bool]$nr['changed'] -and $nr['code'] -eq 'unknown') 'near: not found -> the nearest row is proposed as unknown (a gate asks)'
+    Assert-True ($nr['clock'] -like '13:45:*') ('near: ... the 13:45 job is the nearest to 13:40: ' + $nr['clock'])
+    Assert-True ([int]$nr['offsetMinutes'] -ge 5 -and [int]$nr['offsetMinutes'] -le 6 -and [bool]$nr['near']) 'near: ... +5 min, within the near range'
+    Assert-True ($nr['reason'] -like '*13:45:*' -and $nr['reason'] -like '*Enter = go on with*') 'near: the reason tells the operator what Enter does'
+    $far = Invoke-TestStep 'verify.nearest_time' @{ found = $false; date = '2026-10-08'; clock = '10:45:20'; records = $rec['records']; withinMinutes = 5 }
+    Assert-True ([bool]$far['changed'] -and -not [bool]$far['near'] -and $far['reason'] -like '*farther than 5 min*') 'near: a row far away is still proposed, flagged as far'
+    $nothing = Invoke-TestStep 'verify.nearest_time' @{ found = $false; date = '2026-10-08'; clock = '10:45:20'; records = @() }
+    Assert-True ((-not [bool]$nothing['changed']) -and $nothing['clock'] -eq '10:45:20') 'near: no rows at all -> the clock is kept'
+
+    # ---- a FAILED job on the OPEN side (10-13 JJDSWM41): the status icon is not in
+    # the page text; the operator adds the view's resolved column, which reads No
+    # on the failed row only
+    $rsText = [System.IO.File]::ReadAllText((Join-Path $fx 'goanywhere-list-resolved.sample.txt'))
+    $rs = Invoke-TestStep 'verify.parse_text' @{ text = $rsText; grammar = $prof['grammar']['goAnywhere'] }
+    Assert-Equal 6 $rs['recordCount'] 'resolved: the page with the extra column parses (6 rows)'
+    Assert-Equal 'No' (@($rs['records'] | Where-Object { $_['key'] -eq '1000004712517' })[0]['resolved']) 'resolved: the failed row reads No'
+    Assert-Equal '' (@($rs['records'] | Where-Object { $_['key'] -eq '1000004712355' })[0]['resolved']) 'resolved: a good row is blank'
+    Assert-Equal 12 $rec['recordCount'] 'resolved: the OLD page without the column still parses every row (optionalTail)'
+    Assert-Equal '' $rec['records'][0]['resolved'] 'resolved: ... with resolved blank'
+    $w45 = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-13'; clock = '10:45:20'; beforeMinutes = 2; afterMinutes = 13 }
+    $m45 = Invoke-TestStep 'verify.filter_records' @{ records = $rs['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $w45['window'] }) }
+    $hs = Invoke-TestStep 'verify.assert_each' @{ records = $m45['records']; rules = $prof['rules']['goAnywhereJob'] }
+    Assert-Equal 'ng' $hs['code'] 'failed job: the 10:45 job has a Send row with resolved = No -> ng'
+    Assert-True ($hs['reason'] -like '1000004712517:*' -and $hs['failedCount'] -eq 1 -and $hs['judged'] -eq 1) ('failed job: the reason names the row: ' + $hs['reason'])
+    $w11 = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-13'; clock = '11:00:27'; beforeMinutes = 2; afterMinutes = 13 }
+    $m11 = Invoke-TestStep 'verify.filter_records' @{ records = $rs['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $w11['window'] }) }
+    $hs2 = Invoke-TestStep 'verify.assert_each' @{ records = $m11['records']; rules = $prof['rules']['goAnywhereJob'] }
+    Assert-True ($hs2['code'] -eq 'ok' -and $hs2['judged'] -eq 4 -and $hs2['failedCount'] -eq 0 -and $hs2['reason'] -eq '') 'good job: 2 Send + 2 Receive rows, none unresolved -> ok'
+    $hs3 = Invoke-TestStep 'verify.assert_each' @{ records = @(); rules = $prof['rules']['goAnywhereJob'] }
+    Assert-Equal 'ok' $hs3['code'] 'assert_each: no records -> ok'
+    $hsMix = Invoke-TestStep 'verify.assert_each' @{ records = @(@{ key = 'a'; resolved = '' }, @{ key = 'b'; resolved = 'No' }, @{ key = 'c'; resolved = 'No' }); rules = $prof['rules']['goAnywhereJob'] }
+    Assert-True ($hsMix['code'] -eq 'ng' -and $hsMix['failedCount'] -eq 2 -and $hsMix['reason'] -like 'b:*(+1 more)') 'assert_each: several failing rows -> the first named, the rest counted'
+    $hsBad = Invoke-TestStep 'verify.assert_each' @{ records = @(); rules = @{ rules = 'x' } }
+    Assert-True ((-not $hsBad['ok']) -and $hsBad['failure'] -eq 'rules_invalid') 'assert_each: a broken rule table is rules_invalid'
+    $rq = Invoke-TestStep 'flow.require' @{ value = 'ok'; equals = 'ok'; message = 'm' }
+    Assert-True ([bool]$rq['ok'] -and [bool]$rq['met']) 'require: ok passes'
+    $rq2 = Invoke-TestStep 'flow.require' @{ value = 'ng'; equals = 'ok'; message = 'the track judged this job ng' }
+    Assert-True ((-not $rq2['ok']) -and $rq2['failure'] -eq 'not_met' -and $rq2['message'] -like 'the track judged this job ng (value: "ng"*') 'require: ng is not_met with the reason and the value'
+    $rq3 = Invoke-TestStep 'flow.require' @{ value = ''; equals = 'ok' }
+    Assert-True ((-not $rq3['ok']) -and $rq3['failure'] -eq 'not_met') 'require: an empty value (no track.json field) is not_met too'
+
+    # ---- verify.owner_pattern: the WBS owner cell (name, name<-other, other->name)
+    $gen = [string][char]0x53B3                     # the operator's name as the WBS writes it
+    $other = -join @([char]0x30CB, [char]0x30F3, [char]0x30CC)
+    $la = [string][char]0x2190; $ra = [string][char]0x2192
+    $op = Invoke-TestStep 'verify.owner_pattern' @{ owner = $gen }
+    Assert-True (-not [bool]$op['everyone'] -and $op['pattern'] -ne '') 'owner: a name gives a pattern'
+    foreach ($cell in @($gen, (' ' + $gen + ' '), ($gen + $la + $other), ($other + $ra + $gen))) { Assert-True ([regex]::IsMatch($cell, $op['pattern'])) ('owner: mine: ' + $cell) }
+    foreach ($cell in @($other, ($other + $la + $gen), ($gen + $ra + $other), '')) { Assert-True (-not [regex]::IsMatch($cell, $op['pattern'])) ('owner: not mine: ' + $cell) }
+    $opAll = Invoke-TestStep 'verify.owner_pattern' @{ owner = '  ' }
+    Assert-True ([bool]$opAll['everyone'] -and $opAll['pattern'] -eq '' -and [regex]::IsMatch($other, $opAll['pattern'])) 'owner: blank -> everyone (the empty pattern matches every cell)'
+    $opRx = Invoke-TestStep 'verify.owner_pattern' @{ owner = 'a.b' }
+    Assert-True ((-not [regex]::IsMatch('axb', $opRx['pattern'])) -and [regex]::IsMatch('a.b', $opRx['pattern'])) 'owner: regex characters in a name are escaped'
+
+    # ---- excel.open: who holds the workbook (Excel's ~$ owner file)
+    $who = 'JP222093'
+    $lockBytes = New-Object byte[] (55 + 2 * $who.Length + 8)
+    $lockBytes[0] = [byte]$who.Length
+    [System.Text.Encoding]::ASCII.GetBytes($who).CopyTo($lockBytes, 1)
+    $lockBytes[54] = [byte]$who.Length
+    [System.Text.Encoding]::Unicode.GetBytes($who).CopyTo($lockBytes, 55)
+    Assert-Equal $who (ExcelOpen-LockOwner -Bytes $lockBytes) 'lock: the UTF-16 name from the ~$ file'
+    $short = New-Object byte[] 10; $short[0] = 3; [System.Text.Encoding]::ASCII.GetBytes('abc').CopyTo($short, 1)
+    Assert-Equal 'abc' (ExcelOpen-LockOwner -Bytes $short) 'lock: a short file falls back to the ANSI name'
+    Assert-Equal '' (ExcelOpen-LockOwner -Bytes (New-Object byte[] 0)) 'lock: empty -> no name'
+    $lockDir = Join-Path $tmp 'lock'; New-Item -ItemType Directory -Path $lockDir -Force | Out-Null
+    [System.IO.File]::WriteAllBytes((Join-Path $lockDir ('~$' + 'J4_X.xlsx')), $lockBytes)
+    Assert-Equal $who (ExcelOpen-HeldBy -Path (Join-Path $lockDir 'J4_X.xlsx')) 'lock: found next to the workbook'
+    Assert-Equal '' (ExcelOpen-HeldBy -Path (Join-Path $lockDir 'J4_Y.xlsx')) 'lock: no owner file -> empty, no throw'
+
+    # ---- file.extract_blocks: two transfers logged at the same time (10-13 JJDSWM10)
+    $il = @('GFIXReceiver START KEYA', 'a1', 'GFIXReceiver START KEYB', 'b1', 'a2', 'GFIXReceiver END KEYA', '2026-10-13 10:30:30', 'b2', 'GFIXReceiver END KEYB', '2026-10-13 10:30:31', 'GFIXReceiver START KEYC', 'c1', 'GFIXReceiver END KEYC', '2026-10-13 10:40:00')
+    $ilPath = Join-Path $tmp 'log/il.log'
+    [System.IO.File]::WriteAllText($ilPath, (($il -join "`r`n") + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    $ib = Invoke-TestStep 'file.extract_blocks' @{ paths = @($ilPath); blockKeys = @('KEYA', 'KEYB'); encoding = 'utf8'; saveTo = 'capture/il.txt' }
+    Assert-True ([bool]$ib['ok']) 'interleaved: ok'
+    Assert-Equal 'True,True' (@($ib['blocks'] | ForEach-Object { [string]$_['complete'] }) -join ',') 'interleaved: both blocks reach their own END (no block_incomplete)'
+    Assert-Equal 10 $ib['lineCount'] 'interleaved: START A .. END B + date written ONCE (10 lines), not A cut at START B'
+    $ilOut = @(Get-EbiTextLines -Text ([System.IO.File]::ReadAllText($ib['path'])))
+    Assert-Equal 'GFIXReceiver START KEYA' $ilOut[0] 'interleaved: begins at START A'
+    Assert-Equal '2026-10-13 10:30:31' $ilOut[9] 'interleaved: ends with the date line after END B'
+    Assert-Equal 1 @($ib['warnings'] | Where-Object { $_['code'] -eq 'block_interleaved' }).Count 'interleaved: one block_interleaved warning names the pair'
+    Assert-Equal 0 @($ib['warnings'] | Where-Object { $_['code'] -eq 'block_incomplete' }).Count 'interleaved: ... and no block_incomplete'
+    $ic = Invoke-TestStep 'file.extract_blocks' @{ paths = @($ilPath); blockKeys = @('KEYC'); encoding = 'utf8'; saveTo = 'capture/il2.txt' }
+    Assert-Equal 4 $ic['lineCount'] 'interleaved: a block after the pair is cut on its own as before'
     $c = HumanPaste-Check -Text $msgOk -Pattern $pat -Expect 'SJDSWM40' -ExpectGroup 'job'
     Assert-True ((-not $c['ok']) -and $c['reason'].Contains('JJMRWE6K') -and $c['reason'].Contains('SJDSWM40')) 'paste: a message for another job is refused and says both names'
     $c = HumanPaste-Check -Text 'hello' -Pattern $pat -Expect '' -ExpectGroup 'job'
-    Assert-True ((-not $c['ok']) -and $c['fields'].Contains('count') -and $c['fields'].Contains('job')) 'paste: not the message -> refused, every group still present as ""'
+    Assert-True ((-not $c['ok']) -and $c['fields'].Contains('counts') -and $c['fields'].Contains('job')) 'paste: not the message -> refused, every group still present as ""'
     Assert-Equal 'time|10:30:00' ((HumanPaste-Typed -Answer '10:30')['kind'] + '|' + (HumanPaste-Typed -Answer '10:30')['clock']) 'paste: a typed time replaces now'
     Assert-Equal '09:05:00' (HumanPaste-Typed -Answer '905')['clock'] 'paste: 905 -> 09:05:00'
     $kinds = @(foreach ($a in @('', 'n', 'k', 's', 'zz')) { (HumanPaste-Typed -Answer $a)['kind'] })

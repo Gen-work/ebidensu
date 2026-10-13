@@ -5,7 +5,7 @@ file stays small. Designed-then-shelved work lives in
 [`Parked-Ideas.md`](Parked-Ideas.md) instead; release history lives in
 [`../CHANGELOG.md`](../CHANGELOG.md).
 
-- **gfix-recv: dashboard + entry point -- SHIPPED (v2.24.0).** `ebi status`
+- **gfix-recv: dashboard + entry point -- SHIPPED (v2.25.0).** `ebi status`
   / `ebi menu` / `ebi.cmd` (`kernel/Dashboard.ps1`); README "A receive
   day in one screen". Still open from that card: a first office-PC run
   of the menu itself (the child PowerShell hand-off, the `.ebi/menu.json`

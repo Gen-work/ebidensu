@@ -25,6 +25,7 @@ $Manifest = @{
     reason   = @{ type='string'; default=''; desc='why (verify.assert''s reason), shown on the panel' }
     evidence = @{ type='any';    default=''; desc='a path, or a list of paths / values, to look at' }
     key      = @{ type='string'; default=''; desc='which item; empty = the current item' }
+    skipFails = @{ type='bool';  default=$false; desc='true: the operator''s s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time)' }
   }
   outputs    = @{
     code   = @{ type='string'; desc='ok | ng | unknown | empty -- what flow.checkpoint should write' }
@@ -33,6 +34,7 @@ $Manifest = @{
   }
   failures   = @(
     @{ id = 'operator_quit'; transient = $false }
+    @{ id = 'operator_skip'; transient = $false }
   )
   example    = @{ use = 'human.gate'; with = @{ code = '{{steps.verdict.out.code}}'; askWhen = @('unknown'); reason = '{{steps.verdict.out.reason}}'; evidence = '{{steps.shot.out.path}}' } }
   notes      = 'Under DryRun or without a console the panel is printed and the verdict is kept as is (action=keep). onError.policy=ask reuses this panel''s rendering (kernel/Gate.ps1), so the two never drift.'
@@ -75,5 +77,6 @@ function Invoke-Step {
     if ($r['auto']) { $Ctx.Log.Info('nobody to ask (dry run or no console): verdict kept as is') }
     if ([string]$r['action'] -eq 'q') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q at the gate'; code = $code; action = 'quit'; note = $note } }
     $d = HumanGate-Decide -Code $code -AskWhen $askWhen -Answer ([string]$r['action'])
+    if ($d['action'] -eq 'skip' -and [bool]$In['skipFails']) { return @{ ok = $false; failure = 'operator_skip'; message = 'operator skipped this item at the gate'; code = ''; action = 'skip'; note = $note } }
     return @{ ok = $true; code = $d['code']; action = $d['action']; note = $note }
 }

@@ -1,0 +1,4 @@
+{
+  "_doc": "Who runs this: the WBS owner-cell name the plan keeps (the bare name, name<-other, other->name). EMPTY = no owner filter, every owner's rows of the day go into the worklist. Set it per machine in <WorkDir>/ebi.local.json { \"operator\": { \"owner\": \"<name>\" } } -- the repo copy stays blank (no personal names in the repo).",
+  "owner": ""
+}

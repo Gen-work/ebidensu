@@ -3,13 +3,15 @@
     "role": "list",
     "label": "GoAnywhere 完了したジョブ",
     "url": "",
-    "openHint": "GoAnywhere 監査ログ > ジョブログ > 完了したジョブ。日付範囲: Today、プロジェクト名で絞り込み、開始時間 ▼(新しい順)",
+    "openHint": "GoAnywhere 監査ログ > ジョブログ > 完了したジョブ。日付範囲: Today、プロジェクト名で絞り込み、開始時間 ▼(新しい順)、列に「解決済み」を追加(異常終了の行だけ No)",
     "windowTitle": "GoAnywhere",
     "fingerprint": {
       "ok": [
         "完了したジョブ",
-        "ジョブ番号"
+        "ジョブ番号",
+        "解決済み"
       ],
+      "_ok_doc": "解決済み (resolved) is a column the operator adds to the view; without it a failed job (red icon, not in the text) cannot be told from a good one, so a page without the column is the wrong page.",
       "loading": [],
       "empty": [
         "表示中 0"
@@ -34,6 +36,9 @@
     "pollMs": 3000,
     "windowBefore": 2,
     "windowAfter": 13,
+    "_near_doc": "the wider window browser.wait_for also watches (nearAny): a row this far outside windowBefore..windowAfter means the time typed is off, not the page late -- verify.nearest_time proposes that row's start and a gate asks.",
+    "nearBefore": 7,
+    "nearAfter": 18,
     "_crop_doc": "the 'part above' of the list for Teams (p4): panel title down to the job's rows. Pixels relative to the screen with the window MAXIMIZED on a 1920x1080 display (measured on the operator's full-screen capture). insetX/insetY undo the off-screen frame of a maximized window.",
     "crop": {
       "left": 590,

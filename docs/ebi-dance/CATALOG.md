@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-71 step(s) in 9 group(s).
+76 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,10 +13,10 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
 | excel | `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.quit_app`, `excel.read_rows`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.pair_files`, `verify.parse_text`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
 | human | `human.choose`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
-| flow | `flow.checkpoint` |
+| flow | `flow.checkpoint`, `flow.require` |
 
 ## browser
 
@@ -342,6 +342,7 @@ Poll the page text until it contains a string, or time out
 | `deselectAt` | map |  | {} |  | @{ x; y } window-relative blank point clicked after the last read, so the Ctrl+A selection does not show in a screenshot taken next |
 | `deselectRecipe` | list |  | [] |  | instead of deselectAt: keys run after the last read to drop the Ctrl+A selection without a click (e.g. find:<a label at the top>) |
 | `expectPage` | list |  | [] |  | texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes) |
+| `nearAny` | list |  | [] |  | texts of a WIDER window: when the deadline passes without a contains / containsAny hit but one of these is on the page, the step returns ok with found = false (a later step proposes the nearby row) instead of failing with timeout -- the operator typed a time that is off, not a page that is late |
 | `pollMs` | int |  | 800 |  | wait between reads |
 | `refreshRecipe` | list |  | [] |  | run before every read: find:<text> \| keys:<SendKeys> \| wait:<ms> (e.g. a refresh button the page needs) |
 | `settledAfter` | string |  | (empty) |  | ISO time after which the page cannot change any more (the end of the time window): when it is already past, one read decides -- no polling |
@@ -351,6 +352,7 @@ Poll the page text until it contains a string, or time out
 | output | type | desc |
 |--------|------|------|
 | `elapsedMs` | int |  |
+| `found` | bool | true when contains / containsAny matched; false only on the nearAny way out |
 | `path` | path | where the text was archived, or empty |
 | `polls` | int |  |
 | `text` | string | the page text at the end (matched or not) |
@@ -737,13 +739,16 @@ Compare pairs of text files line by line; ok when every pair is identical
 |-------|------|----------|---------|------|------|
 | `leftField` | string |  | left |  |  |
 | `pairs` | list | yes |  |  | @{ left; right } paths (verify.pair_files output) |
+| `repairByContent` | bool |  | false |  | when pairs differ, re-pair the differing files by content: a left file goes with the ONE differing right file identical to it. Only when every differing left finds exactly one such right and no right is claimed twice; anything else keeps the pairs and the ng. Several files of one job arrive in an order the file names need not follow |
 | `rightField` | string |  | right |  |  |
 
 | output | type | desc |
 |--------|------|------|
 | `code` | string | ok (all identical) \| ng (a pair differs) \| unknown (no pairs, or a file missing) |
 | `identical` | int | pairs that are identical |
+| `pairs` | list | the pairs as compared: the input pairs, re-paired when repairByContent moved a right file (every other field of a pair is kept, so the DF step can take this list) |
 | `reason` | string |  |
+| `repaired` | int | pairs whose right file was changed by repairByContent (0 = the input pairing) |
 | `results` | list | @{ left; right; identical; firstDiff; leftLines; rightLines; leftEncoding; rightEncoding } per pair |
 
 failures: `input_invalid` (not transient)
@@ -752,7 +757,7 @@ failures: `input_invalid` (not transient)
 {"id":"compare","use":"file.compare","with":{"pairs":"{{steps.pair.out.pairs}}"}}
 ```
 
-Notes: A difference is a verdict (ng), not a failure: the workflow decides (human.gate). firstDiff is 1-based.
+Notes: A difference is a verdict (ng), not a failure: the workflow decides (human.gate). firstDiff is 1-based. repairByContent never invents a match: a re-pairing is reported (repaired, a repaired_by_content warning, the reason) and only happens when the content proves it.
 
 ### `file.convert_encoding`
 
@@ -852,7 +857,7 @@ failures: `file_not_found` (transient), `not_found` (transient), `write_failed` 
 {"id":"extract_blocks","use":"file.extract_blocks","with":{"blockKeys":"{{steps.names.out.plucked}}","markers":["file stored"],"paths":["log/GFIXReceive/{{run.mmdd}}.log"],"saveTo":"capture/gfix/{{item.keySafe}}.receive.txt"}}
 ```
 
-Notes: not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete).
+Notes: not_found (transient: the log may not hold the transfer yet) when NO key has a block; some keys missing -> ok with a warning per key and the missing list filled. A block without its END line is kept and warned about (block_incomplete). Two transfers logged at the same time interleave (START A, START B, END A, END B): their blocks overlap and are written ONCE as one span in log order (block_interleaved), never cut at the other START.
 
 ### `file.find`
 
@@ -901,6 +906,8 @@ List the files in a folder (size, time, optional line count) in order
 | `countLines` | bool |  | false |  | read each file and count its lines (CRLF / LF) |
 | `createIfMissing` | bool |  | false |  | no candidate exists: create dir (so the operator can drop the files in) and stop with no_files |
 | `dir` | path | yes |  |  | relative: under the work dir |
+| `expect` | int |  | -1 |  | how many files should be there (the job's FileCount); -1 = any number. A different count is a warning (count_mismatch), not a failure: the pairing step decides |
+| `expectFallback` | string |  | (empty) |  | count used when expect is -1 (the Teams message's send count); blank or not a number = none |
 | `glob` | string |  | * |  |  |
 | `mustExist` | bool |  | true |  | false: a missing folder lists as empty |
 | `orderBy` | string |  | name | name, time |  |
@@ -920,7 +927,7 @@ failures: `file_not_found` (not transient), `no_files` (transient)
 {"id":"list","use":"file.list","with":{"countLines":true,"dir":"DATA/GIFT/{{item.JOB}}","glob":"*.csv"}}
 ```
 
-Notes: order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way.
+Notes: order is the sort key used (the name, or the time as yyyyMMddHHmmss), so a later pairing step can sort the two sides the same way. A job of several files is one folder with several files: expect says how many are wanted, so a missing second file is named here, before pairing.
 
 ### `file.move`
 
@@ -1235,7 +1242,7 @@ failures: `file_not_found` (transient), `read_only` (transient), `open_failed` (
 {"id":"open","use":"excel.open","with":{"app":"xl","as":"wb","path":"{{vars.evidenceDir}}/{{item.Excel_NAME}}.xlsx"}}
 ```
 
-Notes: read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).
+Notes: read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry; the failure names who holds it when Excel's ~$ lock file next to the workbook says. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).
 
 ### `excel.quit_app`
 
@@ -1652,6 +1659,36 @@ failures: `rules_invalid` (not transient)
 
 Notes: A verdict is never a failure: ng and unknown are outputs (code), and human.gate decides what to ask. Only a malformed rule table fails. A within rule whose value is null or an empty map (no run.timeWindow given) holds: an absent window is not a failed check.
 
+### `verify.assert_each`
+
+Run a rule table over every record; the worst verdict wins (ng > unknown > ok)
+
+- file: `modules/verify/verify.assert_each.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `keyField` | string |  | key |  | field named in the reason for a record that failed |
+| `records` | list | yes |  |  | the records to judge (verify.filter_records / parse_text output) |
+| `rules` | map | yes |  |  | { rules: [ { field, op, value?, else, message } ], default: ok } -- the verify.assert shape |
+
+| output | type | desc |
+|--------|------|------|
+| `code` | string | ok \| ng \| unknown: the worst verdict over the records (ok when there are none) |
+| `failed` | list | @{ key; code; reason; record } per record that did not pass, in list order |
+| `failedCount` | int |  |
+| `judged` | int | records judged |
+| `reason` | string | the first failing record's key and its rule message; "" when ok |
+
+failures: `rules_invalid` (not transient)
+
+```json
+{"id":"assert_each","use":"verify.assert_each","with":{"records":"{{steps.mine.out.records}}","rules":"{{profile.rules.goAnywhereJob}}"}}
+```
+
+Notes: An empty list is ok (nothing failed) -- pair it with a filter step that fails not_found when the rows are missing. The same rule table as verify.assert, so a profile keeps one vocabulary of rules.
+
 ### `verify.compare_sets`
 
 Compare two lists as sets; ok when they hold the same values
@@ -1747,6 +1784,7 @@ Keep the records matching every condition; positions, plucked values, time span
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
 | `expect` | int |  | -1 |  | how many records should match; -1 = any number. A different count is a warning, not a failure |
+| `expectFallback` | string |  | (empty) |  | count used when expect is -1 (e.g. the send count read off the Teams message); blank or not a number = none. When both are known and differ, a warning (expect_disagree) says so and expect wins |
 | `padAfterSec` | int |  | 0 |  | span.to moved this much later |
 | `padBeforeSec` | int |  | 0 |  | span.from moved this much earlier |
 | `pluck` | string |  | (empty) |  | field whose value of every kept record goes to plucked |
@@ -1757,8 +1795,10 @@ Keep the records matching every condition; positions, plucked values, time span
 
 | output | type | desc |
 |--------|------|------|
+| `extent` | int | last - first + 1: the run of list rows from the first kept record to the last (a screen region must cover them all, even when other rows sit between); 0 when none |
 | `first` | int | position of the first kept record; 0 when none |
 | `indexes` | list | their 1-based positions in the input list |
+| `last` | int | position of the last kept record; 0 when none |
 | `matched` | int |  |
 | `plucked` | list | the pluck field of each kept record |
 | `records` | list | the kept records, in list order |
@@ -1770,7 +1810,7 @@ failures: `rules_invalid` (not transient), `not_found` (transient)
 {"id":"filter_records","use":"verify.filter_records","with":{"pluck":"key","records":"{{steps.rec.out.records}}","where":[{"field":"folder","op":"equals","value":"/in"}]}}
 ```
 
-Notes: not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output).
+Notes: not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot.
 
 ### `verify.match_record`
 
@@ -1804,6 +1844,67 @@ failures: `record_not_found` (transient), `ambiguous` (not transient)
 ```
 
 Notes: record_not_found is transient: the row is usually still arriving. The key input is a raw column value ({{item.<col>}}), not {{item.key}}, unless the records carry the composite key in one field.
+
+### `verify.nearest_time`
+
+When the expected time is not on the page, propose the nearest row's time (a gate confirms)
+
+- file: `modules/verify/verify.nearest_time.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `clock` | string | yes |  |  | the start time given (HH:mm[:ss]) |
+| `date` | string | yes |  |  | yyyy-MM-dd of the clock |
+| `found` | bool |  | true |  | browser.wait_for found: true = the window matched, keep the clock as is |
+| `records` | list |  | [] |  | the page rows (verify.parse_text records) to look through |
+| `timeField` | string |  | startTime |  |  |
+| `withinMinutes` | int |  | 5 |  | a row this close counts as "near"; farther rows are still offered, flagged |
+
+| output | type | desc |
+|--------|------|------|
+| `changed` | bool | true when the nearest row's time replaced the given clock |
+| `clock` | string | HH:mm:ss to go on with: the given clock, or the nearest row's time |
+| `code` | string | ok (kept) \| unknown (changed: a person confirms) |
+| `near` | bool | true when the nearest row is within withinMinutes |
+| `nearest` | map | the nearest record ({} when none) |
+| `offsetMinutes` | int | nearest - given, in whole minutes (0 when none) |
+| `reason` | string | what was proposed and how far it is from the time given |
+
+failures: `parse_error` (not transient)
+
+```json
+{"id":"nearest_time","use":"verify.nearest_time","with":{"clock":"{{steps.start.out.clock}}","date":"{{item.GFIX_DATE}}","found":"{{steps.wait.out.found}}","records":"{{steps.rec.out.records}}"}}
+```
+
+Notes: Never silent: a changed clock comes back as code unknown so the workflow's human.gate asks (Enter = use it, s = skip and rerun with the right time). Rows whose time field does not parse are ignored.
+
+### `verify.owner_pattern`
+
+Build the WBS owner-cell regex for one operator (empty owner = everyone)
+
+- file: `modules/verify/verify.owner_pattern.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `owner` | string |  | (empty) |  | the operator as the WBS writes it (e.g. a family name); empty = no owner filter |
+
+| output | type | desc |
+|--------|------|------|
+| `everyone` | bool | true when owner is empty: the plan takes every owner's rows |
+| `owner` | string | the owner, trimmed |
+| `pattern` | string | regex for an excel.read_rows where { op: matches }: the name alone, name<-other, other->name; "" (matches every cell) when owner is empty |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"owner_pattern","use":"verify.owner_pattern","with":{"owner":"{{profile.operator.owner}}"}}
+```
+
+Notes: The arrows are the full-width ones the WBS uses (U+2190 / U+2192). An owner that contains regex characters is escaped.
 
 ### `verify.pair_files`
 
@@ -1863,6 +1964,41 @@ failures: `grammar_invalid` (not transient), `no_records` (transient)
 ```
 
 Notes: no_records is transient: the usual cause is a page still loading. A labeled grammar always yields one record; a label it could not find is a warning (label_missing) with the field blank, and verify.assert's present/empty rules decide what that means.
+
+### `verify.record_counts`
+
+Parse the per-file record counts of a start message; compare with the files' line counts
+
+- file: `modules/verify/verify.record_counts.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `files` | list |  | [] |  | file.download / file.list files (lines per file, arrival order); empty = parse only |
+| `headerLines` | int |  | 1 |  | a file may have this many lines more than its record count (a header) |
+| `joiner` | string |  | ,  |  | between the counts in text |
+| `label` | string |  | (empty) |  | text before the counts in suffix (e.g. the words for "received data:") |
+| `text` | string |  | (empty) |  | the counts as the message writes them (numbers, any separators, a unit after each); empty = no message |
+| `unit` | string |  | (empty) |  | text after each count (the message's counter word) |
+
+| output | type | desc |
+|--------|------|------|
+| `actual` | list | line count of each file given, in order |
+| `expected` | list | the counts in the message, in order |
+| `fileCount` | int | how many files the message names; -1 when no message |
+| `matched` | bool | every file agrees with its count (true when there is nothing to compare) |
+| `reason` | string |  |
+| `suffix` | string | " (" + label + text + ")" ready to append to a reply; "" when no message |
+| `text` | string | per file: "<count><unit>", or "<lines><unit>(<count><unit>)" when the file disagrees; the message's counts alone when no files were given |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"record_counts","use":"verify.record_counts","with":{"files":"{{steps.dl.out.files}}","text":"{{steps.start.out.fields.counts}}"}}
+```
+
+Notes: A disagreement is a warning (count_disagree), never a failure: the line compare decides whether the files are right; this only says what the reply should show.
 
 ### `verify.time_window`
 
@@ -1943,6 +2079,7 @@ Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
 | `evidence` | any |  | (empty) |  | a path, or a list of paths / values, to look at |
 | `key` | string |  | (empty) |  | which item; empty = the current item |
 | `reason` | string |  | (empty) |  | why (verify.assert's reason), shown on the panel |
+| `skipFails` | bool |  | false |  | true: the operator's s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time) |
 
 | output | type | desc |
 |--------|------|------|
@@ -1950,7 +2087,7 @@ Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
 | `code` | string | ok \| ng \| unknown \| empty -- what flow.checkpoint should write |
 | `note` | string | free text typed with m |
 
-failures: `operator_quit` (not transient)
+failures: `operator_quit` (not transient), `operator_skip` (not transient)
 
 ```json
 {"id":"gate","use":"human.gate","with":{"askWhen":["unknown"],"code":"{{steps.verdict.out.code}}","evidence":"{{steps.shot.out.path}}","reason":"{{steps.verdict.out.reason}}"}}
@@ -2122,6 +2259,7 @@ Print done / pending / ng counts per field as an ASCII table
 |-------|------|----------|---------|------|------|
 | `field` | string |  | (empty) |  | one field; empty = every verdict / bitmask column the profile declares |
 | `groupBy` | string |  | (empty) |  | also count per value of this column |
+| `next` | list |  | [] |  | lines printed under the table as "next:" -- the command to run next, so the operator never looks it up (templates allowed: {{run.workDir}}) |
 | `worklist` | session:worklist | yes |  |  |  |
 
 | output | type | desc |
@@ -2165,3 +2303,30 @@ failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_
 ```
 
 Notes: value must be a logical verdict (ok / ng / unknown / empty); a stored code is refused (value_invalid) so a workflow cannot hard-wire the profile's encoding.
+
+### `flow.require`
+
+Fail with not_met unless a value equals what the rest of the item needs
+
+- file: `modules/flow/flow.require.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `equals` | string |  | ok |  | what it must be (text, case-sensitive) |
+| `message` | string |  | (empty) |  | why the item cannot go on; shown with the actual value |
+| `value` | string |  | (empty) |  | the value to check (a template) |
+
+| output | type | desc |
+|--------|------|------|
+| `met` | bool |  |
+| `value` | string | the value as seen |
+
+failures: `not_met` (not transient)
+
+```json
+{"id":"require","use":"flow.require","with":{"equals":"ok","message":"the track judged this job ng: nothing to collect","value":"{{steps.track.out.data.verdict}}"}}
+```
+
+Notes: Pair it with onError.byFailure.not_met = skip in the workflow; under DryRun the check always passes (a dry run has no real values).

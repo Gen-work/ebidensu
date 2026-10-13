@@ -32,12 +32,14 @@ $Manifest = @{
     deselectRecipe = @{ type='list'; default=@(); desc='instead of deselectAt: keys run after the last read to drop the Ctrl+A selection without a click (e.g. find:<a label at the top>)' }
     expectPage = @{ type='list'; default=@(); desc='texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes)' }
     settledAfter = @{ type='string'; default=''; desc='ISO time after which the page cannot change any more (the end of the time window): when it is already past, one read decides -- no polling' }
+    nearAny    = @{ type='list'; default=@(); desc='texts of a WIDER window: when the deadline passes without a contains / containsAny hit but one of these is on the page, the step returns ok with found = false (a later step proposes the nearby row) instead of failing with timeout -- the operator typed a time that is off, not a page that is late' }
   }
   outputs    = @{
     text      = @{ type='string'; desc='the page text at the end (matched or not)' }
     elapsedMs = @{ type='int' }
     polls     = @{ type='int' }
     path      = @{ type='path'; desc='where the text was archived, or empty' }
+    found     = @{ type='bool'; desc='true when contains / containsAny matched; false only on the nearAny way out' }
   }
   failures   = @(
     @{ id = 'timeout';         transient = $true }
@@ -86,7 +88,7 @@ function Invoke-Step {
     if ($any.Count -eq 0) { return @{ ok = $false; failure = 'input_invalid'; message = 'give contains or containsAny'; text = ''; elapsedMs = 0; polls = 0; path = '' } }
     $needle = $any -join ' | '
     $archive = Resolve-EbiWorkPath -PathValue ([string]$In['archiveTo']) -WorkDir ([string]$Ctx['WorkDir'])
-    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would poll the page text for "{0}" up to {1}s' -f $needle, [int]$In['timeoutSec'])); return @{ ok = $true; text = ''; elapsedMs = 0; polls = 0; path = $archive } }
+    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would poll the page text for "{0}" up to {1}s' -f $needle, [int]$In['timeoutSec'])); return @{ ok = $true; text = ''; elapsedMs = 0; polls = 0; path = $archive; found = $true } }
     $recipe = @(@($In['refreshRecipe']) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
     if ($recipe.Count -gt 0) { $t = Test-EbiKeyRecipe -Recipe $recipe; if (-not $t['ok']) { return @{ ok = $false; failure = 'recipe_invalid'; message = $t['message']; text = ''; elapsedMs = 0; polls = 0; path = $archive } } }
     $hWnd = ConvertTo-EbiHandle $In['window']
@@ -133,6 +135,15 @@ function Invoke-Step {
     if ($why -eq 'wrong_page') { return @{ ok = $false; failure = 'wrong_page'; message = ('not the expected page (it should show: ' + ($expect -join ', ') + ') -- a click or a key went somewhere else; put the page back by hand, then r'); text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive } }
     $shown = if ($any.Count -gt 3) { ('"' + $any[0] + '" .. "' + $any[$any.Count - 1] + '" (' + $any.Count + ' texts)') } else { ('"' + $needle + '"') }
     $tail = switch ($why) { 'settled' { ' (the time window is over, so one read decides)' } 'stopped' { ' (stopped by the operator)' } default { '' } }
-    if (-not $hit) { return @{ ok = $false; failure = 'timeout'; message = ($shown + ' not seen after ' + $polls + ' read(s) in ' + $elapsed + ' ms' + $tail); text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive } }
-    return @{ ok = $true; text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive }
+    if (-not $hit) {
+        $nearList = @(@($In['nearAny']) | Where-Object { -not [string]::IsNullOrEmpty([string]$_) } | ForEach-Object { [string]$_ })
+        $nearHit = @($nearList | Where-Object { BrowserWaitFor-Matches -Text $text -Needle $_ })
+        if ($nearHit.Count -gt 0) {
+            $msg = ($shown + ' not seen after ' + $polls + ' read(s) in ' + $elapsed + ' ms, but a nearby time is on the page (' + $nearHit[0] + '): going on with found = false so the next step can propose it')
+            $Ctx.Log.Info($msg)
+            return @{ ok = $true; text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive; found = $false; warnings = @(@{ code = 'near_rows'; message = $msg }) }
+        }
+        return @{ ok = $false; failure = 'timeout'; message = ($shown + ' not seen after ' + $polls + ' read(s) in ' + $elapsed + ' ms' + $tail); text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive; found = $false }
+    }
+    return @{ ok = $true; text = $text; elapsedMs = $elapsed; polls = $polls; path = $archive; found = $true }
 }
