@@ -189,8 +189,11 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         (`ebi grammar tune`), Mask.ps1 (mask-lite rules;
                         `ebi mask check`, run first by Tests\Run-Tests.ps1).
                         Dashboard.ps1 (`ebi status` / `ebi menu`: phases = the
-                        workflows naming the profile, in worklist.json verdict-
-                        column order; the menu runs ebi.ps1 in a CHILD PowerShell).
+                        workflows naming the profile, in verdict-column order;
+                        the menu runs ebi.ps1 in a CHILD PowerShell).
+                        PictureRange.ps1 (pure: DF capture plan mirroring the
+                        HOST pictures' OCR'd line numbers, or 'unknown' + reason;
+                        office-PC glue pending; Tests\Test-PictureRange.ps1).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
@@ -641,13 +644,10 @@ JenkinsDownload.ps1     Jenkins receive-file download glue: Select-Jenkins
                         (reports the passed-over entries as Superseded).
                         Unit-tested via Tests\Test-JenkinsDownload.ps1.
 Probe-Shapes.ps1        lists all shapes in an evidence workbook (calibration aid)
-Probe-SheetFormat.ps1   read-only cell-FORMAT probe (calibration aid):
-                        dumps a workbook's / one sheet's column widths, row
-                        heights and distinct format signatures (NumberFormat,
-                        font, colors as raw BGR Longs, alignment, borders)
-                        with sample addresses; optional -Json report. Use to
-                        match generated output (e.g. ProcessTime) to a
-                        delivery template. Has param() -> call via &.
+Probe-SheetFormat.ps1   read-only cell-FORMAT probe (calibration aid): column
+                        widths, row heights, distinct format signatures with
+                        sample addresses; optional -Json. Use to match generated
+                        output to a delivery template. Has param() -> call via &.
 Read-ClipboardJson.ps1  polls clipboard for JSON from bookmarklet
 Read-PageText.ps1       captures visible text from foreground Edge page via clipboard
 Resolve-ExpectedTime.ps1  interactive Expected_Time column helper
@@ -674,7 +674,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
 `Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
 `Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`, `Rules.ps1`, `ProfileCheck.ps1`,
-`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`, `Dashboard.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`, `Dashboard.ps1`, `PictureRange.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`, `StepDryRun.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

@@ -26,12 +26,21 @@ file stays small. Designed-then-shelved work lives in
   English recognizer (digits only; the ja recognizer reads 9 as 3), then
   trust it only when the numbers are consecutive and their count equals
   the count of text bands in the strip (screen.find_ink_rows); anything
-  else -> ask. Pieces still missing: (1) the strip's crop box (calibrate
-  once on the 562 x 428 shot); (2) DF row pitch on the office PC (429 px =
-  16 lines; measure 17/18/19 to size the window per picture); (3) a DF key
-  recipe that shows a given top line (Ctrl+Home + PgDn for the 2nd page,
-  the END view for the last; a middle range may need DF's line jump).
-  Not started.
+  else -> ask. **Pure half shipped (v2.25.1): `kernel/PictureRange.ps1`**
+  -- OCR text -> numbers (spaces inside removed, nothing else repaired) ->
+  consecutive + band-count check -> HOST-minus-header DF ranges ->
+  per-picture window height (from a row pitch parameter) and keys
+  (`^{HOME}`, whole pages down, or the END view), the whole plan `unknown`
+  with a reason when anything does not add up
+  (`Tests\Test-PictureRange.ps1`, 66 checks). Pieces still missing, all
+  office PC: (1) the strip's crop box (calibrate once on the 562 x 428
+  shot) + a step that exports the HOST pictures off 送信データ and OCRs the
+  strip with the English recognizer; (2) DF row pitch (429 px = 16 lines;
+  measure 17/18/19 -> `RowPitch`); (3) a DF key recipe for a top line that
+  is not a whole page (the plan says `no_key_recipe` there; DF's line
+  jump?); (4) `screen.launch_capture` taking a per-run height + keys list
+  instead of the fixed 16-line rule; (5) confirm the minus-one header rule
+  on a second workbook (it is a parameter, `HeaderLines`).
 - **gfix-recv: a progress view the operator can see while the browser is
   full screen** (office run feedback, 2026-10-09). During browser / DF
   steps the console is behind Edge and the operator cannot tell whether to

@@ -192,3 +192,14 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   since P2-09 also `Get-EbiPageKind` (the fingerprint classifier) and
   `Select-EbiNewestRecord` (the tie-break), so the fixture runner and the
   steps share them.
+- `PictureRange.ps1` -- pure, gfix-recv's "DF pictures follow the HOST
+  pictures" (docs/TODO.md): `ConvertFrom-EbiLineNumberText` (OCR text of
+  the 6-digit line-number strip -> numbers; spaces inside a number removed,
+  anything else listed as rejected, never repaired), `Test-EbiLineNumberRun`
+  (consecutive, and as many as the strip's ink bands), `ConvertTo-EbiDfRange`
+  (HOST n..m -> DF n-1..m-1: the HOST header line the CSV lacks, a
+  parameter confirmed on one workbook) and `Get-EbiDfRangePlan` (one DF
+  capture per HOST picture: range, window height from the calibrated row
+  pitch, keys -- `^{HOME}`, whole pages down, or the END view -- or
+  `code='unknown'` naming the first thing that did not add up). The crop
+  box, the OCR call and the pitch calibration are office-PC glue, not here.

@@ -1,3 +1,33 @@
+## 2026-10-13 - gfix-recv: DF ranges that follow the HOST pictures, the pure half (v2.25.1)
+
+### Added
+- **`kernel/PictureRange.ps1`** -- the logic behind the leader's request
+  (2026-10-12, `docs/TODO.md`): the DF pictures should show the same line
+  ranges as the HOST team's pictures on the send-data sheet, instead of a
+  fixed 16 lines a picture adjusted by hand on the 19-line workbooks.
+  `ConvertFrom-EbiLineNumberText` turns the OCR text of a picture's 6-digit
+  line-number strip into numbers (spaces inside a number are OCR artefacts
+  and removed; anything else is listed as rejected, never repaired -- the ja
+  recognizer's 9-as-3 is caught by the run check, not guessed at);
+  `Test-EbiLineNumberRun` accepts a run only when it is consecutive and as
+  long as the strip has ink bands (`screen.find_ink_rows`);
+  `ConvertTo-EbiDfRange` shifts HOST n..m to DF n-1..m-1 (the one header
+  line the CSV lacks -- confirmed on one workbook, so it is the
+  `HeaderLines` parameter); `Get-EbiDfRangePlan` gives one DF capture per
+  HOST picture with its range, the window height from the calibrated row
+  pitch (a 16-line picture needs none) and the keys that show it
+  (`^{HOME}`, whole pages down, or the END view), and says `unknown` with
+  the first reason that did not add up (not consecutive, count mismatch,
+  overlap, the last picture not ending where the DF file ends, pitch not
+  calibrated, no key recipe) while still returning the ranges it derived,
+  for the gate. `Tests\Test-PictureRange.ps1` (66 checks).
+
+### Notes
+- Pure logic only; nothing in a run changes yet. The office-PC pieces
+  (strip crop box, HOST picture export + English OCR, DF row pitch, a key
+  recipe for a top line that is not a whole page, `screen.launch_capture`
+  taking a per-run height) are listed in `docs/TODO.md`.
+
 ## 2026-10-13 - gfix-recv: the day dashboard and one entry point (v2.25.0)
 
 ### Added
