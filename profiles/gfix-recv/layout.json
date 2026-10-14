@@ -13,6 +13,8 @@
       "gfixResult": "GFIX受信結果",
       "compare": "GIFTデータvsGFIXデータ"
     },
+    "logMinRow": 8,
+    "_logMinRow_doc": "the GFIX受信ログ label never starts above this row: the Excel snap copied to B3 is sometimes a row shorter (10/14 CJODWDB6 / FJODWDB6 ended at row 6, label on row 7); the template's place is row 8.",
     "labels": {
       "jobLog": "GFIX受信ログ",
       "receiveLog": "GFIXReceive.log"

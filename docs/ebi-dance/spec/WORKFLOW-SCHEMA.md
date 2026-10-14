@@ -148,6 +148,12 @@ runner 只能退而求其次拿 `use` 当键,而**同一段里出现两次同一
 CLI `--only <key>[,<key>...]`(P0-R16)按 `{{item.key}}` 的显示形在
 `select` 之上再筛一层;`--force` 才忽略 `pendingWhen`。
 
+**担当者(10/14 补)。** profile 设了 `operator.owner`、工作清单又声明了
+`role: "owner"` 的列时,runner 在 `select` 之后再筛一层:该列写着别人名字的
+行不选(规则同 WBS 的箭头规则,`kernel/Worklist.ps1` 的
+`Get-EbiOwnerPattern`),该列为空的行保留,控制台列出被筛掉的行。
+`--only` 点名的行不受这层筛选。`operator.owner` 为空 = 不筛。
+
 ### 3.1 `pendingWhen` 的允许写法(**穷举,不许扩展**)
 
 | 写法 | 含义 |

@@ -23,6 +23,8 @@ $repoRoot = Split-Path $here -Parent
 . (Join-Path $repoRoot 'kernel/Layout.ps1')
 . (Join-Path $repoRoot 'kernel/RichClip.ps1')
 . (Join-Path $repoRoot 'kernel/LogText.ps1')
+. (Join-Path $repoRoot 'kernel/Key.ps1')
+. (Join-Path $repoRoot 'kernel/Worklist.ps1')
 
 Reset-Tests 'GfixRecvSteps'
 
@@ -262,6 +264,25 @@ try {
     $rows2 = @(@{ Excel_NAME = 'JJDSWM51'; JOB = 'JJDSJM51'; GFIX_DATE = '2026-10-09'; GFIX_TIME = '11:00:00' })
     $u3 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows2; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME'); resetOnChange = $reset }
     Assert-Equal '|2026-10-09|11:00:00|1' ('' + $wl['rows'][0]['track'] + '|' + $wl['rows'][0]['GFIX_DATE'] + '|' + $wl['rows'][0]['GFIX_TIME'] + '|' + $wl['rows'][0]['FileCount']) 'plan: planned again on another day -> progress cleared, new date / time'
+
+    # addNew false (10/14): with operator.owner set the plan only refreshes the jobs the WBS gave
+    # this operator -- mapping.xlsx lists everyone's, and the other owner's rows used to be added
+    $rows3 = @(@{ Excel_NAME = 'JJDSWM51'; JOB = 'JJDSJM51'; GFIX_DATE = '2026-10-09'; GFIX_TIME = '11:30:00' }, @{ Excel_NAME = 'JJDSWMAJ'; JOB = 'JJDSJMAJ'; GFIX_DATE = '2026-10-09'; GFIX_TIME = '10:30:00' })
+    $u4 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows3; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME'); addNew = $false }
+    Assert-Equal '0|1|JJDSWMAJ|1|11:30:00' ('' + $u4['added'] + '|' + $u4['updated'] + '|' + (@($u4['skippedNew']) -join ',') + '|' + @($wl['rows']).Count + '|' + $wl['rows'][0]['GFIX_TIME']) 'plan: addNew false -> the existing row refreshed, the unknown job not added'
+    $u5 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows3; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME') }
+    Assert-Equal '1|2' ('' + $u5['added'] + '|' + @($wl['rows']).Count) 'plan: addNew default (true) adds it as before'
+
+    # ---- owner (kernel/Worklist.ps1): the same arrow rule the plan's WBS filter uses
+    $la = [string][char]0x2190; $ra = [string][char]0x2192
+    $op = Get-EbiOwnerPattern -Owner 'yan'
+    Assert-Equal '' (Get-EbiOwnerPattern -Owner '  ') 'owner: blank owner -> no pattern'
+    Assert-True (('yan' -match $op) -and (('yan' + $la + 'nin') -match $op) -and (('nin' + $ra + 'yan') -match $op)) 'owner: bare name, name<-other, other->name are mine'
+    Assert-True (-not (('yan' + $ra + 'nin') -match $op) -and -not ('nin' -match $op)) 'owner: name->other and another name are not'
+    $orows = @(@{ Excel_NAME = 'A'; Owner = 'yan' }, @{ Excel_NAME = 'B'; Owner = 'nin' }, @{ Excel_NAME = 'C'; Owner = '' }, @{ Excel_NAME = 'D'; Owner = ('nin' + $ra + 'yan') })
+    $own = Select-EbiOwnedRows -Rows $orows -Column 'Owner' -Pattern $op -KeyColumns @('Excel_NAME')
+    Assert-Equal 'A,C,D|B (nin)' ((@($own['rows'] | ForEach-Object { $_['Excel_NAME'] }) -join ',') + '|' + (@($own['leftOut']) -join ',')) 'owner: someone else''s row left out, a blank owner kept'
+    Assert-Equal 'Owner' (Get-EbiWorklistOwnerColumn -Profile $prof) 'owner: the gfix-recv worklist declares its owner column'
 
     # ============================================================ kernel/Layout.ps1
     $bs = @(Get-EbiInkBands -Counts @(0, 0, 3, 4, 0, 5, 0, 0, 0, 2) -MinInk 1 -MergeGap 1)

@@ -1,4 +1,4 @@
-## 2026-10-14 - gfix-recv: GoAnywhere columns read by header; a filter never passes everything (v2.25.1)
+## 2026-10-14 - gfix-recv: GoAnywhere columns read by header; a filter never passes everything; owner filter for the day (v2.25.1)
 
 ### Fixed
 - **GoAnywhere list read by its own header line.** On 10/14 the view had
@@ -24,6 +24,20 @@
   asked the operator, and the run ended FAIL with every item fine. When
   no once:group step produced outputs for the group, its groupEnd steps
   are now skipped with "nothing was opened for group ...".
+
+- **operator.owner now keeps other owners' jobs out of the day.** On
+  10/14 the owner was set, yet a colleague's three jobs still came up in
+  track / logs / evidence: the plan filtered the WBS by owner, but
+  mapping.xlsx (everyone's jobs) still added rows, and the day workflows
+  never looked at the owner. Now (a) the plan writes the WBS owner cell
+  into the worklist's Owner column, (b) with an owner set, mapping.xlsx
+  only refreshes jobs already in the worklist (`table.upsert` `addNew`),
+  (c) the runner leaves out pending rows whose owner column names someone
+  else (blank owner kept, `-Only` not filtered) and prints which.
+- **Evidence log label never above row 8.** A smaller Excel snap put the
+  GFIX受信ログ label on row 7 (CJODWDB6 / FJODWDB6); `excel.write_lines`
+  takes `minRow`, the layout profile sets `evidence.logMinRow` = 8.
+- **FAILED panel: Enter = skip this item** (it answered nothing before).
 
 ### Added
 - **`verify.filter_records`**: `window_missing` -- a `within` condition with

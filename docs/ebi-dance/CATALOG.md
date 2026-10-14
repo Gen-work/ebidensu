@@ -1413,6 +1413,7 @@ Paste text lines (from files or a list) down a column, under an optional label
 | `label` | string |  | (empty) |  | written at row; the lines start one row below |
 | `labelBold` | bool |  | false |  | the label cell in bold (the lines stay plain) |
 | `lines` | list |  | [] |  | more lines, after the files |
+| `minRow` | int |  | 0 |  | never start above this row (10/14: a small Excel snap ends at row 6 and the label landed on row 7; the template wants row 8 or lower); 0 = no floor |
 | `paths` | list |  | [] |  | text files, concatenated in order |
 | `row` | int | yes |  |  | first row to write (the label, when there is one) |
 | `sheet` | string | yes |  |  |  |
@@ -1609,6 +1610,7 @@ Insert or refresh worklist rows by key; merge duplicates and count them
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `addNew` | bool |  | true |  | false: only rows already in the worklist are refreshed; input keys not there are left out (counted in skippedNew). gfix-recv plan: with operator.owner set, mapping.xlsx (everyone's jobs) only adds time / count to the jobs the WBS gave this operator |
 | `countAs` | string |  | (empty) |  | worklist column that receives how many input rows had the key |
 | `fields` | map | yes |  |  | worklist column -> record field; the key columns must be among them |
 | `overwrite` | list |  | [] |  | columns refreshed on rows that already exist (others are only filled when blank) |
@@ -1620,6 +1622,7 @@ Insert or refresh worklist rows by key; merge duplicates and count them
 |--------|------|------|
 | `added` | int |  |
 | `keyList` | list | key display of every row touched, in input order |
+| `skippedNew` | list | keys not added because addNew is false |
 | `updated` | int |  |
 
 failures: `key_column_missing` (not transient), `write_failed` (transient)

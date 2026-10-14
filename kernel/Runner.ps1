@@ -902,6 +902,21 @@ function Invoke-EbiWorkflow {
                 $limitValue = if ($Limit -gt 0) { $Limit } elseif ($source.Contains('limit') -and $null -ne $source['limit']) { [int]$source['limit'] } else { 0 }
                 $selected = Select-EbiWorklistRows -Rows $rows -Field $field -PendingWhen ([string]$sel['pendingWhen']) -Spec $spec -Only $Only -KeyColumns $keyColumns -Limit 0
                 $result['total'] = $selected['total']
+                # operator.owner (10/14): the worklist holds every owner's rows of
+                # the day (mapping.xlsx, a shared csv); a row whose owner column
+                # names someone else is not this operator's to run. -Only names
+                # rows explicitly and is not filtered.
+                $ownerName = ''
+                if ($Profile -is [System.Collections.IDictionary] -and $Profile.Contains('operator') -and ($Profile['operator'] -is [System.Collections.IDictionary]) -and $Profile['operator'].Contains('owner')) { $ownerName = ([string]$Profile['operator']['owner']).Trim() }
+                $ownerColumn = Get-EbiWorklistOwnerColumn -Profile $Profile
+                $onlyGiven = ($null -ne $Only -and @(@($Only) | Where-Object { [string]$_ -ne '' }).Count -gt 0)
+                if ($ownerName -ne '' -and $ownerColumn -ne '' -and -not $onlyGiven) {
+                    $owned = Select-EbiOwnedRows -Rows $selected['rows'] -Column $ownerColumn -Pattern (Get-EbiOwnerPattern -Owner $ownerName) -KeyColumns $keyColumns
+                    if (@($owned['leftOut']).Count -gt 0) {
+                        Write-Host ('  owner {0}: {1} pending row(s) of other owners left out: {2}' -f $ownerName, @($owned['leftOut']).Count, (@($owned['leftOut']) -join ', ')) -ForegroundColor Cyan
+                    }
+                    $selected['rows'] = $owned['rows']
+                }
                 $orderBy = if ($source.Contains('orderBy') -and $null -ne $source['orderBy']) { [string]$source['orderBy'] } else { '' }
                 $ordered = @(Sort-EbiWorklistRows -Rows $selected['rows'] -GroupBy $groupBy -OrderBy $orderBy -KeyColumns $keyColumns)
                 if ($limitValue -gt 0 -and $ordered.Count -gt $limitValue) { $ordered = @($ordered[0..($limitValue - 1)]) }

@@ -6,6 +6,8 @@
 # { "operator": { "owner": "..." } }); an EMPTY owner means nobody filters:
 # every row of the day is kept, and the step says so.
 
+. (Join-Path $PSScriptRoot '..\..\kernel\Worklist.ps1')   # Get-EbiOwnerPattern
+
 $Manifest = @{
   id         = 'verify.owner_pattern'
   group      = 'verify'
@@ -32,13 +34,11 @@ $Manifest = @{
 }
 
 function VerifyOwnerPattern-Build {
-    # PURE. owner -> regex ('' when owner is blank).
+    # PURE. owner -> regex ('' when owner is blank). The rule itself lives in
+    # kernel/Worklist.ps1 (Get-EbiOwnerPattern): the runner filters the day
+    # workflows' rows with the same pattern.
     param([string]$Owner)
-    $o = if ($null -eq $Owner) { '' } else { $Owner.Trim() }
-    if ($o -eq '') { return '' }
-    $n = [regex]::Escape($o)
-    $left = [string][char]0x2190; $right = [string][char]0x2192
-    return ('^\s*' + $n + '\s*($|' + $left + ')|' + $right + '\s*' + $n + '\s*$')
+    return (Get-EbiOwnerPattern -Owner $Owner)
 }
 
 function Invoke-Step {

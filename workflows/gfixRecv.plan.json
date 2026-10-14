@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.plan",
   "title": "GFIX受信: 今日やるジョブを WBS から拾って作業リスト (gfixrecv.csv) へ(mapping.xlsx に今日の行があれば時刻・ファイル数も)",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "profile": "gfix-recv",
   "vars": {
     "wbsSheet": "WBS",
@@ -193,7 +193,8 @@
         "fields": {
           "Excel_NAME": "Excel_NAME",
           "JOB": "JOB",
-          "GFIX_DATE": "GFIX_DATE"
+          "GFIX_DATE": "GFIX_DATE",
+          "Owner": "owner"
         },
         "overwrite": [
           "GFIX_DATE"
@@ -223,6 +224,7 @@
           "GFIX_TIME": "GFIX_TIME"
         },
         "countAs": "FileCount",
+        "addNew": "{{steps.ownerPat.out.everyone}}",
         "overwrite": [
           "GFIX_DATE",
           "GFIX_TIME"
@@ -236,7 +238,7 @@
           ]
         }
       },
-      "label": "mapping.xlsx の今日の行: GFIX時刻とファイル数で上書き"
+      "label": "mapping.xlsx の今日の行: GFIX時刻とファイル数で上書き。operator.owner があるときは WBS で自分のジョブの行だけ(mapping.xlsx は全員分。10/14 に さんの行が混ざった)"
     }
   ],
   "teardown": [

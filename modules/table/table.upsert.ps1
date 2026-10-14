@@ -26,12 +26,14 @@ $Manifest = @{
     fields    = @{ type='map';    required=$true; desc='worklist column -> record field; the key columns must be among them' }
     countAs   = @{ type='string'; default=''; desc='worklist column that receives how many input rows had the key' }
     overwrite = @{ type='list';   default=@(); desc='columns refreshed on rows that already exist (others are only filled when blank)' }
+    addNew    = @{ type='bool';   default=$true; desc='false: only rows already in the worklist are refreshed; input keys not there are left out (counted in skippedNew). gfix-recv plan: with operator.owner set, mapping.xlsx (everyone''s jobs) only adds time / count to the jobs the WBS gave this operator' }
     resetOnChange = @{ type='map'; default=@{}; desc='@{ watch = <column>; clear = @(<columns>) }: when an existing row''s watch value changes, the clear columns are emptied (the same deliverable planned again on another day starts over)' }
   }
   outputs    = @{
     added   = @{ type='int' }
     updated = @{ type='int' }
     keyList = @{ type='list'; desc='key display of every row touched, in input order' }
+    skippedNew = @{ type='list'; desc='keys not added because addNew is false' }
   }
   failures   = @(
     @{ id = 'key_column_missing'; transient = $false }
@@ -53,7 +55,7 @@ function Invoke-Step {
     $wl = $In['worklist']
     $map = $In['fields']
     $keyCols = @($Ctx['KeyColumns']); if ($keyCols.Count -eq 0) { $keyCols = @(Get-EbiWorklistKeyColumns -Profile $Ctx['Profile']) }
-    foreach ($k in $keyCols) { if (-not $map.Contains([string]$k)) { return @{ ok = $false; failure = 'key_column_missing'; message = ('fields must map the key column "' + $k + '"'); added = 0; updated = 0; keyList = @() } } }
+    foreach ($k in $keyCols) { if (-not $map.Contains([string]$k)) { return @{ ok = $false; failure = 'key_column_missing'; message = ('fields must map the key column "' + $k + '"'); added = 0; updated = 0; keyList = @(); skippedNew = @() } } }
     $over = @(@($In['overwrite']) | ForEach-Object { [string]$_ })
     $countAs = [string]$In['countAs']
     # merge input rows by key
@@ -79,6 +81,13 @@ function Invoke-Step {
     $byKey = @{}
     foreach ($row in @($wl['rows'])) { $byKey[(Get-EbiKeyDisplay -Item $row -KeyColumns $keyCols)] = $row }
     $added = 0; $updated = 0
+    $skippedNew = New-Object System.Collections.ArrayList
+    if (-not [bool]$In['addNew']) {
+        $keep = New-Object System.Collections.ArrayList
+        foreach ($kd in $order) { if ($byKey.Contains($kd)) { [void]$keep.Add($kd) } else { [void]$skippedNew.Add($kd) } }
+        $order = $keep
+        if ($skippedNew.Count -gt 0) { $Ctx.Log.Info(('worklist: {0} row(s) not added (addNew false): {1}' -f $skippedNew.Count, ($skippedNew.ToArray() -join ', '))) }
+    }
     $plan = New-Object System.Collections.ArrayList
     foreach ($kd in $order) {
         $vals = $merged[$kd]
@@ -102,7 +111,7 @@ function Invoke-Step {
             $added++
         }
     }
-    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would add {0} row(s) and refresh {1} to the worklist' -f $added, $updated)); return @{ ok = $true; added = $added; updated = $updated; keyList = $order.ToArray(); warnings = $warn.ToArray() } }
+    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would add {0} row(s) and refresh {1} to the worklist' -f $added, $updated)); return @{ ok = $true; added = $added; updated = $updated; keyList = $order.ToArray(); skippedNew = $skippedNew.ToArray(); warnings = $warn.ToArray() } }
     $before = @{ columns = @($wl['columns']); rows = @($wl['rows']) }
     $snap = @(foreach ($p in $plan) { @{ row = $p['row']; col = $p['col']; old = $(if ($p['row'].Contains($p['col'])) { $p['row'][$p['col']] } else { $null }) } })
     foreach ($c in $newCols) { [void]$columns.Add([string]$c); foreach ($row in @($wl['rows'])) { if (-not $row.Contains([string]$c)) { $row[[string]$c] = TableUpsert-Default -Profile $Ctx['Profile'] -Column ([string]$c) } } }
@@ -125,9 +134,9 @@ function Invoke-Step {
         if (-not $s['ok']) {
             foreach ($x in $snap) { if ($null -eq $x['old']) { [void]$x['row'].Remove($x['col']) } else { $x['row'][$x['col']] = $x['old'] } }
             $wl['columns'] = $before['columns']; $wl['rows'] = $before['rows']
-            return @{ ok = $false; failure = 'write_failed'; message = $s['message']; added = 0; updated = 0; keyList = @() }
+            return @{ ok = $false; failure = 'write_failed'; message = $s['message']; added = 0; updated = 0; keyList = @(); skippedNew = @() }
         }
     }
     $Ctx.Log.Info(('worklist: {0} row(s) added, {1} refreshed' -f $added, $updated))
-    return @{ ok = $true; added = $added; updated = $updated; keyList = $order.ToArray(); warnings = $warn.ToArray() }
+    return @{ ok = $true; added = $added; updated = $updated; keyList = $order.ToArray(); skippedNew = $skippedNew.ToArray(); warnings = $warn.ToArray() }
 }

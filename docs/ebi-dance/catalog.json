@@ -1799,6 +1799,11 @@
           "desc": "more lines, after the files",
           "type": "list"
         },
+        "minRow": {
+          "default": 0,
+          "desc": "never start above this row (10/14: a small Excel snap ends at row 6 and the label landed on row 7; the template wants row 8 or lower); 0 = no floor",
+          "type": "int"
+        },
         "paths": {
           "default": [],
           "desc": "text files, concatenated in order",
@@ -4790,6 +4795,11 @@
       "id": "table.upsert",
       "idempotent": true,
       "inputs": {
+        "addNew": {
+          "default": true,
+          "desc": "false: only rows already in the worklist are refreshed; input keys not there are left out (counted in skippedNew). gfix-recv plan: with operator.owner set, mapping.xlsx (everyone's jobs) only adds time / count to the jobs the WBS gave this operator",
+          "type": "bool"
+        },
         "countAs": {
           "default": "",
           "desc": "worklist column that receives how many input rows had the key",
@@ -4829,6 +4839,10 @@
         },
         "keyList": {
           "desc": "key display of every row touched, in input order",
+          "type": "list"
+        },
+        "skippedNew": {
+          "desc": "keys not added because addNew is false",
           "type": "list"
         },
         "updated": {
