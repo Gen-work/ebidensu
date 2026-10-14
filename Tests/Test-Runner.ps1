@@ -1042,6 +1042,33 @@ try {
     $ledger = Read-EbiLedger -Path (Get-EbiLedgerFile -WorkDir $work -RunId 'r-p104-groupend')
     Assert-True ($ledger['done'].Contains('group:JOB_A|open') -and $ledger['done'].Contains('group:JOB_A|close')) 'groupEnd: once: group / groupEnd are ledgered under (group, step)'
 
+    # -- a group whose every item stopped BEFORE the group head ran (10/14: no track.json,
+    # skipped before excel.open): groupEnd has nothing to release -> skipped, the run stays ok
+    Set-Answers @()
+    $noHeadRows = '[ { "Correl_ID_S": "A2", "JOB_NAME": "JOB_A", "status": "0" }, { "Correl_ID_S": "declared", "JOB_NAME": "JOB_C", "status": "0" } ]'
+    $wf = New-PolicyWorkflow -Name 'groupendnohead' -OnError '{ "policy": "skip" }' -Rows $noHeadRows -SourceExtra ', "groupBy": "JOB_NAME"' `
+        -Each '[ { "id": "work",  "use": "fake.fail",    "with": { "mode": "{{item.Correl_ID_S}}" } },
+                 { "id": "open",  "use": "fake.ensure",  "once": "group",    "with": { "title": "{{item.group}}", "as": "wb" } },
+                 { "id": "close", "use": "fake.release", "once": "groupEnd", "with": { "window": "wb" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-groupend-nohead' -Profile $profile -AskHandler $handler
+    Assert-True ($res['ok']) 'groupEnd no head: the run is ok'
+    $nhCloses = Get-ItemRecs $res 'close'
+    Assert-Equal 'ok,skip' (@($nhCloses | ForEach-Object { $_['status'] }) -join ',') 'groupEnd no head: JOB_A closed; JOB_C (its only item skipped before open) -> close skipped, no session_missing'
+    Assert-True ($nhCloses[1]['message'] -like '*nothing was opened*') ('groupEnd no head: the skip says why: ' + $nhCloses[1]['message'])
+
+    # -- operator.owner (10/14): rows whose owner column names someone else are not selected;
+    # a blank owner stays; -Only names rows explicitly and is not filtered
+    $ownProfile = @{ worklist = @{ key = @{ columns = @('Correl_ID_S') }; columns = @( @{ name = 'Correl_ID_S'; role = 'key' }, @{ name = 'Owner'; role = 'owner' } ) }; operator = @{ owner = 'yan' } }
+    $ownRows = '[ { "Correl_ID_S": "A1", "Owner": "yan" }, { "Correl_ID_S": "A2", "Owner": "nin" }, { "Correl_ID_S": "A3", "Owner": "" } ]'
+    $wf = New-PolicyWorkflow -Name 'owner' -Rows $ownRows -Each '[ { "id": "echo", "use": "fake.pure", "with": { "text": "{{item.Correl_ID_S}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-owner' -Profile $ownProfile -AskHandler $handler
+    Assert-Equal 'A1,A3' (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') 'owner: nin''s row is not selected, the blank owner is'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-owner-only' -Profile $ownProfile -AskHandler $handler -Only @('A2')
+    Assert-Equal 'A2' (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') 'owner: -Only A2 runs it anyway'
+    $ownProfile['operator']['owner'] = ''
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-owner-all' -Profile $ownProfile -AskHandler $handler
+    Assert-Equal 3 @($res['items']).Count 'owner: no operator.owner -> every row'
+
     # -- resume with a group resource: the provides / releases steps run again, the rest replays (7.6)
     Reset-Counters; Set-Answers @()
     $wf = New-PolicyWorkflow -Name 'groupresume' -OnError '{ "policy": "fail" }' -Rows $groupRows -SourceExtra ', "groupBy": "JOB_NAME"' `

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -54,7 +54,8 @@
 
     { "id": "jobLog", "use": "excel.write_lines",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
-                "row": "{{steps.excelSnap.out.nextRow}}", "label": "{{profile.layout.evidence.labels.jobLog}}", "labelBold": true,
+                "row": "{{steps.excelSnap.out.nextRow}}",
+        "minRow": "{{profile.layout.evidence.logMinRow}}", "label": "{{profile.layout.evidence.labels.jobLog}}", "labelBold": true,
                 "paths": "{{steps.logs.out.data.jobLogs}}",
                 "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
     { "id": "jobMark", "use": "excel.highlight",

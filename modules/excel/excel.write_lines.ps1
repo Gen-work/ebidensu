@@ -26,6 +26,7 @@ $Manifest = @{
     sheet    = @{ type='string'; required=$true }
     row      = @{ type='int';    required=$true; desc='first row to write (the label, when there is one)' }
     gapRows  = @{ type='int';    default=0; desc='blank rows left before row (row + gapRows is where writing starts)' }
+    minRow   = @{ type='int';    default=0; desc='never start above this row (10/14: a small Excel snap ends at row 6 and the label landed on row 7; the template wants row 8 or lower); 0 = no floor' }
     column   = @{ type='string'; default='B' }
     label    = @{ type='string'; default=''; desc='written at row; the lines start one row below' }
     labelBold = @{ type='bool';  default=$false; desc='the label cell in bold (the lines stay plain)' }
@@ -68,6 +69,7 @@ function Invoke-Step {
     }
     foreach ($l in @($In['lines'])) { [void]$all.Add([string]$l) }
     $row = [Math]::Max(1, [int]$In['row'] + [Math]::Max(0, [int]$In['gapRows']))
+    if ([int]$In['minRow'] -gt $row) { $row = [int]$In['minRow'] }
     $label = [string]$In['label']
     $labelRow = if ($label -ne '') { $row } else { 0 }
     $firstRow = if ($label -ne '') { $row + 1 } else { $row }

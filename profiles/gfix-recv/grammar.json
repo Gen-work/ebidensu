@@ -23,6 +23,23 @@
       "^(GoAnywhere|システム名|hub\\d+|監査ログ|グローバルログ|サーチ|サービスログ|トリガログ|トリガー|ジョブログ|完了したジョブ|ファイル監査|フィルタリングする|日付範囲|プロジェクト名|詳細|更新|ui-button|表示中|©|AS2|AS4|FTP|FTPS|GoDrive|GoFast|HTTPS|PeSIT|SFTP|アンチウイルス|家|言語|ワークフロー|報告|ヘルプ)",
       "^ジョブ番号\\t"
     ],
+    "header": {
+      "match": "^\\s*ジョブ番号\\t",
+      "columns": {
+        "ジョブ番号": "key",
+        "プロジェクト名": "projectName",
+        "フォルダ": "folder",
+        "ステータス": "status",
+        "実行ユーザー": "user",
+        "開始時間": "startTime",
+        "終了時間": "endTime",
+        "時間 (秒)": "seconds",
+        "送信方法": "method",
+        "解決済み": "resolved"
+      },
+      "required": ["key", "folder", "startTime", "endTime"]
+    },
+    "_header_doc": "The view's columns are read off its own header line (the operator can show, hide or move columns: on 10/14 the 実行ユーザー column was gone and every later column moved left, so endTime read the seconds and the Jenkins filter let every file through). fields stays the order for a text with no header line. A header without one of the required columns stops the parse (grammar_invalid) instead of reading the wrong column.",
     "optionalTail": 1,
     "_resolved_doc": "resolved = the view's 解決済み column (the operator adds it: 詳細 > columns). The status icon is not in the page text; a FAILED job reads No here, every other row blank. optionalTail 1: a page without the column still parses (resolved blank) -- pages.goAnywhere.fingerprint.ok requires the column so the check is never blind."
   },

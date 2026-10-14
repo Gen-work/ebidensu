@@ -261,7 +261,7 @@ function Invoke-EbiGateAsk {
     <#
       The runner's -AskHandler on top of the panel (the two question
       shapes documented on kernel/Runner.ps1's Invoke-EbiDefaultAsk):
-        error   -> 'r' | 's' | 'q'   (auto: s)
+        error   -> 'r' | 's' | 'q'   (auto: s; Enter = s, 10/14)
         confirm -> 'y' | 'n' | 'q'   (auto: y)
     #>
     param([hashtable]$Question, [bool]$DryRun = $false, [scriptblock]$Reader = $null)
@@ -287,9 +287,9 @@ function Invoke-EbiGateAsk {
     $attemptText = if ($Question.Contains('attempt') -and [int]$Question['attempt'] -gt 1) { (' (attempt ' + [string]$Question['attempt'] + ')') } else { '' }
     $r = Show-EbiGate -Title 'FAILED' `
         -What @(('{0} ({1}){2}' -f $where, $Question['use'], $attemptText), ([string]$Question['failure'] + ': ' + [string]$Question['message'])) `
-        -Next @('r: run this step again', 's: skip this item, leave it pending', 'q: cancel the whole run (teardown still runs)') `
+        -Next @('r: run this step again', 's / Enter: skip this item, leave it pending', 'q: cancel the whole run (teardown still runs)') `
         -Evidence $evidence.ToArray() `
-        -Actions @(@{ key = 'r'; label = 'retry' }, @{ key = 's'; label = 'skip item' }, @{ key = 'q'; label = 'quit' }) `
-        -Auto 's' -Reader $Reader -DryRun $DryRun
+        -Actions @(@{ key = 'r'; label = 'retry' }, @{ key = 's'; label = 'skip item (Enter)' }, @{ key = 'q'; label = 'quit' }) `
+        -Default 's' -Auto 's' -Reader $Reader -DryRun $DryRun
     return $r['action']
 }

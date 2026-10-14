@@ -176,6 +176,54 @@ function Test-EbiRowPending {
     return $false
 }
 
+function Get-EbiOwnerPattern {
+    <#
+      PURE. operator.owner -> the regex an owner cell must match ('' when
+      the owner is blank = nobody filters). The WBS rule (OwnerFilter.ps1):
+      the bare name, "name<-other" (the job is handed TO name) or
+      "other->name"; the reverse arrow directions are someone else's job.
+      The arrows are the full-width ones the WBS uses (U+2190 / U+2192).
+    #>
+    param([string]$Owner)
+    $o = if ($null -eq $Owner) { '' } else { $Owner.Trim() }
+    if ($o -eq '') { return '' }
+    $n = [regex]::Escape($o)
+    $left = [string][char]0x2190; $right = [string][char]0x2192
+    return ('^\s*' + $n + '\s*($|' + $left + ')|' + $right + '\s*' + $n + '\s*$')
+}
+
+function Get-EbiWorklistOwnerColumn {
+    # PURE. The worklist column whose role is "owner" ('' when none).
+    param($Profile)
+    if ($null -eq $Profile -or -not ($Profile -is [System.Collections.IDictionary]) -or -not $Profile.Contains('worklist')) { return '' }
+    $wl = $Profile['worklist']
+    if (-not ($wl -is [System.Collections.IDictionary]) -or -not $wl.Contains('columns')) { return '' }
+    foreach ($c in @($wl['columns'])) {
+        if ($c -is [System.Collections.IDictionary] -and [string]$c['role'] -eq 'owner') { return [string]$c['name'] }
+    }
+    return ''
+}
+
+function Select-EbiOwnedRows {
+    <#
+      PURE. Keep the rows this operator owns: a row whose owner cell is
+      blank is kept (nobody claimed it); a row whose owner cell is set and
+      does not match the pattern is someone else's and left out. Pattern ''
+      or Column '' keeps everything. Returns @{ rows; leftOut (keys) }.
+    #>
+    param($Rows, [string]$Column, [string]$Pattern, $KeyColumns = @())
+    $kept = New-Object System.Collections.ArrayList
+    $left = New-Object System.Collections.ArrayList
+    foreach ($row in @($Rows)) {
+        if ($null -eq $row) { continue }
+        $cell = ''
+        if ($Column -ne '' -and $row.Contains($Column) -and $null -ne $row[$Column]) { $cell = ([string]$row[$Column]).Trim() }
+        if ($Pattern -eq '' -or $Column -eq '' -or $cell -eq '' -or [regex]::IsMatch($cell, $Pattern)) { [void]$kept.Add($row) }
+        else { [void]$left.Add((Get-EbiKeyDisplay -Item $row -KeyColumns $KeyColumns) + ' (' + $cell + ')') }
+    }
+    return @{ rows = $kept.ToArray(); leftOut = $left.ToArray() }
+}
+
 function Select-EbiWorklistRows {
     <#
       PURE. The one row filter (runner source.select AND table.select).

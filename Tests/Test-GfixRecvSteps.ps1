@@ -23,6 +23,8 @@ $repoRoot = Split-Path $here -Parent
 . (Join-Path $repoRoot 'kernel/Layout.ps1')
 . (Join-Path $repoRoot 'kernel/RichClip.ps1')
 . (Join-Path $repoRoot 'kernel/LogText.ps1')
+. (Join-Path $repoRoot 'kernel/Key.ps1')
+. (Join-Path $repoRoot 'kernel/Worklist.ps1')
 
 Reset-Tests 'GfixRecvSteps'
 
@@ -263,6 +265,25 @@ try {
     $u3 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows2; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME'); resetOnChange = $reset }
     Assert-Equal '|2026-10-09|11:00:00|1' ('' + $wl['rows'][0]['track'] + '|' + $wl['rows'][0]['GFIX_DATE'] + '|' + $wl['rows'][0]['GFIX_TIME'] + '|' + $wl['rows'][0]['FileCount']) 'plan: planned again on another day -> progress cleared, new date / time'
 
+    # addNew false (10/14): with operator.owner set the plan only refreshes the jobs the WBS gave
+    # this operator -- mapping.xlsx lists everyone's, and the other owner's rows used to be added
+    $rows3 = @(@{ Excel_NAME = 'JJDSWM51'; JOB = 'JJDSJM51'; GFIX_DATE = '2026-10-09'; GFIX_TIME = '11:30:00' }, @{ Excel_NAME = 'JJDSWMAJ'; JOB = 'JJDSJMAJ'; GFIX_DATE = '2026-10-09'; GFIX_TIME = '10:30:00' })
+    $u4 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows3; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME'); addNew = $false }
+    Assert-Equal '0|1|JJDSWMAJ|1|11:30:00' ('' + $u4['added'] + '|' + $u4['updated'] + '|' + (@($u4['skippedNew']) -join ',') + '|' + @($wl['rows']).Count + '|' + $wl['rows'][0]['GFIX_TIME']) 'plan: addNew false -> the existing row refreshed, the unknown job not added'
+    $u5 = Invoke-TestStep 'table.upsert' @{ worklist = 'wl'; rows = $rows3; fields = $flds; countAs = 'FileCount'; overwrite = @('GFIX_DATE', 'GFIX_TIME') }
+    Assert-Equal '1|2' ('' + $u5['added'] + '|' + @($wl['rows']).Count) 'plan: addNew default (true) adds it as before'
+
+    # ---- owner (kernel/Worklist.ps1): the same arrow rule the plan's WBS filter uses
+    $la = [string][char]0x2190; $ra = [string][char]0x2192
+    $op = Get-EbiOwnerPattern -Owner 'yan'
+    Assert-Equal '' (Get-EbiOwnerPattern -Owner '  ') 'owner: blank owner -> no pattern'
+    Assert-True (('yan' -match $op) -and (('yan' + $la + 'nin') -match $op) -and (('nin' + $ra + 'yan') -match $op)) 'owner: bare name, name<-other, other->name are mine'
+    Assert-True (-not (('yan' + $ra + 'nin') -match $op) -and -not ('nin' -match $op)) 'owner: name->other and another name are not'
+    $orows = @(@{ Excel_NAME = 'A'; Owner = 'yan' }, @{ Excel_NAME = 'B'; Owner = 'nin' }, @{ Excel_NAME = 'C'; Owner = '' }, @{ Excel_NAME = 'D'; Owner = ('nin' + $ra + 'yan') })
+    $own = Select-EbiOwnedRows -Rows $orows -Column 'Owner' -Pattern $op -KeyColumns @('Excel_NAME')
+    Assert-Equal 'A,C,D|B (nin)' ((@($own['rows'] | ForEach-Object { $_['Excel_NAME'] }) -join ',') + '|' + (@($own['leftOut']) -join ',')) 'owner: someone else''s row left out, a blank owner kept'
+    Assert-Equal 'Owner' (Get-EbiWorklistOwnerColumn -Profile $prof) 'owner: the gfix-recv worklist declares its owner column'
+
     # ============================================================ kernel/Layout.ps1
     $bs = @(Get-EbiInkBands -Counts @(0, 0, 3, 4, 0, 5, 0, 0, 0, 2) -MinInk 1 -MergeGap 1)
     Assert-Equal '2-5|9-9' ((@($bs | ForEach-Object { '' + $_['top'] + '-' + $_['bottom'] })) -join '|') 'layout: a one-row gap merges, a three-row gap splits'
@@ -369,6 +390,30 @@ try {
     $m11 = Invoke-TestStep 'verify.filter_records' @{ records = $rs['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $w11['window'] }) }
     $hs2 = Invoke-TestStep 'verify.assert_each' @{ records = $m11['records']; rules = $prof['rules']['goAnywhereJob'] }
     Assert-True ($hs2['code'] -eq 'ok' -and $hs2['judged'] -eq 4 -and $hs2['failedCount'] -eq 0 -and $hs2['reason'] -eq '') 'good job: 2 Send + 2 Receive rows, none unresolved -> ok'
+    # ---- 10-14: the view had NO user column (jikkou-user) -- by position every
+    # column after status moved left, endTime read the seconds, the Receive
+    # span came out empty and the Jenkins filter let 2183 files through. The
+    # grammar now reads the columns off the page's own header line.
+    $nuText = [System.IO.File]::ReadAllText((Join-Path $fx 'goanywhere-list-nouser.sample.txt'))
+    $nu = Invoke-TestStep 'verify.parse_text' @{ text = $nuText; grammar = $prof['grammar']['goAnywhere'] }
+    Assert-Equal 8 $nu['recordCount'] 'no user column: 8 rows'
+    $nu0 = @($nu['records'] | Where-Object { $_['key'] -eq '1000004734879' })[0]
+    Assert-Equal '2026-10-14 11:00:29|2026-10-14 11:00:32|/jpcusr/Receive|' ($nu0['startTime'] + '|' + $nu0['endTime'] + '|' + $nu0['folder'] + '|' + $nu0['user']) 'no user column: start / end / folder read by header, user blank'
+    $nuW = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-14'; clock = '11:00:00'; beforeMinutes = 2; afterMinutes = 13 }
+    $nuMine = Invoke-TestStep 'verify.filter_records' @{ records = $nu['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $nuW['window'] }) }
+    $nuRecv = Invoke-TestStep 'verify.filter_records' @{ records = $nuMine['records']; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; spanFrom = 'startTime'; spanTo = 'endTime'; padBeforeSec = 2; padAfterSec = 10 }
+    Assert-Equal '2026-10-14T11:00:27|2026-10-14T11:00:42' ($nuRecv['span']['from'] + '|' + $nuRecv['span']['to']) 'no user column: the Receive span is the real 11:00:29..11:00:32 (+pads)'
+    Assert-Equal 6 $rs['recordCount'] 'header with a leading empty cell (10-13 page) still maps every column'
+    Assert-Equal '2026-10-08 13:45:24' $rec['records'][0]['startTime'] 'the 10-08 page (user column, no resolved) still reads by header'
+    $hdrBad = Invoke-TestStep 'verify.parse_text' @{ text = ($nuText.Replace("`t" + (-join [char[]](0x958B, 0x59CB, 0x6642, 0x9593)), "`tX")); grammar = $prof['grammar']['goAnywhere'] }
+    Assert-True ((-not $hdrBad['ok']) -and $hdrBad['failure'] -eq 'grammar_invalid' -and $hdrBad['message'] -like '*startTime*') ('a header without the start column stops the parse: ' + $hdrBad['message'])
+    # the guards behind it: an empty window and an unreadable span are stops, not pass-throughs
+    $wm = Invoke-TestStep 'verify.filter_records' @{ records = $nu['records']; where = @(@{ field = 'startTime'; op = 'within'; value = @{} }) }
+    Assert-True ((-not $wm['ok']) -and $wm['failure'] -eq 'window_missing') 'filter: within with an empty window -> window_missing'
+    $su = Invoke-TestStep 'verify.filter_records' @{ records = @(@{ key = 'a'; startTime = '2026-10-14 11:00:32'; endTime = '3.52' }); spanFrom = 'startTime'; spanTo = 'endTime' }
+    Assert-True ((-not $su['ok']) -and $su['failure'] -eq 'span_unreadable' -and $su['message'] -like '*3.52*') ('filter: an end time that is not a time -> span_unreadable: ' + $su['message'])
+    $tm = Invoke-TestStep 'file.download' @{ baseUrl = 'http://127.0.0.1:9/'; names = @('a', 'b', 'c'); dir = $tmp; maxFiles = 2 }
+    Assert-True ((-not $tm['ok']) -and $tm['failure'] -eq 'too_many' -and $tm['total'] -eq 0) 'download: more names than maxFiles -> too_many, nothing fetched'
     $hs3 = Invoke-TestStep 'verify.assert_each' @{ records = @(); rules = $prof['rules']['goAnywhereJob'] }
     Assert-Equal 'ok' $hs3['code'] 'assert_each: no records -> ok'
     $hsMix = Invoke-TestStep 'verify.assert_each' @{ records = @(@{ key = 'a'; resolved = '' }, @{ key = 'b'; resolved = 'No' }, @{ key = 'c'; resolved = 'No' }); rules = $prof['rules']['goAnywhereJob'] }

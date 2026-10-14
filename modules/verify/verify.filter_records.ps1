@@ -42,9 +42,11 @@ $Manifest = @{
   failures   = @(
     @{ id = 'rules_invalid'; transient = $false }
     @{ id = 'not_found';     transient = $true  }
+    @{ id = 'window_missing'; transient = $false }
+    @{ id = 'span_unreadable'; transient = $false }
   )
   example    = @{ use = 'verify.filter_records'; with = @{ records = '{{steps.rec.out.records}}'; where = @(@{ field = 'folder'; op = 'equals'; value = '/in' }); pluck = 'key' } }
-  notes      = 'not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot.'
+  notes      = 'not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot. A within condition with no window (an empty from/to, e.g. a span an earlier step could not compute) is window_missing, not "everything passes": on 10/14 an unreadable end time emptied the span and every Jenkins file matched. span_unreadable: spanFrom is set, records matched, but their times do not parse (the page''s columns moved?).'
 }
 
 function VerifyFilterRecords-Expect {
@@ -76,6 +78,22 @@ function Invoke-Step {
             return @{ ok = $false; failure = 'rules_invalid'; message = ('condition ' + $i + ' needs field and op (one of ' + ($ops -join ', ') + ')'); records = @(); indexes = @(); first = 0; last = 0; extent = 0; matched = 0; plucked = @(); span = @{} }
         }
     }
+    # A within with no window would keep every record (Rules.ps1: an absent
+    # window passes, which is right for an optional check but wrong for a
+    # filter). Outside a dry run that is a stop, not a silent pass-through.
+    if (-not $Ctx['DryRun']) {
+        $i = 0
+        foreach ($c in $conds) {
+            $i++
+            if ([string]$c['op'] -ne 'within') { continue }
+            $w = $c['value']
+            $hasFrom = ($w -is [System.Collections.IDictionary]) -and $w.Contains('from') -and [string]$w['from'] -ne ''
+            $hasTo = ($w -is [System.Collections.IDictionary]) -and $w.Contains('to') -and [string]$w['to'] -ne ''
+            if (-not $hasFrom -and -not $hasTo) {
+                return @{ ok = $false; failure = 'window_missing'; message = ('condition ' + $i + ' (' + [string]$c['field'] + ' within) has no window -- the step that builds it found no readable time'); records = @(); indexes = @(); first = 0; last = 0; extent = 0; matched = 0; plucked = @(); span = @{} }
+            }
+        }
+    }
     $kept = New-Object System.Collections.ArrayList
     $idx = New-Object System.Collections.ArrayList
     for ($k = 0; $k -lt $records.Count; $k++) {
@@ -96,6 +114,10 @@ function Invoke-Step {
         if ($null -ne $lo -and $null -ne $hi) {
             $span = @{ from = $lo.AddSeconds(-1 * [int]$In['padBeforeSec']).ToString('yyyy-MM-ddTHH:mm:ss'); to = $hi.AddSeconds([int]$In['padAfterSec']).ToString('yyyy-MM-ddTHH:mm:ss') }
         }
+    }
+    if (-not $Ctx['DryRun'] -and $sf -ne '' -and $kept.Count -gt 0 -and $span.Count -eq 0) {
+        $k0 = $kept[0]
+        return @{ ok = $false; failure = 'span_unreadable'; message = ('matched ' + $kept.Count + ' record(s) but their ' + $sf + '/' + $st + ' do not read as times (first: "' + [string]$k0[$sf] + '" / "' + [string]$k0[$st] + '") -- did the page''s columns move?'); records = $kept.ToArray(); indexes = $idx.ToArray(); first = 0; last = 0; extent = 0; matched = $kept.Count; plucked = $values; span = @{} }
     }
     $first = if ($idx.Count -gt 0) { [int]$idx[0] } else { 0 }
     $last = if ($idx.Count -gt 0) { [int]$idx[$idx.Count - 1] } else { 0 }

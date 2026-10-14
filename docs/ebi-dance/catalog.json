@@ -1799,6 +1799,11 @@
           "desc": "more lines, after the files",
           "type": "list"
         },
+        "minRow": {
+          "default": 0,
+          "desc": "never start above this row (10/14: a small Excel snap ends at row 6 and the label landed on row 7; the template wants row 8 or lower); 0 = no floor",
+          "type": "int"
+        },
         "paths": {
           "default": [],
           "desc": "text files, concatenated in order",
@@ -2080,6 +2085,10 @@
         {
           "id": "not_found",
           "transient": false
+        },
+        {
+          "id": "too_many",
+          "transient": false
         }
       ],
       "file": "modules/file/file.download.ps1",
@@ -2101,6 +2110,11 @@
           "default": "",
           "desc": "with names: the folder to write into (created when missing)",
           "type": "path"
+        },
+        "maxFiles": {
+          "default": 0,
+          "desc": "more names than this = too_many, nothing downloaded (a filter upstream let too much through); 0 = no limit",
+          "type": "int"
         },
         "missingOk": {
           "default": false,
@@ -4781,6 +4795,11 @@
       "id": "table.upsert",
       "idempotent": true,
       "inputs": {
+        "addNew": {
+          "default": true,
+          "desc": "false: only rows already in the worklist are refreshed; input keys not there are left out (counted in skippedNew). gfix-recv plan: with operator.owner set, mapping.xlsx (everyone's jobs) only adds time / count to the jobs the WBS gave this operator",
+          "type": "bool"
+        },
         "countAs": {
           "default": "",
           "desc": "worklist column that receives how many input rows had the key",
@@ -4820,6 +4839,10 @@
         },
         "keyList": {
           "desc": "key display of every row touched, in input order",
+          "type": "list"
+        },
+        "skippedNew": {
+          "desc": "keys not added because addNew is false",
           "type": "list"
         },
         "updated": {
@@ -5172,6 +5195,14 @@
         {
           "id": "not_found",
           "transient": true
+        },
+        {
+          "id": "window_missing",
+          "transient": false
+        },
+        {
+          "id": "span_unreadable",
+          "transient": false
         }
       ],
       "file": "modules/verify/verify.filter_records.ps1",
@@ -5226,7 +5257,7 @@
         }
       },
       "needs": [],
-      "notes": "not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot.",
+      "notes": "not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot. A within condition with no window (an empty from/to, e.g. a span an earlier step could not compute) is window_missing, not \"everything passes\": on 10/14 an unreadable end time emptied the span and every Jenkins file matched. span_unreadable: spanFrom is set, records matched, but their times do not parse (the page's columns moved?).",
       "outputs": {
         "extent": {
           "desc": "last - first + 1: the run of list rows from the first kept record to the last (a screen region must cover them all, even when other rows sit between); 0 when none",

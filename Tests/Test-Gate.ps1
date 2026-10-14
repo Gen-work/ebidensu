@@ -83,6 +83,7 @@ Set-Typed @('n')
 Assert-Equal 'n' (Invoke-EbiGateAsk -Question @{ kind = 'confirm'; section = 'each'; id = 'rep'; use = 'excel.replace_sheet'; key = 'A1'; group = ''; effects = 'destructive'; with = @{ sheet = 'x' } } -Reader $reader) 'ask: confirm -> n'
 Assert-Equal 'y' (Invoke-EbiGateAsk -Question @{ kind = 'confirm'; section = 'each'; id = 'rep'; use = 'x.y'; key = ''; group = ''; effects = 'destructive'; with = @{} } -DryRun $true) 'ask: confirm under DryRun is y'
 Assert-Equal 's' (Invoke-EbiGateAsk -Question @{ kind = 'error'; section = 'setup'; id = 'e'; use = 'x.y'; key = ''; group = ''; failure = 'boom'; message = 'm'; attempt = 1; transient = $false; policy = 'ask' } -DryRun $true) 'ask: error under DryRun is s'
+Assert-Equal 's' (Invoke-EbiGateAsk -Question @{ kind = 'error'; section = 'each'; id = 'track'; use = 'file.read_json'; key = 'JJDSWM53'; group = ''; failure = 'file_not_found'; message = 'no file'; attempt = 1; transient = $false; policy = 'ask' } -Reader { '' }) 'ask: FAILED + Enter = s (skip this item; 10/14 Enter answered nothing)'
 
 # ---------------------------------------------------------------- the "front" handle
 # $Ctx.Session holds @{ kind; value }: 3560785 converted the whole entry, so

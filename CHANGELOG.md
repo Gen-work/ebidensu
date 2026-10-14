@@ -1,3 +1,58 @@
+## 2026-10-14 - gfix-recv: GoAnywhere columns read by header; a filter never passes everything; owner filter for the day (v2.25.1)
+
+### Fixed
+- **GoAnywhere list read by its own header line.** On 10/14 the view had
+  no 実行ユーザー column; the grammar read cells by position, so every
+  column after the status moved left: startTime read the end time and
+  endTime read the seconds ("3.52"). The Receive span then came out empty,
+  an empty `within` window passes (kernel/Rules.ps1), and the Jenkins
+  filter kept 2183 of 4019 files; the track started downloading old
+  files (2025-09, 10-09) into `DATA\GFIX\CJODWDB6`. The `delimited`
+  parser now takes an optional `header` (`match`, `columns` title ->
+  field, `required`): when the header line is in the text, cells are read
+  by title; a column the page does not show reads blank; a header missing
+  a required column (key / folder / startTime / endTime) stops the parse
+  as `grammar_invalid` naming the column. Leading empty header cells are
+  dropped (the 10/13 page's header starts with a tab, its rows do not).
+  No header line -> the positional `fields` as before. Pages of 10/08
+  (user column, no resolved), 10/13 (both) and 10/14 (resolved, no user)
+  all read correctly.
+
+- **groupEnd with nothing opened.** On 10/14 the evidence run skipped a
+  job with no `track.json` before `excel.open` (its only item); the
+  group's `close` (once: groupEnd) still ran, failed `session_missing`,
+  asked the operator, and the run ended FAIL with every item fine. When
+  no once:group step produced outputs for the group, its groupEnd steps
+  are now skipped with "nothing was opened for group ...".
+
+- **operator.owner now keeps other owners' jobs out of the day.** On
+  10/14 the owner was set, yet a colleague's three jobs still came up in
+  track / logs / evidence: the plan filtered the WBS by owner, but
+  mapping.xlsx (everyone's jobs) still added rows, and the day workflows
+  never looked at the owner. Now (a) the plan writes the WBS owner cell
+  into the worklist's Owner column, (b) with an owner set, mapping.xlsx
+  only refreshes jobs already in the worklist (`table.upsert` `addNew`),
+  (c) the runner leaves out pending rows whose owner column names someone
+  else (blank owner kept, `-Only` not filtered) and prints which.
+- **Evidence log label never above row 8.** A smaller Excel snap put the
+  GFIX受信ログ label on row 7 (CJODWDB6 / FJODWDB6); `excel.write_lines`
+  takes `minRow`, the layout profile sets `evidence.logMinRow` = 8.
+- **FAILED panel: Enter = skip this item** (it answered nothing before).
+
+### Added
+- **`verify.filter_records`**: `window_missing` -- a `within` condition with
+  an empty window is a stop outside a dry run, never "keep every record";
+  `span_unreadable` -- `spanFrom` set, records matched, times do not
+  parse (names the values it saw).
+- **`file.download`**: `maxFiles` (0 = no limit); more names than that is
+  `too_many` and nothing is fetched. The track sets 10.
+- Fixture `Tests/fixtures/gfix-recv/goanywhere-list-nouser.sample.txt`
+  (the 10/14 page) and the regression tests for all of the above.
+
+### Operator note
+- `ebi.local.json`: the owner is `"operator": { "owner": "..." }` (nested).
+  A dotted key `"operator.owner"` is a different key and is ignored.
+
 ## 2026-10-13 - gfix-recv: the day dashboard and one entry point (v2.25.0)
 
 ### Added
