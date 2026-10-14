@@ -926,6 +926,16 @@ function Invoke-EbiWorkflow {
                     if ($groupOutputs.Contains($G)) { foreach ($k in $groupOutputs[$G].Keys) { $gSteps[$k] = $groupOutputs[$G][$k] } }
                     $gScope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $Row -Steps $gSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
                     $ctx['Item'] = $Row; $ctx['KeyColumns'] = $keyColumns
+                    # Nothing the group head opens ever ran for this group (every
+                    # item stopped before the once:group steps -- 10/14: a job
+                    # with no track.json was skipped before excel.open): there
+                    # is nothing to release, so groupEnd is skipped, not run
+                    # into session_missing.
+                    $hasGroupHead = @($workflow['each'] | Where-Object { $_.Contains('once') -and [string]$_['once'] -eq 'group' }).Count -gt 0
+                    if ($hasGroupHead -and (-not $groupOutputs.Contains($G) -or $groupOutputs[$G].Count -eq 0)) {
+                        foreach ($gCall in $groupEndCalls) { [void]$records.Add((New-EbiSkipRecord -Section 'each' -Call $gCall -Key $gKey -Group $G -Why ('once: groupEnd -- nothing was opened for group "' + $G + '"') -State $state)) }
+                        return
+                    }
                     foreach ($gCall in $groupEndCalls) {
                         $gDone = . Invoke-EbiStepWithPolicy -State $state -Section 'each' -Call $gCall -Scope $gScope -Steps $gSteps -Key $gKey -Group $G -LedgerGroup $G
                         foreach ($r in $gDone['records']) { [void]$records.Add($r) }

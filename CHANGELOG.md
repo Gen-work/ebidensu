@@ -18,6 +18,13 @@
   (user column, no resolved), 10/13 (both) and 10/14 (resolved, no user)
   all read correctly.
 
+- **groupEnd with nothing opened.** On 10/14 the evidence run skipped a
+  job with no `track.json` before `excel.open` (its only item); the
+  group's `close` (once: groupEnd) still ran, failed `session_missing`,
+  asked the operator, and the run ended FAIL with every item fine. When
+  no once:group step produced outputs for the group, its groupEnd steps
+  are now skipped with "nothing was opened for group ...".
+
 ### Added
 - **`verify.filter_records`**: `window_missing` -- a `within` condition with
   an empty window is a stop outside a dry run, never "keep every record";
