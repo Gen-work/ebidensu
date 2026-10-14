@@ -369,6 +369,30 @@ try {
     $m11 = Invoke-TestStep 'verify.filter_records' @{ records = $rs['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $w11['window'] }) }
     $hs2 = Invoke-TestStep 'verify.assert_each' @{ records = $m11['records']; rules = $prof['rules']['goAnywhereJob'] }
     Assert-True ($hs2['code'] -eq 'ok' -and $hs2['judged'] -eq 4 -and $hs2['failedCount'] -eq 0 -and $hs2['reason'] -eq '') 'good job: 2 Send + 2 Receive rows, none unresolved -> ok'
+    # ---- 10-14: the view had NO user column (jikkou-user) -- by position every
+    # column after status moved left, endTime read the seconds, the Receive
+    # span came out empty and the Jenkins filter let 2183 files through. The
+    # grammar now reads the columns off the page's own header line.
+    $nuText = [System.IO.File]::ReadAllText((Join-Path $fx 'goanywhere-list-nouser.sample.txt'))
+    $nu = Invoke-TestStep 'verify.parse_text' @{ text = $nuText; grammar = $prof['grammar']['goAnywhere'] }
+    Assert-Equal 8 $nu['recordCount'] 'no user column: 8 rows'
+    $nu0 = @($nu['records'] | Where-Object { $_['key'] -eq '1000004734879' })[0]
+    Assert-Equal '2026-10-14 11:00:29|2026-10-14 11:00:32|/jpcusr/Receive|' ($nu0['startTime'] + '|' + $nu0['endTime'] + '|' + $nu0['folder'] + '|' + $nu0['user']) 'no user column: start / end / folder read by header, user blank'
+    $nuW = Invoke-TestStep 'verify.time_window' @{ date = '2026-10-14'; clock = '11:00:00'; beforeMinutes = 2; afterMinutes = 13 }
+    $nuMine = Invoke-TestStep 'verify.filter_records' @{ records = $nu['records']; where = @(@{ field = 'startTime'; op = 'within'; value = $nuW['window'] }) }
+    $nuRecv = Invoke-TestStep 'verify.filter_records' @{ records = $nuMine['records']; where = @(@{ field = 'folder'; op = 'equals'; value = '/jpcusr/Receive' }); pluck = 'key'; spanFrom = 'startTime'; spanTo = 'endTime'; padBeforeSec = 2; padAfterSec = 10 }
+    Assert-Equal '2026-10-14T11:00:27|2026-10-14T11:00:42' ($nuRecv['span']['from'] + '|' + $nuRecv['span']['to']) 'no user column: the Receive span is the real 11:00:29..11:00:32 (+pads)'
+    Assert-Equal 6 $rs['recordCount'] 'header with a leading empty cell (10-13 page) still maps every column'
+    Assert-Equal '2026-10-08 13:45:24' $rec['records'][0]['startTime'] 'the 10-08 page (user column, no resolved) still reads by header'
+    $hdrBad = Invoke-TestStep 'verify.parse_text' @{ text = ($nuText.Replace("`t" + (-join [char[]](0x958B, 0x59CB, 0x6642, 0x9593)), "`tX")); grammar = $prof['grammar']['goAnywhere'] }
+    Assert-True ((-not $hdrBad['ok']) -and $hdrBad['failure'] -eq 'grammar_invalid' -and $hdrBad['message'] -like '*startTime*') ('a header without the start column stops the parse: ' + $hdrBad['message'])
+    # the guards behind it: an empty window and an unreadable span are stops, not pass-throughs
+    $wm = Invoke-TestStep 'verify.filter_records' @{ records = $nu['records']; where = @(@{ field = 'startTime'; op = 'within'; value = @{} }) }
+    Assert-True ((-not $wm['ok']) -and $wm['failure'] -eq 'window_missing') 'filter: within with an empty window -> window_missing'
+    $su = Invoke-TestStep 'verify.filter_records' @{ records = @(@{ key = 'a'; startTime = '2026-10-14 11:00:32'; endTime = '3.52' }); spanFrom = 'startTime'; spanTo = 'endTime' }
+    Assert-True ((-not $su['ok']) -and $su['failure'] -eq 'span_unreadable' -and $su['message'] -like '*3.52*') ('filter: an end time that is not a time -> span_unreadable: ' + $su['message'])
+    $tm = Invoke-TestStep 'file.download' @{ baseUrl = 'http://127.0.0.1:9/'; names = @('a', 'b', 'c'); dir = $tmp; maxFiles = 2 }
+    Assert-True ((-not $tm['ok']) -and $tm['failure'] -eq 'too_many' -and $tm['total'] -eq 0) 'download: more names than maxFiles -> too_many, nothing fetched'
     $hs3 = Invoke-TestStep 'verify.assert_each' @{ records = @(); rules = $prof['rules']['goAnywhereJob'] }
     Assert-Equal 'ok' $hs3['code'] 'assert_each: no records -> ok'
     $hsMix = Invoke-TestStep 'verify.assert_each' @{ records = @(@{ key = 'a'; resolved = '' }, @{ key = 'b'; resolved = 'No' }, @{ key = 'c'; resolved = 'No' }); rules = $prof['rules']['goAnywhereJob'] }

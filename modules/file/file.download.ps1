@@ -30,6 +30,7 @@ $Manifest = @{
     timeoutSec = @{ type='int';   default=60 }
     countLines = @{ type='bool';  default=$false; desc='count each file''s lines (files[].lines), for verify.pair_files' }
     missingOk  = @{ type='bool';  default=$false; desc='a 404 is not a failure: the file is left out (total counts only what arrived)' }
+    maxFiles   = @{ type='int';   default=0; desc='more names than this = too_many, nothing downloaded (a filter upstream let too much through); 0 = no limit' }
   }
   outputs    = @{
     paths   = @{ type='list'; desc='every file now on disk, in the order asked' }
@@ -40,6 +41,7 @@ $Manifest = @{
     @{ id = 'input_invalid';   transient = $false }
     @{ id = 'download_failed'; transient = $true  }
     @{ id = 'not_found';       transient = $false }
+    @{ id = 'too_many';        transient = $false }
   )
   example    = @{ use = 'file.download'; with = @{ baseUrl = '{{profile.urls.jenkinsReport}}'; names = '{{steps.jk.out.plucked}}'; dir = 'DATA/GFIX/{{item.Excel_NAME}}' } }
   notes      = 'An HTTP 404 is not_found (not transient): the file is not there. Anything else (timeout, 5xx, refused) is download_failed and may be retried. Nothing is downloaded when names is empty and url is blank -- that is input_invalid, not a silent success.'
@@ -128,6 +130,12 @@ function Invoke-Step {
             $why = ('give url + saveAs, or baseUrl + names + dir (names: {0}, baseUrl: "{1}", dir: "{2}")' -f $names.Count, $base, $dir)
             if ($Ctx['DryRun']) { $Ctx.Log.Info(('would download nothing: ' + $why)); return @{ ok = $true; paths = @(); files = @(); total = 0 } }
             return @{ ok = $false; failure = 'input_invalid'; message = $why; paths = @(); files = @(); total = 0 }
+        }
+        $max = [int]$In['maxFiles']
+        if ($max -gt 0 -and $names.Count -gt $max) {
+            $msg = ('' + $names.Count + ' file name(s) to download, the limit is ' + $max + ' -- the list upstream is too wide (first: ' + (@($names | Select-Object -First 3) -join ', ') + '); nothing downloaded')
+            if ($Ctx['DryRun']) { $Ctx.Log.Info(('would stop: ' + $msg)); return @{ ok = $true; paths = @(); files = @(); total = 0 } }
+            return @{ ok = $false; failure = 'too_many'; message = $msg; paths = @(); files = @(); total = 0 }
         }
         if (-not $base.EndsWith('/')) { $base = $base + '/' }
         foreach ($n in $names) { [void]$jobs.Add(@{ url = ($base + [string]$n); dest = (Join-Path $dir ([string]$n)); name = [string]$n }) }

@@ -1,3 +1,37 @@
+## 2026-10-14 - gfix-recv: GoAnywhere columns read by header; a filter never passes everything (v2.25.1)
+
+### Fixed
+- **GoAnywhere list read by its own header line.** On 10/14 the view had
+  no 実行ユーザー column; the grammar read cells by position, so every
+  column after the status moved left: startTime read the end time and
+  endTime read the seconds ("3.52"). The Receive span then came out empty,
+  an empty `within` window passes (kernel/Rules.ps1), and the Jenkins
+  filter kept 2183 of 4019 files; the track started downloading old
+  files (2025-09, 10-09) into `DATA\GFIX\CJODWDB6`. The `delimited`
+  parser now takes an optional `header` (`match`, `columns` title ->
+  field, `required`): when the header line is in the text, cells are read
+  by title; a column the page does not show reads blank; a header missing
+  a required column (key / folder / startTime / endTime) stops the parse
+  as `grammar_invalid` naming the column. Leading empty header cells are
+  dropped (the 10/13 page's header starts with a tab, its rows do not).
+  No header line -> the positional `fields` as before. Pages of 10/08
+  (user column, no resolved), 10/13 (both) and 10/14 (resolved, no user)
+  all read correctly.
+
+### Added
+- **`verify.filter_records`**: `window_missing` -- a `within` condition with
+  an empty window is a stop outside a dry run, never "keep every record";
+  `span_unreadable` -- `spanFrom` set, records matched, times do not
+  parse (names the values it saw).
+- **`file.download`**: `maxFiles` (0 = no limit); more names than that is
+  `too_many` and nothing is fetched. The track sets 10.
+- Fixture `Tests/fixtures/gfix-recv/goanywhere-list-nouser.sample.txt`
+  (the 10/14 page) and the regression tests for all of the above.
+
+### Operator note
+- `ebi.local.json`: the owner is `"operator": { "owner": "..." }` (nested).
+  A dotted key `"operator.owner"` is a different key and is ignored.
+
 ## 2026-10-13 - gfix-recv: the day dashboard and one entry point (v2.25.0)
 
 ### Added

@@ -73,6 +73,38 @@ function Test-EbiGrammarIgnored {
     return $false
 }
 
+function Get-EbiDelimitedHeaderMap {
+    <#
+      PURE. One header line -> @{ ok; index (field -> column); need; message }.
+      Leading empty cells are dropped (a copied table header can start with
+      the checkbox column's empty cell while the data rows start with the
+      key). Titles are compared trimmed, whitespace collapsed. need = the
+      cell count a data row must reach to hold every required column.
+    #>
+    param([string]$Line, [string]$Delimiter, $Header)
+    $cells = @(if ($Delimiter -eq 'ws' -or $Delimiter -eq ' ') { [regex]::Split($Line.Trim(), '\s+') } else { $Line -split [regex]::Escape($Delimiter) })
+    $norm = @(foreach ($c in $cells) { [regex]::Replace(([string]$c).Trim(), '\s+', ' ') })
+    $lead = 0
+    while ($lead -lt $norm.Count -and $norm[$lead] -eq '') { $lead++ }
+    $titles = @{}
+    if ($Header.Contains('columns') -and ($Header['columns'] -is [System.Collections.IDictionary])) {
+        foreach ($k in $Header['columns'].Keys) { $titles[([regex]::Replace(([string]$k).Trim(), '\s+', ' '))] = [string]$Header['columns'][$k] }
+    }
+    $index = @{}
+    for ($i = $lead; $i -lt $norm.Count; $i++) {
+        if ($titles.ContainsKey($norm[$i]) -and -not $index.Contains($titles[$norm[$i]])) { $index[$titles[$norm[$i]]] = $i - $lead }
+    }
+    $required = @(if ($Header.Contains('required') -and $null -ne $Header['required']) { @($Header['required']) | ForEach-Object { [string]$_ } })
+    $missing = @($required | Where-Object { -not $index.Contains($_) })
+    if ($missing.Count -gt 0) {
+        $shown = @($norm[$lead..([Math]::Max($lead, $norm.Count - 1))] | Where-Object { $_ -ne '' })
+        return @{ ok = $false; index = $index; need = 0; message = ('the page header has no column for ' + ($missing -join ', ') + ' (header: ' + ($shown -join ' | ') + ') -- show that column in the view') }
+    }
+    $need = 0
+    foreach ($f in $required) { if ([int]$index[$f] + 1 -gt $need) { $need = [int]$index[$f] + 1 } }
+    return @{ ok = $true; index = $index; need = $need; message = '' }
+}
+
 function ConvertFrom-EbiDelimitedText {
     param([string]$Text, $Grammar)
     $records = New-Object System.Collections.ArrayList
@@ -86,25 +118,53 @@ function ConvertFrom-EbiDelimitedText {
         if ($rowWhen.Contains('field')) { $f = $rowWhen['field']; if ($f -is [string] -and $f -notmatch '^\d+$') { $rwField = [array]::IndexOf($fields, [string]$f) } else { $rwField = [int]$f } }
         if ($rowWhen.Contains('matches')) { $rwRegex = [string]$rowWhen['matches'] }
     }
+    # header (optional): read the column order off the page's own header
+    # line instead of trusting the position list in "fields". The operator
+    # can show / hide / reorder a view's columns (GoAnywhere: the user column
+    # vanished on 10/14 and every later column moved one to the left), so a
+    # page that names its columns is read by name. header = @{ match = regex
+    # for the header line; columns = @{ '<title>' = '<field>' }; required =
+    # @(fields the header must have) }. No header line in the text -> the
+    # positional "fields" as before.
+    $hdr = if ($Grammar.Contains('header') -and ($Grammar['header'] -is [System.Collections.IDictionary])) { $Grammar['header'] } else { $null }
+    $hdrRegex = if ($null -ne $hdr -and $hdr.Contains('match')) { [string]$hdr['match'] } else { '' }
+    $colIdx = $null   # field -> column index once a header line was read
     $n = 0
     foreach ($line in (Get-EbiGrammarLines -Text $Text)) {
         $n++
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($hdrRegex -ne '' -and $line -match $hdrRegex) {
+            $m = Get-EbiDelimitedHeaderMap -Line $line -Delimiter $delim -Header $hdr
+            if (-not $m['ok']) { return @{ ok = $false; message = $m['message']; records = @(); unrecognized = @() } }
+            $colIdx = $m['index']
+            continue
+        }
         if (Test-EbiGrammarIgnored -Line $line -Grammar $Grammar) { continue }
         $parts = @(if ($delim -eq 'ws' -or $delim -eq ' ') { [regex]::Split($line.Trim(), '\s+') } else { $line -split [regex]::Escape($delim) })   # @(if) -- a one-field line must stay an array
         $ok = $true
         if ($rwRegex -ne '') {
-            $probe = if ($rwField -ge 0 -and $rwField -lt $parts.Count) { ([string]$parts[$rwField]).Trim() } else { '' }
+            $rwAt = $rwField
+            if ($null -ne $colIdx -and $rwField -ge 0 -and $rwField -lt $fields.Count -and $colIdx.Contains($fields[$rwField])) { $rwAt = [int]$colIdx[$fields[$rwField]] }
+            $probe = if ($rwAt -ge 0 -and $rwAt -lt $parts.Count) { ([string]$parts[$rwAt]).Trim() } else { '' }
             if ($probe -notmatch $rwRegex) { $ok = $false }
         }
-        # optionalTail: the last N fields may be missing from a row (a column
-        # the operator adds to the view, e.g. GoAnywhere's resolved column):
-        # such a row still parses, the missing fields blank
-        $optTail = if ($Grammar.Contains('optionalTail') -and $null -ne $Grammar['optionalTail']) { [Math]::Max(0, [int]$Grammar['optionalTail']) } else { 0 }
-        if ($ok -and $parts.Count -lt ($fields.Count - $optTail)) { $ok = $false }
+        if ($null -eq $colIdx) {
+            # optionalTail: the last N fields may be missing from a row (a column
+            # the operator adds to the view, e.g. GoAnywhere's resolved column):
+            # such a row still parses, the missing fields blank
+            $optTail = if ($Grammar.Contains('optionalTail') -and $null -ne $Grammar['optionalTail']) { [Math]::Max(0, [int]$Grammar['optionalTail']) } else { 0 }
+            if ($ok -and $parts.Count -lt ($fields.Count - $optTail)) { $ok = $false }
+        } elseif ($ok -and $parts.Count -lt [int]$m['need']) { $ok = $false }
         if (-not $ok) { [void]$unrec.Add(@{ line = $n; text = $line }); continue }
         $rec = @{}
-        for ($i = 0; $i -lt $fields.Count; $i++) { $rec[$fields[$i]] = $(if ($i -lt $parts.Count) { ([string]$parts[$i]).Trim() } else { '' }) }
+        if ($null -eq $colIdx) {
+            for ($i = 0; $i -lt $fields.Count; $i++) { $rec[$fields[$i]] = $(if ($i -lt $parts.Count) { ([string]$parts[$i]).Trim() } else { '' }) }
+        } else {
+            # every declared field exists on the record; a column the page
+            # does not show reads blank
+            foreach ($f in $fields) { $rec[$f] = '' }
+            foreach ($f in @($colIdx.Keys)) { $i = [int]$colIdx[$f]; $rec[$f] = $(if ($i -lt $parts.Count) { ([string]$parts[$i]).Trim() } else { '' }) }
+        }
         # lastNonEmpty: a page whose rows sometimes carry an extra empty cell
         # (the HM abend row) keeps its key as the LAST non-empty cell, the
         # way ConvertFrom-HmPageText read it; the field named here takes it.

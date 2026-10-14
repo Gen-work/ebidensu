@@ -803,6 +803,7 @@ HTTP GET files (base URL + names, or one URL) into a folder
 | `baseUrl` | string |  | (empty) |  | URL prefix the names are appended to (a trailing / is added when missing) |
 | `countLines` | bool |  | false |  | count each file's lines (files[].lines), for verify.pair_files |
 | `dir` | path |  | (empty) |  | with names: the folder to write into (created when missing) |
+| `maxFiles` | int |  | 0 |  | more names than this = too_many, nothing downloaded (a filter upstream let too much through); 0 = no limit |
 | `missingOk` | bool |  | false |  | a 404 is not a failure: the file is left out (total counts only what arrived) |
 | `names` | list |  | [] |  | file names under baseUrl; each is saved under the same name |
 | `overwrite` | bool |  | true |  | false: an existing file is kept and reported as skipped |
@@ -816,7 +817,7 @@ HTTP GET files (base URL + names, or one URL) into a folder
 | `paths` | list | every file now on disk, in the order asked |
 | `total` | int | files downloaded or already there |
 
-failures: `input_invalid` (not transient), `download_failed` (transient), `not_found` (not transient)
+failures: `input_invalid` (not transient), `download_failed` (transient), `not_found` (not transient), `too_many` (not transient)
 
 ```json
 {"id":"download","use":"file.download","with":{"baseUrl":"{{profile.urls.jenkinsReport}}","dir":"DATA/GFIX/{{item.Excel_NAME}}","names":"{{steps.jk.out.plucked}}"}}
@@ -1804,13 +1805,13 @@ Keep the records matching every condition; positions, plucked values, time span
 | `records` | list | the kept records, in list order |
 | `span` | map | @{ from; to } ISO, empty map when spanFrom is blank or nothing matched |
 
-failures: `rules_invalid` (not transient), `not_found` (transient)
+failures: `rules_invalid` (not transient), `not_found` (transient), `window_missing` (not transient), `span_unreadable` (not transient)
 
 ```json
 {"id":"filter_records","use":"verify.filter_records","with":{"pluck":"key","records":"{{steps.rec.out.records}}","where":[{"field":"folder","op":"equals","value":"/in"}]}}
 ```
 
-Notes: not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot.
+Notes: not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot. A within condition with no window (an empty from/to, e.g. a span an earlier step could not compute) is window_missing, not "everything passes": on 10/14 an unreadable end time emptied the span and every Jenkins file matched. span_unreadable: spanFrom is set, records matched, but their times do not parse (the page's columns moved?).
 
 ### `verify.match_record`
 
