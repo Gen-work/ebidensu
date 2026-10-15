@@ -79,6 +79,7 @@ function Invoke-Step {
     $ws = Get-EbiSheet -Workbook $In['workbook'] -Sheet $In['sheet']
     if ($null -eq $ws) { return @{ ok = $false; failure = 'sheet_not_found'; message = ('no sheet "' + $In['sheet'] + '"'); labelRow = 0; firstRow = 0; lastRow = 0; nextRow = 0; written = 0 } }
     $col = ConvertTo-EbiColumnNumber ([string]$In['column'])
+    Show-EbiExcelAt -Worksheet $ws -Row $row -Front
     try {
         if ($label -ne '') {
             Set-EbiCellTextPlain -Cell $ws.Cells.Item($row, $col) -Text $label -FontName ([string]$In['fontName']) -FontSize ([double]$In['fontSize'])

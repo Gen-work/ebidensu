@@ -23,6 +23,7 @@
     { "name": "track", "role": "verdict", "default": "", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "logs", "role": "verdict", "default": "", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "evidence", "role": "verdict", "default": "", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
+    { "name": "deliver", "role": "verdict", "default": "", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "note", "role": "text", "default": "" }
   ]
 }

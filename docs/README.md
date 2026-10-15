@@ -65,6 +65,7 @@ grammar tune、PNG 尺寸对拍。合并后(2026-09-29)按 review 修了两处 P
 | `ebi-dance/Plan.md` | 人 | 想知道**为什么**这么设计、整体长什么样 |
 | `ebi-dance/BACKLOG.md` | 人 + Agent | **每次开工**。任务卡 + 铁律 |
 | `ebi-dance/INTERVIEW.md` | **Agent** | 要给一份新工作做流程访谈时。**不依赖代码,现在就能用** |
+| `ebi-dance/KNOWLEDGE.md` | 人 + **Agent** | 写新工作流**之前**:办公 PC 实跑撞到的边界情况(症状 / 原因 / 对策 / 写法)+ 检查清单;撞到新的就补一条 |
 | `ebi-dance/spec/VOCABULARY.md` | 人 + Agent | 起名字的时候;搞不清 role / action / verb 区别的时候 |
 | `ebi-dance/spec/STEP-CONTRACT.md` | 写 step 的人 | 写任何一个 `modules/**` 文件之前 |
 | `ebi-dance/spec/WORKFLOW-SCHEMA.md` | 写工作流的人 + Agent | 写 `workflows/*.json` 之前 |
@@ -77,7 +78,7 @@ grammar tune、PNG 尺寸对拍。合并后(2026-09-29)按 review 修了两处 P
 | 你要… | 读 |
 |-------|-----|
 | 加一个新的 step | `spec/STEP-CONTRACT.md` §1-3, §9 |
-| 搭一条新工作流 | `spec/WORKFLOW-SCHEMA.md` §1-4, §8 |
+| 搭一条新工作流 | `spec/WORKFLOW-SCHEMA.md` §1-4, §8 + `KNOWLEDGE.md` 开头的检查清单 |
 | 接一份全新的工作 | `INTERVIEW.md` 全文 + `spec/PROFILE-SCHEMA.md` §10 |
 | 改判定规则 | `spec/PROFILE-SCHEMA.md` §5 |
 | 页面解析不对 | `spec/PROFILE-SCHEMA.md` §4 |

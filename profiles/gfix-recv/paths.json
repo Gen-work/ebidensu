@@ -7,5 +7,8 @@
   "goAnywhereUrl": "",
   "jenkinsReportUrl": "",
   "receiveLogUrl": "",
-  "receiveUnzipLogUrl": ""
+  "receiveUnzipLogUrl": "",
+  "reviewSheet": "CHANGE-ME/00.management/review-check-sheet.xlsx",
+  "mailTemplate": "review-mail.json",
+  "_deliver_doc": "gfixRecv.deliver (10/15): reviewSheet = the shared review check sheet (Check Sheet_J4); mailTemplate = the review-request mail, a .json / .bat (#==TEMPLATE_JSON==) / .msg / .oft kept in the work dir -- it carries real addresses, so it never goes in the repo (kernel/Mail.ps1)"
 }

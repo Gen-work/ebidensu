@@ -207,6 +207,83 @@ function Read-EbiGateAnswer {
     return @{ ok = $true; action = $key; note = $note }
 }
 
+function Get-EbiGateLineColor {
+    # PURE. Yellow, or Red when the line holds one of the Alert fragments.
+    param([string]$Line, [string[]]$Alert = @())
+    foreach ($a in @($Alert)) { if (-not [string]::IsNullOrEmpty($a) -and $Line.IndexOf($a, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return 'Red' } }
+    return 'Yellow'
+}
+
+function Get-EbiFailureHints {
+    <#
+      PURE. The FAILED panel's "what usually causes this / what to do"
+      lines, so the operator does not have to look the code up (10/15:
+      "less time to rtfm"). Two tables, both checked:
+        - message patterns (a COM HRESULT says more than the failure id)
+        - failure ids (the STEP-CONTRACT failure table's ids)
+      Returns string[] (empty when nothing is known). Add a row here when
+      a new failure turns up on the office PC -- and a line to
+      docs/ebi-dance/KNOWLEDGE.md saying where it came from.
+    #>
+    param([string]$Failure, [string]$Message = '', [string]$Use = '')
+    $out = New-Object System.Collections.ArrayList
+    $byMessage = @(
+        @{ pattern = '0x800AC472|0x80010001|0x8001010A|RPC_E_CALL_REJECTED|RPC_E_SERVERCALL_RETRYLATER'
+           hint = 'Excel is busy and refused the call: a cell is being edited, a dialog is open, or someone clicked in Excel while the tool was writing. Press Esc in Excel, keep your hands off it, then r.' },
+        @{ pattern = '0x800A03EC'
+           hint = 'Excel rejected the value or the range (protected sheet, merged cells, a formula error). Look at the sheet named above, then r or s.' },
+        @{ pattern = 'read-only|ReadOnly|has it open'
+           hint = 'Someone else has the workbook open. Ask them to close it (the name is above when Excel knows it), then r.' }
+    )
+    foreach ($row in $byMessage) { if ($Message -match $row['pattern']) { [void]$out.Add($row['hint']) } }
+    $byId = @{
+        'not_found'         = $(if ($Use -eq 'screen.find_window') { 'The window title is the ACTIVE TAB''s title. Give the page its own browser window, make it the active tab, wait until it has loaded, then r.' } else { 'Nothing matched. Check the item / page named above; r after fixing it, s to leave the item pending.' })
+        'foreground_lost'   = 'Another window came to the front (a popup, a Teams toast, a click). Close it, leave the mouse alone, then r.'
+        'window_gone'       = 'The window was closed or replaced (browser restarted?). Open it again, then r.'
+        'no_window'         = 'The window is not open. Open it, then r.'
+        'no_browser_window' = 'The browser window is not open. Open it, then r.'
+        'file_not_found'    = 'An earlier flow did not produce this file for this job (track / logs), or a path in ebi.local.json is wrong. s, then run that flow with -Only <job>.'
+        'dir_not_found'     = 'The folder does not exist: check the paths in ebi.local.json (and the share is reachable), then r.'
+        'write_failed'      = 'Writing failed. If Excel shows a dialog or a cell in edit mode, close it (Esc), then r.'
+        'save_failed'       = 'Saving failed: the workbook may be open read-only by someone else, or the share is unreachable. r after fixing it.'
+        'copy_failed'       = 'Copy / paste through the clipboard failed (another program used the clipboard?). r.'
+        'clipboard_error'   = 'The clipboard was busy (another program held it). r.'
+        'session_missing'   = 'A step before this one was skipped or failed, so what it opens is not there. s (the item stays pending).'
+        'sheet_not_found'   = 'The workbook has no sheet with that name: wrong workbook, or the sheet was renamed. Check it, then s.'
+        'wrong_page'        = 'The page is not the expected one (filter, columns, tab). Fix the page as the PREPARE panel says, then r.'
+        'page_loading'      = 'The page is still loading. Wait, then r.'
+        'timeout'           = 'Nothing came in time (page slow, file not there yet). r to wait again, s to leave the item pending.'
+        'read_only'         = 'Someone else has the workbook open. Ask them to close it, then r.'
+        'open_failed'       = 'Excel could not open the file (path, lock, or a broken file). Check it, then r.'
+        'download_failed'   = 'The download did not arrive (session expired? proxy?). Check the browser, then r.'
+        'input_invalid'     = 'The workflow passed a wrong value to this step: not your screen. q and report it (the message names the parameter).'
+        'contract_violation' = 'The step definition is wrong: not your screen. q and report it.'
+        'ambiguous'         = 'Several candidates matched; the item cannot be decided automatically. s, then run it with -Only <job> after fixing the data.'
+    }
+    if ($byId.Contains($Failure)) { [void]$out.Add([string]$byId[$Failure]) }
+    return $out.ToArray()
+}
+
+function Test-EbiStopRequested {
+    <#
+      Was q (or Esc) pressed in the console while a step was working?
+      Reads -- and so drops -- every key typed ahead; true when one of them
+      was q / Q / Esc. The runner asks before the next step (STOP? panel).
+      False with no console to read (redirected stdin, EBI_NO_ASK=1 as the
+      test runner sets it, Linux CI). Never throws.
+    #>
+    if ([string]$env:EBI_NO_ASK -eq '1') { return $false }
+    $hit = $false
+    try {
+        if ([Console]::IsInputRedirected) { return $false }
+        while ([Console]::KeyAvailable) {
+            $k = [Console]::ReadKey($true)
+            if ($k.Key -eq [ConsoleKey]::Escape -or $k.KeyChar -eq 'q' -or $k.KeyChar -eq 'Q') { $hit = $true }
+        }
+    } catch { }
+    return $hit
+}
+
 function Show-EbiGate {
     <#
       Render the panel, read an answer, repeat until it is one of the
@@ -219,11 +296,15 @@ function Show-EbiGate {
                   Read-Host
         Raw       free-text mode: the typed line is the answer (note under
                   the Default action); only a bare 'q' is an action
+        Alert     text fragments: a panel line holding one of them is
+                  drawn red instead of yellow (10/15: "a run from another
+                  day", "the picture shows another job") -- the panel text
+                  itself is unchanged, so tests and logs read the same
       Nothing here decides what an action MEANS -- the caller does.
     #>
-    param([string]$Title = '', $What = $null, $Next = $null, $Evidence = $null, $Actions = @(), [string]$Default = '', [string]$Auto = '', [scriptblock]$Reader = $null, [bool]$DryRun = $false, [switch]$Raw)
+    param([string]$Title = '', $What = $null, $Next = $null, $Evidence = $null, $Actions = @(), [string]$Default = '', [string]$Auto = '', [scriptblock]$Reader = $null, [bool]$DryRun = $false, [switch]$Raw, [string[]]$Alert = @())
     foreach ($line in @(Format-EbiGatePanel -Title $Title -What $What -Next $Next -Evidence $Evidence -Actions $Actions)) {
-        Write-Host ('  ' + $line) -ForegroundColor Yellow
+        Write-Host ('  ' + $line) -ForegroundColor (Get-EbiGateLineColor -Line $line -Alert $Alert)
     }
     $noConsole = $DryRun
     $why = 'dry run'
@@ -261,7 +342,8 @@ function Invoke-EbiGateAsk {
     <#
       The runner's -AskHandler on top of the panel (the two question
       shapes documented on kernel/Runner.ps1's Invoke-EbiDefaultAsk):
-        error   -> 'r' | 's' | 'q'   (auto: s; Enter = s, 10/14)
+        error   -> 'r' | 's' | 'q'   (auto: s; Enter = r when the failure is
+                                      transient, else s -- 10/15)
         confirm -> 'y' | 'n' | 'q'   (auto: y)
     #>
     param([hashtable]$Question, [bool]$DryRun = $false, [scriptblock]$Reader = $null)
@@ -285,11 +367,20 @@ function Invoke-EbiGateAsk {
         foreach ($k in ($Question['evidence'].Keys | Sort-Object)) { $v = $Question['evidence'][$k]; if ($null -ne $v -and -not ($v -is [System.Collections.IDictionary]) -and -not ($v -is [System.Collections.IList])) { [void]$evidence.Add([string]$k + ': ' + [string]$v) } }
     }
     $attemptText = if ($Question.Contains('attempt') -and [int]$Question['attempt'] -gt 1) { (' (attempt ' + [string]$Question['attempt'] + ')') } else { '' }
+    # Enter: r when the failure is transient (window not open yet, Excel
+    # busy -- trying again is what a person does), s otherwise (a missing
+    # track.json does not appear by retrying). 10/14 Enter = s; 10/15 split.
+    $transient = $Question.Contains('transient') -and [bool]$Question['transient']
+    $enter = if ($transient) { 'r' } else { 's' }
+    $what = New-Object System.Collections.ArrayList
+    [void]$what.Add(('{0} ({1}){2}' -f $where, $Question['use'], $attemptText))
+    [void]$what.Add(([string]$Question['failure'] + ': ' + [string]$Question['message']))
+    foreach ($h in @(Get-EbiFailureHints -Failure ([string]$Question['failure']) -Message ([string]$Question['message']) -Use ([string]$Question['use']))) { [void]$what.Add('hint: ' + $h) }
     $r = Show-EbiGate -Title 'FAILED' `
-        -What @(('{0} ({1}){2}' -f $where, $Question['use'], $attemptText), ([string]$Question['failure'] + ': ' + [string]$Question['message'])) `
-        -Next @('r: run this step again', 's / Enter: skip this item, leave it pending', 'q: cancel the whole run (teardown still runs)') `
+        -What $what.ToArray() `
+        -Next @($(if ($enter -eq 'r') { 'r / Enter: run this step again' } else { 'r: run this step again' }), $(if ($enter -eq 's') { 's / Enter: skip this item, leave it pending' } else { 's: skip this item, leave it pending' }), 'q: cancel the whole run (teardown still runs)') `
         -Evidence $evidence.ToArray() `
-        -Actions @(@{ key = 'r'; label = 'retry' }, @{ key = 's'; label = 'skip item (Enter)' }, @{ key = 'q'; label = 'quit' }) `
-        -Default 's' -Auto 's' -Reader $Reader -DryRun $DryRun
+        -Actions @(@{ key = 'r'; label = $(if ($enter -eq 'r') { 'retry (Enter)' } else { 'retry' }) }, @{ key = 's'; label = $(if ($enter -eq 's') { 'skip item (Enter)' } else { 'skip item' }) }, @{ key = 'q'; label = 'quit' }) `
+        -Default $enter -Auto 's' -Reader $Reader -DryRun $DryRun
     return $r['action']
 }

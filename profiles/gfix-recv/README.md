@@ -14,7 +14,8 @@ Workflows that use it (`workflows/gfixRecv.*.json`):
 | `gfixRecv.plan` | morning | today's jobs = WBS (受信 / 修正後実施 / 担当 厳, arrows as in OwnerFilter) ∪ mapping.xlsx (GFIX実行日 = today) -> `gfixrecv.csv` |
 | `gfixRecv.track` | each HOST job | wait for the Teams "正常終了", refresh GoAnywhere, find the job's rows, Jenkins file, download to DATA\GFIX\<W-job>, pair with DATA\GIFT\<J-job>, compare, DF captures, Teams text + pictures on the clipboard |
 | `gfixRecv.logs` | end of day | GFIXReceive.log (+ Unzip) -> log\GFIXReceive\mmdd.log (SJIS), GoAnywhere / Jenkins overview texts, each Receive job's log -> log\GFIX受信ログ |
-| `gfixRecv.evidence` | after logs | GFIX受信結果 (Excel snap copy, job log + yellow, GFIXReceive.log block + yellow, Jenkins snap + red box), GIFTデータvsGFIXデータ (B3, DF captures, wave, red boxes), tidy + save |
+| `gfixRecv.evidence` | after logs | GFIX受信結果 (Excel snap copy + OCR check that it is this job's row, job log + yellow, GFIXReceive.log block + yellow, Jenkins snap + red box), GIFTデータvsGFIXデータ (B3, DF captures, wave, red boxes), tidy + save; the gate lists `layout.evidence.checklist` and draws a disagreeing check red |
+| `gfixRecv.deliver` | after evidence | one Outlook **draft** per job from the mail template; the operator sends it and answers Enter; then one row on the review check sheet (Check Sheet_J4). A book already on the sheet (requested by hand) is taken as done: no draft, no question |
 
 Files:
 
@@ -31,7 +32,16 @@ Files:
   URLs go in `<WorkDir>\ebi.local.json` (see `docs/gfix-recv/RUNBOOK.zh.md`);
   the mask gate refuses UNC paths / personal folders in the repo.
 - `worklist.json` -- `gfixrecv.csv`, one row per Excel_NAME (the W-name),
-  verdict columns `track` / `logs` / `evidence`.
+  verdict columns `track` / `logs` / `evidence` / `deliver`.
+- `operator.json` -- `owner` (the WBS 担当 filter) and `reviewer` (the check
+  sheet's 確認 column); both blank here, set per machine in ebi.local.json.
+
+The mail template (`paths.mailTemplate`, default `review-mail.json` in the
+work dir) holds real addresses and names, so it lives only on the PC: a
+`.json` { token, subject, body, html, recipients }, the operator's
+`sendj4mail.bat` itself (its `#==TEMPLATE_JSON==` section), or a mail saved
+from Outlook (`.msg` / `.oft`, give the token in the workflow). The token --
+the job name of the mail it was copied from -- becomes each job's W-name.
 
 Measured, not guessed (from the sample workbook QJDSWM39 and the operator's
 screenshots): Teams crop (GoAnywhere maximized, 1920 x 1080), DF line-number

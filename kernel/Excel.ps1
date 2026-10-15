@@ -110,3 +110,79 @@ function Set-EbiCellTextPlain {
     if ($FontName -ne '') { try { $Cell.Font.Name = $FontName } catch { } }
     if ($FontSize -gt 0) { try { $Cell.Font.Size = $FontSize } catch { } }
 }
+
+function Show-EbiExcelAt {
+    <#
+      Let the operator SEE what the run is doing to a visible workbook
+      (10/15: "switch to it, so I can q any time, not wait blind"):
+      activate the sheet, scroll so -Row is near the top, and -- with
+      -Front -- bring Excel in front. Does nothing when Excel is hidden
+      (the plan reads books with visible = false). Best effort, never
+      throws: a refused call here must not fail the step that wrote.
+      Looking is fine; CLICKING in Excel while the run writes makes Excel
+      refuse the next call (0x800AC472, docs/ebi-dance/KNOWLEDGE.md).
+    #>
+    param($Worksheet, [int]$Row = 0, [switch]$Front)
+    $app = $null
+    try { $app = $Worksheet.Application; if (-not [bool]$app.Visible) { return } } catch { return }
+    try { [void]$Worksheet.Activate() } catch { }
+    if ($Row -gt 0) { try { $app.ActiveWindow.ScrollRow = [Math]::Max(1, $Row - 2) } catch { } }
+    if ($Front -and [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT -and $null -ne (Get-Command -Name 'Set-EbiForeground' -ErrorAction SilentlyContinue)) {
+        try { [void](Set-EbiForeground -HWnd ([IntPtr]([int64]$app.Hwnd)) -SettleMs 0) } catch { }
+    }
+}
+
+function Export-EbiShapePng {
+    <#
+      One shape -> a PNG, through a temporary chart (Shape.Copy, paste into
+      a ChartObject stretched to -Scale x the shape, Chart.Export, delete
+      the chart). Scale > 1 re-renders from the picture's ORIGINAL data, so
+      text shown small on the sheet is big enough for OCR (EvidenceImage
+      Export.ps1's lesson). Clobbers the clipboard; leaves the sheet as it
+      was. Returns @{ ok; path; message }; never throws.
+    #>
+    param($Worksheet, $Shape, [string]$OutPath, [double]$Scale = 3.0)
+    $chartObj = $null
+    try {
+        $dir = Split-Path -Parent $OutPath
+        if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        if (Test-Path -LiteralPath $OutPath) { Remove-Item -LiteralPath $OutPath -Force }
+        $w0 = [double]$Shape.Width; $h0 = [double]$Shape.Height
+        if ($Scale -lt 1.0) { $Scale = 1.0 }
+        if ([Math]::Max($w0, $h0) * $Scale -gt 6000.0) { $Scale = 6000.0 / [Math]::Max($w0, $h0) }
+        $w = $w0 * $Scale; $h = $h0 * $Scale
+        [void]$Shape.Copy()
+        Start-Sleep -Milliseconds 150
+        $chartObj = $Worksheet.ChartObjects().Add(0, 0, $w, $h)
+        [void]$chartObj.Activate()
+        [void]$chartObj.Chart.Paste()
+        Start-Sleep -Milliseconds 150
+        try { $pz = $chartObj.Chart.Shapes; if ([int]$pz.Count -ge 1) { $p = $pz.Item(1); $p.LockAspectRatio = 0; $p.Left = 0; $p.Top = 0; $p.Width = $w; $p.Height = $h } } catch { }
+        [void]$chartObj.Chart.Export($OutPath, 'PNG')
+        if (-not (Test-Path -LiteralPath $OutPath)) { return @{ ok = $false; path = $OutPath; message = 'Chart.Export wrote no file' } }
+        return @{ ok = $true; path = $OutPath; message = '' }
+    } catch {
+        return @{ ok = $false; path = $OutPath; message = $_.Exception.Message }
+    } finally {
+        if ($null -ne $chartObj) { try { $chartObj.Delete() } catch { }; try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch { } }
+    }
+}
+
+function Get-EbiGroupShapesAbove {
+    # Group shapes (msoGroup 6: pictures put together with Ctrl+G) whose top
+    # is at or above -Top points: they come BEFORE the first plain picture
+    # in reading order, and Get-EbiPictureShapes does not see them, so "the
+    # first picture" may not be the one a person sees first. Names, top
+    # first. Never throws.
+    param($Worksheet, [double]$Top)
+    $out = New-Object System.Collections.ArrayList
+    try {
+        foreach ($s in $Worksheet.Shapes) {
+            $t = 0
+            try { $t = [int]$s.Type } catch { continue }
+            if ($t -ne 6) { continue }
+            if ([double]$s.Top -le ($Top + 1.0)) { [void]$out.Add([string]$s.Name) }
+        }
+    } catch { }
+    return $out.ToArray()
+}

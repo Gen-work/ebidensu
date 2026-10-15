@@ -885,6 +885,132 @@
       "summary": "Poll the page text until it contains a string, or time out",
       "tier": "core"
     },
+    "excel.append_row": {
+      "effects": "write",
+      "example": {
+        "use": "excel.append_row",
+        "with": {
+          "cells": {
+            "B": "{{run.date}}",
+            "C": "JAVA",
+            "F": "book_{{item.key}}.xlsx"
+          },
+          "dateColumns": [
+            "B"
+          ],
+          "keyColumn": "F",
+          "sheet": "Check Sheet_J4",
+          "workbook": "cs"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        },
+        {
+          "id": "read_only",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.append_row.ps1",
+      "group": "excel",
+      "id": "excel.append_row",
+      "idempotent": true,
+      "inputs": {
+        "cells": {
+          "desc": "column letter -> value, e.g. { \"B\": \"2026-10-16\", \"F\": \"<file name>\" }; empty values are left blank",
+          "required": true,
+          "type": "map"
+        },
+        "checkOnly": {
+          "default": false,
+          "desc": "only look: is the key listed? (existing / verdict / line), never write or save -- for a flow that writes the row after a person confirmed (gfixRecv.deliver: after the mail was sent)",
+          "type": "bool"
+        },
+        "dateColumns": {
+          "default": [],
+          "desc": "columns whose value (yyyy-MM-dd or yyyy/MM/dd) is written as a real date, formatted like the row above",
+          "type": "list"
+        },
+        "dismissDialogs": {
+          "default": [],
+          "desc": "title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does",
+          "type": "list"
+        },
+        "firstRow": {
+          "default": 2,
+          "desc": "first data row: the key search starts here",
+          "type": "int"
+        },
+        "keyColumn": {
+          "default": "",
+          "desc": "column whose text identifies a row (e.g. F, the review target); a row already holding cells[keyColumn] there means \"already listed\": nothing is written. Empty = always append",
+          "type": "string"
+        },
+        "lastBy": {
+          "default": "B",
+          "desc": "column whose last used cell marks the end of the list (pre-filled number columns would fool a whole-row search)",
+          "type": "string"
+        },
+        "save": {
+          "default": true,
+          "desc": "save the workbook right after writing (a shared list: keep the time it is changed short)",
+          "type": "bool"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "The key is compared as trimmed text, case-insensitively. read_only is not transient here: the session holds the read-only copy, so retrying cannot help -- close the run, have the other person close the book, run again (the row is not listed yet, so the rerun adds it).",
+      "outputs": {
+        "added": {
+          "desc": "true when a row was written",
+          "type": "bool"
+        },
+        "existing": {
+          "desc": "true when the key was already listed (nothing written)",
+          "type": "bool"
+        },
+        "line": {
+          "desc": "one line for a gate: \"row N added\" / \"already listed on row N (date)\"",
+          "type": "string"
+        },
+        "row": {
+          "desc": "the row written, or the row that already held the key; 0 in a dry run",
+          "type": "int"
+        },
+        "verdict": {
+          "desc": "ok when the key was already listed (the list says it is done: nothing for a person to do), unknown when a row was added (a person finishes the job, e.g. sends the mail) -- the code for a human.gate askWhen [unknown]",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Append one row under the last used row, unless the key is already listed; optionally save",
+      "tier": "core"
+    },
     "excel.close": {
       "effects": "write",
       "example": {
@@ -983,6 +1109,11 @@
           "desc": "1-based, top-to-bottom",
           "type": "int"
         },
+        "savePng": {
+          "default": "",
+          "desc": "also export the picture to this PNG (3x, for OCR); relative paths resolve under the work dir; empty = no export",
+          "type": "path"
+        },
         "toSheet": {
           "required": true,
           "type": "string"
@@ -996,14 +1127,26 @@
       "needs": [
         "excel"
       ],
-      "notes": "Clobbers the clipboard. Not idempotent: a rerun pastes a second copy.",
+      "notes": "Clobbers the clipboard. Not idempotent: a rerun pastes a second copy. A failed savePng export is a warning (png_not_saved), never a failure: the copy itself is done.",
       "outputs": {
+        "groups": {
+          "desc": "names of grouped shapes (Ctrl+G) at or above the picture on fromSheet: the copy may be the wrong picture",
+          "type": "list"
+        },
         "name": {
           "type": "string"
         },
         "nextRow": {
           "desc": "first row whose top is below the copy, plus gapRows",
           "type": "int"
+        },
+        "note": {
+          "desc": "one line for the gate when groups is not empty, else empty",
+          "type": "string"
+        },
+        "png": {
+          "desc": "the exported PNG; empty when savePng is empty or the export failed (a warning says why)",
+          "type": "path"
         }
       },
       "provides": [],
@@ -2354,6 +2497,10 @@
           "desc": "exact | stripped | fullwidth | case | glob (kernel/Key.ps1 tiers)",
           "type": "string"
         },
+        "name": {
+          "desc": "the hit's file name (path without the folder); empty when there is no hit",
+          "type": "string"
+        },
         "path": {
           "desc": "the hit (the only one, or the newest with expect=any)",
           "type": "path"
@@ -2981,6 +3128,99 @@
       "summary": "Show every candidate with its evidence; the operator picks one, none, or skips",
       "tier": "core"
     },
+    "human.draft_mail": {
+      "effects": "write",
+      "example": {
+        "use": "human.draft_mail",
+        "with": {
+          "template": "{{profile.paths.mailTemplate}}",
+          "value": "{{item.Excel_NAME}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "template_invalid",
+          "transient": false
+        },
+        {
+          "id": "outlook_unavailable",
+          "transient": false
+        },
+        {
+          "id": "draft_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/human/human.draft_mail.ps1",
+      "group": "human",
+      "id": "human.draft_mail",
+      "idempotent": false,
+      "inputs": {
+        "cc": {
+          "default": [],
+          "desc": "addresses that replace the template's CC; empty = keep the template's",
+          "type": "list"
+        },
+        "display": {
+          "default": true,
+          "desc": "open the draft window for the operator",
+          "type": "bool"
+        },
+        "template": {
+          "desc": ".json, .bat/.cmd (a #==TEMPLATE_JSON== section) or .msg/.oft; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "to": {
+          "default": [],
+          "desc": "addresses that replace the template's To; empty = keep the template's",
+          "type": "list"
+        },
+        "token": {
+          "default": "",
+          "desc": "the word in the template to replace; empty = the template's own token (a .msg/.oft has none: give it)",
+          "type": "string"
+        },
+        "trimBefore": {
+          "default": true,
+          "desc": "drop spaces between \"_\" or \">\" and the token (a template whose file name read \"_ JOB.xlsx\")",
+          "type": "bool"
+        },
+        "value": {
+          "desc": "what the token becomes, e.g. {{item.Excel_NAME}}",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Not idempotent: every run makes one more draft (a rerun after a failure leaves the earlier draft in Drafts -- delete it there). The template file stays on the PC (addresses and names are not committed); profiles/gfix-recv/README.md says where.",
+      "outputs": {
+        "cc": {
+          "desc": "CC addresses",
+          "type": "list"
+        },
+        "saved": {
+          "desc": "the draft is in the Drafts folder",
+          "type": "bool"
+        },
+        "subject": {
+          "desc": "the draft's subject",
+          "type": "string"
+        },
+        "to": {
+          "desc": "To addresses",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Make an Outlook draft from a template (token -> value), save and open it; never sends",
+      "tier": "core"
+    },
     "human.gate": {
       "effects": "ui",
       "example": {
@@ -3009,11 +3249,21 @@
       "id": "human.gate",
       "idempotent": true,
       "inputs": {
+        "alert": {
+          "default": "",
+          "desc": "a line, or a list of lines, drawn RED on the panel (an automatic check that disagrees, e.g. verify.find_token alert); empty lines are left out",
+          "type": "any"
+        },
         "askWhen": {
           "default": [
             "unknown"
           ],
           "desc": "codes that need a person",
+          "type": "list"
+        },
+        "checklist": {
+          "default": [],
+          "desc": "what to look at, one line each, shown as \"check: ...\" (10/15: the review points, kept in the profile so they can grow)",
           "type": "list"
         },
         "code": {
@@ -4205,6 +4455,61 @@
       "summary": "Locate target list entries in an end-scrolled screenshot; one rect per run",
       "tier": "core"
     },
+    "screen.ocr": {
+      "effects": "read",
+      "example": {
+        "use": "screen.ocr",
+        "with": {
+          "path": "capture/gfix/{{item.keySafe}}/pic1.png"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        }
+      ],
+      "file": "modules/screen/screen.ocr.ps1",
+      "group": "screen",
+      "id": "screen.ocr",
+      "idempotent": true,
+      "inputs": {
+        "language": {
+          "default": "en-US",
+          "desc": "recognizer tried first (BCP-47); then en, then the Windows profile languages. en reads job / file names (O/0, I/1) better than ja",
+          "type": "string"
+        },
+        "path": {
+          "default": "",
+          "desc": "the PNG to read; relative paths resolve under the work dir. Empty = nothing to read (an earlier export that did not happen): ok, available=false, no warning",
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "notes": "OCR misreads look-alikes (O/0, I/1, S/5, B/8): compare with verify.find_token, which folds them. Windows only; on another host available=false.",
+      "outputs": {
+        "available": {
+          "desc": "false: OCR could not run here (the text is empty for that reason, not because the picture is blank)",
+          "type": "bool"
+        },
+        "language": {
+          "desc": "the recognizer that read it; empty when none ran",
+          "type": "string"
+        },
+        "lines": {
+          "desc": "the lines OCR found, top to bottom",
+          "type": "list"
+        },
+        "text": {
+          "desc": "every line, joined with a newline; empty when nothing was read",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "OCR a PNG (Windows OCR); no OCR on this PC = ok with available=false",
+      "tier": "core"
+    },
     "screen.row_region": {
       "effects": "read",
       "example": {
@@ -5294,6 +5599,76 @@
       "provides": [],
       "releases": [],
       "summary": "Keep the records matching every condition; positions, plucked values, time span",
+      "tier": "core"
+    },
+    "verify.find_token": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.find_token",
+        "with": {
+          "expect": "{{item.JOB}}",
+          "label": "picture 1 (Excel snap)",
+          "text": "{{steps.pic1Ocr.out.text}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.find_token.ps1",
+      "group": "verify",
+      "id": "verify.find_token",
+      "idempotent": true,
+      "inputs": {
+        "expect": {
+          "default": "",
+          "desc": "the name that must be in it, e.g. the job's J name",
+          "type": "string"
+        },
+        "label": {
+          "default": "the picture",
+          "desc": "what the text came from, for the reason / alert wording",
+          "type": "string"
+        },
+        "pattern": {
+          "default": "[A-Za-z0-9|]{5,16}",
+          "desc": "regex of a name-like word, for the candidates the reason lists",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "desc": "the text to search (screen.ocr text)",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Pure. Folding is symmetric, so a correct name never fails for a look-alike; the cost is that two names differing only by a look-alike pair (O vs 0) are not told apart.",
+      "outputs": {
+        "alert": {
+          "desc": "the reason when code is ng or a near miss, else empty: the gate draws it red",
+          "type": "string"
+        },
+        "candidates": {
+          "desc": "name-like words read from the text (as read, upper-cased)",
+          "type": "list"
+        },
+        "code": {
+          "desc": "ok | ng | unknown",
+          "type": "string"
+        },
+        "found": {
+          "type": "bool"
+        },
+        "reason": {
+          "desc": "one line for the gate",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Find an expected name in OCR text, folding look-alikes; ok / ng / unknown + alert",
       "tier": "core"
     },
     "verify.match_record": {

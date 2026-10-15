@@ -368,10 +368,16 @@ if ($resumeFlag) {
     }
 } elseif ($unfinished.Count -gt 0 -and -not $dryRunFlag) {
     # P0-R16: never silently start anew next to an unfinished run.
+    # 10/15: Enter = n (a new run); a run that started on another day is
+    # drawn red -- its ledger replays by job name, so resuming it next to
+    # today's jobs is only right when you know why.
+    $runLines = Format-EbiUnfinishedRunLines -Runs $unfinished
+    $what = @(('{0} unfinished run(s) of "{1}" under {2}:' -f $unfinished.Count, $wfId, $wd)) + @($runLines['lines'])
+    if ($runLines['otherDay'] -gt 0) { $what += @('another day = left over from an earlier day: usually d (forget) or n, not r') }
     $r = Show-EbiGate -Title 'UNFINISHED RUN' `
-        -What @(('{0} unfinished run(s) of "{1}" under {2}:' -f $unfinished.Count, $wfId, $wd), (($unfinished | ForEach-Object { [string]$_['runId'] + ' (started ' + [string]$_['startedAt'] + ')' }) -join '; ')) `
-        -Next @('r: resume the newest one', 'n: start a new run anyway (they stay listed)', 'd: forget them (mark abandoned, never offered again) and start a new run', 'q: quit') `
-        -Actions @(@{ key = 'r'; label = 'resume' }, @{ key = 'n'; label = 'new run' }, @{ key = 'd'; label = 'forget + new run' }, @{ key = 'q'; label = 'quit' }) -Auto 'n'
+        -What $what `
+        -Next @('r: resume the newest one (the first line)', 'n / Enter: start a new run (they stay listed)', 'd: forget them (mark abandoned, never offered again) and start a new run', 'q: quit') `
+        -Actions @(@{ key = 'r'; label = 'resume' }, @{ key = 'n'; label = 'new run (Enter)' }, @{ key = 'd'; label = 'forget + new run' }, @{ key = 'q'; label = 'quit' }) -Default 'n' -Auto 'n' -Alert @('another day')
     if ($r['action'] -eq 'q') { exit 3 }
     if ($r['action'] -eq 'r') { $resumeFlag = $true; $RunId = [string]$unfinished[0]['runId'] }
     if ($r['action'] -eq 'd') {

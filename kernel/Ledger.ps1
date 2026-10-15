@@ -207,3 +207,31 @@ function Find-EbiUnfinishedRuns {
     }
     return $out.ToArray()
 }
+
+function Format-EbiUnfinishedRunLines {
+    <#
+      PURE. The UNFINISHED RUN panel's one line per run: "<runId>  started
+      yyyy-MM-dd HH:mm", plus "  <- another day" when it did not start on
+      -Today (10/15: a 10/14 evidence run was offered and resumed next to
+      today's jobs -- the ledger replays by job name, so an old run must
+      look old). Returns @{ lines = string[]; otherDay = int }.
+    #>
+    param($Runs, [datetime]$Today = (Get-Date))
+    $lines = New-Object System.Collections.ArrayList
+    $other = 0
+    foreach ($doc in @($Runs)) {
+        if (-not ($doc -is [System.Collections.IDictionary])) { continue }
+        $started = [string]$doc['startedAt']
+        $when = $started
+        $isOther = $false
+        $dt = [datetime]::MinValue
+        if ([datetime]::TryParse($started, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$dt)) {
+            $local = if ($dt.Kind -eq [System.DateTimeKind]::Utc) { $dt.ToLocalTime() } else { $dt }
+            $when = $local.ToString('yyyy-MM-dd HH:mm')
+            $isOther = ($local.Date -ne $Today.Date)
+        }
+        if ($isOther) { $other++ }
+        [void]$lines.Add(([string]$doc['runId'] + '  started ' + $when + $(if ($isOther) { '  <- another day' } else { '' })))
+    }
+    return @{ lines = $lines.ToArray(); otherDay = $other }
+}

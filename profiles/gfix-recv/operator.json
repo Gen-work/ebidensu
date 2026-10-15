@@ -1,4 +1,6 @@
 {
   "_doc": "Who runs this: the WBS owner-cell name the plan keeps (the bare name, name<-other, other->name). EMPTY = no owner filter, every owner's rows of the day go into the worklist. Set it per machine in <WorkDir>/ebi.local.json { \"operator\": { \"owner\": \"<name>\" } } -- the repo copy stays blank (no personal names in the repo).",
-  "owner": ""
+  "owner": "",
+  "reviewer": "",
+  "_reviewer_doc": "gfixRecv.deliver: the review check sheet's 確認 column (H) for the rows this operator adds, as the sheet writes it (a family name). Per machine in ebi.local.json, like owner."
 }

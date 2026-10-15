@@ -4,17 +4,17 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-76 step(s) in 9 group(s).
+80 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
-| screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.row_region`, `screen.save` |
+| screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.row_region`, `screen.save` |
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
-| excel | `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.quit_app`, `excel.read_rows`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
+| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.quit_app`, `excel.read_rows`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
-| human | `human.choose`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
+| human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.require` |
 
@@ -631,6 +631,34 @@ failures: `not_found` (not transient)
 
 Notes: not_found when no target can be placed at all. Bands are matched from the bottom only as far as there are bands; an entry scrolled off the top is reported missing, not boxed at a guessed place.
 
+### `screen.ocr`
+
+OCR a PNG (Windows OCR); no OCR on this PC = ok with available=false
+
+- file: `modules/screen/screen.ocr.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `language` | string |  | en-US |  | recognizer tried first (BCP-47); then en, then the Windows profile languages. en reads job / file names (O/0, I/1) better than ja |
+| `path` | path |  | (empty) |  | the PNG to read; relative paths resolve under the work dir. Empty = nothing to read (an earlier export that did not happen): ok, available=false, no warning |
+
+| output | type | desc |
+|--------|------|------|
+| `available` | bool | false: OCR could not run here (the text is empty for that reason, not because the picture is blank) |
+| `language` | string | the recognizer that read it; empty when none ran |
+| `lines` | list | the lines OCR found, top to bottom |
+| `text` | string | every line, joined with a newline; empty when nothing was read |
+
+failures: `file_not_found` (not transient)
+
+```json
+{"id":"ocr","use":"screen.ocr","with":{"path":"capture/gfix/{{item.keySafe}}/pic1.png"}}
+```
+
+Notes: OCR misreads look-alikes (O/0, I/1, S/5, B/8): compare with verify.find_token, which folds them. Windows only; on another host available=false.
+
 ### `screen.row_region`
 
 Compute the rectangle covering a list header plus a run of rows
@@ -883,6 +911,7 @@ Find the file(s) for a key or glob; full-width and stamped names tolerated
 | `files` | list | every hit, newest first |
 | `found` | int | how many files matched |
 | `matchedBy` | string | exact \| stripped \| fullwidth \| case \| glob (kernel/Key.ps1 tiers) |
+| `name` | string | the hit's file name (path without the folder); empty when there is no hit |
 | `path` | path | the hit (the only one, or the newest with expect=any) |
 
 failures: `dir_not_found` (not transient), `file_not_found` (transient), `ambiguous` (not transient)
@@ -1066,6 +1095,43 @@ failures: `write_failed` (transient), `not_serializable` (not transient)
 
 ## excel
 
+### `excel.append_row`
+
+Append one row under the last used row, unless the key is already listed; optionally save
+
+- file: `modules/excel/excel.append_row.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `cells` | map | yes |  |  | column letter -> value, e.g. { "B": "2026-10-16", "F": "<file name>" }; empty values are left blank |
+| `checkOnly` | bool |  | false |  | only look: is the key listed? (existing / verdict / line), never write or save -- for a flow that writes the row after a person confirmed (gfixRecv.deliver: after the mail was sent) |
+| `dateColumns` | list |  | [] |  | columns whose value (yyyy-MM-dd or yyyy/MM/dd) is written as a real date, formatted like the row above |
+| `dismissDialogs` | list |  | [] |  | title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does |
+| `firstRow` | int |  | 2 |  | first data row: the key search starts here |
+| `keyColumn` | string |  | (empty) |  | column whose text identifies a row (e.g. F, the review target); a row already holding cells[keyColumn] there means "already listed": nothing is written. Empty = always append |
+| `lastBy` | string |  | B |  | column whose last used cell marks the end of the list (pre-filled number columns would fool a whole-row search) |
+| `save` | bool |  | true |  | save the workbook right after writing (a shared list: keep the time it is changed short) |
+| `sheet` | string | yes |  |  |  |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `added` | bool | true when a row was written |
+| `existing` | bool | true when the key was already listed (nothing written) |
+| `line` | string | one line for a gate: "row N added" / "already listed on row N (date)" |
+| `row` | int | the row written, or the row that already held the key; 0 in a dry run |
+| `verdict` | string | ok when the key was already listed (the list says it is done: nothing for a person to do), unknown when a row was added (a person finishes the job, e.g. sends the mail) -- the code for a human.gate askWhen [unknown] |
+
+failures: `sheet_not_found` (not transient), `input_invalid` (not transient), `read_only` (not transient), `write_failed` (transient), `save_failed` (transient)
+
+```json
+{"id":"append_row","use":"excel.append_row","with":{"cells":{"B":"{{run.date}}","C":"JAVA","F":"book_{{item.key}}.xlsx"},"dateColumns":["B"],"keyColumn":"F","sheet":"Check Sheet_J4","workbook":"cs"}}
+```
+
+Notes: The key is compared as trimmed text, case-insensitively. read_only is not transient here: the session holds the read-only copy, so retrying cannot help -- close the run, have the other person close the book, run again (the row is not listed yet, so the rerun adds it).
+
 ### `excel.close`
 
 Close a registered workbook (save or discard) and release it
@@ -1106,13 +1172,17 @@ Copy the n-th picture of a sheet to a cell of another sheet
 | `fromSheet` | string | yes |  |  |  |
 | `gapRows` | int |  | 0 |  | added to nextRow |
 | `index` | int |  | 1 |  | 1-based, top-to-bottom |
+| `savePng` | path |  | (empty) |  | also export the picture to this PNG (3x, for OCR); relative paths resolve under the work dir; empty = no export |
 | `toSheet` | string | yes |  |  |  |
 | `workbook` | session:workbook | yes |  |  |  |
 
 | output | type | desc |
 |--------|------|------|
+| `groups` | list | names of grouped shapes (Ctrl+G) at or above the picture on fromSheet: the copy may be the wrong picture |
 | `name` | string |  |
 | `nextRow` | int | first row whose top is below the copy, plus gapRows |
+| `note` | string | one line for the gate when groups is not empty, else empty |
+| `png` | path | the exported PNG; empty when savePng is empty or the export failed (a warning says why) |
 
 failures: `sheet_not_found` (not transient), `not_found` (not transient), `copy_failed` (transient)
 
@@ -1120,7 +1190,7 @@ failures: `sheet_not_found` (not transient), `not_found` (not transient), `copy_
 {"id":"copy_picture","use":"excel.copy_picture","with":{"cell":"B3","fromSheet":"sheetA","toSheet":"sheetB","workbook":"wb"}}
 ```
 
-Notes: Clobbers the clipboard. Not idempotent: a rerun pastes a second copy.
+Notes: Clobbers the clipboard. Not idempotent: a rerun pastes a second copy. A failed savePng export is a warning (png_not_saved), never a failure: the copy itself is done.
 
 ### `excel.ensure_app`
 
@@ -1816,6 +1886,37 @@ failures: `rules_invalid` (not transient), `not_found` (transient), `window_miss
 
 Notes: not_found when nothing matches (transient: the page may not show the new rows yet -- retry after a refresh). A condition with op within takes value = @{ from; to } (verify.time_window output). Several files of one job (FileCount 2) are several kept rows: extent, not matched, sizes the screenshot. A within condition with no window (an empty from/to, e.g. a span an earlier step could not compute) is window_missing, not "everything passes": on 10/14 an unreadable end time emptied the span and every Jenkins file matched. span_unreadable: spanFrom is set, records matched, but their times do not parse (the page's columns moved?).
 
+### `verify.find_token`
+
+Find an expected name in OCR text, folding look-alikes; ok / ng / unknown + alert
+
+- file: `modules/verify/verify.find_token.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `expect` | string |  | (empty) |  | the name that must be in it, e.g. the job's J name |
+| `label` | string |  | the picture |  | what the text came from, for the reason / alert wording |
+| `pattern` | string |  | [A-Za-z0-9\|]{5,16} |  | regex of a name-like word, for the candidates the reason lists |
+| `text` | string |  | (empty) |  | the text to search (screen.ocr text) |
+
+| output | type | desc |
+|--------|------|------|
+| `alert` | string | the reason when code is ng or a near miss, else empty: the gate draws it red |
+| `candidates` | list | name-like words read from the text (as read, upper-cased) |
+| `code` | string | ok \| ng \| unknown |
+| `found` | bool |  |
+| `reason` | string | one line for the gate |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"find_token","use":"verify.find_token","with":{"expect":"{{item.JOB}}","label":"picture 1 (Excel snap)","text":"{{steps.pic1Ocr.out.text}}"}}
+```
+
+Notes: Pure. Folding is symmetric, so a correct name never fails for a look-alike; the cost is that two names differing only by a look-alike pair (O vs 0) are not told apart.
+
 ### `verify.match_record`
 
 Find the record for a key; newest / first / ask on several
@@ -2068,6 +2169,39 @@ failures: `operator_quit` (not transient), `input_invalid` (not transient)
 
 Notes: Under DryRun or without a console the suggestion is taken when there is one, else none. n = none of them (the item becomes unknown), s = skip (leave pending), q = quit.
 
+### `human.draft_mail`
+
+Make an Outlook draft from a template (token -> value), save and open it; never sends
+
+- file: `modules/human/human.draft_mail.ps1`
+- effects: `write` / tier: `core` / idempotent: `false`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `cc` | list |  | [] |  | addresses that replace the template's CC; empty = keep the template's |
+| `display` | bool |  | true |  | open the draft window for the operator |
+| `template` | path | yes |  |  | .json, .bat/.cmd (a #==TEMPLATE_JSON== section) or .msg/.oft; relative paths resolve under the work dir |
+| `to` | list |  | [] |  | addresses that replace the template's To; empty = keep the template's |
+| `token` | string |  | (empty) |  | the word in the template to replace; empty = the template's own token (a .msg/.oft has none: give it) |
+| `trimBefore` | bool |  | true |  | drop spaces between "_" or ">" and the token (a template whose file name read "_ JOB.xlsx") |
+| `value` | string | yes |  |  | what the token becomes, e.g. {{item.Excel_NAME}} |
+
+| output | type | desc |
+|--------|------|------|
+| `cc` | list | CC addresses |
+| `saved` | bool | the draft is in the Drafts folder |
+| `subject` | string | the draft's subject |
+| `to` | list | To addresses |
+
+failures: `file_not_found` (not transient), `template_invalid` (not transient), `outlook_unavailable` (not transient), `draft_failed` (transient)
+
+```json
+{"id":"draft_mail","use":"human.draft_mail","with":{"template":"{{profile.paths.mailTemplate}}","value":"{{item.Excel_NAME}}"}}
+```
+
+Notes: Not idempotent: every run makes one more draft (a rerun after a failure leaves the earlier draft in Drafts -- delete it there). The template file stays on the PC (addresses and names are not committed); profiles/gfix-recv/README.md says where.
+
 ### `human.gate`
 
 Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
@@ -2078,7 +2212,9 @@ Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `alert` | any |  | (empty) |  | a line, or a list of lines, drawn RED on the panel (an automatic check that disagrees, e.g. verify.find_token alert); empty lines are left out |
 | `askWhen` | list |  | ["unknown"] |  | codes that need a person |
+| `checklist` | list |  | [] |  | what to look at, one line each, shown as "check: ..." (10/15: the review points, kept in the profile so they can grow) |
 | `code` | string | yes |  |  | the verdict so far: ok \| ng \| unknown \| empty |
 | `evidence` | any |  | (empty) |  | a path, or a list of paths / values, to look at |
 | `key` | string |  | (empty) |  | which item; empty = the current item |
