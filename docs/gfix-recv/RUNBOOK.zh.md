@@ -167,8 +167,9 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
    不下载、不比较、不开 DF；SHARE 面板的文字变成「OPEN側で異常終了でした。」+ 哪一行 No，只带 GoAnywhere 一张图，贴到 Teams 让他们知道；
    作业清单 `track = ng`。之后 logs / evidence 碰到这行会自己跳过（「track judged this job ng: nothing to collect」），HOST 侧重跑后把 `track` 清空再跑一次就行。
 9. **SHARE 面板**：文字「OPEN側で確認できました。前後一致です。 (受信データ:815件、46件)」+ GoAnywhere 图 + DF 图已经放进剪贴板。
-   括号里是 Teams 消息里的件数，逐文件和下载文件的行数核过（允许多 1 行表头、0 件 = 空文件或 1 个空行）；对不上的文件写成 `行数件(消息件数件)`，
-   例 `0件(2件)、1件(4件)`，并在末尾 warnings 里报 `count_disagree`——这不是判定，判定还是逐行比较。没有消息（k 跳过）就不带括号。
+   括号里是 Teams 消息里的件数，逐文件和下载文件的行数核过（允许多 1 行表头、0 件 = 空文件或 1 个空行；**行数比件数少**也算正常——HOST 侧多算 1 条、去掉空行时会差 2 行以上，
+   10/15 起不报 warning，`-Var countsShortOk=false` 可以改回严格模式）；对不上的文件写成 `行数件(消息件数件)`，
+   例 `0件(2件)、1件(4件)`；行数比「件数＋表头」还**多**时，才会在末尾 warnings 里报 `count_disagree`——这不是判定，判定还是逐行比较。没有消息（k 跳过）就不带括号。
    → 点 Teams 的输入框 → **Ctrl+V** → 看一眼 → 发送 → 回到控制台按 Enter。
    多个文件时，DF 图会按顺序全部带上。
 10. 记录：`capture\gfix\<W名>\track.json`（后面 logs / evidence 用），作业清单 `track = ok`。
@@ -319,6 +320,22 @@ evidence = ok 的行，每个 job：
   同一个 job 以后换了日期再次出现在计划里时，plan 会自动把这三列清空（`resetOnChange`）。
 - 所有中间产物：`capture\gfix\<W名>\`（截图、页面文本、track.json、logs.json、receive.txt）。
 - 每次运行的记录：`run\<runId>\`（trace、ledger）。出了问题把这个文件夹的内容发给我就能看。
+
+---
+
+## 5b. 可以按你的习惯改的默认值
+
+| 默认 | 现在 | 怎么改 |
+|------|------|--------|
+| FAILED 面板的 Enter | 临时性错误 = 重试，其余 = 跳过这一行 | step 的 `transient`（告诉我改哪个） |
+| UNFINISHED RUN 的 Enter | 新开一次 run（以前某天的 run 画红） | `ebi.ps1` |
+| 第 1 张图的 job 名对不上 | GATE 画红字，**不停** | `gfixRecv.evidence.json` 的 `look` |
+| Excel 忙的时候写入失败 | 自动重试 4 次再问 | `gfixRecv.evidence.json` 的 `onError.byFailure` |
+| 文件行数比 Teams 件数少 | 正常，只在回复里标 `行数(件数)` | `-Var countsShortOk=false`（只这一次）或 `gfixRecv.track.json` 的 `vars` |
+| GATE 的 `check:` 行 | 5 条 | `profiles/gfix-recv/layout.json` 的 `evidence.checklist` |
+| 邮件 | 只做草稿，你来发送 | 不提供自动发送 |
+
+觉得哪个不顺手就说一声；改动会记进 `docs/ebi-dance/KNOWLEDGE.md`。
 
 ---
 

@@ -6061,6 +6061,11 @@
           "desc": "text before the counts in suffix (e.g. the words for \"received data:\")",
           "type": "string"
         },
+        "shortOk": {
+          "default": false,
+          "desc": "a file with fewer lines than its count is expected (the HOST counts a header / empty lines the file does not carry): still shown lines(count), but no warning and matched stays true",
+          "type": "bool"
+        },
         "text": {
           "default": "",
           "desc": "the counts as the message writes them (numbers, any separators, a unit after each); empty = no message",
@@ -6088,11 +6093,15 @@
           "type": "int"
         },
         "matched": {
-          "desc": "every file agrees with its count (true when there is nothing to compare)",
+          "desc": "every file agrees with its count (true when there is nothing to compare); a short file counts as agreeing under shortOk",
           "type": "bool"
         },
         "reason": {
           "type": "string"
+        },
+        "short": {
+          "desc": "per file: how many lines fewer than its count (0 when not short)",
+          "type": "list"
         },
         "suffix": {
           "desc": "\" (\" + label + text + \")\" ready to append to a reply; \"\" when no message",

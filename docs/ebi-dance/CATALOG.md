@@ -2084,6 +2084,7 @@ Parse the per-file record counts of a start message; compare with the files' lin
 | `headerLines` | int |  | 1 |  | a file may have this many lines more than its record count (a header) |
 | `joiner` | string |  | ,  |  | between the counts in text |
 | `label` | string |  | (empty) |  | text before the counts in suffix (e.g. the words for "received data:") |
+| `shortOk` | bool |  | false |  | a file with fewer lines than its count is expected (the HOST counts a header / empty lines the file does not carry): still shown lines(count), but no warning and matched stays true |
 | `text` | string |  | (empty) |  | the counts as the message writes them (numbers, any separators, a unit after each); empty = no message |
 | `unit` | string |  | (empty) |  | text after each count (the message's counter word) |
 
@@ -2092,8 +2093,9 @@ Parse the per-file record counts of a start message; compare with the files' lin
 | `actual` | list | line count of each file given, in order |
 | `expected` | list | the counts in the message, in order |
 | `fileCount` | int | how many files the message names; -1 when no message |
-| `matched` | bool | every file agrees with its count (true when there is nothing to compare) |
+| `matched` | bool | every file agrees with its count (true when there is nothing to compare); a short file counts as agreeing under shortOk |
 | `reason` | string |  |
+| `short` | list | per file: how many lines fewer than its count (0 when not short) |
 | `suffix` | string | " (" + label + text + ")" ready to append to a reply; "" when no message |
 | `text` | string | per file: "<count><unit>", or "<lines><unit>(<count><unit>)" when the file disagrees; the message's counts alone when no files were given |
 

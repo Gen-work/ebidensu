@@ -354,6 +354,12 @@ try {
     $rc2 = Invoke-TestStep 'verify.record_counts' @{ text = ('2' + $ken + $ten + '4' + $ken); files = $filesNg; unit = $ken; joiner = $ten; label = 'recv:' }
     Assert-Equal ('0' + $ken + '(2' + $ken + ')' + $ten + '1' + $ken + '(4' + $ken + ')') $rc2['text'] 'counts: a file that disagrees shows lines(message count) -- the operator''s example'
     Assert-True ((-not [bool]$rc2['matched']) -and $rc2['warnings'][0]['code'] -eq 'count_disagree') 'counts: ... and warns count_disagree'
+    $rc2s = Invoke-TestStep 'verify.record_counts' @{ text = ('1' + $ken + $ten + '127' + $ken + $ten + '50' + $ken); files = @(@{ name = 'R.csv'; lines = 0 }, @{ name = 'S.csv'; lines = 126 }, @{ name = 'T.csv'; lines = 47 }); unit = $ken; joiner = $ten; shortOk = $true }
+    Assert-Equal ('0' + $ken + '(1' + $ken + ')' + $ten + '126' + $ken + '(127' + $ken + ')' + $ten + '47' + $ken + '(50' + $ken + ')') $rc2s['text'] 'counts shortOk (10/15 R/S): short files still show lines(count) in the reply'
+    Assert-True ([bool]$rc2s['matched'] -and (-not $rc2s.Contains('warnings') -or @($rc2s['warnings']).Count -eq 0)) 'counts shortOk: 1, 1 and 3 lines short are expected -> matched, no count_disagree'
+    Assert-Equal '1,1,3' (@($rc2s['short']) -join ',') 'counts shortOk: short says by how many lines'
+    $rc2o = Invoke-TestStep 'verify.record_counts' @{ text = ('10' + $ken); files = @(@{ name = 'U.csv'; lines = 13 }); unit = $ken; shortOk = $true }
+    Assert-True (-not [bool]$rc2o['matched'] -and $rc2o['warnings'][0]['code'] -eq 'count_disagree') 'counts shortOk: MORE lines than count + header is still a disagreement'
     $rc3 = Invoke-TestStep 'verify.record_counts' @{ text = ('0' + $ken); files = @(@{ name = 'F.csv'; lines = 1 }); unit = $ken }
     Assert-True ([bool]$rc3['matched']) 'counts: an empty transfer may be one empty line'
     $rc4 = Invoke-TestStep 'verify.record_counts' @{ text = ('5' + $ken); files = $filesOk; unit = $ken; joiner = $ten }
