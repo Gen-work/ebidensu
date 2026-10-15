@@ -1,3 +1,24 @@
+## 2026-10-15 - gfix-recv: fewer lines than the Teams count is normal; ask the operator for defaults (v2.26.1)
+
+### Changed
+- **`verify.record_counts shortOk`** (gfixRecv.track `vars.countsShortOk`
+  = true): a received file with FEWER lines than the start message's count
+  is expected on this work -- the HOST side counts a record the file does
+  not carry (usually 1; 2 or more when empty lines are dropped too; the
+  operator, 10/15, after R 1件 -> 0 lines, S 127件 -> 126). It is still
+  shown `lines(count)` in the Teams reply, but no `count_disagree`
+  warning; `matched` stays true and the new `short` output says by how
+  many lines. More lines than count + header is still a disagreement.
+  `-Var countsShortOk=false` restores the strict check for one run.
+
+### Docs
+- `INTERVIEW.md` 6.5 / `KNOWLEDGE.md` checklist item 8: before writing a
+  workflow, ask the operator which DEFAULTS they want (what Enter means,
+  stop or only flag, retries, an old run, number tolerances) and tell them
+  where each is changed; the RUNBOOK gets a "defaults you can change"
+  table (5b). K-10 closed with the operator's answer; K-05 notes the
+  current behaviour is an accepted, adjustable default.
+
 ## 2026-10-15 - gfix-recv: review-request delivery, picture-1 check, see what Excel is doing, hints on FAILED (v2.26.0)
 
 Office feedback after the 10/15 receive day (R/S done; docs/ebi-dance/KNOWLEDGE.md

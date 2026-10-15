@@ -6,7 +6,9 @@
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
-    "capture": "capture/gfix"
+    "capture": "capture/gfix",
+    "countsShortOk": true,
+    "_countsShortOk_doc": "10/15: a received file with FEWER lines than the Teams count is normal here (the HOST counts a record the file does not carry: usually 1, 2+ when empty lines are dropped): shown lines(count) in the reply, no count_disagree warning. -Var countsShortOk=false to warn again"
   },
   "source": {
     "table": "wl",
@@ -361,7 +363,8 @@
         "files": "{{steps.dl.out.files}}",
         "label": "{{profile.vocabulary.messages.receivedCounts}}",
         "unit": "{{profile.vocabulary.messages.countUnit}}",
-        "joiner": "{{profile.vocabulary.messages.countJoiner}}"
+        "joiner": "{{profile.vocabulary.messages.countJoiner}}",
+        "shortOk": "{{vars.countsShortOk}}"
       }
     },
     {
