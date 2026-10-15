@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "id": "gfixRecv.deliver",
+  "title": "GFIX受信: レビュー依頼(Outlook の下書きを 1 通 -> 人が送信 -> チェックシートに 1 行)",
+  "version": "0.1.0",
+  "profile": "gfix-recv",
+
+  "source": {
+    "table": "wl",
+    "select": { "field": "deliver", "pendingWhen": "!= ok" },
+    "groupBy": "Excel_NAME",
+    "orderBy": "GFIX_TIME"
+  },
+
+  "onError": { "policy": "ask", "byFailure": { "not_met": { "policy": "skip" },
+                                               "write_failed": { "policy": "retry", "times": 4, "backoffMs": 1500 },
+                                               "save_failed": { "policy": "retry", "times": 3, "backoffMs": 2000 } } },
+
+  "setup": [
+    { "id": "load", "use": "table.load",
+      "with": { "path": "{{profile.worklist.file}}", "as": "wl" } },
+    { "id": "app", "use": "excel.ensure_app", "with": { "visible": true, "as": "xl" } },
+    { "id": "sheet", "use": "excel.open",
+      "label": "レビューチェックシート(共有。誰かが開いていたら r で待つ)",
+      "with": { "app": "xl", "path": "{{profile.paths.reviewSheet}}", "as": "cs" } }
+  ],
+
+  "each": [
+    { "id": "evOk", "use": "flow.require",
+      "label": "evidence が ok の行だけ(まだなら黙って飛ばす)",
+      "with": { "value": "{{item.evidence}}", "equals": "ok",
+                "message": "the evidence of this job is not ok yet: run gfixRecv.evidence first" } },
+    { "id": "book", "use": "file.find",
+      "label": "証跡ブックのファイル名(チェックシートの レビュー対象 / メール本文)",
+      "with": { "dir": "{{profile.paths.bix}}", "glob": "{{profile.layout.evidence.glob}}", "expect": "one" } },
+    { "id": "listed", "use": "excel.append_row",
+      "label": "もうチェックシートに載っているか(見るだけ)。載っていれば手で依頼済み: 下書きも質問もなしで ok",
+      "with": { "workbook": "cs", "sheet": "{{profile.layout.checkSheet.sheet}}", "checkOnly": true,
+                "keyColumn": "F", "lastBy": "B", "firstRow": "{{profile.layout.checkSheet.firstRow}}",
+                "cells": { "F": "{{steps.book.out.name}}" } } },
+    { "id": "mail", "use": "human.draft_mail",
+      "label": "レビュー依頼メールの下書き(1 ジョブ 1 通)。送信は人",
+      "when": "steps.listed.out.existing == false",
+      "with": { "template": "{{profile.paths.mailTemplate}}", "value": "{{item.Excel_NAME}}" } },
+    { "id": "sent", "use": "human.gate",
+      "label": "送ったら Enter(ok)。あとで送るなら s(チェックシートにはまだ書かない)",
+      "with": { "code": "{{steps.listed.out.verdict}}", "askWhen": ["unknown"],
+                "reason": "{{steps.listed.out.line}}",
+                "checklist": "{{profile.layout.checkSheet.checklist}}",
+                "evidence": ["{{steps.mail.out.subject}}", "{{steps.book.out.name}}"] } },
+    { "id": "row", "use": "excel.append_row",
+      "label": "送ったと答えた行だけ Check Sheet_J4 に 1 行足して保存",
+      "when": "steps.sent.out.action == ok",
+      "with": { "workbook": "cs", "sheet": "{{profile.layout.checkSheet.sheet}}",
+                "keyColumn": "F", "lastBy": "B", "firstRow": "{{profile.layout.checkSheet.firstRow}}", "dateColumns": ["B"],
+                "dismissDialogs": "{{profile.layout.evidence.saveDialogs}}",
+                "cells": { "B": "{{run.date}}", "C": "{{profile.layout.checkSheet.language}}", "E": "{{profile.layout.checkSheet.phase}}",
+                           "F": "{{steps.book.out.name}}", "G": "{{profile.operator.owner}}", "H": "{{profile.operator.reviewer}}" } } },
+    { "id": "checkpoint", "use": "flow.checkpoint",
+      "when": "steps.sent.out.action != skip",
+      "with": { "worklist": "wl", "field": "deliver", "value": "{{steps.sent.out.code}}" } }
+  ],
+
+  "teardown": [
+    { "id": "close", "use": "excel.close", "with": { "workbook": "cs", "save": false } },
+    { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
+    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "deliver", "next": ["今日の分は以上。Outlook の送信済みと gfixrecv.csv の deliver 列を確認"] } }
+  ]
+}

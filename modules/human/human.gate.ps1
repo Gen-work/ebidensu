@@ -25,6 +25,8 @@ $Manifest = @{
     reason   = @{ type='string'; default=''; desc='why (verify.assert''s reason), shown on the panel' }
     evidence = @{ type='any';    default=''; desc='a path, or a list of paths / values, to look at' }
     key      = @{ type='string'; default=''; desc='which item; empty = the current item' }
+    checklist = @{ type='list';  default=@(); desc='what to look at, one line each, shown as "check: ..." (10/15: the review points, kept in the profile so they can grow)' }
+    alert     = @{ type='any';   default=''; desc='a line, or a list of lines, drawn RED on the panel (an automatic check that disagrees, e.g. verify.find_token alert); empty lines are left out' }
     skipFails = @{ type='bool';  default=$false; desc='true: the operator''s s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time)' }
   }
   outputs    = @{
@@ -57,6 +59,27 @@ function HumanGate-Decide {
     }
 }
 
+function HumanGate-WhatLines {
+    # PURE. The WHAT HAPPENED lines and the red fragments: "!! <alert>"
+    # first (what an automatic check disagrees with), then the verdict, the
+    # reason, and "check: <point>" per checklist line. Alert fragments are
+    # the wrapped pieces of each alert line, so every panel row of a long
+    # alert is drawn red, not only its first.
+    param([string]$Code, [string]$Reason = '', $Checklist = @(), $Alert = '')
+    $what = New-Object System.Collections.ArrayList
+    $frags = New-Object System.Collections.ArrayList
+    foreach ($a in @($Alert)) {
+        if ($null -eq $a -or ([string]$a).Trim() -eq '') { continue }
+        $line = '!! ' + ([string]$a).Trim()
+        [void]$what.Add($line)
+        foreach ($w in @(ConvertTo-EbiGateWrapped -Text $line -Width ((Get-EbiGateWidth) - 6))) { if ($w.Trim() -ne '') { [void]$frags.Add($w.Trim()) } }
+    }
+    [void]$what.Add(('verdict so far: ' + $(if ($Code -eq '') { '(empty)' } else { $Code })))
+    if ($Reason -ne '') { [void]$what.Add($Reason) }
+    foreach ($c in @($Checklist)) { if ($null -ne $c -and ([string]$c).Trim() -ne '') { [void]$what.Add('check: ' + ([string]$c).Trim()) } }
+    return @{ what = $what.ToArray(); alert = $frags.ToArray() }
+}
+
 function Invoke-Step {
     param($In, $Ctx)
     $code = [string]$In['code']
@@ -67,10 +90,11 @@ function Invoke-Step {
     if ($key -eq '' -and $null -ne $Ctx['Item']) { $key = Get-EbiKeyDisplay -Item $Ctx['Item'] -KeyColumns @($Ctx['KeyColumns']) }
     $ev = New-Object System.Collections.ArrayList
     foreach ($e in @($In['evidence'])) { if ($null -ne $e -and [string]$e -ne '') { [void]$ev.Add([string]$e) } }
-    $what = @(('verdict so far: ' + $(if ($code -eq '') { '(empty)' } else { $code })), [string]$In['reason'])
+    $panel = HumanGate-WhatLines -Code $code -Reason ([string]$In['reason']) -Checklist $In['checklist'] -Alert $In['alert']
+    $what = $panel['what']
     $note = ''
     while ($true) {
-        $r = Show-EbiGate -Title ('GATE ' + $key) -What $what -Next @('Enter/o: it is ok', 'n: it is ng', 'k: keep the verdict as it is', 's: skip this item, leave it pending', 'm <text>: add a note, then answer again', 'q: cancel the whole run') -Evidence $ev.ToArray() -Actions (HumanGate-Actions) -Default 'o' -Auto 'k' -DryRun ([bool]$Ctx['DryRun'])
+        $r = Show-EbiGate -Title ('GATE ' + $key) -What $what -Next @('Enter/o: it is ok', 'n: it is ng', 'k: keep the verdict as it is', 's: skip this item, leave it pending', 'm <text>: add a note, then answer again', 'q: cancel the whole run') -Evidence $ev.ToArray() -Actions (HumanGate-Actions) -Default 'o' -Auto 'k' -DryRun ([bool]$Ctx['DryRun']) -Alert $panel['alert']
         if ([string]$r['action'] -eq 'm') { $note = [string]$r['note']; continue }
         break
     }

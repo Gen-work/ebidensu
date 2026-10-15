@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -15,7 +15,9 @@
     "orderBy": "GFIX_TIME"
   },
 
-  "onError": { "policy": "ask", "byFailure": { "not_met": { "policy": "skip" } } },
+  "onError": { "policy": "ask", "byFailure": { "not_met": { "policy": "skip" },
+                                               "write_failed": { "policy": "retry", "times": 4, "backoffMs": 1500 },
+                                               "save_failed": { "policy": "retry", "times": 3, "backoffMs": 2000 } } },
 
   "setup": [
     { "id": "load", "use": "table.load",
@@ -48,9 +50,16 @@
       "with": { "app": "xl", "path": "{{steps.book.out.path}}", "as": "wb" } },
 
     { "id": "excelSnap", "use": "excel.copy_picture",
-      "label": "GIFT受信結果 の 1 枚目(Excel スナップ)を GFIX受信結果 B3 へ",
+      "label": "GIFT受信結果 の 1 枚目(Excel スナップ)を GFIX受信結果 B3 へ(OCR 用に PNG も)",
       "with": { "workbook": "wb", "fromSheet": "{{profile.layout.evidence.sheets.giftResult}}", "index": 1,
-                "toSheet": "{{profile.layout.evidence.sheets.gfixResult}}", "cell": "B3" } },
+                "toSheet": "{{profile.layout.evidence.sheets.gfixResult}}", "cell": "B3",
+                "savePng": "{{vars.capture}}/{{item.keySafe}}/pic1.png" } },
+    { "id": "pic1Ocr", "use": "screen.ocr",
+      "label": "1 枚目を OCR(OCR が使えない PC では空のまま先へ)",
+      "with": { "path": "{{steps.excelSnap.out.png}}" } },
+    { "id": "pic1Job", "use": "verify.find_token",
+      "label": "1 枚目の最後の列(ジョブ)= このジョブの J 名か(違えば GATE で赤字。止まらない)",
+      "with": { "text": "{{steps.pic1Ocr.out.text}}", "expect": "{{item.JOB}}", "label": "picture 1 (Excel snap)" } },
 
     { "id": "jobLog", "use": "excel.write_lines",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
@@ -128,10 +137,19 @@
                 "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
 
     { "id": "look", "use": "human.gate",
-      "label": "ブックを目で確認(Enter = OK / n = NG / s = あとで)",
+      "label": "ブックを目で確認(Enter = OK / n = NG / s = あとで)。自動チェックの食い違いは赤字",
       "with": { "code": "unknown", "askWhen": ["unknown"],
-                "reason": "check the workbook in Excel: picture positions, yellow rows, red boxes",
-                "evidence": ["{{steps.book.out.path}}", "{{steps.jkShot.out.path}}"] } },
+                "reason": "{{steps.pic1Job.out.reason}}",
+                "checklist": "{{profile.layout.evidence.checklist}}",
+                "alert": ["{{steps.pic1Job.out.alert}}", "{{steps.excelSnap.out.note}}"],
+                "evidence": ["{{steps.book.out.path}}", "{{steps.excelSnap.out.png}}", "{{steps.jkShot.out.path}}"] } },
+    { "id": "lookLog", "use": "file.write_json",
+      "label": "自動チェックと人の答えを並べて残す(あとでルールに育てる材料: docs/ebi-dance/KNOWLEDGE.md)",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/gate.json",
+                "data": { "key": "{{item.key}}", "date": "{{item.GFIX_DATE}}",
+                          "auto": { "pic1Job": "{{steps.pic1Job.out.code}}", "reason": "{{steps.pic1Job.out.reason}}",
+                                    "ocr": "{{steps.pic1Ocr.out.text}}", "groups": "{{steps.excelSnap.out.groups}}" },
+                          "person": { "action": "{{steps.look.out.action}}", "note": "{{steps.look.out.note}}" } } } },
 
     { "id": "checkpoint", "use": "flow.checkpoint",
       "when": "steps.look.out.action != skip",
@@ -143,6 +161,6 @@
 
   "teardown": [
     { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
-    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "evidence", "next": ["今日の分は以上。gfixrecv.csv の evidence 列が全部 ok か確認"] } }
+    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "evidence", "next": ["ebi.ps1 run workflows\\gfixRecv.deliver.json -WorkDir {{run.workDir}}   (レビュー依頼: チェックシート 1 行 + メール下書き)"] } }
   ]
 }

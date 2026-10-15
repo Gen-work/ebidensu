@@ -29,11 +29,13 @@
 
    ```json
    {
-     "operator": { "owner": "厳" },
+     "operator": { "owner": "厳", "reviewer": "<确认者的姓>" },
      "paths": {
        "bix": "<共享盘>\\...\\REQ-000xxxxx_GIFT廃止対応\\40.J4\\08.BIX",
        "wbs": "<共享盘>\\...\\REQ-000xxxxx_GIFT廃止対応\\00.管理\\【GIFT廃止対応】WBS.xlsx",
        "mapping": "mapping.xlsx",
+       "reviewSheet": "<共享盘>\\...\\REQ-000xxxxx_GIFT廃止対応\\00.管理\\<レビューチェックシート>_OPEN.xlsx",
+       "mailTemplate": "review-mail.json",
        "dfExe": "C:\\tools\\DF\\DF.exe",
        "goAnywhereUrl": "https://<GoAnywhere>/goanywhere/jobs/CompletedJobs.xhtml?logs=true",
        "jenkinsReportUrl": "http://<jenkins>/jenkins_jpc/userContent/logs/files/JPC/Ver1/data/report/",
@@ -44,6 +46,8 @@
    ```
 
    JSON 里的 `\` 要写成 `\\`。填好真实值的版本，聊天里会直接给你。
+   **`"operator"` 是顶层的一个键**，不要把 `{ "operator": … }` 整个塞进别的对象里（10/15 这样写过，plan 读不到 owner，
+   全员的 job 都进了清单）。存成 **UTF-8**（记事本「名前を付けて保存」→ 文字コード UTF-8；有没有 BOM 都能读）。
    `operator.owner` 是 WBS 担当列里你的名字（规则同 OwnerFilter：「厳」「厳←○○」「○○→厳」算你的）；
    **留空 = 不按担当过滤，当天所有人的 job 都进清单**（plan 开头会提示一句）。仓库里的 `profiles/gfix-recv/operator.json` 是空的，名字只写在本机。
 
@@ -70,7 +74,7 @@
   和「下一条该打的命令」。只读，不碰 CSV。
 - **入口**：仓库目录里双击 `ebi.cmd`（第一次带参数 `ebi.cmd C:\Users\<you>\work-BIX`，
   之后记住在 `.ebi\menu.json`），或 `ebi.ps1 menu -WorkDir $W`。先显示上面的盘，再选：
-  `1`～`4` = plan / track / logs / evidence（track/logs/evidence 会再问一次 Excel_NAME，
+  数字 = plan / track / logs / evidence / deliver（plan 之后的几段会再问一次 Excel_NAME，
   回车 = 所有待做的行，`A,B` = 几本），`r` = 续跑没跑完的 run，`c` = 清掉某一行某一列的判定
   （代替用记事本改 CSV），`s` = 重画，`d` = doctor，`q` = 退出。
   选完它会**把那条 `ebi.ps1 run ...` 原样打印出来再执行**（子进程），跑完回到菜单。
@@ -271,9 +275,44 @@ GIFTデータvsGFIXデータ：
 检查 GFIX受信結果 B 列的字体是不是 ＭＳ ゴシック 10（只报告，不改）。
 然后 **GATE**：你在 Excel 里看一遍，`Enter` = ok，作业清单 `evidence = ok`。
 
+GATE 的面板上：
+- `check:` 行 = 要看的点（`profiles/gfix-recv/layout.json` 的 `evidence.checklist`，看漏过什么就往里加一条）。
+- 第一行如果是 **红字 `!! …`** = 自动检查和预期不一样：B3 那张图 OCR 出来的「ジョブ」不是这个 job 的 J 名
+  （另一个 job 的图？），或者 GIFT受信結果 里有 Ctrl+G 编组的图（复制的可能不是第 1 张）。**不会停**，你看了再决定 o / n。
+- 自动检查和你的回答并排存在 `capture\gfix\<W名>\gate.json`（以后据此调整检查，见 `docs/ebi-dance/KNOWLEDGE.md` 第 9 节）。
+
+跑的时候 Excel 会被拉到前面，并滚到正在写的位置：**可以看，别点**。点了 Excel，下一次写入会被拒
+（`0x800AC472`）；现在会自动重试几次，还不行才停下来问你。想中途停：点一下控制台窗口，按 `q`（或 Esc），
+下一步开始前会问 `STOP?`，`y` = 停（已经做完的行保持 ok）。
+
+---
+
+## 4b. 交付：`gfixRecv.deliver`（v2.26.0 起）
+
+```powershell
+ebi.ps1 run workflows\gfixRecv.deliver.json -WorkDir $W -Only RJODWDB6,SJODWDB6
+```
+
+evidence = ok 的行，每个 job：
+
+1. 先**只看**レビューチェックシート（Check Sheet_J4）的 F 列（レビュー対象 = 证据工作簿的文件名）里有没有这本。
+   **已经有了**（手工写过，比如 10/14 的 R/S）→ 当作已经委托过：不建草稿、不问，`deliver = ok`。
+2. 没有 → 用 `mailTemplate`（你的 `sendj4mail.bat` 本身、或它导出的 `review-mail.json`、或从 Outlook 存的 `.msg`）
+   建一封 **Outlook 草稿**并打开：主题和正文里的 job 名换成这本的 W名。**工具不会发送。**
+3. GATE：在 Outlook 里检查（收件人、主题、正文里的文件名），按「送信」，然后 `Enter`。
+4. 这时才往检查表追加一行（B 记入日 = 今天、C JAVA、E J4内部ﾚﾋﾞｭｰ、F 文件名、G owner、H reviewer）并保存；
+   `deliver = ok`。`s` = 等会儿再发：什么都不写，这一行保持 pending。
+
+检查表被别人开着时，`open` 会说是谁，等对方关掉再 `r`。需要 Classic Outlook（新版 Outlook 不能自动化）。
+
 ---
 
 ## 5. 出问题时
+
+- FAILED 面板上的 `hint:` 行 = 这种错误常见的原因和下一步。临时性的错误（窗口还没出来、Excel 在忙）`Enter` = 重试，
+  其余的 `Enter` = 跳过这一行。
+- 出现 UNFINISHED RUN 面板时，`Enter` = 新开一次 run。**红字的是以前某一天的 run**：一般选 `d`（忘掉它）或 `n`，
+  不要 `r`（旧 run 按 job 名重放，同一个 job 换了日期再来时会被当成已经做完）。
 
 - 中途断了：同样的命令加 `-Resume`（续跑上一次的 run，已经做完的步骤不会重做）。
 - 想重做某个 job：在 `gfixrecv.csv` 里把对应的 `track` / `logs` / `evidence` 清空。

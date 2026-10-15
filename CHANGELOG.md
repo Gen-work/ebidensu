@@ -1,3 +1,56 @@
+## 2026-10-15 - gfix-recv: review-request delivery, picture-1 check, see what Excel is doing, hints on FAILED (v2.26.0)
+
+Office feedback after the 10/15 receive day (R/S done; docs/ebi-dance/KNOWLEDGE.md
+keeps each finding as a K-entry for whoever writes the next workflow).
+
+### Added
+- **`gfixRecv.deliver`** (worklist column `deliver`): for each job whose
+  evidence is ok -- if the evidence book is already on the review check
+  sheet (Check Sheet_J4, column F; listed by hand, like R/S on 10/14) it
+  counts as requested: no draft, no question, deliver = ok. Otherwise one
+  Outlook **draft** per job from the operator's mail template
+  (`paths.mailTemplate`: a .json, `sendj4mail.bat` itself -- its
+  `#==TEMPLATE_JSON==` section -- or a .msg/.oft); the operator sends it
+  and answers Enter; only then is the check-sheet row written (B date,
+  C JAVA, E J4内部ﾚﾋﾞｭｰ, F file name, G owner, H reviewer) and saved.
+  `s` writes nothing. Nothing is ever sent by the tool.
+- Steps: **`human.draft_mail`** (token -> value in subject / text / HTML,
+  To / CC override, drops a stray space between "_" and the token -- the
+  10/15 template read "_ MJDSWM39.xlsx"), **`excel.append_row`** (append
+  under the last used row unless the key is listed; `checkOnly`; date
+  columns formatted like the row above; save with the classification
+  dialog answered; a retry after save_failed saves its own unsaved row),
+  **`screen.ocr`** (Windows OCR, kernel/Ocr.ps1; no OCR on the PC =
+  ok with available=false), **`verify.find_token`** (expected name in OCR
+  text, look-alikes O/0 I/1 S/5 B/8 folded; ok / ng / near-miss unknown +
+  a red `alert`). `file.find` also returns the hit's file `name`.
+- **Evidence: picture 1 is checked.** The Excel snap copied to B3 is
+  exported (`excel.copy_picture savePng`), OCR'd, and its job column must
+  be the row's J name; a different name is drawn red on the GATE (the run
+  never stops for it). A Ctrl+G group at or above picture 1 on
+  GIFT受信結果 is reported too (`group_shape`: picture #1 may not be the
+  one a person sees first).
+- **GATE checklist + red alerts.** `human.gate` takes `checklist` (shown
+  as `check:` lines; evidence: `layout.evidence.checklist`) and `alert`
+  (drawn red, every wrapped row). Evidence writes the automatic verdict
+  and the operator's answer side by side to `capture/gfix/<W>/gate.json`.
+- **Watch Excel, stop between steps.** Steps that write a visible workbook
+  bring Excel to the front and scroll to the row being written
+  (`Show-EbiExcelAt`). q / Esc pressed in the console while a step runs ->
+  a STOP? panel before the next step (y cancels; teardown runs).
+- **FAILED panel hints.** A `hint:` line per known failure id / HRESULT
+  (`Get-EbiFailureHints`: window title = the active tab; 0x800AC472 =
+  Excel busy because someone clicked in it; read-only = who holds it ...).
+
+### Changed
+- FAILED panel: **Enter = r for a transient failure** (window not in
+  front yet, Excel busy), Enter = s otherwise (10/14 made it s for all).
+- UNFINISHED RUN panel: **Enter = n** (new run); one line per run with its
+  start time; a run from another day is drawn red ("<- another day"): its
+  ledger replays by job name (TODO: key it per day).
+- Evidence / deliver retry `write_failed` (4x, 1.5 s doubling) and
+  `save_failed` (3x) before asking -- the 10/15 `0x800AC472`.
+
 ## 2026-10-14 - gfix-recv: GoAnywhere columns read by header; a filter never passes everything; owner filter for the day (v2.25.1)
 
 ### Fixed

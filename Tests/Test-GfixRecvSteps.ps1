@@ -47,7 +47,8 @@ $loaded = @{}
 foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'verify.filter_records', 'screen.row_region', 'file.list', 'verify.pair_files',
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
                  'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy',
-                 'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open', 'verify.assert_each', 'flow.require')) {
+                 'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open', 'verify.assert_each', 'flow.require',
+                 'verify.find_token', 'screen.ocr', 'human.gate', 'excel.append_row', 'human.draft_mail')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -578,6 +579,79 @@ try {
     Assert-True (-not (FileDownload-Gunzip -Path (Join-Path $tmp 'a.gz'))) 'download: a real .gz file is kept as it is'
     [System.IO.File]::WriteAllBytes((Join-Path $tmp 'empty.csv'), [byte[]]@())
     Assert-True (-not (FileDownload-Gunzip -Path (Join-Path $tmp 'empty.csv'))) 'download: a 0-byte file is left alone'
+    # ============================================================ evidence: picture 1 is this job's row (10/15)
+    $ft = Invoke-TestStep 'verify.find_token' @{ text = "Host JOD - Open JPC - JJPCRS13 IF6000 001 JOD_PRD1_IF6000_FTP TEXT No SJODJDB6"; expect = 'SJODJDB6'; label = 'picture 1' }
+    Assert-True ($ft['ok'] -and $ft['code'] -eq 'ok' -and $ft['alert'] -eq '') ('find_token: the J name on the picture -> ok: ' + $ft['reason'])
+    $ft = Invoke-TestStep 'verify.find_token' @{ text = "JJPCRS13 IF6000 TEXT No SJ0D JDB6"; expect = 'SJODJDB6' }
+    Assert-Equal 'ok' $ft['code'] 'find_token: OCR look-alike (0 for O) and a space inside the word still match'
+    $ft = Invoke-TestStep 'verify.find_token' @{ text = "JJPCRS13 IF6000 TEXT No QJODJDC2"; expect = 'SJODJDB6'; label = 'picture 1' }
+    Assert-True ($ft['code'] -eq 'ng' -and $ft['alert'] -like '*does NOT show SJODJDB6*QJODJDC2*') ('find_token: another job -> ng, alert names what was read: ' + $ft['alert'])
+    $ft = Invoke-TestStep 'verify.find_token' @{ text = "JJPCRS13 IF6000 TEXT No RJODJDB6"; expect = 'SJODJDB6' }
+    Assert-True ($ft['code'] -eq 'unknown' -and $ft['alert'] -like '*one character off*') ('find_token: one letter off (R vs S: misread or the neighbour job) -> unknown, still red: ' + $ft['alert'])
+    $ft = Invoke-TestStep 'verify.find_token' @{ text = ''; expect = 'SJODJDB6' }
+    Assert-True ($ft['code'] -eq 'unknown' -and $ft['alert'] -eq '') 'find_token: no OCR text (no OCR on this PC) -> unknown, no red line'
+    $ft = Invoke-TestStep 'verify.find_token' @{ text = 'SJODJDB6'; expect = '' }
+    Assert-True ($ft['code'] -eq 'unknown' -and $ft['reason'] -like '*no expected name*') 'find_token: a row with no JOB -> unknown'
+    Assert-Equal 1 (VerifyFindToken-Distance 'SJODJDB6' 'RJODJDB6') 'find_token: distance of one substitution'
+    $oc = Invoke-TestStep 'screen.ocr' @{ path = '' }
+    Assert-True ($oc['ok'] -and -not $oc['available'] -and $oc['text'] -eq '') 'screen.ocr: no picture exported -> ok, nothing read, no failure'
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+        $png = Join-Path $tmp 'pic1.png'; [System.IO.File]::WriteAllBytes($png, [byte[]]@(137, 80, 78, 71))
+        $oc = Invoke-TestStep 'screen.ocr' @{ path = $png }
+        Assert-True ($oc['ok'] -and -not $oc['available'] -and @($oc['warnings']).Count -eq 1) 'screen.ocr: no Windows OCR here -> ok, available=false, one warning'
+    }
+    $oc = Invoke-TestStep 'screen.ocr' @{ path = (Join-Path $tmp 'nope.png') }
+    Assert-Equal 'file_not_found' $oc['failure'] 'screen.ocr: a named picture that is not there is a failure'
+    $gw = HumanGate-WhatLines -Code 'unknown' -Reason 'picture 1 shows SJODJDB6' -Checklist @('B3 is this job', '', 'red boxes') -Alert @('', 'picture 1 does NOT show SJODJDB6 (read: QJODJDC2): another job''s picture? This line is long enough to wrap onto a second panel row')
+    Assert-True ($gw['what'][0] -like '!! picture 1 does NOT*') 'gate: the alert comes first, marked !!'
+    Assert-Equal 2 @($gw['what'] | Where-Object { $_ -like 'check: *' }).Count 'gate: one check line per non-empty checklist point'
+    Assert-True (@($gw['alert']).Count -ge 2) ('gate: a long alert is red on every wrapped row: ' + @($gw['alert']).Count + ' fragment(s)')
+    $panel = @(Format-EbiGatePanel -Title 'GATE X' -What $gw['what'])
+    $red = @($panel | Where-Object { (Get-EbiGateLineColor -Line $_ -Alert $gw['alert']) -eq 'Red' })
+    Assert-Equal @($gw['alert']).Count $red.Count 'gate: exactly the alert rows of the rendered panel are red'
+    $gw = HumanGate-WhatLines -Code 'unknown' -Reason '' -Checklist @() -Alert ''
+    Assert-True (@($gw['alert']).Count -eq 0 -and $gw['what'][0] -eq 'verdict so far: unknown') 'gate: no alert, no red'
+    # ============================================================ deliver (10/15): check sheet row + mail draft
+    $p0 = ExcelAppendRow-Plan -LastRow 358 -FirstRow 19 -KeyTexts @{ 355 = 'J4_book_RJODWDB6.xlsx'; 356 = ' j4_book_sjodwdb6.xlsx ' } -Key 'J4_book_SJODWDB6.xlsx'
+    Assert-True ($p0['existing'] -and $p0['row'] -eq 356 -and -not $p0['added']) 'append_row: a book already listed (10/14, by hand) -> nothing added, its row reported (trim + case-insensitive)'
+    $p0 = ExcelAppendRow-Plan -LastRow 358 -FirstRow 19 -KeyTexts @{ 355 = 'J4_book_RJODWDB6.xlsx' } -Key 'J4_book_KJODWDBC.xlsx'
+    Assert-True ($p0['added'] -and $p0['row'] -eq 359) 'append_row: a new book goes under the last used row'
+    Assert-Equal 19 (ExcelAppendRow-Plan -LastRow 2 -FirstRow 19 -KeyTexts @{} -Key '')['row'] 'append_row: never above firstRow'
+    Assert-Equal '2026-10-16' ((ExcelAppendRow-ParseDate '2026-10-16').ToString('yyyy-MM-dd')) 'append_row: run.date -> a real date'
+    Assert-True ($null -eq (ExcelAppendRow-ParseDate 'JAVA')) 'append_row: text is not a date'
+    Assert-True ((ExcelAppendRow-Said -Sheet 'S' -Row 356 -Existing $true -When '2026/10/14') -like 'already listed on S row 356 (2026/10/14)*') 'append_row: the gate line names the row and its date'
+
+    $at = [string][char]64
+    $addrTo = 'reviewer' + $at + 'example.invalid'; $addrCc = 'lead' + $at + 'example.invalid'
+    $tplObj = @{ token = 'MJDSWM39'; subject = ' [GIFT] BIX_J4 review (MJDSWM39)'; body = "Hello`r`nJ4_book_ MJDSWM39.xlsx`r`n"
+                 html = '<p>J4_book_<span style=''x''> MJDSWM39</span>.xlsx</p><p>MJDSWM39 again</p>'; recipients = @(@{ name = 'R'; address = $addrTo; type = 1 }) }
+    $tplJson = Join-Path $tmp 'review-mail.json'
+    [void](Write-EbiJson -Path $tplJson -Value $tplObj)
+    $rt = Read-EbiMailTemplate -Path $tplJson
+    Assert-True ($rt['ok'] -and $rt['template']['token'] -eq 'MJDSWM39' -and @($rt['template']['recipients']).Count -eq 1) ('mail: a .json template reads: ' + $rt['message'])
+    $bat = Join-Path $tmp 'sendj4mail.bat'
+    $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((ConvertTo-EbiJson -Value $tplObj)))
+    [System.IO.File]::WriteAllText($bat, ("@echo off`r`nrem ...`r`n#==POWERSHELL==`r`n# code`r`n#==TEMPLATE_JSON==`r`n" + $b64 + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    $rb = Read-EbiMailTemplate -Path $bat
+    Assert-True ($rb['ok'] -and $rb['template']['subject'] -eq $tplObj['subject']) ('mail: the template embedded in sendj4mail.bat reads the same: ' + $rb['message'])
+    $x = Expand-EbiMailTemplate -Template $rb['template'] -Value 'RJODWDB6' -TrimBefore
+    Assert-True ($x['ok'] -and $x['subject'] -like '*review (RJODWDB6)') 'mail: the token becomes the job in the subject'
+    Assert-True ($x['body'] -like '*J4_book_RJODWDB6.xlsx*') ('mail: "_ MJDSWM39.xlsx" -> "_RJODWDB6.xlsx" (the stray space dropped): ' + $x['body'])
+    Assert-True ($x['html'] -like '*J4_book_<span style=''x''>RJODWDB6</span>.xlsx*' -and $x['html'] -like '*<p>RJODWDB6 again*') ('mail: html too, the space inside the span dropped, other places replaced: ' + $x['html'])
+    Assert-True (-not (Expand-EbiMailTemplate -Template $rb['template'] -Token 'NOPE' -Value 'X')['ok']) 'mail: a token found nowhere is refused (the mail would go out unchanged)'
+    $rc = @(HumanDraftMail-Recipients -Recipients $rb['template']['recipients'] -To @() -Cc @($addrCc))
+    Assert-True ($rc.Count -eq 2 -and $rc[0]['address'] -eq $addrTo -and $rc[1]['type'] -eq 2) 'mail: the template To kept, a CC added'
+    $rc = @(HumanDraftMail-Recipients -Recipients $rb['template']['recipients'] -To @($addrCc) -Cc @())
+    Assert-True ($rc.Count -eq 1 -and $rc[0]['address'] -eq $addrCc) 'mail: a given To replaces the template To'
+    $ctx['DryRun'] = $true
+    $dm = Invoke-TestStep 'human.draft_mail' @{ template = $bat; value = 'RJODWDB6' }
+    Assert-True ($dm['ok'] -and $dm['subject'] -like '*(RJODWDB6)' -and @($dm['to']).Count -eq 1 -and -not $dm['saved']) 'draft_mail: a dry run shows the subject it would use, saves nothing'
+    $ctx['DryRun'] = $false
+    $dm = Invoke-TestStep 'human.draft_mail' @{ template = (Join-Path $tmp 'none.json'); value = 'X' }
+    Assert-Equal 'file_not_found' $dm['failure'] 'draft_mail: no template file -> file_not_found (set paths.mailTemplate)'
+    [System.IO.File]::WriteAllText((Join-Path $tmp 'bad.bat'), "@echo off`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    $dm = Invoke-TestStep 'human.draft_mail' @{ template = (Join-Path $tmp 'bad.bat'); value = 'X' }
+    Assert-True ($dm['failure'] -eq 'template_invalid' -and $dm['message'] -like '*TEMPLATE_JSON*') 'draft_mail: a .bat without the template section -> template_invalid'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -35,7 +35,27 @@
       "unitsPerColumn": 3
     },
     "compareFirstRow": 4,
+    "checklist": [
+      "GFIX受信結果 B3: the Excel snap is THIS job's row (last column ジョブ = the J name)",
+      "GFIX受信ログ from row 8, label bold; yellow rows on the Command / uploaded lines",
+      "GFIXReceive.log block: yellow on fileName / file stored",
+      "Jenkins picture: red box on this job's file",
+      "GIFTデータvsGFIXデータ: B3 = the IF name, DF pictures + red boxes"
+    ],
+    "_checklist_doc": "the evidence GATE's 'check:' lines (10/15). Add a point when a review finds something the gate did not ask about; docs/ebi-dance/KNOWLEDGE.md says how a point grows into an automatic check.",
     "_glob_doc": "starts with J4 so the ~$ lock file Excel leaves next to an open workbook never matches"
+  },
+  "checkSheet": {
+    "_doc": "gfixRecv.deliver (10/15): the review check sheet row, read off Check Sheet_J4 (row 351..358: B 記入日 / C COBOL/JAVA / E 確認ﾌｪｰｽﾞ / F レビュー対象 = the evidence book's file name / G 担当 / H 確認). The columns are in the workflow (excel.append_row cells); the values that may change are here.",
+    "sheet": "Check Sheet_J4",
+    "firstRow": 19,
+    "language": "JAVA",
+    "phase": "J4内部ﾚﾋﾞｭｰ",
+    "checklist": [
+      "the Outlook draft is open: To, the subject's job name, the file name in the body",
+      "press Send in Outlook, then Enter here: the check sheet row is written then (s = send it later: nothing written, the job stays pending)"
+    ],
+    "_checklist_doc": "a book already on the check sheet (listed by hand, e.g. R/S on 10/14) is taken as requested: no draft, no question, deliver = ok"
   },
   "df": {
     "_doc": "DF captures (leader, 2026-10-12): one picture shows 16 data lines (window 1133 x 429, the sample evidence). <= 16 lines: one picture; 17..32: a second picture after PgDn from the top, so it starts at line 17 (keysMid: Ctrl+Home, PgDn); more: the END view (keysEnd: End, PgUp, Down x2). Wave between the two. Boxes on the second (or only) picture: the last line number (last band of dark ink in the line-number strip) and the 同一内容 cell of the status bar (bottom-right). Some workbooks follow the HOST team's 19-line pictures instead: check by hand until that case is detected (see TODO).",

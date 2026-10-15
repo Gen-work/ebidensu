@@ -109,6 +109,7 @@ function Invoke-Step {
     foreach ($e in $entries) {
         $n++
         if ($n -gt 1) { $row = $row + [Math]::Max(0, [int]$e['gapRows']) }
+        Show-EbiExcelAt -Worksheet $ws -Row $row -Front
         try {
             $col = ConvertTo-EbiColumnNumber $e['column']
             $cell = $ws.Cells.Item($row, $col)

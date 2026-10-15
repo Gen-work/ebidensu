@@ -35,6 +35,7 @@ $Manifest = @{
   }
   outputs    = @{
     path       = @{ type='path';   desc='the hit (the only one, or the newest with expect=any)' }
+    name       = @{ type='string'; desc='the hit''s file name (path without the folder); empty when there is no hit' }
     files      = @{ type='list';   desc='every hit, newest first' }
     found      = @{ type='int';    desc='how many files matched' }
     matchedBy  = @{ type='string'; desc='exact | stripped | fullwidth | case | glob (kernel/Key.ps1 tiers)' }
@@ -107,9 +108,9 @@ function Invoke-Step {
             # A dry run walks the plan on a machine that may have none of the
             # folders; the lookup itself is read-only, so it runs when it can.
             $Ctx.Log.Warn(('would fail: no folder at {0}' -f $dir))
-            return @{ ok = $true; path = ''; files = @(); found = 0; matchedBy = ''; candidates = $null; warnings = @( @{ code = 'would_fail'; message = ('no folder at ' + $dir); data = @{} } ) }
+            return @{ ok = $true; path = ''; name = ''; files = @(); found = 0; matchedBy = ''; candidates = $null; warnings = @( @{ code = 'would_fail'; message = ('no folder at ' + $dir); data = @{} } ) }
         }
-        return @{ ok = $false; failure = 'dir_not_found'; message = $dir; path = ''; files = @(); found = 0; matchedBy = ''; candidates = $null }
+        return @{ ok = $false; failure = 'dir_not_found'; message = $dir; path = ''; name = ''; files = @(); found = 0; matchedBy = ''; candidates = $null }
     }
     $items = @(Get-ChildItem -LiteralPath $dir -Filter $glob -File -Recurse:([bool]$In['recurse']) -ErrorAction SilentlyContinue)
     # name -> ALL the files carrying it. With recurse the same key file name
@@ -120,7 +121,7 @@ function Invoke-Step {
     foreach ($it in $items) { if (-not $byName.Contains($it.Name)) { $byName[$it.Name] = New-Object System.Collections.ArrayList }; [void]$byName[$it.Name].Add($it) }
     $rank = FileFind-Rank -Names @($byName.Keys) -Key $key -Ext $ext -Rules (Get-EbiKeyRules -Profile $Ctx['Profile'])
     if ($rank['tier'] -eq '') {
-        return @{ ok = $false; failure = 'file_not_found'; message = ('nothing for key "' + $key + '"' + $(if ($ext -ne '') { ' (.' + $ext.TrimStart('.') + ')' } else { '' }) + ' under ' + $dir + ' (' + $items.Count + ' file(s) seen)'); path = ''; files = @(); found = 0; matchedBy = ''; candidates = $null }
+        return @{ ok = $false; failure = 'file_not_found'; message = ('nothing for key "' + $key + '"' + $(if ($ext -ne '') { ' (.' + $ext.TrimStart('.') + ')' } else { '' }) + ' under ' + $dir + ' (' + $items.Count + ' file(s) seen)'); path = ''; name = ''; files = @(); found = 0; matchedBy = ''; candidates = $null }
     }
     $hits = New-Object System.Collections.ArrayList
     foreach ($it in @(@($rank['names']) | ForEach-Object { @($byName[$_].ToArray()) } | Sort-Object -Property @{ Expression = 'LastWriteTimeUtc'; Descending = $true }, @{ Expression = 'Name' }, @{ Expression = 'FullName' })) {
@@ -129,9 +130,9 @@ function Invoke-Step {
     $paths = @(@($hits.ToArray()) | ForEach-Object { $_['path'] })
     if ($hits.Count -gt 1 -and $expect -ne 'any') {
         $cand = FileFind-Candidates -Files $hits.ToArray() -Dir $dir -Tier $rank['tier']
-        return @{ ok = $false; failure = 'ambiguous'; message = ('' + $hits.Count + ' files match key "' + $key + '" (' + $rank['tier'] + ')'); path = ''; files = $paths; found = $hits.Count; matchedBy = $rank['tier']; candidates = $cand }
+        return @{ ok = $false; failure = 'ambiguous'; message = ('' + $hits.Count + ' files match key "' + $key + '" (' + $rank['tier'] + ')'); path = ''; name = ''; files = $paths; found = $hits.Count; matchedBy = $rank['tier']; candidates = $cand }
     }
     $warnings = @()
     if ($rank['tier'] -eq 'fullwidth') { $warnings = @( @{ code = 'full_width_name'; message = 'matched only after folding full-width characters'; data = @{ name = $hits[0]['name'] } } ) }
-    return @{ ok = $true; path = $paths[0]; files = $paths; found = $hits.Count; matchedBy = $rank['tier']; candidates = $null; warnings = $warnings }
+    return @{ ok = $true; path = $paths[0]; name = [System.IO.Path]::GetFileName([string]$paths[0]); files = $paths; found = $hits.Count; matchedBy = $rank['tier']; candidates = $null; warnings = $warnings }
 }

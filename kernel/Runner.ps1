@@ -613,6 +613,22 @@ function Invoke-EbiStepCall {
         if ($ebiCall['frontH'] -ne [IntPtr]::Zero -and -not $ebiCall['frontOk']) { $ebiCall['ctx'].Log.Warn(('front "{0}" did not come to the front: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
     }
 
+    # -- q / Esc pressed while the run was working (10/15: "so I can quit
+    # any time, not wait blind") -- asked between steps, never inside one;
+    # teardown always runs to the end.
+    if (-not $ebiCall['ctx']['DryRun'] -and $Section -ne 'teardown' -and (Test-EbiStopRequested)) {
+        $ebiCall['stop'] = Show-EbiGate -Title 'STOP?' `
+            -What @(('q / Esc was pressed while the run was working; next step: {0} ({1}){2}' -f $ebiCall['id'], $ebiCall['use'], $(if ($Key -ne '') { ' for ' + $Key } else { '' }))) `
+            -Next @('y: cancel the run here (teardown still runs; finished items stay done)', 'n / Enter: go on') `
+            -Actions @(@{ key = 'y'; label = 'cancel the run' }, @{ key = 'n'; label = 'go on (Enter)' }) -Default 'n' -Auto 'n'
+        if ($ebiCall['stop']['action'] -eq 'y' -or $ebiCall['stop']['action'] -eq 'q') {
+            $ebiCall['rec']['status'] = 'fail'; $ebiCall['rec']['failure'] = 'cancelled'; $ebiCall['rec']['message'] = 'operator stopped the run between steps (q)'
+            Write-EbiStepLine -Status 'fail' -Section $Section -Id $ebiCall['id'] -Use $ebiCall['use'] -Key $Key -Detail 'cancelled: q between steps'
+            Write-TraceEvent -WorkDir $ebiCall['workDir'] -RunId $ebiCall['runId'] -Phase $Section -Key $Key -Tags $ebiCall['tags'] -Action 'step' -Status 'fail' -Message $ebiCall['rec']['message'] -Data @{ failure = 'cancelled' }
+            return $ebiCall['rec']
+        }
+    }
+
     # -- call -----------------------------------------------------------------
     $ebiCall['ret'] = $null
     $ebiCall['threw'] = ''

@@ -5,6 +5,22 @@ file stays small. Designed-then-shelved work lives in
 [`Parked-Ideas.md`](Parked-Ideas.md) instead; release history lives in
 [`../CHANGELOG.md`](../CHANGELOG.md).
 
+- **ebi-dance: ledger key per day** (10/15, docs/ebi-dance/KNOWLEDGE.md
+  K-05). The ledger replays by "<job> | <step>", not by date: resuming an
+  old run after the same job came back with a new GFIX_DATE would replay
+  its steps as done and build nothing. v2.26.0 only makes the old run
+  look old (UNFINISHED RUN: Enter = new run, other-day runs in red). Fix:
+  a per-row fingerprint in the ledger key (e.g. the source's `orderBy` /
+  a declared `source.ledgerKey` column such as GFIX_DATE).
+- **gfix-recv: Teams count = file lines + 1 on JOD jobs?** (10/15,
+  KNOWLEDGE.md K-10) R 1件 -> 0 lines, S 127件 -> 126 lines, both equal
+  to the GIFT file. Ask the HOST side whether their count includes a
+  header record; then let `verify.record_counts` accept count-1 for those.
+- **gfix-recv: first office run of gfixRecv.deliver** (v2.26.0): the
+  check-sheet row (date format copied from the row above, the classification
+  dialog on save), the Outlook draft from sendj4mail.bat's template, and
+  the evidence gate's picture-1 OCR (needs the en-US OCR language; without
+  it the check says "no text read" and only the eye checks).
 - **gfix-recv: dashboard + entry point -- SHIPPED (v2.25.0).** `ebi status`
   / `ebi menu` / `ebi.cmd` (`kernel/Dashboard.ps1`); README "A receive
   day in one screen". Still open from that card: a first office-PC run

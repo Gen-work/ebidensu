@@ -97,5 +97,12 @@ Assert-Equal -1 (Get-EbiLastCommitIndex -Calls $calls -Done $doneOther -Item 'B1
 Assert-Equal 1 (Get-EbiCallIndex -Calls $calls -Id 'snap') 'call index: by id'
 Assert-Equal -1 (Get-EbiCallIndex -Calls $calls -Id 'nope') 'call index: unknown -> -1'
 
+# -- the UNFINISHED RUN panel lines (10/15: a 10/14 run was offered next to today's jobs)
+$fl = Format-EbiUnfinishedRunLines -Runs @(@{ runId = 'r-today'; startedAt = '2026-10-15T10:57:16.7830478+09:00' }, @{ runId = 'r-old'; startedAt = '2026-10-14T15:17:47+09:00' }, @{ runId = 'r-odd'; startedAt = 'not a date' }) -Today ([datetime]::Parse('2026-10-15T12:00:00+09:00').ToLocalTime())
+Assert-Equal 3 @($fl['lines']).Count 'unfinished lines: one per run'
+Assert-True ($fl['lines'][1] -like 'r-old  started 2026-10-1* <- another day') ('unfinished lines: the other-day run is marked: ' + $fl['lines'][1])
+Assert-True ($fl['lines'][2] -eq 'r-odd  started not a date') 'unfinished lines: an unparsable start is shown as it is, unmarked'
+Assert-Equal 1 $fl['otherDay'] 'unfinished lines: one run from another day'
+
 $rc = Complete-Tests
 exit $rc

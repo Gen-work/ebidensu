@@ -70,7 +70,7 @@ modules/                capability-oriented ebi-dance steps, one .ps1 per step
                         Test-TableSteps.ps1 / Test-VerifySteps.ps1 run the
                         pure helpers and the file / table / verify / human
                         steps for real on temp fixtures.
-                        gfix-recv (P3) added 34 steps (excel/ lifecycle etc.; see CHANGELOG.md).
+                        gfix-recv steps: CHANGELOG.md; edge cases: docs/ebi-dance/KNOWLEDGE.md.
 legacy/                 retired implementations, kept only while they still have
                         a backlog to clear. Not in the catalog.
 kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
@@ -674,7 +674,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
 `Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
 `Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`, `Rules.ps1`, `ProfileCheck.ps1`,
-`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`, `Dashboard.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`, `Dashboard.ps1`, `Ocr.ps1`, `Mail.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`, `StepDryRun.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

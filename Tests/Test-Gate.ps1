@@ -84,6 +84,20 @@ Assert-Equal 'n' (Invoke-EbiGateAsk -Question @{ kind = 'confirm'; section = 'ea
 Assert-Equal 'y' (Invoke-EbiGateAsk -Question @{ kind = 'confirm'; section = 'each'; id = 'rep'; use = 'x.y'; key = ''; group = ''; effects = 'destructive'; with = @{} } -DryRun $true) 'ask: confirm under DryRun is y'
 Assert-Equal 's' (Invoke-EbiGateAsk -Question @{ kind = 'error'; section = 'setup'; id = 'e'; use = 'x.y'; key = ''; group = ''; failure = 'boom'; message = 'm'; attempt = 1; transient = $false; policy = 'ask' } -DryRun $true) 'ask: error under DryRun is s'
 Assert-Equal 's' (Invoke-EbiGateAsk -Question @{ kind = 'error'; section = 'each'; id = 'track'; use = 'file.read_json'; key = 'JJDSWM53'; group = ''; failure = 'file_not_found'; message = 'no file'; attempt = 1; transient = $false; policy = 'ask' } -Reader { '' }) 'ask: FAILED + Enter = s (skip this item; 10/14 Enter answered nothing)'
+Assert-Equal 'r' (Invoke-EbiGateAsk -Question @{ kind = 'error'; section = 'setup'; id = 'jk'; use = 'screen.find_window'; key = ''; group = ''; failure = 'not_found'; message = 'no window title contains "data/report"'; attempt = 1; transient = $true; policy = 'ask' } -Reader { '' }) 'ask: FAILED + Enter on a transient failure = r (10/15: the window was simply not in front yet)'
+Assert-Equal 's' (Invoke-EbiGateAsk -Question @{ kind = 'error'; section = 'setup'; id = 'jk'; use = 'screen.find_window'; key = ''; group = ''; failure = 'not_found'; message = 'm'; attempt = 1; transient = $true; policy = 'ask' } -DryRun $true) 'ask: a transient failure under DryRun is still s (nobody to retry for)'
+
+# ---------------------------------------------------------------- hints and the alert colour (10/15)
+$h = @(Get-EbiFailureHints -Failure 'write_failed' -Message 'HRESULT 0x800AC472' -Use 'excel.write_lines')
+Assert-True ($h.Count -eq 2 -and $h[0] -like '*Excel is busy*') ('hints: Excel busy HRESULT first, then the id hint: ' + ($h -join ' | '))
+Assert-True ((@(Get-EbiFailureHints -Failure 'not_found' -Use 'screen.find_window'))[0] -like '*ACTIVE TAB*') 'hints: find_window not_found names the active-tab rule'
+Assert-Equal 0 @(Get-EbiFailureHints -Failure 'nobody_knows_this' -Message 'x').Count 'hints: an unknown failure has no hint (no invented advice)'
+Assert-Equal 'Red' (Get-EbiGateLineColor -Line '|   r1 started 2026-10-14 (another day) |' -Alert @('another day')) 'colour: a line holding an alert fragment is red'
+Assert-Equal 'Yellow' (Get-EbiGateLineColor -Line '|   r1 started today |' -Alert @('another day')) 'colour: other lines stay yellow'
+Assert-Equal 'Yellow' (Get-EbiGateLineColor -Line 'x' -Alert @()) 'colour: no alert -> yellow'
+$keepNoAsk = $env:EBI_NO_ASK; $env:EBI_NO_ASK = '1'
+Assert-True (-not (Test-EbiStopRequested)) 'stop key: never read with EBI_NO_ASK (tests, CI): the run is not stopped'
+$env:EBI_NO_ASK = $keepNoAsk
 
 # ---------------------------------------------------------------- the "front" handle
 # $Ctx.Session holds @{ kind; value }: 3560785 converted the whole entry, so
