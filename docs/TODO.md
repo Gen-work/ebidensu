@@ -39,10 +39,25 @@ file stays small. Designed-then-shelved work lives in
     with an empty reason on 10/16): v2.26.2 makes the warning name the
     stage (copy / add chart / paste / export) and the exception type /
     HRESULT -- read it on the next evidence run and fix the stage.
-  - *4 DBC rows that are not the operator's*: plan kept M/Q/R/S JODJDBC
-    (WBS AF = 10/16) under owner 厳, but the operator says they are
-    ニンヌ's. Find what the WBS owner cell says for them (arrow form?)
-    and fix the owner match, then drop them from gfixrecv.csv.
+  - *Delayed rows* (operator, 10/16): the 4 DBC rows (M/Q/R/S JODJDBC, WBS
+    AF = 10/16) ARE the operator's, but their test waits for a HOST-side
+    fix. Wanted: a "delay" mark on a row (e.g. a verdict value or a
+    `hold` column, set from the menu like `c`) that every day phase skips
+    and the board shows apart, until it is cleared -- together with the
+    "recent days only" scope below.
+  - *Kase's 10/13 review (JJDSWM10, rows 326-328), ニンヌ's fix in
+    JJDSWM51* -- being built (evidence):
+    (a) GIFT / GFIX受信結果 picture 1: when the job has several rows in the
+    GFIX一覧 that are the same from "from" to 送信ジョブ, the snap must
+    run on to 元ファイル(SNDFILE) (ライブラリ / ディレクトリ / 元ファイル
+    columns) so the rows can be told apart. Take the snap from the real
+    overview workbook (the old ExcelSnap.ps1 way: AutoFilter 送信ジョブ =
+    J名, CopyPicture, chart export) instead of copying GIFT's picture, and
+    when the snap had to run on, replace GIFT受信結果's picture 1 too.
+    (b) GIFTデータvsGFIXデータ: every section gets the STEP name from
+    送信データ next to the correl id (JJDSWM51: B3 JJPCRS12 + G3
+    STEP:MQFXRSX1; B26 JJPCRS12 + G26 STEP:MQFXRSX2; 送信データ A3/B3,
+    A33/B33; trim the trailing space 送信データ sometimes has).
   - *Rows from other days are "pending".* `source.select` is `!= ok`
     over every date: track lists 10/15's DBC / MJOD / QJOD rows, and
     deliver lists all 20 rows from before deliver existed -- Enter (= all
