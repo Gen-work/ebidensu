@@ -62,6 +62,18 @@ file stays small. Designed-then-shelved work lives in
     (track gates, deliver's Send/Enter) cannot work through it. Run the
     child without capturing it (e.g. `Start-Process -NoNewWindow -Wait
     -PassThru`, then `.ExitCode`).
+  - *Bring the right window to the front.* While a phase drives Edge /
+    GoAnywhere / Jenkins / DF, the console ends up behind them and the
+    operator does not notice a question or the end of the run. (a) Every
+    time the run stops for the operator (a gate, human.prepare / input /
+    choose) and when it finishes, raise the PowerShell console (one
+    `Set-EbiForeground` on the console's own hwnd, in Gate.ps1 and at the
+    end of `Invoke-EbiWorkflow`). (b) When track's `human.share` has put
+    the reply on the clipboard, raise Teams instead (the operator's next
+    move is Ctrl+V there), falling back to the console when no Teams
+    window is found. Only raise; never send keys to Teams.
+  - `ebi status` silently ignores extra arguments (`status workflows\x.json
+    -Only K...` ran as plain status); warn on what it does not use.
   - *The result line should be a message for the operator*, not a code
     legend: "plan OK -- 4 rows added (MJODWDBC, ...), 0 from mapping.xlsx;
     next: track" / "track stopped at <step>: <reason>", the numbers the
