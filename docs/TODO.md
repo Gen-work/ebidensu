@@ -54,6 +54,18 @@ file stays small. Designed-then-shelved work lives in
     job that comes back on another day keeps an old `deliver = ok`.
   - RUNBOOK.zh.md 0.5 still says three verdict columns (deliver is the
     fourth).
+  - *The menu swallows the child's output.* `Invoke-EbiMenu` runs
+    `$code = & $run ...`, and the default runner's `& $psExe ... -File
+    ebi.ps1` output lands in `$code`: nothing shows while the phase
+    runs, then everything prints as ONE line inside "plan finished with
+    exit code ... 0 (0 ok, 1 failed, 3 cancelled)". Interactive phases
+    (track gates, deliver's Send/Enter) cannot work through it. Run the
+    child without capturing it (e.g. `Start-Process -NoNewWindow -Wait
+    -PassThru`, then `.ExitCode`).
+  - *The result line should be a message for the operator*, not a code
+    legend: "plan OK -- 4 rows added (MJODWDBC, ...), 0 from mapping.xlsx;
+    next: track" / "track stopped at <step>: <reason>", the numbers the
+    operator would otherwise dig out of the run log.
 - **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
   (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
   picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks
