@@ -118,6 +118,17 @@ file stays small. Designed-then-shelved work lives in
   - *deliver: a switch to skip the draft* (`-Var mail=false`) for a mail
     already sent by hand, so only the check-sheet row is written. Today the
     mail step has no off switch (only `listed.existing` skips it).
+  - *deliver in two passes* (operator ask, 10/16): pass 1 makes every
+    selected job's draft and stops (the operator sends them all in
+    Outlook); pass 2 asks "sent?" per job and appends the check-sheet rows
+    in one go. Today each job is draft -> gate -> row before the next job.
+    Needs a "drafted" state between pending and ok (e.g. deliver =
+    drafted) so pass 2 selects exactly what pass 1 drafted.
+  - *-Only "a,b" works; a,b unquoted is not safe* when calling
+    `powershell -File ebi.ps1` from PowerShell (the comma makes an array,
+    passed on as separate arguments -- not verified on the office PC).
+    Make -Only take the rest of the names too (string[] / ValueFromRemaining)
+    so both spellings work.
   - `ebi status` silently ignores extra arguments (`status workflows\x.json
     -Only K...` ran as plain status); warn on what it does not use.
   - *The result line should be a message for the operator*, not a code
