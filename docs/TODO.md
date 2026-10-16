@@ -115,6 +115,9 @@ file stays small. Designed-then-shelved work lives in
     body ("..._ KJODWSPP.xlsx"; trimBefore already handles the space) --
     and show it in the panel before the first draft. The .msg holds real
     addresses: it stays in the work folder, never in git.
+  - *deliver: a switch to skip the draft* (`-Var mail=false`) for a mail
+    already sent by hand, so only the check-sheet row is written. Today the
+    mail step has no off switch (only `listed.existing` skips it).
   - `ebi status` silently ignores extra arguments (`status workflows\x.json
     -Only K...` ran as plain status); warn on what it does not use.
   - *The result line should be a message for the operator*, not a code
