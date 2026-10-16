@@ -73,6 +73,15 @@ file stays small. Designed-then-shelved work lives in
     move is Ctrl+V there), falling back to the console when no Teams
     window is found. Start with raise only; the operator is fine with a
     Ctrl+V into Teams later (a Teams message can be recalled).
+  - *track: fetch a missing GIFT file from Jenkins* (operator ask, 10/16
+    CJODWSPQ). Today `gift` (file.list) creates DATA\GIFT\<J名> and stops
+    for a hand copy. Wanted: when the folder is missing / empty, ask the
+    GIFT run date + time (or take them from mapping.xlsx when it has
+    them), read the GIFT-side Jenkins listing, keep the files in a window
+    around that time matching the name pattern, confirm when more than
+    one, download straight into DATA\GIFT\<J名>, then go on. Open facts:
+    the GIFT listing URL, the GIFT file-name pattern, where the GIFT time
+    lives.
   - `ebi status` silently ignores extra arguments (`status workflows\x.json
     -Only K...` ran as plain status); warn on what it does not use.
   - *The result line should be a message for the operator*, not a code
