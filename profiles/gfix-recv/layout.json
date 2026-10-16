@@ -37,7 +37,8 @@
     "compareFirstRow": 4,
     "list": {
       "_doc": "picture 1 (the Excel snap) is taken from the real overview workbook paths.gfixList (10/16, the old ExcelSnap.ps1 way): AutoFilter 送信 / ジョブ = the J name, snap from 'left' to 'job'; when two or more rows are the same from 'left' to 'job' the snap runs on to 'extendTo' (加瀬さん 10/13 review of JJDSWM10, rows 326/327; ニンヌ's fix in JJDSWM51). Columns are found by these labels in groupRow / subRow; a sub label matches a cell that starts with it.",
-      "sheet": "GFIX送受信一覧",
+      "sheet": "GFIX送受信一覧(BIX)",
+      "_sheet_doc": "the workbook has both GFIX送受信一覧 and GFIX送受信一覧(BIX); the BIX one is the source (operator, 10/16)",
       "groupRow": 4,
       "subRow": 5,
       "left": { "group": "from", "sub": "システム種別" },

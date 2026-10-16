@@ -29,6 +29,10 @@
   GFIXデータ G3 = 送信データ B3 (the STEP name, trimmed) -- the first
   section only; a second file pair's section is still labelled by hand.
 - **New setting**: `paths.gfixList` in ebi.local.json (the GFIX一覧.xlsx).
+  The source sheet is `GFIX送受信一覧(BIX)` (the workbook also has a
+  `GFIX送受信一覧`; operator, 10/16). Checked against the real header rows
+  4/5 (Tests/fixtures/gfix-list-bix-header.json, labels only): B..O, on to
+  R (元ファイル(SNDFILE)); JJDSJM51 / JJDSJM10 repeat, CJODJSPQ does not.
 
 ## 2026-10-16 - gfix-recv: menu / status fixes from the first office run of the dashboard (v2.26.2)
 
