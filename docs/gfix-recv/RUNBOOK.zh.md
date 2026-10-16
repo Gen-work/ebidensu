@@ -225,7 +225,9 @@ mapping.xlsx 里同一个 job 有几行，作业清单的 `FileCount` 就是几�
   - Jenkins 截图：两个文件各一个红框；两行紧挨着时合成一个框（和你手工画的一样）。
   - `GIFTデータvsGFIXデータ`：DF 图按配对顺序往下排，**每对之间空一行**，每对的最后一张图上画「最后一行行号」和「同一内容」两个框。
     这一条是推断（样本里没有多文件的这张表），第一本做完请对一眼。
-  - B3 = 送信データ!A3 是 IF 名（JJPCRS12），一本一个，两个文件也一样——10/13 的 JJDSWM10 实物确认过，不用补。
+  - B3 = 送信データ!A3 是 IF 名（JJPCRS12）。但 10/13 加瀬さん的レビュー（JJDSWM10，检查表 328 行）要求每一段都在 G 列写上
+    送信データ 的 STEP 名（ニンヌ 改好的 JJDSWM51：B3 + G3 `STEP:MQFXRSX1`，B26 + G26 `STEP:MQFXRSX2`）。
+    v2.27.0 起自动写**第一段**的 G3；第二对文件那一段的相关ID + STEP 名**还要手写**（TODO）。
 
 ---
 
@@ -263,7 +265,11 @@ ebi.ps1 run workflows\gfixRecv.evidence.json -WorkDir $W -Only LJDSWM40
 
 GFIX受信結果（按样本 QJDSWM39 的版式）：
 
-- B3：GIFT受信結果 的第 1 张图（Excel 截图）的复制。
+- B3：**从真正的 GFIX一覧 现截的 Excel 截图**（v2.27.0 起，旧 ExcelSnap.ps1 的做法：`送信 / ジョブ` 列筛选成这个 job 的 J 名，
+  从 `from / システム種別` 截到 `ジョブ`）。同一个 job 有多行、而且 from～送信ジョブ **每一列都一样**时，一直截到
+  `元ファイル(SNDFILE)`，并把 **GIFT受信結果 的第 1 张图也换成这张**（加瀬さん 10/13 レビュー 326/327 行；IF番号 不同就不算重复）。
+  要先在 `ebi.local.json` 的 `paths` 里加 `"gfixList": "<GFIX一覧.xlsx 的完整路径>"`（只读打开，筛选后不保存）。
+  工作表名和表头的字在 `profiles/gfix-recv/layout.json` 的 `evidence.list`。
 - 下一行：`GFIX受信ログ` + job log 全文（多个 job log 之间不空行），黄色标记 `successfully uploaded to …` 和 `Command: …`。
   宽度 = 文字半角宽度 ÷ 3 列（用样本的 4 处黄色标记校准过，结果一致）。
 - 空一行：`GFIXReceive.log` + 这次转送的 START…END 块（含 END 后面的日期行），黄色标记 `FileGIFTGetBLBean.execute() fileName` 和 `file stored :`。
@@ -272,7 +278,7 @@ GFIX受信結果（按样本 QJDSWM39 的版式）：
 
 GIFTデータvsGFIXデータ：
 
-- B3 = 送信データ!A3（JJPCRS12）。
+- B3 = 送信データ!A3（JJPCRS12），G3 = 送信データ!B3（STEP 名，前后空格去掉）。
 - B4 起：DF 截图。超过 16 行：开头截图 → Z 列放波浪线（p5）→ 结尾截图；
   红框框住**最后一行的行号**（在截图里找行号那一列最后一行墨迹）和右下角「同一内容」。
   （和样本对比：行号框 213px vs 212px。）

@@ -24,6 +24,7 @@ $Manifest = @{
     fromCell  = @{ type='string'; default='' }
     fontName  = @{ type='string'; default='' }
     fontSize  = @{ type='int';    default=0 }
+    trim      = @{ type='bool';   default=$false; desc='drop the spaces around the value (10/16: the send-data sheet''s STEP cell sometimes ends in one)' }
   }
   outputs    = @{
     value = @{ type='string'; desc='what the cell holds now' }
@@ -48,6 +49,7 @@ function Invoke-Step {
         if ($null -eq $src) { return @{ ok = $false; failure = 'sheet_not_found'; message = ('no sheet "' + $In['fromSheet'] + '"'); value = ''; row = 0 } }
         try { $val = [string]$src.Range([string]$In['fromCell']).Text } catch { return @{ ok = $false; failure = 'write_failed'; message = $_.Exception.Message; value = ''; row = 0 } }
     }
+    if ([bool]$In['trim']) { $val = $val.Trim() }
     try {
         $c = $ws.Range([string]$In['cell'])
         Set-EbiCellTextPlain -Cell $c -Text $val -FontName ([string]$In['fontName']) -FontSize ([double]$In['fontSize'])

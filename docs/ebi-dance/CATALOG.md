@@ -4,14 +4,14 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-80 step(s) in 9 group(s).
+82 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.row_region`, `screen.save` |
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
-| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.quit_app`, `excel.read_rows`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
+| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
 | verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
@@ -1315,6 +1315,40 @@ failures: `file_not_found` (transient), `read_only` (transient), `open_failed` (
 
 Notes: read_only is transient: close the workbook in the other Excel (or ask whoever has it open) and retry; the failure names who holds it when Excel's ~$ lock file next to the workbook says. Release with excel.close (once:groupEnd for a per-deliverable workbook, teardown for a run-wide one).
 
+### `excel.place_picture`
+
+Put a PNG on a sheet at a cell, replacing the picture there (or the first picture) when asked
+
+- file: `modules/excel/excel.place_picture.ps1`
+- effects: `write` / tier: `core` / idempotent: `false`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `cell` | string |  | B3 |  | top-left cell (replace = first: used only when the sheet has no picture) |
+| `gapRows` | int |  | 0 |  | added to nextRow |
+| `name` | string |  | (empty) |  | shape name for the new picture (empty: Excel's) |
+| `path` | path | yes |  |  | the PNG (relative: under the work dir) |
+| `replace` | string |  | atCell | none, atCell, first | none = just add; atCell = remove pictures whose top-left is in cell first; first = remove the sheet's first picture and put the new one where it was |
+| `sheet` | string | yes |  |  |  |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `groups` | list | replace = first: grouped shapes (Ctrl+G) at or above the replaced picture -- the "first picture" may not be the one a person sees first |
+| `name` | string |  |
+| `nextRow` | int | first row whose top is below the picture, plus gapRows |
+| `note` | string | one line for the gate when groups is not empty, else empty |
+| `replaced` | list | names of the pictures taken away |
+
+failures: `sheet_not_found` (not transient), `file_not_found` (transient), `insert_failed` (transient)
+
+```json
+{"id":"place_picture","use":"excel.place_picture","with":{"cell":"B3","path":"{{steps.snap.out.png}}","replace":"atCell","sheet":"result","workbook":"wb"}}
+```
+
+Notes: Not idempotent for replace = none (a rerun adds a second copy); atCell and first replace what is there, so a rerun ends with one picture.
+
 ### `excel.quit_app`
 
 Quit the registered Excel instance and release it
@@ -1373,6 +1407,43 @@ failures: `sheet_not_found` (not transient), `rules_invalid` (not transient), `r
 ```
 
 Notes: No matching row is not a failure (matched = 0): an empty day is an answer. A date cell holding text that looks like a date is passed through as it is.
+
+### `excel.snap_list`
+
+Filter the overview list to one job and snap its rows to a PNG (on to SNDFILE when the rows repeat)
+
+- file: `modules/excel/excel.snap_list.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `extendTo` | map |  | {} |  | @{ group; sub }: the right edge when rows repeat from left to job; empty = never extend |
+| `groupRow` | int |  | 4 |  | header row with the group labels (from / to / send) |
+| `job` | map | yes |  |  | @{ group; sub }: the filtered column, the normal right edge |
+| `left` | map | yes |  |  | @{ group; sub }: the first column of the snap |
+| `maxColumns` | int |  | 40 |  | header columns scanned |
+| `savePng` | path | yes |  |  | the PNG (relative: under the work dir) |
+| `sheet` | string | yes |  |  |  |
+| `subRow` | int |  | 5 |  | header row with the column labels; data starts below it |
+| `value` | string | yes |  |  | the job to filter on (the J name) |
+| `workbook` | session:workbook | yes |  |  | the overview workbook (excel.open readOnly) |
+
+| output | type | desc |
+|--------|------|------|
+| `extended` | bool | true when the snap ran on to extendTo (rows repeated from left to job) |
+| `lines` | list | each row's cells from left to the right edge, tab-joined (for the gate) |
+| `png` | path |  |
+| `range` | string | the snapped address, e.g. B4:O7 |
+| `rows` | int | rows the filter left |
+
+failures: `sheet_not_found` (not transient), `column_not_found` (not transient), `not_found` (not transient), `copy_failed` (transient)
+
+```json
+{"id":"snap_list","use":"excel.snap_list","with":{"extendTo":{"group":"send","sub":"source file"},"job":{"group":"send","sub":"job"},"left":{"group":"from","sub":"system"},"savePng":"capture/{{item.keySafe}}/pic1.png","sheet":"overview","value":"{{item.JOB}}","workbook":"list"}}
+```
+
+Notes: Changes only the AutoFilter of the overview sheet and clears it again; open the overview read-only (excel.open readOnly) so nothing is ever saved. Clobbers the clipboard. A header label matches when the cell, spaces and line breaks removed, STARTS with it (a cell "<label>(SNDFILE)" matches "<label>").
 
 ### `excel.stack_plan`
 
@@ -1451,6 +1522,7 @@ Write a value (or another cell's value) into one cell as text
 | `fromCell` | string |  | (empty) |  |  |
 | `fromSheet` | string |  | (empty) |  | instead of value: copy the value of fromCell on this sheet |
 | `sheet` | string | yes |  |  |  |
+| `trim` | bool |  | false |  | drop the spaces around the value (10/16: the send-data sheet's STEP cell sometimes ends in one) |
 | `value` | string |  | (empty) |  | the text to write |
 | `workbook` | session:workbook | yes |  |  |  |
 

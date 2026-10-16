@@ -1,3 +1,35 @@
+## 2026-10-16 - gfix-recv evidence: picture 1 snapped from the GFIX list, on to SNDFILE when rows repeat; the STEP name (v2.27.0)
+
+加瀬さん's 10/13 review of JJDSWM10 (check sheet rows 326-328, NG), with
+ニンヌ's fixed JJDSWM51 as the model.
+
+### Added
+- **`excel.snap_list`**: filter the overview workbook (paths.gfixList,
+  sheet + header labels in layout.json `evidence.list`) to one job on its
+  送信 / ジョブ column and snap the rows to a PNG the old ExcelSnap.ps1
+  way (CopyPicture with the xlScreen/xlPrinter x bitmap/picture
+  fallbacks, chart export). Columns are found by the two header rows
+  (group + sub label), never by letter. When two or more of the job's
+  rows are the same in every column from "from" to the job, the snap runs
+  on to 元ファイル(SNDFILE) (`extended`); a different IF番号 is not a
+  repeat. The filter is cleared again; the workbook is opened read-only.
+- **`excel.place_picture`**: put a PNG at a cell at native size, replacing
+  the picture already at that cell (`atCell`, so a rerun ends with one) or
+  the sheet's first picture (`first`, put where it was; a Ctrl+G group
+  above it is reported).
+- `excel.write_cell trim`.
+
+### Changed
+- **gfixRecv.evidence 0.5.0**: picture 1 of GFIX受信結果 (B3) is no
+  longer a copy of GIFT受信結果's picture 1 but the fresh snap from the
+  GFIX list (`list` opened read-only in setup, closed in teardown;
+  `listSnap` -> `excelSnap` at B3). When the snap ran on to SNDFILE,
+  GIFT受信結果's picture 1 is replaced by the same snap (`giftSnap`).
+  The picture-1 OCR reads the snap itself. New `stepName`: GIFTデータvs
+  GFIXデータ G3 = 送信データ B3 (the STEP name, trimmed) -- the first
+  section only; a second file pair's section is still labelled by hand.
+- **New setting**: `paths.gfixList` in ebi.local.json (the GFIX一覧.xlsx).
+
 ## 2026-10-16 - gfix-recv: menu / status fixes from the first office run of the dashboard (v2.26.2)
 
 Office run 10/16 (the four 10/20 jobs pulled forward: track, logs,
