@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -27,7 +27,10 @@
       "with": { "message": "Jenkins の data/report を開いてください(証跡のスクリーンショット用)", "url": "{{profile.paths.jenkinsReportUrl}}" } },
     { "id": "jk", "use": "screen.find_window",
       "with": { "title": "{{page.windowTitle}}", "state": "restore",
-                "width": "{{profile.window.width}}", "height": "{{profile.window.height}}", "as": "jk" } }
+                "width": "{{profile.window.width}}", "height": "{{profile.window.height}}", "as": "jk" } },
+    { "id": "list", "use": "excel.open",
+      "label": "GFIX一覧(1 枚目の Excel スナップの元。読み取り専用: フィルターをかけて撮るだけ、保存しない)",
+      "with": { "app": "xl", "path": "{{profile.paths.gfixList}}", "readOnly": true, "as": "list" } }
   ],
 
   "each": [
@@ -49,14 +52,25 @@
     { "id": "open", "use": "excel.open", "once": "group",
       "with": { "app": "xl", "path": "{{steps.book.out.path}}", "as": "wb" } },
 
-    { "id": "excelSnap", "use": "excel.copy_picture",
-      "label": "GIFT受信結果 の 1 枚目(Excel スナップ)を GFIX受信結果 B3 へ(OCR 用に PNG も)",
-      "with": { "workbook": "wb", "fromSheet": "{{profile.layout.evidence.sheets.giftResult}}", "index": 1,
-                "toSheet": "{{profile.layout.evidence.sheets.gfixResult}}", "cell": "B3",
+    { "id": "listSnap", "use": "excel.snap_list",
+      "label": "GFIX一覧を 送信ジョブ = J名 でフィルターして撮る(ExcelSnap と同じ)。from～送信ジョブ が同じ行が複数あれば 元ファイル(SNDFILE) まで(加瀬さん 10/13 レビュー)",
+      "with": { "workbook": "list", "sheet": "{{profile.layout.evidence.list.sheet}}", "value": "{{item.JOB}}",
+                "groupRow": "{{profile.layout.evidence.list.groupRow}}", "subRow": "{{profile.layout.evidence.list.subRow}}",
+                "left": "{{profile.layout.evidence.list.left}}", "job": "{{profile.layout.evidence.list.job}}",
+                "extendTo": "{{profile.layout.evidence.list.extendTo}}",
                 "savePng": "{{vars.capture}}/{{item.keySafe}}/pic1.png" } },
+    { "id": "excelSnap", "use": "excel.place_picture",
+      "label": "その PNG を GFIX受信結果 B3 へ(B3 に前の図があれば差し替え)",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}", "path": "{{steps.listSnap.out.png}}",
+                "cell": "B3", "replace": "atCell" } },
+    { "id": "giftSnap", "use": "excel.place_picture",
+      "label": "SNDFILE まで撮ったときは GIFT受信結果 の 1 枚目も差し替え",
+      "when": "steps.listSnap.out.extended == true",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.giftResult}}", "path": "{{steps.listSnap.out.png}}",
+                "cell": "B3", "replace": "first" } },
     { "id": "pic1Ocr", "use": "screen.ocr",
       "label": "1 枚目を OCR(OCR が使えない PC では空のまま先へ)",
-      "with": { "path": "{{steps.excelSnap.out.png}}" } },
+      "with": { "path": "{{steps.listSnap.out.png}}" } },
     { "id": "pic1Job", "use": "verify.find_token",
       "label": "1 枚目の最後の列(ジョブ)= このジョブの J 名か(違えば GATE で赤字。止まらない)",
       "with": { "text": "{{steps.pic1Ocr.out.text}}", "expect": "{{item.JOB}}", "label": "picture 1 (Excel snap)" } },
@@ -123,6 +137,11 @@
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.compare}}", "cell": "B3",
                 "fromSheet": "{{profile.layout.evidence.sheets.sendData}}", "fromCell": "A3",
                 "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
+    { "id": "stepName", "use": "excel.write_cell",
+      "label": "GIFTデータvsGFIXデータ G3 = 送信データ!B3(STEP 名。加瀬さん 10/13 レビュー)",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.compare}}", "cell": "{{profile.layout.evidence.stepName.cell}}",
+                "fromSheet": "{{profile.layout.evidence.sheets.sendData}}", "fromCell": "{{profile.layout.evidence.stepName.fromCell}}", "trim": true,
+                "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
     { "id": "dfPlan", "use": "excel.stack_plan",
       "with": { "sets": "{{steps.track.out.data.dfShots}}",
                 "separator": "{{run.toolDir}}/{{profile.layout.df.separator}}",
@@ -160,6 +179,7 @@
   ],
 
   "teardown": [
+    { "id": "listClose", "use": "excel.close", "with": { "workbook": "list" } },
     { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
     { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "evidence", "next": ["ebi.ps1 run workflows\\gfixRecv.deliver.json -WorkDir {{run.workDir}}   (レビュー依頼: チェックシート 1 行 + メール下書き)"] } }
   ]

@@ -24,6 +24,102 @@ file stays small. Designed-then-shelved work lives in
   memory, Japanese titles on the real console); and, not part of it, the
   478-byte SJDSWM40 download that compared "equal" (file.compare), the
   untested PgDn / END DF keys, and the HOST-range card below.
+- **gfix-recv: menu / status first office run, 10/16 findings.** Done in
+  v2.26.2 (CHANGELOG): a broken ebi.local.json is named instead of "no
+  profile has its worklist"; the menu asks for the work folder (and
+  refuses the tool folder); a fresh work folder opens on the one plan
+  profile; NEXT says plan first when no row is dated today; totals never
+  cut; the menu's child runs live in the same console (gates work) and
+  ends with a one-line result; status / menu warn on arguments they do
+  not use; a .json mail template holding the .bat's base64 body reads;
+  a missing setting file gets its own FAILED hint; picture export errors
+  name the stage. `-Only a,b` and `-Only "a,b"` both work (operator, 10/16).
+  Open:
+  - *Picture 1 not exported* (evidence `excelSnap`, 4 x png_not_saved
+    with an empty reason on 10/16): v2.26.2 makes the warning name the
+    stage (copy / add chart / paste / export) and the exception type /
+    HRESULT -- read it on the next evidence run and fix the stage.
+  - *Delayed rows* (operator, 10/16): the 4 DBC rows (M/Q/R/S JODJDBC, WBS
+    AF = 10/16) ARE the operator's, but their test waits for a HOST-side
+    fix. Wanted: a "delay" mark on a row (e.g. a verdict value or a
+    `hold` column, set from the menu like `c`) that every day phase skips
+    and the board shows apart, until it is cleared -- together with the
+    "recent days only" scope below.
+  - *Kase's 10/13 review, the rest* (v2.27.0 built (a) picture 1 snapped
+    from the GFIX一覧 -- on to 元ファイル(SNDFILE) when rows repeat, GIFT's
+    picture 1 replaced then -- and (b) the STEP name in G3 of the FIRST
+    compare section; both still to be run on the office PC). Open: a
+    second file pair's section (JJDSWM51 B26 / G26: correl id + its own
+    STEP name above its DF pictures) -- needs excel.stack_plan to say
+    where each set starts and the n-th "STEP:" cell of 送信データ.
+  - *Rows from other days are "pending".* `source.select` is `!= ok`
+    over every date: track lists 10/15's DBC / MJOD / QJOD rows, and
+    deliver lists all 20 rows from before deliver existed -- Enter (= all
+    pending) at the menu's Excel_NAME prompt would draft 20 mails. Scope
+    the day phases to GFIX_DATE = today by default (older rows on
+    request), or mark pre-deliver rows done once.
+  - *GFIX_DATE in two formats* in one CSV (`2026/10/9` and `2026-10-14`,
+    older versions); normalize on write.
+  - *plan's resetOnChange clears track/logs/evidence but not deliver*: a
+    job that comes back on another day keeps an old `deliver = ok`.
+  - *Bring the right window to the front.* While a phase drives Edge /
+    GoAnywhere / Jenkins / DF, the console ends up behind them and the
+    operator does not notice a question or the end of the run. (a) Every
+    time the run stops for the operator (a gate, human.prepare / input /
+    choose) and when it finishes, raise the PowerShell console (one
+    `Set-EbiForeground` on the console's own hwnd, in Gate.ps1 and at the
+    end of `Invoke-EbiWorkflow`). (b) When track's `human.share` has put
+    the reply on the clipboard, raise Teams instead (the operator's next
+    move is Ctrl+V there), falling back to the console when no Teams
+    window is found. Start with raise only; the operator is fine with a
+    Ctrl+V into Teams later (a Teams message can be recalled).
+  - *track: fetch a missing GIFT file from Jenkins* (operator ask, 10/16
+    CJODWSPQ). Today `gift` (file.list) creates DATA\GIFT\<J名> and stops
+    for a hand copy. Wanted: when the folder is missing / empty, ask the
+    GIFT run date + time (or take them from mapping.xlsx when it has
+    them), read the GIFT-side Jenkins listing, keep the files in a window
+    around that time matching the name pattern, confirm when more than
+    one, download straight into DATA\GIFT\<J名>, then go on.
+    Facts (operator, 10/16): the GIFT files sit on the SAME Jenkins
+    data/report page with the same F<yyyyMMdd><nnnn> names; the operator
+    finds one by the GIFT run time from the Teams "実施します" message
+    (CJODWSPQ: Teams 09/11 10:30 -> Ctrl+F "2026/09/11 10:30" ->
+    F202609110030.csv 10:30:29). The page is long (4063 entries on 10/16)
+    and the clipboard has a length limit: read only the text around the
+    hit, not Ctrl+A of the whole page. Time sources, best first: Teams
+    (authentic; scripting Teams is an option), 処理時間(BIX).xlsx on the
+    BIX share (GIFT rows: 相関ID / 開始日時 / 終了日時 / 件数 / ジョブ;
+    119 GIFT rows, "not that accurate, not complete"; CJODJSPQ there =
+    09/11 10:30:25..10:30:34, and the Jenkins file's 10:30:29 falls inside
+    -> rule: the report entry whose time is within [start, end] of the
+    GIFT run), mapping.xlsx (some rows), else ask. The workbook mixes
+    date forms ('2026/9/9  10:15:28' with two spaces, '2026/09/11 ...',
+    real datetimes) and J / W names in ジョブ. Build after the receive
+    tests are done (operator).
+  - *deliver: a sent mail saved as .msg is the template* (operator ask,
+    10/16). When paths.mailTemplate is missing / unreadable, the panel
+    asks: "open a review mail you already sent in Outlook, File > Save As
+    > .msg into the work folder, Enter" -- then remember that file in
+    ebi.local.json. human.draft_mail already reads .msg / .oft through
+    Outlook, but a .msg carries no token ("no token: the template names
+    none"): infer it -- the W-name in the subject's last "(...)"
+    (【GIFT廃止対応】BIX_J4レビュー依頼(KJODWSPP)) that also appears in the
+    body ("..._ KJODWSPP.xlsx"; trimBefore already handles the space) --
+    and show it in the panel before the first draft. The .msg holds real
+    addresses: it stays in the work folder, never in git.
+  - *deliver: a switch to skip the draft* (`-Var mail=false`) for a mail
+    already sent by hand, so only the check-sheet row is written. Today the
+    mail step has no off switch (only `listed.existing` skips it).
+  - *deliver in two passes* (operator ask, 10/16): pass 1 makes every
+    selected job's draft and stops (the operator sends them all in
+    Outlook); pass 2 asks "sent?" per job and appends the check-sheet rows
+    in one go. Today each job is draft -> gate -> row before the next job.
+    Needs a "drafted" state between pending and ok (e.g. deliver =
+    drafted) so pass 2 selects exactly what pass 1 drafted.
+  - *The run's own last lines as a message for the operator* (the menu's
+    line is words now): "plan OK -- 4 rows added (MJODWDBC, ...), 0 from
+    mapping.xlsx; next: track" / "track stopped at <step>: <reason>", the
+    numbers the operator would otherwise dig out of the run log.
 - **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
   (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
   picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks

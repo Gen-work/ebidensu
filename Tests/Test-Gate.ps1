@@ -91,6 +91,8 @@ Assert-Equal 's' (Invoke-EbiGateAsk -Question @{ kind = 'error'; section = 'setu
 $h = @(Get-EbiFailureHints -Failure 'write_failed' -Message 'HRESULT 0x800AC472' -Use 'excel.write_lines')
 Assert-True ($h.Count -eq 2 -and $h[0] -like '*Excel is busy*') ('hints: Excel busy HRESULT first, then the id hint: ' + ($h -join ' | '))
 Assert-True ((@(Get-EbiFailureHints -Failure 'not_found' -Use 'screen.find_window'))[0] -like '*ACTIVE TAB*') 'hints: find_window not_found names the active-tab rule'
+Assert-True ((@(Get-EbiFailureHints -Failure 'file_not_found' -Message 'no mail template at C:\w\review-mail.json (set paths.mailTemplate in ebi.local.json)'))[0] -like 'A setting file is missing*') 'hints: a missing setting file (10/16 mail template) is not blamed on an earlier flow'
+Assert-True ((@(Get-EbiFailureHints -Failure 'file_not_found' -Message 'no logs.json for JJDSWM53'))[0] -like 'An earlier flow*') 'hints: a missing per-job file still points at the earlier flow'
 Assert-Equal 0 @(Get-EbiFailureHints -Failure 'nobody_knows_this' -Message 'x').Count 'hints: an unknown failure has no hint (no invented advice)'
 Assert-Equal 'Red' (Get-EbiGateLineColor -Line '|   r1 started 2026-10-14 (another day) |' -Alert @('another day')) 'colour: a line holding an alert fragment is red'
 Assert-Equal 'Yellow' (Get-EbiGateLineColor -Line '|   r1 started today |' -Alert @('another day')) 'colour: other lines stay yellow'

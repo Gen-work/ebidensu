@@ -35,12 +35,27 @@
       "unitsPerColumn": 3
     },
     "compareFirstRow": 4,
+    "list": {
+      "_doc": "picture 1 (the Excel snap) is taken from the real overview workbook paths.gfixList (10/16, the old ExcelSnap.ps1 way): AutoFilter 送信 / ジョブ = the J name, snap from 'left' to 'job'; when two or more rows are the same from 'left' to 'job' the snap runs on to 'extendTo' (加瀬さん 10/13 review of JJDSWM10, rows 326/327; ニンヌ's fix in JJDSWM51). Columns are found by these labels in groupRow / subRow; a sub label matches a cell that starts with it.",
+      "sheet": "GFIX送受信一覧(BIX)",
+      "_sheet_doc": "the workbook has both GFIX送受信一覧 and GFIX送受信一覧(BIX); the BIX one is the source (operator, 10/16)",
+      "groupRow": 4,
+      "subRow": 5,
+      "left": { "group": "from", "sub": "システム種別" },
+      "job": { "group": "送信", "sub": "ジョブ" },
+      "extendTo": { "group": "送信", "sub": "元ファイル" }
+    },
+    "stepName": {
+      "_doc": "GIFTデータvsGFIXデータ: the STEP name of the send data next to the correl id (加瀬さん 10/13 review, row 328; JJDSWM51 G3 = 送信データ B3 'STEP:MQFXRSX1'). The FIRST section only: a second section (a second file pair, JJDSWM51 B26 / G26) is still labelled by hand -- docs/TODO.md.",
+      "cell": "G3",
+      "fromCell": "B3"
+    },
     "checklist": [
-      "GFIX受信結果 B3: the Excel snap is THIS job's row (last column ジョブ = the J name)",
+      "GFIX受信結果 B3: the Excel snap is THIS job's row(s) (last column ジョブ = the J name); several rows that look the same -> the snap runs on to 元ファイル(SNDFILE), and GIFT受信結果's picture 1 is the same new snap",
       "GFIX受信ログ from row 8, label bold; yellow rows on the Command / uploaded lines",
       "GFIXReceive.log block: yellow on fileName / file stored",
       "Jenkins picture: red box on this job's file",
-      "GIFTデータvsGFIXデータ: B3 = the IF name, DF pictures + red boxes"
+      "GIFTデータvsGFIXデータ: B3 = the IF name, G3 = the STEP name (送信データ B3), DF pictures + red boxes; a second file pair: its correl id + STEP name above its DF pictures BY HAND"
     ],
     "_checklist_doc": "the evidence GATE's 'check:' lines (10/15). Add a point when a review finds something the gate did not ask about; docs/ebi-dance/KNOWLEDGE.md says how a point grows into an automatic check.",
     "_glob_doc": "starts with J4 so the ~$ lock file Excel leaves next to an open workbook never matches"

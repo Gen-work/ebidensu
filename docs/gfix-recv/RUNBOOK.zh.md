@@ -69,15 +69,21 @@
 下面第 1～4 节的四条 `run` 命令仍然是正本，但平时不用手打：
 
 - **看盘**：`ebi.ps1 status -WorkDir $W`。一屏：每本（Excel_NAME）一行，JOB / GFIX_DATE /
-  GFIX_TIME / FileCount，track / logs / evidence 三列判定（`ok` / `NG` / `-` 未做），
-  每列合计，没跑完的 run（`-Resume` 用的 id），以及 NEXT（先续跑、再清 NG、再是最早有行在等的阶段）
-  和「下一条该打的命令」。只读，不碰 CSV。
-- **入口**：仓库目录里双击 `ebi.cmd`（第一次带参数 `ebi.cmd C:\Users\<you>\work-BIX`，
-  之后记住在 `.ebi\menu.json`），或 `ebi.ps1 menu -WorkDir $W`。先显示上面的盘，再选：
+  GFIX_TIME / FileCount，track / logs / evidence / deliver 四列判定（`ok` / `NG` / `-` 未做），
+  每列合计，没跑完的 run（`-Resume` 用的 id），以及 NEXT（先续跑；**表里没有一行是今天的日期时先 plan**；
+  再清 NG、再是最早有行在等的阶段）和「下一条该打的命令」。只读，不碰 CSV。
+  注意：往日的行也一直在表里，也会被算作「待做」。所以每段选 Excel_NAME 时**手打今天的名字**，
+  不要直接回车（尤其是 deliver，回车会给所有旧行都做草稿）。
+- **入口**：仓库目录里双击 `ebi.cmd`。第一次（还没记住工作文件夹时）它会问「Which work folder?」，
+  把工作文件夹**拖进窗口**再回车即可；也可以把文件夹直接拖到 `ebi.cmd` 图标上，或 `ebi.cmd C:\Users\<you>\work-BIX`。
+  之后记住在 `.ebi\menu.json`，或 `ebi.ps1 menu -WorkDir $W`。
+  `ebi.local.json` 写坏了（少逗号、路径里单个 `\`）时会直接说是哪个文件、哪里坏了，不会再报「no profile has its worklist」。先显示上面的盘，再选：
   数字 = plan / track / logs / evidence / deliver（plan 之后的几段会再问一次 Excel_NAME，
   回车 = 所有待做的行，`A,B` = 几本），`r` = 续跑没跑完的 run，`c` = 清掉某一行某一列的判定
   （代替用记事本改 CSV），`s` = 重画，`d` = doctor，`q` = 退出。
-  选完它会**把那条 `ebi.ps1 run ...` 原样打印出来再执行**（子进程），跑完回到菜单。
+  选完它会**把那条 `ebi.ps1 run ...` 原样打印出来再执行**（子进程，输出和 GATE 的提问都实时显示在同一个窗口），
+  跑完印一行结果（done / stopped with a failure / cancelled）再回到菜单。
+  （v2.26.1 以前子进程的输出被整段吞掉、最后挤成一行，GATE 的提问看不见：track / deliver 请用 v2.26.2 以后的版本从菜单跑。）
   选了前置没做完的阶段（比如 logs 还没 ok 就选 evidence）会先 `[WARN]` 提示，
   workflow 本身也会拒绝（`file_not_found`）。
 - 只有一个 profile 的作业清单在 WorkDir 里时不用说 `-Profile`；有几个时加 `-Profile gfix-recv`。
@@ -219,7 +225,9 @@ mapping.xlsx 里同一个 job 有几行，作业清单的 `FileCount` 就是几�
   - Jenkins 截图：两个文件各一个红框；两行紧挨着时合成一个框（和你手工画的一样）。
   - `GIFTデータvsGFIXデータ`：DF 图按配对顺序往下排，**每对之间空一行**，每对的最后一张图上画「最后一行行号」和「同一内容」两个框。
     这一条是推断（样本里没有多文件的这张表），第一本做完请对一眼。
-  - B3 = 送信データ!A3 是 IF 名（JJPCRS12），一本一个，两个文件也一样——10/13 的 JJDSWM10 实物确认过，不用补。
+  - B3 = 送信データ!A3 是 IF 名（JJPCRS12）。但 10/13 加瀬さん的レビュー（JJDSWM10，检查表 328 行）要求每一段都在 G 列写上
+    送信データ 的 STEP 名（ニンヌ 改好的 JJDSWM51：B3 + G3 `STEP:MQFXRSX1`，B26 + G26 `STEP:MQFXRSX2`）。
+    v2.27.0 起自动写**第一段**的 G3；第二对文件那一段的相关ID + STEP 名**还要手写**（TODO）。
 
 ---
 
@@ -257,7 +265,11 @@ ebi.ps1 run workflows\gfixRecv.evidence.json -WorkDir $W -Only LJDSWM40
 
 GFIX受信結果（按样本 QJDSWM39 的版式）：
 
-- B3：GIFT受信結果 的第 1 张图（Excel 截图）的复制。
+- B3：**从真正的 GFIX一覧 现截的 Excel 截图**（v2.27.0 起，旧 ExcelSnap.ps1 的做法：`送信 / ジョブ` 列筛选成这个 job 的 J 名，
+  从 `from / システム種別` 截到 `ジョブ`）。同一个 job 有多行、而且 from～送信ジョブ **每一列都一样**时，一直截到
+  `元ファイル(SNDFILE)`，并把 **GIFT受信結果 的第 1 张图也换成这张**（加瀬さん 10/13 レビュー 326/327 行；IF番号 不同就不算重复）。
+  要先在 `ebi.local.json` 的 `paths` 里加 `"gfixList": "<GFIX一覧.xlsx 的完整路径>"`（只读打开，筛选后不保存）。
+  工作表名和表头的字在 `profiles/gfix-recv/layout.json` 的 `evidence.list`。
 - 下一行：`GFIX受信ログ` + job log 全文（多个 job log 之间不空行），黄色标记 `successfully uploaded to …` 和 `Command: …`。
   宽度 = 文字半角宽度 ÷ 3 列（用样本的 4 处黄色标记校准过，结果一致）。
 - 空一行：`GFIXReceive.log` + 这次转送的 START…END 块（含 END 后面的日期行），黄色标记 `FileGIFTGetBLBean.execute() fileName` 和 `file stored :`。
@@ -266,7 +278,7 @@ GFIX受信結果（按样本 QJDSWM39 的版式）：
 
 GIFTデータvsGFIXデータ：
 
-- B3 = 送信データ!A3（JJPCRS12）。
+- B3 = 送信データ!A3（JJPCRS12），G3 = 送信データ!B3（STEP 名，前后空格去掉）。
 - B4 起：DF 截图。超过 16 行：开头截图 → Z 列放波浪线（p5）→ 结尾截图；
   红框框住**最后一行的行号**（在截图里找行号那一列最后一行墨迹）和右下角「同一内容」。
   （和样本对比：行号框 213px vs 212px。）

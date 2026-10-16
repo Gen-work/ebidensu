@@ -1476,6 +1476,107 @@
       "summary": "Open a workbook in the registered Excel instance and register it",
       "tier": "core"
     },
+    "excel.place_picture": {
+      "effects": "write",
+      "example": {
+        "use": "excel.place_picture",
+        "with": {
+          "cell": "B3",
+          "path": "{{steps.snap.out.png}}",
+          "replace": "atCell",
+          "sheet": "result",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "insert_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.place_picture.ps1",
+      "group": "excel",
+      "id": "excel.place_picture",
+      "idempotent": false,
+      "inputs": {
+        "cell": {
+          "default": "B3",
+          "desc": "top-left cell (replace = first: used only when the sheet has no picture)",
+          "type": "string"
+        },
+        "gapRows": {
+          "default": 0,
+          "desc": "added to nextRow",
+          "type": "int"
+        },
+        "name": {
+          "default": "",
+          "desc": "shape name for the new picture (empty: Excel's)",
+          "type": "string"
+        },
+        "path": {
+          "desc": "the PNG (relative: under the work dir)",
+          "required": true,
+          "type": "path"
+        },
+        "replace": {
+          "default": "atCell",
+          "desc": "none = just add; atCell = remove pictures whose top-left is in cell first; first = remove the sheet's first picture and put the new one where it was",
+          "enum": [
+            "none",
+            "atCell",
+            "first"
+          ],
+          "type": "string"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "Not idempotent for replace = none (a rerun adds a second copy); atCell and first replace what is there, so a rerun ends with one picture.",
+      "outputs": {
+        "groups": {
+          "desc": "replace = first: grouped shapes (Ctrl+G) at or above the replaced picture -- the \"first picture\" may not be the one a person sees first",
+          "type": "list"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nextRow": {
+          "desc": "first row whose top is below the picture, plus gapRows",
+          "type": "int"
+        },
+        "note": {
+          "desc": "one line for the gate when groups is not empty, else empty",
+          "type": "string"
+        },
+        "replaced": {
+          "desc": "names of the pictures taken away",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Put a PNG on a sheet at a cell, replacing the picture there (or the first picture) when asked",
+      "tier": "core"
+    },
     "excel.quit_app": {
       "effects": "ui",
       "example": {
@@ -1624,6 +1725,133 @@
       "provides": [],
       "releases": [],
       "summary": "Read lettered columns of a sheet into records, keep rows matching conditions",
+      "tier": "core"
+    },
+    "excel.snap_list": {
+      "effects": "ui",
+      "example": {
+        "use": "excel.snap_list",
+        "with": {
+          "extendTo": {
+            "group": "send",
+            "sub": "source file"
+          },
+          "job": {
+            "group": "send",
+            "sub": "job"
+          },
+          "left": {
+            "group": "from",
+            "sub": "system"
+          },
+          "savePng": "capture/{{item.keySafe}}/pic1.png",
+          "sheet": "overview",
+          "value": "{{item.JOB}}",
+          "workbook": "list"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "column_not_found",
+          "transient": false
+        },
+        {
+          "id": "not_found",
+          "transient": false
+        },
+        {
+          "id": "copy_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.snap_list.ps1",
+      "group": "excel",
+      "id": "excel.snap_list",
+      "idempotent": true,
+      "inputs": {
+        "extendTo": {
+          "default": {},
+          "desc": "@{ group; sub }: the right edge when rows repeat from left to job; empty = never extend",
+          "type": "map"
+        },
+        "groupRow": {
+          "default": 4,
+          "desc": "header row with the group labels (from / to / send)",
+          "type": "int"
+        },
+        "job": {
+          "desc": "@{ group; sub }: the filtered column, the normal right edge",
+          "required": true,
+          "type": "map"
+        },
+        "left": {
+          "desc": "@{ group; sub }: the first column of the snap",
+          "required": true,
+          "type": "map"
+        },
+        "maxColumns": {
+          "default": 40,
+          "desc": "header columns scanned",
+          "type": "int"
+        },
+        "savePng": {
+          "desc": "the PNG (relative: under the work dir)",
+          "required": true,
+          "type": "path"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "subRow": {
+          "default": 5,
+          "desc": "header row with the column labels; data starts below it",
+          "type": "int"
+        },
+        "value": {
+          "desc": "the job to filter on (the J name)",
+          "required": true,
+          "type": "string"
+        },
+        "workbook": {
+          "desc": "the overview workbook (excel.open readOnly)",
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "Changes only the AutoFilter of the overview sheet and clears it again; open the overview read-only (excel.open readOnly) so nothing is ever saved. Clobbers the clipboard. A header label matches when the cell, spaces and line breaks removed, STARTS with it (a cell \"<label>(SNDFILE)\" matches \"<label>\").",
+      "outputs": {
+        "extended": {
+          "desc": "true when the snap ran on to extendTo (rows repeated from left to job)",
+          "type": "bool"
+        },
+        "lines": {
+          "desc": "each row's cells from left to the right edge, tab-joined (for the gate)",
+          "type": "list"
+        },
+        "png": {
+          "type": "path"
+        },
+        "range": {
+          "desc": "the snapped address, e.g. B4:O7",
+          "type": "string"
+        },
+        "rows": {
+          "desc": "rows the filter left",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Filter the overview list to one job and snap its rows to a PNG (on to SNDFILE when the rows repeat)",
       "tier": "core"
     },
     "excel.stack_plan": {
@@ -1837,6 +2065,11 @@
         "sheet": {
           "required": true,
           "type": "string"
+        },
+        "trim": {
+          "default": false,
+          "desc": "drop the spaces around the value (10/16: the send-data sheet's STEP cell sometimes ends in one)",
+          "type": "bool"
         },
         "value": {
           "default": "",

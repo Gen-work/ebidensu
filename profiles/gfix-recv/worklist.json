@@ -9,7 +9,9 @@
   },
   "dashboard": {
     "_doc": "ebi status / ebi menu: the columns shown between the key and the verdict columns, in this order (else every non-key non-verdict column, as many as fit in 80 columns)",
-    "columns": ["JOB", "GFIX_DATE", "GFIX_TIME", "FileCount"]
+    "columns": ["JOB", "GFIX_DATE", "GFIX_TIME", "FileCount"],
+    "_dateColumn_doc": "the row's day: when no row carries today's date, NEXT says run plan first (10/16: the earlier days' rows made it say track)",
+    "dateColumn": "GFIX_DATE"
   },
   "columns": [
     { "name": "Excel_NAME", "role": "key" },
