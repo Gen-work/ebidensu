@@ -79,9 +79,23 @@ file stays small. Designed-then-shelved work lives in
     GIFT run date + time (or take them from mapping.xlsx when it has
     them), read the GIFT-side Jenkins listing, keep the files in a window
     around that time matching the name pattern, confirm when more than
-    one, download straight into DATA\GIFT\<J名>, then go on. Open facts:
-    the GIFT listing URL, the GIFT file-name pattern, where the GIFT time
-    lives.
+    one, download straight into DATA\GIFT\<J名>, then go on.
+    Facts (operator, 10/16): the GIFT files sit on the SAME Jenkins
+    data/report page with the same F<yyyyMMdd><nnnn> names; the operator
+    finds one by the GIFT run time from the Teams "実施します" message
+    (CJODWSPQ: Teams 09/11 10:30 -> Ctrl+F "2026/09/11 10:30" ->
+    F202609110030.csv 10:30:29). The page is long (4063 entries on 10/16)
+    and the clipboard has a length limit: read only the text around the
+    hit, not Ctrl+A of the whole page. Time sources, best first: Teams
+    (authentic; scripting Teams is an option), 処理時間(BIX).xlsx on the
+    BIX share (GIFT rows: 相関ID / 開始日時 / 終了日時 / 件数 / ジョブ;
+    119 GIFT rows, "not that accurate, not complete"; CJODJSPQ there =
+    09/11 10:30:25..10:30:34, and the Jenkins file's 10:30:29 falls inside
+    -> rule: the report entry whose time is within [start, end] of the
+    GIFT run), mapping.xlsx (some rows), else ask. The workbook mixes
+    date forms ('2026/9/9  10:15:28' with two spaces, '2026/09/11 ...',
+    real datetimes) and J / W names in ジョブ. Build after the receive
+    tests are done (operator).
   - `ebi status` silently ignores extra arguments (`status workflows\x.json
     -Only K...` ran as plain status); warn on what it does not use.
   - *The result line should be a message for the operator*, not a code
