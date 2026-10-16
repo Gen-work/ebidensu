@@ -71,7 +71,8 @@ file stays small. Designed-then-shelved work lives in
     end of `Invoke-EbiWorkflow`). (b) When track's `human.share` has put
     the reply on the clipboard, raise Teams instead (the operator's next
     move is Ctrl+V there), falling back to the console when no Teams
-    window is found. Only raise; never send keys to Teams.
+    window is found. Start with raise only; the operator is fine with a
+    Ctrl+V into Teams later (a Teams message can be recalled).
   - `ebi status` silently ignores extra arguments (`status workflows\x.json
     -Only K...` ran as plain status); warn on what it does not use.
   - *The result line should be a message for the operator*, not a code
