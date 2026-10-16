@@ -96,6 +96,14 @@ file stays small. Designed-then-shelved work lives in
     date forms ('2026/9/9  10:15:28' with two spaces, '2026/09/11 ...',
     real datetimes) and J / W names in ジョブ. Build after the receive
     tests are done (operator).
+  - *deliver's mail template errors mislead.* file_not_found on
+    paths.mailTemplate got the generic hint "an earlier flow did not
+    produce this file (track / logs)" -- it is a config file, say so. A
+    .json holding the .bat's base64 section (10/16: the operator pasted
+    the #==TEMPLATE_JSON== body into review-mail.json) fails as "無効な
+    JSON プリミティブ: eyJ0b2tl..."; detect base64 that decodes to JSON
+    and either accept it or say "this is base64: point mailTemplate at
+    the .bat, or decode it".
   - `ebi status` silently ignores extra arguments (`status workflows\x.json
     -Only K...` ran as plain status); warn on what it does not use.
   - *The result line should be a message for the operator*, not a code
