@@ -24,6 +24,36 @@ file stays small. Designed-then-shelved work lives in
   memory, Japanese titles on the real console); and, not part of it, the
   478-byte SJDSWM40 download that compared "equal" (file.compare), the
   untested PgDn / END DF keys, and the HOST-range card below.
+- **gfix-recv: menu / status first office run, 10/16 findings** (the menu
+  drew the board; child hand-off not yet seen). Open:
+  - *Check ebi.local.json first.* A missing comma / a single `\` in a
+    path made `Read-EbiProfile` fail, and `Find-EbiDayProfiles` skipped
+    the profile silently, so the menu said "no profile has its worklist"
+    instead of "ebi.local.json: not valid JSON". Validate the overlay
+    (and `profiles/*/` JSON) before anything else in `menu` / `status` /
+    `run` / `doctor`, report the file and the likely cause, and never
+    turn a profile read error into "not found".
+  - *ebi.cmd asks for the work dir.* A bare double-click with nothing in
+    `.ebi/menu.json` falls back to the current directory = the tool
+    folder. Ask for the folder instead (and remember it). Also: a fresh
+    work dir with no worklist yet cannot open the menu that runs plan;
+    when exactly one profile has day workflows, pick it.
+  - *Rows from other days are "pending".* `source.select` is `!= ok`
+    over every date: track lists 10/15's DBC / MJOD / QJOD rows, and
+    deliver lists all 20 rows from before deliver existed -- Enter (= all
+    pending) at the menu's Excel_NAME prompt would draft 20 mails. Scope
+    the day phases to GFIX_DATE = today by default (older rows on
+    request), or mark pre-deliver rows done once.
+  - *NEXT ignores "today".* With no row dated today it said "track"; it
+    should say "run plan first".
+  - *Totals cell truncated:* logs showed `ok ~` (`ok 21` is wider than
+    the 4-char column).
+  - *GFIX_DATE in two formats* in one CSV (`2026/10/9` and `2026-10-14`,
+    older versions); normalize on write.
+  - *plan's resetOnChange clears track/logs/evidence but not deliver*: a
+    job that comes back on another day keeps an old `deliver = ok`.
+  - RUNBOOK.zh.md 0.5 still says three verdict columns (deliver is the
+    fourth).
 - **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
   (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
   picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks
