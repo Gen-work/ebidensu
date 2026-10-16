@@ -24,44 +24,35 @@ file stays small. Designed-then-shelved work lives in
   memory, Japanese titles on the real console); and, not part of it, the
   478-byte SJDSWM40 download that compared "equal" (file.compare), the
   untested PgDn / END DF keys, and the HOST-range card below.
-- **gfix-recv: menu / status first office run, 10/16 findings** (the menu
-  drew the board; child hand-off not yet seen). Open:
-  - *Check ebi.local.json first.* A missing comma / a single `\` in a
-    path made `Read-EbiProfile` fail, and `Find-EbiDayProfiles` skipped
-    the profile silently, so the menu said "no profile has its worklist"
-    instead of "ebi.local.json: not valid JSON". Validate the overlay
-    (and `profiles/*/` JSON) before anything else in `menu` / `status` /
-    `run` / `doctor`, report the file and the likely cause, and never
-    turn a profile read error into "not found".
-  - *ebi.cmd asks for the work dir.* A bare double-click with nothing in
-    `.ebi/menu.json` falls back to the current directory = the tool
-    folder. Ask for the folder instead (and remember it). Also: a fresh
-    work dir with no worklist yet cannot open the menu that runs plan;
-    when exactly one profile has day workflows, pick it.
+- **gfix-recv: menu / status first office run, 10/16 findings.** Done in
+  v2.26.2 (CHANGELOG): a broken ebi.local.json is named instead of "no
+  profile has its worklist"; the menu asks for the work folder (and
+  refuses the tool folder); a fresh work folder opens on the one plan
+  profile; NEXT says plan first when no row is dated today; totals never
+  cut; the menu's child runs live in the same console (gates work) and
+  ends with a one-line result; status / menu warn on arguments they do
+  not use; a .json mail template holding the .bat's base64 body reads;
+  a missing setting file gets its own FAILED hint; picture export errors
+  name the stage. `-Only a,b` and `-Only "a,b"` both work (operator, 10/16).
+  Open:
+  - *Picture 1 not exported* (evidence `excelSnap`, 4 x png_not_saved
+    with an empty reason on 10/16): v2.26.2 makes the warning name the
+    stage (copy / add chart / paste / export) and the exception type /
+    HRESULT -- read it on the next evidence run and fix the stage.
+  - *4 DBC rows that are not the operator's*: plan kept M/Q/R/S JODJDBC
+    (WBS AF = 10/16) under owner 厳, but the operator says they are
+    ニンヌ's. Find what the WBS owner cell says for them (arrow form?)
+    and fix the owner match, then drop them from gfixrecv.csv.
   - *Rows from other days are "pending".* `source.select` is `!= ok`
     over every date: track lists 10/15's DBC / MJOD / QJOD rows, and
     deliver lists all 20 rows from before deliver existed -- Enter (= all
     pending) at the menu's Excel_NAME prompt would draft 20 mails. Scope
     the day phases to GFIX_DATE = today by default (older rows on
     request), or mark pre-deliver rows done once.
-  - *NEXT ignores "today".* With no row dated today it said "track"; it
-    should say "run plan first".
-  - *Totals cell truncated:* logs showed `ok ~` (`ok 21` is wider than
-    the 4-char column).
   - *GFIX_DATE in two formats* in one CSV (`2026/10/9` and `2026-10-14`,
     older versions); normalize on write.
   - *plan's resetOnChange clears track/logs/evidence but not deliver*: a
     job that comes back on another day keeps an old `deliver = ok`.
-  - RUNBOOK.zh.md 0.5 still says three verdict columns (deliver is the
-    fourth).
-  - *The menu swallows the child's output.* `Invoke-EbiMenu` runs
-    `$code = & $run ...`, and the default runner's `& $psExe ... -File
-    ebi.ps1` output lands in `$code`: nothing shows while the phase
-    runs, then everything prints as ONE line inside "plan finished with
-    exit code ... 0 (0 ok, 1 failed, 3 cancelled)". Interactive phases
-    (track gates, deliver's Send/Enter) cannot work through it. Run the
-    child without capturing it (e.g. `Start-Process -NoNewWindow -Wait
-    -PassThru`, then `.ExitCode`).
   - *Bring the right window to the front.* While a phase drives Edge /
     GoAnywhere / Jenkins / DF, the console ends up behind them and the
     operator does not notice a question or the end of the run. (a) Every
@@ -96,14 +87,6 @@ file stays small. Designed-then-shelved work lives in
     date forms ('2026/9/9  10:15:28' with two spaces, '2026/09/11 ...',
     real datetimes) and J / W names in ジョブ. Build after the receive
     tests are done (operator).
-  - *deliver's mail template errors mislead.* file_not_found on
-    paths.mailTemplate got the generic hint "an earlier flow did not
-    produce this file (track / logs)" -- it is a config file, say so. A
-    .json holding the .bat's base64 section (10/16: the operator pasted
-    the #==TEMPLATE_JSON== body into review-mail.json) fails as "無効な
-    JSON プリミティブ: eyJ0b2tl..."; detect base64 that decodes to JSON
-    and either accept it or say "this is base64: point mailTemplate at
-    the .bat, or decode it".
   - *deliver: a sent mail saved as .msg is the template* (operator ask,
     10/16). When paths.mailTemplate is missing / unreadable, the panel
     asks: "open a review mail you already sent in Outlook, File > Save As
@@ -124,17 +107,10 @@ file stays small. Designed-then-shelved work lives in
     in one go. Today each job is draft -> gate -> row before the next job.
     Needs a "drafted" state between pending and ok (e.g. deliver =
     drafted) so pass 2 selects exactly what pass 1 drafted.
-  - *-Only "a,b" works; a,b unquoted is not safe* when calling
-    `powershell -File ebi.ps1` from PowerShell (the comma makes an array,
-    passed on as separate arguments -- not verified on the office PC).
-    Make -Only take the rest of the names too (string[] / ValueFromRemaining)
-    so both spellings work.
-  - `ebi status` silently ignores extra arguments (`status workflows\x.json
-    -Only K...` ran as plain status); warn on what it does not use.
-  - *The result line should be a message for the operator*, not a code
-    legend: "plan OK -- 4 rows added (MJODWDBC, ...), 0 from mapping.xlsx;
-    next: track" / "track stopped at <step>: <reason>", the numbers the
-    operator would otherwise dig out of the run log.
+  - *The run's own last lines as a message for the operator* (the menu's
+    line is words now): "plan OK -- 4 rows added (MJODWDBC, ...), 0 from
+    mapping.xlsx; next: track" / "track stopped at <step>: <reason>", the
+    numbers the operator would otherwise dig out of the run log.
 - **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
   (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
   picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks

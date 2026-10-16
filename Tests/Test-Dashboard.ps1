@@ -115,6 +115,44 @@ Assert-Equal 'done' $next['first']['kind'] 'next: everything ok -> done'
 $next = Get-EbiDashboardNext -Model @() -Phases $phases -Unfinished @()
 Assert-Equal 'plan' $next['first']['kind'] 'next: an empty worklist -> run the plan'
 Assert-Equal 'demo.plan' $next['first']['phase']['id'] 'next: ... the no-source phase'
+# 10/16: the menu's child now runs through Start-Process with ONE argument string
+Assert-Equal 'run' (ConvertTo-EbiProcessArgument -Value 'run') 'arg: a plain word stays bare'
+Assert-Equal '""' (ConvertTo-EbiProcessArgument -Value '') 'arg: empty -> ""'
+Assert-Equal '"C:\work dir\x.json"' (ConvertTo-EbiProcessArgument -Value 'C:\work dir\x.json') 'arg: a space -> quoted, inner backslashes kept'
+Assert-Equal '"C:\work dir\\"' (ConvertTo-EbiProcessArgument -Value 'C:\work dir\') 'arg: a trailing backslash is doubled before the closing quote'
+Assert-Equal '"say \"hi\""' (ConvertTo-EbiProcessArgument -Value 'say "hi"') 'arg: inner quotes are escaped'
+Assert-Equal 'C:\Users\JP\work-BIX' (ConvertTo-EbiProcessArgument -Value 'C:\Users\JP\work-BIX') 'arg: a path without spaces stays bare'
+Assert-Equal 'KJODWSPP,RJODWSPP' (ConvertTo-EbiProcessArgument -Value 'KJODWSPP,RJODWSPP') 'arg: an -Only list stays one argument'
+Assert-True ((Format-EbiMenuRunResult -Phase 'plan' -Code 0) -like 'plan: done*') 'run result: 0 -> done'
+Assert-True ((Format-EbiMenuRunResult -Phase 'track' -Code 1) -like 'track: stopped with a failure*') 'run result: 1 -> failure'
+Assert-Equal 'deliver: cancelled (q)' (Format-EbiMenuRunResult -Phase 'deliver' -Code 3) 'run result: 3 -> cancelled'
+Assert-Equal 'logs: ended with exit code 7' (Format-EbiMenuRunResult -Phase 'logs' -Code 7) 'run result: anything else -> the code'
+# 10/16: a two-digit total under a four-letter column ("ok 21" under "logs") was cut to "ok ~"
+$bigRows = @(); for ($k = 1; $k -le 21; $k++) { $bigRows += (New-Row ('B' + $k) 'ok' 'ok' 'ok') }
+$bigModel = @(Get-EbiDashboardModel -Rows $bigRows -Phases $phases -Profile $profile -KeyColumns @('Excel_NAME') -ShowColumns $show)
+$bigLines = @(Format-EbiDashboard -Title 'demo' -WorkDir 'C:\w' -WorklistPath 'C:\w\x.csv' -Model $bigModel -Phases $phases -Totals (Get-EbiDashboardTotals -Model $bigModel -Phases $phases) -Next $null -ShowColumns $show -KeyHeader 'Excel_NAME')
+$totLine = @($bigLines | Where-Object { $_ -like 'total 21*' })[0]
+Assert-True (-not $totLine.Contains('~') -and ([regex]::Matches($totLine, 'ok 21')).Count -eq 3) ('render: two-digit totals are never cut: ' + $totLine)
+Assert-Equal 0 @($bigLines | Where-Object { $_.Length -gt 80 }).Count 'render: ... and still no line wider than 80'
+# 10/16: the earlier days' rows stay in the worklist; no row dated today -> plan first
+$next = Get-EbiDashboardNext -Model $model -Phases $phases -Unfinished @() -TodayRows 0 -Today '2026-10-16'
+Assert-Equal 'plan' $next['first']['kind'] 'next: no row dated today -> plan before the waiting / ng rows'
+Assert-Equal 'no row is dated today (2026-10-16) -> run plan first' $next['lines'][0] 'next: ... and says why'
+Assert-True (($next['lines'] -join "`n").Contains('track: 2 rows wait (A4, A5)')) 'next: ... the waiting rows are still listed'
+$next = Get-EbiDashboardNext -Model $model -Phases $phases -Unfinished $unf -TodayRows 0
+Assert-Equal 'resume' $next['first']['kind'] 'next: an unfinished run still comes before plan'
+Assert-Equal 'clear' (Get-EbiDashboardNext -Model $model -Phases $phases -Unfinished @() -TodayRows 2)['first']['kind'] 'next: rows dated today -> as before'
+Assert-Equal 'clear' (Get-EbiDashboardNext -Model $model -Phases $phases -Unfinished @() -TodayRows -1)['first']['kind'] 'next: no date column (-1) -> as before'
+Assert-Equal '2026-10-09' (ConvertTo-EbiDashboardDay -Text '2026/10/9') 'day: 2026/10/9'
+Assert-Equal '2026-10-14' (ConvertTo-EbiDashboardDay -Text '2026-10-14') 'day: 2026-10-14'
+Assert-Equal '2026-10-14' (ConvertTo-EbiDashboardDay -Text '2026/10/14 10:15:00') 'day: a time after the date is ignored'
+Assert-Equal '' (ConvertTo-EbiDashboardDay -Text '') 'day: blank'
+Assert-Equal '' (ConvertTo-EbiDashboardDay -Text '2026/13/40') 'day: not a date'
+$dProf = @{ worklist = @{ dashboard = @{ dateColumn = 'D' } } }
+$dRows = @(@{ D = '2026/10/16' }, @{ D = '2026-10-16' }, @{ D = '2026-10-15' }, @{ D = '' })
+Assert-Equal 2 (Get-EbiDashboardTodayRows -Rows $dRows -Profile $dProf -Columns @('D') -Today '2026-10-16') 'today rows: both date forms count'
+Assert-Equal -1 (Get-EbiDashboardTodayRows -Rows $dRows -Profile @{ worklist = @{} } -Columns @('D') -Today '2026-10-16') 'today rows: no dateColumn -> -1'
+Assert-Equal -1 (Get-EbiDashboardTodayRows -Rows $dRows -Profile $dProf -Columns @('X') -Today '2026-10-16') 'today rows: the CSV lacks the column -> -1'
 $runOnly = @(Get-EbiDashboardModel -Rows @((New-Row 'A4' '' '' '')) -Phases $phases -Profile $profile -KeyColumns @('Excel_NAME') -ShowColumns $show)
 $next = Get-EbiDashboardNext -Model $runOnly -Phases $phases -Unfinished @()
 Assert-Equal 'run' $next['first']['kind'] 'next: rows waiting -> run'
@@ -204,7 +242,20 @@ try {
     Assert-True ($d['lines'][0] -like 'ebi status: demo  2026-10-12  *') ('loader: rendered header: ' + $d['lines'][0])
     $noWork = Join-Path $tmp 'nowork'; New-Item -ItemType Directory -Path $noWork -Force | Out-Null
     $d2 = Read-EbiDashboard -ToolDir $tool -WorkDir $noWork -Operator 'op1'
-    Assert-True (-not $d2['ok'] -and $d2['message'] -like 'no profile has its worklist in *') 'loader: no worklist anywhere -> says so (give -Profile)'
+    Assert-True ($d2['ok'] -and $d2['profileName'] -eq 'demo' -and @($d2['model']).Count -eq 0 -and $d2['next']['first']['kind'] -eq 'plan') 'loader: a fresh work folder (no worklist yet) and ONE profile with a plan workflow -> that profile, an empty board that says run plan'
+    Assert-Equal 'demo' (@(Get-EbiPlanProfiles -ToolDir $tool) -join ',') 'plan profiles: only profiles with a folder and a no-source workflow (other.x has a source and no folder)'
+    $dt = Read-EbiDashboard -ToolDir $tool -WorkDir $tool -Operator 'op1'
+    Assert-True (-not $dt['ok'] -and $dt['message'] -like 'the work folder is the tool folder*') ('loader: the tool folder as the work folder -> says so: ' + $dt['message'])
+    $badWork = Join-Path $tmp 'badwork'; New-Item -ItemType Directory -Path $badWork -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $badWork 'ebi.local.json'), "{ `"paths`": { `"a`": `"x`"`r`n `"b`": `"y`" } }", $utf8)
+    $db = Read-EbiDashboard -ToolDir $tool -WorkDir $badWork -Operator 'op1'
+    Assert-True (-not $db['ok'] -and $db['message'] -like 'could not read the profile(s)*demo:*ebi.local.json*') ('loader: a broken ebi.local.json is reported as such, not as "no worklist": ' + $db['message'])
+    New-Item -ItemType Directory -Path (Join-Path (Join-Path $tool 'profiles') 'second') -Force | Out-Null
+    [void](Write-EbiJson -Path (Join-Path (Join-Path $tool 'workflows') 'second.plan.json') -Value (New-Wf 'second.plan' '' 'second')['value'])
+    $d2b = Read-EbiDashboard -ToolDir $tool -WorkDir $noWork -Operator 'op1'
+    Assert-True (-not $d2b['ok'] -and $d2b['message'] -like 'no profile has its worklist in *') 'loader: no worklist and TWO plan profiles -> says so (give -Profile)'
+    Remove-Item -LiteralPath (Join-Path (Join-Path $tool 'workflows') 'second.plan.json') -Force
+    Remove-Item -LiteralPath (Join-Path (Join-Path $tool 'profiles') 'second') -Recurse -Force
     $d3 = Read-EbiDashboard -ToolDir $tool -WorkDir $noWork -ProfileName 'demo' -Operator 'op1'
     Assert-True ($d3['ok'] -and @($d3['model']).Count -eq 0 -and $d3['next']['first']['kind'] -eq 'plan') 'loader: -Profile with no worklist yet -> an empty dashboard that says run plan'
     $d4 = Read-EbiDashboard -ToolDir $tool -WorkDir $work -ProfileName 'nosuch'
@@ -248,7 +299,7 @@ try {
     $psExe = (Get-Process -Id $PID).Path
     $ebi = Join-Path $repoRoot 'ebi.ps1'
     $cliWork = Join-Path $tmp 'cliwork'; New-Item -ItemType Directory -Path $cliWork -Force | Out-Null
-    [System.IO.File]::WriteAllText((Join-Path $cliWork 'gfixrecv.csv'), "Excel_NAME,JOB,USER,RCVFILE,GFIX_DATE,GFIX_TIME,FileCount,Owner,track,logs,evidence,note`r`nXDEMWM01,XDEMJM01,u,,2026/10/12,09:31:05,2,op1,ok,,,`r`n", (New-Object System.Text.UTF8Encoding($true)))
+    [System.IO.File]::WriteAllText((Join-Path $cliWork 'gfixrecv.csv'), "Excel_NAME,JOB,USER,RCVFILE,GFIX_DATE,GFIX_TIME,FileCount,Owner,track,logs,evidence,note`r`nXDEMWM01,XDEMJM01,u,," + (Get-Date).ToString('yyyy/MM/dd') + ",09:31:05,2,op1,ok,,,`r`n", (New-Object System.Text.UTF8Encoding($true)))
     $out = '' | & $psExe -NoLogo -NoProfile -File $ebi status -WorkDir $cliWork 2>&1 | Out-String
     $code = $LASTEXITCODE
     Assert-True ($code -eq 0 -and $out.Contains('ebi status: gfix-recv') -and $out.Contains('XDEMWM01') -and $out.Contains('logs: 1 row waits (XDEMWM01)')) ('cli status: the gfix-recv dashboard, exit 0' + $(if ($code -ne 0) { "`n" + $out } else { '' }))
@@ -256,7 +307,7 @@ try {
     $out = '' | & $psExe -NoLogo -NoProfile -File $ebi menu -WorkDir $cliWork 2>&1 | Out-String
     Assert-True ($LASTEXITCODE -eq 0 -and $out.Contains('ebi menu: gfix-recv') -and $out.Contains('  4  evidence') -and $out.Contains('(no console to ask: quit)')) 'cli menu: redirected stdin -> draws the menu and quits, exit 0'
     $out = '' | & $psExe -NoLogo -NoProfile -File $ebi status -WorkDir $noWork 2>&1 | Out-String
-    Assert-True ($LASTEXITCODE -eq 2 -and $out.Contains('no profile has its worklist')) 'cli status: no worklist -> usage (exit 2) with the reason'
+    Assert-True ($LASTEXITCODE -eq 0 -and $out.Contains('ebi status: gfix-recv') -and $out.Contains('run plan first')) ('cli status: a fresh work folder -> the one plan profile (gfix-recv), empty, "run plan first"' + "`n" + $out)
     $out = '' | & $psExe -NoLogo -NoProfile -File $ebi status -WorkDir (Join-Path $tmp 'nowhere') 2>&1 | Out-String
     Assert-True ($LASTEXITCODE -eq 2 -and $out.Contains('work dir not found')) 'cli status: a missing work dir -> usage (exit 2)'
 } finally {

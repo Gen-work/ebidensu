@@ -242,7 +242,7 @@ function Get-EbiFailureHints {
         'window_gone'       = 'The window was closed or replaced (browser restarted?). Open it again, then r.'
         'no_window'         = 'The window is not open. Open it, then r.'
         'no_browser_window' = 'The browser window is not open. Open it, then r.'
-        'file_not_found'    = 'An earlier flow did not produce this file for this job (track / logs), or a path in ebi.local.json is wrong. s, then run that flow with -Only <job>.'
+        'file_not_found'    = $(if ($Message -match 'ebi\.local\.json|paths\.') { 'A setting file is missing: the message names the ebi.local.json entry. Put the file there (or fix the path in ebi.local.json), then r.' } else { 'An earlier flow did not produce this file for this job (track / logs), or a path in ebi.local.json is wrong. s, then run that flow with -Only <job>.' })
         'dir_not_found'     = 'The folder does not exist: check the paths in ebi.local.json (and the share is reachable), then r.'
         'write_failed'      = 'Writing failed. If Excel shows a dialog or a cell in edit mode, close it (Esc), then r.'
         'save_failed'       = 'Saving failed: the workbook may be open read-only by someone else, or the share is unreachable. r after fixing it.'

@@ -65,7 +65,27 @@ function Read-EbiMailTemplate {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @{ ok = $false; template = $null; kind = $kind; message = ('no template at ' + $Path) } }
     if ($kind -eq 'json') {
         $r = Read-EbiJson -Path $Path
-        if (-not $r['ok']) { return @{ ok = $false; template = $null; kind = $kind; message = $r['message'] } }
+        if (-not $r['ok']) {
+            # 10/16: the operator pasted sendj4mail.bat's #==TEMPLATE_JSON==
+            # body (base64) into review-mail.json -> "invalid JSON primitive:
+            # eyJ0b2tl...". That body IS the template: read it as such.
+            $raw = ''
+            try { $raw = ([System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding($false)))) -replace '\s', '' } catch { }
+            $raw = $raw.TrimStart([char]0xFEFF)
+            if ($raw -match '^[A-Za-z0-9+/]+={0,2}$') {
+                $json = ''
+                try { $json = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($raw)) } catch { $json = '' }
+                if ($json -ne '') {
+                    $r2 = ConvertFrom-EbiJson -Text $json
+                    if ($r2['ok']) {
+                        $c = ConvertTo-EbiMailTemplate -Value $r2['value']
+                        return @{ ok = $c['ok']; template = $c['template']; kind = $kind; message = $c['message'] }
+                    }
+                }
+                return @{ ok = $false; template = $null; kind = $kind; message = ($Path + ' holds base64, not JSON, and it does not decode to a template: point paths.mailTemplate at sendj4mail.bat itself') }
+            }
+            return @{ ok = $false; template = $null; kind = $kind; message = $r['message'] }
+        }
         $c = ConvertTo-EbiMailTemplate -Value $r['value']
         return @{ ok = $c['ok']; template = $c['template']; kind = $kind; message = $c['message'] }
     }

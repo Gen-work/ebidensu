@@ -640,6 +640,15 @@ try {
     [System.IO.File]::WriteAllText($bat, ("@echo off`r`nrem ...`r`n#==POWERSHELL==`r`n# code`r`n#==TEMPLATE_JSON==`r`n" + $b64 + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
     $rb = Read-EbiMailTemplate -Path $bat
     Assert-True ($rb['ok'] -and $rb['template']['subject'] -eq $tplObj['subject']) ('mail: the template embedded in sendj4mail.bat reads the same: ' + $rb['message'])
+    # 10/16: the .bat's base64 body pasted into a .json file reads as the template too
+    $tplB64 = Join-Path $tmp 'review-mail-b64.json'
+    [System.IO.File]::WriteAllText($tplB64, ($b64.Substring(0, 40) + "`r`n" + $b64.Substring(40) + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    $r64 = Read-EbiMailTemplate -Path $tplB64
+    Assert-True ($r64['ok'] -and $r64['template']['token'] -eq 'MJDSWM39' -and $r64['template']['subject'] -eq $tplObj['subject']) ('mail: a .json holding the .bat''s base64 body (line breaks too) reads as the template: ' + $r64['message'])
+    $tplBad = Join-Path $tmp 'review-mail-bad.json'
+    [System.IO.File]::WriteAllText($tplBad, 'QUJDREVGRw==', (New-Object System.Text.UTF8Encoding($false)))
+    $rbad = Read-EbiMailTemplate -Path $tplBad
+    Assert-True (-not $rbad['ok'] -and $rbad['message'] -like '*holds base64*sendj4mail.bat*') ('mail: base64 that is not a template says so: ' + $rbad['message'])
     $x = Expand-EbiMailTemplate -Template $rb['template'] -Value 'RJODWDB6' -TrimBefore
     Assert-True ($x['ok'] -and $x['subject'] -like '*review (RJODWDB6)') 'mail: the token becomes the job in the subject'
     Assert-True ($x['body'] -like '*J4_book_RJODWDB6.xlsx*') ('mail: "_ MJDSWM39.xlsx" -> "_RJODWDB6.xlsx" (the stray space dropped): ' + $x['body'])

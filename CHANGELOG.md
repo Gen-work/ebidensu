@@ -1,3 +1,61 @@
+## 2026-10-16 - gfix-recv: menu / status fixes from the first office run of the dashboard (v2.26.2)
+
+Office run 10/16 (the four 10/20 jobs pulled forward: track, logs,
+evidence, deliver all done; the dashboard and menu used for real for the
+first time). Open findings stay in docs/TODO.md.
+
+### Fixed
+- **The menu showed nothing while a phase ran, then printed it all as ONE
+  line** (`Invoke-EbiMenu`: the child's output landed in `$code`), so a
+  track gate or deliver's "sent?" question could not be seen. The child
+  now runs through `Start-Process -NoNewWindow -Wait` in the same console
+  (live output, the gate reads the keyboard), arguments quoted by the new
+  pure `ConvertTo-EbiProcessArgument`; the line after it is words
+  (`Format-EbiMenuRunResult`: done / stopped with a failure / cancelled),
+  not "exit code 0 (0 ok, 1 failed, 3 cancelled)".
+- **A broken `ebi.local.json` read as "no profile has its worklist"**
+  (`Find-EbiDayProfiles` skipped a profile it could not read). The board
+  now says "could not read the profile(s) -- fix this first: <profile>:
+  <file>: not valid JSON ...".
+- **A bare double-click on `ebi.cmd` with nothing remembered ran in the
+  tool folder.** `ebi.ps1 menu` asks "Which work folder?" (type it or drag
+  the folder into the window; Enter alone quits), and status / menu refuse
+  the tool folder as the work folder by name.
+- **A fresh work folder (no worklist yet) could not open the menu that
+  runs plan.** When exactly one profile has a plan workflow
+  (`Get-EbiPlanProfiles`: a no-source workflow + a profiles/ folder;
+  today gfix-recv) it is used: an empty board that says run plan.
+- **NEXT said "track" before plan had run** (the earlier days' rows stay
+  in the worklist). New `worklist.dashboard.dateColumn` (gfix-recv:
+  GFIX_DATE, both `2026/10/9` and `2026-10-14` forms read): no row dated
+  today -> "no row is dated today (<date>) -> run plan first", after an
+  unfinished run and before everything else.
+- **Totals cut to `ok ~`** under a four-letter column: verdict columns are
+  as wide as their totals.
+- `status` / `menu` warn about arguments they do not use
+  (`status workflows\x.json -Only K` ran as a plain status, silently).
+- **deliver mail template:** a `.json` holding sendj4mail.bat's base64
+  `#==TEMPLATE_JSON==` body (what was pasted on 10/16) reads as the
+  template; base64 that is not one says "point paths.mailTemplate at
+  sendj4mail.bat". A missing setting file (`file_not_found` naming
+  ebi.local.json / `paths.`) gets its own FAILED hint instead of "an
+  earlier flow did not produce this file".
+- **Picture export errors had no reason** (4 x `png_not_saved ... pic1.png:`
+  with nothing after the colon on 10/16). `Export-EbiShapePng` names the
+  stage that failed (activate sheet / copy shape / add chart / activate
+  chart / paste into chart / export) and the exception type and HRESULT
+  (new pure `Format-EbiExcelError`), activates the sheet first and falls
+  back to `Chart.Pictures()` like EvidenceImageExport.ps1. The cause
+  itself is still to be read on the next evidence run.
+
+### Docs
+- RUNBOOK.zh.md 0.5: four verdict columns, the plan-first NEXT, type
+  today's names at the Excel_NAME prompt (old rows are pending too), the
+  work-folder question, the live child output.
+- docs/TODO.md: the 10/16 findings (done / open), the GIFT-file-from-
+  Jenkins design facts, deliver in two passes, a sent .msg as the mail
+  template, raising the console / Teams.
+
 ## 2026-10-15 - gfix-recv: fewer lines than the Teams count is normal; ask the operator for defaults (v2.26.1)
 
 ### Changed

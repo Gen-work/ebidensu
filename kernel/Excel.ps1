@@ -143,6 +143,11 @@ function Export-EbiShapePng {
     #>
     param($Worksheet, $Shape, [string]$OutPath, [double]$Scale = 3.0)
     $chartObj = $null
+    # 10/16: the office run reported "picture not exported to ...pic1.png:"
+    # with nothing after the colon -- an exception with an empty Message.
+    # Name the stage that failed and the exception's type / HRESULT so the
+    # next failure says what to fix.
+    $stage = 'prepare'
     try {
         $dir = Split-Path -Parent $OutPath
         if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
@@ -151,21 +156,56 @@ function Export-EbiShapePng {
         if ($Scale -lt 1.0) { $Scale = 1.0 }
         if ([Math]::Max($w0, $h0) * $Scale -gt 6000.0) { $Scale = 6000.0 / [Math]::Max($w0, $h0) }
         $w = $w0 * $Scale; $h = $h0 * $Scale
+        $stage = 'activate sheet'
+        try { [void]$Worksheet.Activate() } catch { }   # ChartObject.Activate / Paste are unreliable on a sheet that is not active
+        $stage = 'copy shape'
         [void]$Shape.Copy()
         Start-Sleep -Milliseconds 150
+        $stage = 'add chart'
         $chartObj = $Worksheet.ChartObjects().Add(0, 0, $w, $h)
+        $stage = 'activate chart'
         [void]$chartObj.Activate()
+        $stage = 'paste into chart'
         [void]$chartObj.Chart.Paste()
         Start-Sleep -Milliseconds 150
-        try { $pz = $chartObj.Chart.Shapes; if ([int]$pz.Count -ge 1) { $p = $pz.Item(1); $p.LockAspectRatio = 0; $p.Left = 0; $p.Top = 0; $p.Width = $w; $p.Height = $h } } catch { }
+        # the pasted picture lands in Chart.Shapes or, on some Excel builds,
+        # only in the legacy Chart.Pictures() (EvidenceImageExport.ps1)
+        $stretched = $false
+        try { $pz = $chartObj.Chart.Shapes; if ([int]$pz.Count -ge 1) { $p = $pz.Item(1); $p.LockAspectRatio = 0; $p.Left = 0; $p.Top = 0; $p.Width = $w; $p.Height = $h; $stretched = $true } } catch { }
+        if (-not $stretched) { try { $pc = $chartObj.Chart.Pictures(); if ([int]$pc.Count -ge 1) { $p = $pc.Item(1); $p.Left = 0; $p.Top = 0; $p.Width = $w; $p.Height = $h } } catch { } }
+        $stage = 'export'
         [void]$chartObj.Chart.Export($OutPath, 'PNG')
         if (-not (Test-Path -LiteralPath $OutPath)) { return @{ ok = $false; path = $OutPath; message = 'Chart.Export wrote no file' } }
         return @{ ok = $true; path = $OutPath; message = '' }
     } catch {
-        return @{ ok = $false; path = $OutPath; message = $_.Exception.Message }
+        return @{ ok = $false; path = $OutPath; message = (Format-EbiExcelError -Stage $stage -ErrorRecord $_) }
     } finally {
         if ($null -ne $chartObj) { try { $chartObj.Delete() } catch { }; try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch { } }
     }
+}
+
+function Format-EbiExcelError {
+    <#
+      PURE. One line for a caught COM / PowerShell error: "<stage> failed:
+      <message> [<type> 0x<hresult>]". An empty Message (seen 10/16) still
+      gives the stage and the type.
+    #>
+    param([string]$Stage, $ErrorRecord)
+    $ex = $null
+    if ($null -ne $ErrorRecord) { if ($ErrorRecord -is [System.Exception]) { $ex = $ErrorRecord } elseif ($null -ne $ErrorRecord.Exception) { $ex = $ErrorRecord.Exception } }
+    # a method call on a COM object wraps the real error one level down
+    if ($null -ne $ex -and $ex -is [System.Management.Automation.MethodInvocationException] -and $null -ne $ex.InnerException) { $ex = $ex.InnerException }
+    $msg = ''; $type = ''; $hr = ''
+    if ($null -ne $ex) {
+        $msg = ([string]$ex.Message).Trim()
+        $type = $ex.GetType().Name
+        try { if ([int]$ex.HResult -ne 0) { $hr = ('0x{0:X8}' -f [int]$ex.HResult) } } catch { }
+    }
+    if ($msg -eq '') { $msg = '(no message)' }
+    $tail = (@($type, $hr) | Where-Object { $_ -ne '' }) -join ' '
+    $line = $Stage + ' failed: ' + $msg
+    if ($tail -ne '') { $line += ' [' + $tail + ']' }
+    return $line
 }
 
 function Get-EbiGroupShapesAbove {

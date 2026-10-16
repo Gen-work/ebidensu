@@ -251,7 +251,30 @@ if ($cmd -eq 'status' -or $cmd -eq 'menu') {
     # The menu remembers the last WorkDir / profile (.ebi/menu.json next to
     # ebi.ps1, ignored by git), so a double-click on ebi.cmd asks nothing.
     $remembered = Read-EbiMenuState -ToolDir $PSScriptRoot
+    # 10/16: `status workflows\x.json -Only K` ran as a plain status and said
+    # nothing; name what status / menu do not use
+    $unused = @()
+    if ($Target -ne '') { $unused += $Target }
+    if ($Target2 -ne '') { $unused += $Target2 }
+    foreach ($pair in @(@('-Only', $Only), @('-RunId', $RunId), @('-TimeWindow', $TimeWindow))) { if ([string]$pair[1] -ne '') { $unused += ($pair[0] + ' ' + $pair[1]) } }
+    if ($Limit -gt 0) { $unused += ('-Limit ' + $Limit) }
+    if (@($Var).Count -gt 0) { $unused += ('-Var ' + (@($Var) -join ',')) }
+    if ($resumeFlag) { $unused += '-Resume' }
+    if ($unused.Count -gt 0) { Write-Host ('[WARN] ' + $cmd + ' does not use: ' + ($unused -join ' ') + '  (to run a phase: ebi.ps1 run <workflow.json> ...)') -ForegroundColor Yellow }
     $wd = if (-not [string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir } elseif ($cmd -eq 'menu' -and [string]$remembered['workDir'] -ne '' -and (Test-Path -LiteralPath $remembered['workDir'])) { [string]$remembered['workDir'] } else { (Get-Location).ProviderPath }
+    # 10/16: a bare double-click on ebi.cmd with nothing remembered fell
+    # back to the tool folder. The menu asks for the work folder instead
+    # (dragging the folder into the window types its path).
+    $askWd = $cmd -eq 'menu' -and [string]::IsNullOrWhiteSpace($WorkDir) -and -not ([string]$remembered['workDir'] -ne '' -and (Test-Path -LiteralPath $remembered['workDir']))
+    if ($askWd) { try { if ([Console]::IsInputRedirected) { $askWd = $false } } catch { $askWd = $false } }
+    if ($askWd) {
+        Write-Host ''
+        Write-Host '  Which work folder? (the one with gfixrecv.csv / ebi.local.json)' -ForegroundColor Yellow
+        Write-Host '  Type the path, or drag the folder into this window, then Enter. Enter alone = quit.' -ForegroundColor Yellow
+        $typed = ([string](Read-Host '  work folder')).Trim().Trim('"').Trim()
+        if ($typed -eq '') { exit 3 }
+        $wd = $typed
+    }
     if (-not (Test-Path -LiteralPath $wd -PathType Container)) { Write-Host ('[ERROR] work dir not found: ' + $wd) -ForegroundColor Red; exit 2 }
     $wd = (Resolve-Path -LiteralPath $wd).ProviderPath
     $pn = if (-not [string]::IsNullOrWhiteSpace($Profile)) { $Profile } elseif ($cmd -eq 'menu') { [string]$remembered['profile'] } else { '' }

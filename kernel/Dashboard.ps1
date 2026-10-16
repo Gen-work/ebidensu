@@ -125,6 +125,39 @@ function Get-EbiDashboardVerdictPhases {
 
 # ---------------------------------------------------------------- columns
 
+function ConvertTo-EbiDashboardDay {
+    <#
+      PURE. A worklist date cell -> 'yyyy-MM-dd', '' when it is not one.
+      The CSV holds both '2026/10/9' (older runs) and '2026-10-14'; a time
+      after the date is ignored.
+    #>
+    param([string]$Text)
+    $t = ([string]$Text).Trim()
+    if ($t -match '^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s|T|$)') {
+        try { return ([datetime]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])).ToString('yyyy-MM-dd') } catch { return '' }
+    }
+    return ''
+}
+
+function Get-EbiDashboardTodayRows {
+    <#
+      PURE. How many rows carry today's date in the profile's
+      worklist.dashboard.dateColumn; -1 when the profile names no date
+      column (or the CSV does not have it): "unknown", NEXT ignores it.
+    #>
+    param($Rows, $Profile, $Columns = @(), [string]$Today)
+    $col = ''
+    if ($null -ne $Profile -and ($Profile -is [System.Collections.IDictionary]) -and $Profile.Contains('worklist') -and ($Profile['worklist'] -is [System.Collections.IDictionary])) {
+        $wl = $Profile['worklist']
+        if ($wl.Contains('dashboard') -and ($wl['dashboard'] -is [System.Collections.IDictionary]) -and $wl['dashboard'].Contains('dateColumn')) { $col = [string]$wl['dashboard']['dateColumn'] }
+    }
+    if ($col -eq '' -or -not (@($Columns) -contains $col)) { return -1 }
+    $day = ConvertTo-EbiDashboardDay -Text $Today
+    $n = 0
+    foreach ($r in @($Rows)) { if ($null -ne $r -and $r.Contains($col) -and (ConvertTo-EbiDashboardDay -Text ([string]$r[$col])) -eq $day) { $n++ } }
+    return $n
+}
+
 function Get-EbiDashboardColumns {
     <#
       PURE. Which worklist columns to show between the key and the verdicts.
@@ -228,11 +261,12 @@ function Get-EbiDashboardNext {
         Unfinished  Find-EbiUnfinishedRuns (run.json hashtables, newest first)
       Returns @{ lines; first = @{ kind = 'resume' | 'clear' | 'run' | 'plan'
       | 'done'; phase; runId; keys } }.
-      Priority: an unfinished run (resume it) > ng rows (clear and rerun)
-      > the earliest phase with rows waiting > an empty worklist (plan) >
-      nothing left.
+      Priority: an unfinished run (resume it) > no row dated today (plan;
+      only when TodayRows is 0, -1 = no date column) > ng rows (clear and
+      rerun) > the earliest phase with rows waiting > an empty worklist
+      (plan) > nothing left.
     #>
-    param($Model, $Phases, $Unfinished = @())
+    param($Model, $Phases, $Unfinished = @(), [int]$TodayRows = -1, [string]$Today = '')
     $lines = New-Object System.Collections.ArrayList
     $first = $null
     $byId = @{}
@@ -249,6 +283,17 @@ function Get-EbiDashboardNext {
         if ($started -match '^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})$' -and $rid.StartsWith($Matches[1] + $Matches[2] + $Matches[3])) { $clock = $Matches[4] }
         [void]$lines.Add(('unfinished ' + $label + ' run ' + $rid + ' (started ' + $clock + ') -> -Resume'))
         if ($null -eq $first) { $first = @{ kind = 'resume'; phase = $phase; runId = $rid; keys = @() } }
+    }
+    # 10/16: the worklist kept the earlier days' rows and NEXT said "track"
+    # before plan had run that morning. With a date column (worklist.
+    # dashboard.dateColumn) and no row dated today, plan comes first.
+    if ($TodayRows -eq 0 -and @($Model).Count -gt 0) {
+        $plan0 = $null
+        foreach ($p in @($Phases)) { if ([string]$p['field'] -eq '') { $plan0 = $p; break } }
+        if ($null -ne $plan0) {
+            [void]$lines.Add(('no row is dated today' + $(if ($Today -ne '') { ' (' + $Today + ')' } else { '' }) + ' -> run ' + [string]$plan0['name'] + ' first'))
+            if ($null -eq $first) { $first = @{ kind = 'plan'; phase = $plan0; runId = ''; keys = @() } }
+        }
     }
     $vp = @(Get-EbiDashboardVerdictPhases -Phases $Phases)
     # ng rows, by phase, in day order
@@ -380,7 +425,18 @@ function Format-EbiDashboard {
     $keyW = $KeyHeader.Length
     foreach ($m in $rows) { if (([string]$m['key']).Length -gt $keyW) { $keyW = ([string]$m['key']).Length } }
     $vW = @()
-    foreach ($p in $vp) { $w = ([string]$p['field']).Length; if ($w -lt 4) { $w = 4 }; $vW += $w }
+    foreach ($p in $vp) {
+        $w = ([string]$p['field']).Length; if ($w -lt 4) { $w = 4 }
+        # wide enough for its totals too (10/16: "ok 21" under "logs" showed as "ok ~")
+        $f = [string]$p['field']
+        foreach ($kind in @('ok', 'ng', 'pending')) {
+            $label = if ($kind -eq 'ok') { 'ok' } elseif ($kind -eq 'ng') { 'NG' } else { '-' }
+            $n = if ($null -ne $Totals -and $Totals.Contains($f)) { [int]$Totals[$f][$kind] } else { 0 }
+            $tl = ($label + ' ' + $n).Length
+            if ($tl -gt $w) { $w = $tl }
+        }
+        $vW += $w
+    }
     $show = @(@($ShowColumns) | ForEach-Object { [string]$_ })
     $sW = @()
     for ($i = 0; $i -lt $show.Count; $i++) {
@@ -494,17 +550,44 @@ function Resolve-EbiWorklistFile {
     return (Join-Path $WorkDir $file)
 }
 
+function Get-EbiPlanProfiles {
+    <#
+      The profiles (names) that have a profiles/<name>/ folder AND a
+      workflow without a row source naming them (the "plan" that builds
+      the worklist) -- the ones a fresh work folder can start a day with.
+    #>
+    param([string]$ToolDir)
+    $names = New-Object System.Collections.ArrayList
+    $wfs = Get-EbiDayWorkflows -Dir (Join-Path $ToolDir 'workflows')
+    foreach ($w in @($wfs['workflows'])) {
+        $v = $w['value']
+        if (-not $v.Contains('profile') -or $null -eq $v['profile'] -or [string]$v['profile'] -eq '') { continue }
+        $hasSource = $v.Contains('source') -and ($v['source'] -is [System.Collections.IDictionary]) -and $v['source'].Contains('select')
+        if ($hasSource) { continue }
+        $n = [string]$v['profile']
+        if (-not (Test-Path -LiteralPath (Join-Path (Join-Path $ToolDir 'profiles') $n) -PathType Container)) { continue }
+        if (-not ($names -contains $n)) { [void]$names.Add($n) }
+    }
+    return @($names.ToArray() | Sort-Object)
+}
+
 function Find-EbiDayProfiles {
-    # Every profile under ProfilesRoot whose worklist file exists in WorkDir (or that has a worklist at all when -All).
+    # Every profile under ProfilesRoot whose worklist file exists in WorkDir
+    # (or that has a worklist at all when -All), plus every profile that
+    # could not be READ (error = the reason, worklist = ''): the caller
+    # tells those apart from "found" by the error field.
     param([string]$ProfilesRoot, [string]$WorkDir, [string]$Operator = '', [switch]$All)
     $out = New-Object System.Collections.ArrayList
     if (-not (Test-Path -LiteralPath $ProfilesRoot -PathType Container)) { return $out.ToArray() }
     foreach ($d in @(Get-ChildItem -LiteralPath $ProfilesRoot -Directory | Sort-Object Name)) {
         $pr = Read-EbiProfile -Dir $d.FullName -WorkDir $WorkDir
-        if (-not $pr['ok']) { continue }
+        # 10/16: a broken <WorkDir>\ebi.local.json (one missing comma) made
+        # every profile fail here, and the caller said "no profile has its
+        # worklist" -- keep the reason so it can say what is wrong instead
+        if (-not $pr['ok']) { [void]$out.Add(@{ name = $d.Name; dir = $d.FullName; worklist = ''; error = [string]$pr['message'] }); continue }
         $path = Resolve-EbiWorklistFile -Profile $pr['value'] -WorkDir $WorkDir -Operator $Operator
         if ($path -eq '') { continue }
-        if ($All -or (Test-Path -LiteralPath $path -PathType Leaf)) { [void]$out.Add(@{ name = $d.Name; dir = $d.FullName; worklist = $path }) }
+        if ($All -or (Test-Path -LiteralPath $path -PathType Leaf)) { [void]$out.Add(@{ name = $d.Name; dir = $d.FullName; worklist = $path; error = '' }) }
     }
     return $out.ToArray()
 }
@@ -523,13 +606,28 @@ function Read-EbiDashboard {
     $res = @{ ok = $false; message = ''; profile = $null; profileName = ''; worklistPath = ''; phases = @(); model = @(); totals = @{}; next = $null; unfinished = @(); showColumns = @(); keyColumns = @(); lines = @(); runLine = ''; runCommand = $null }
     $profilesRoot = Join-Path $ToolDir 'profiles'
     $dir = ''
+    # 10/16: a bare double-click on ebi.cmd with nothing remembered ran in
+    # the tool folder itself; say so instead of "no profile has its worklist"
+    try {
+        $wdFull = [System.IO.Path]::GetFullPath($WorkDir).TrimEnd('\', '/')
+        $tdFull = [System.IO.Path]::GetFullPath($ToolDir).TrimEnd('\', '/')
+        if ($wdFull -ieq $tdFull) { $res['message'] = ('the work folder is the tool folder (' + $ToolDir + '): give the work folder -- ebi.cmd <work folder>, drag the folder onto ebi.cmd, or -WorkDir <dir>'); return $res }
+    } catch { }
     if (-not [string]::IsNullOrWhiteSpace($ProfileName)) {
         $dir = Resolve-EbiProfileDir -NameOrPath $ProfileName -ProfilesRoot $profilesRoot
         if ($dir -eq '' -or -not (Test-Path -LiteralPath $dir -PathType Container)) { $res['message'] = ('profile directory not found: ' + $ProfileName); return $res }
     } else {
-        $found = @(Find-EbiDayProfiles -ProfilesRoot $profilesRoot -WorkDir $WorkDir -Operator $Operator)
+        $all = @(Find-EbiDayProfiles -ProfilesRoot $profilesRoot -WorkDir $WorkDir -Operator $Operator)
+        $found = @($all | Where-Object { [string]$_['error'] -eq '' })
+        $broken = @($all | Where-Object { [string]$_['error'] -ne '' })
         if ($found.Count -eq 1) { $dir = [string]$found[0]['dir'] }
-        elseif ($found.Count -eq 0) { $res['message'] = ('no profile has its worklist in ' + $WorkDir + '; say which one with -Profile <name>'); return $res }
+        elseif ($found.Count -eq 0 -and $broken.Count -gt 0) { $res['message'] = ('could not read the profile(s) -- fix this first: ' + ((@($broken | ForEach-Object { [string]$_['name'] + ': ' + [string]$_['error'] })) -join ' | ')); return $res }
+        elseif ($found.Count -eq 0 -and @(Get-EbiPlanProfiles -ToolDir $ToolDir).Count -eq 1) {
+            # a fresh work folder: no worklist yet, but only one profile starts
+            # its day with a plan workflow -> that one (an empty board: run plan)
+            $dir = Resolve-EbiProfileDir -NameOrPath ([string]@(Get-EbiPlanProfiles -ToolDir $ToolDir)[0]) -ProfilesRoot $profilesRoot
+        }
+        elseif ($found.Count -eq 0) { $res['message'] = ('no profile has its worklist in ' + $WorkDir + ' (is this the work folder? ebi.cmd <work folder>, or drag the folder onto ebi.cmd); or say which profile with -Profile <name>'); return $res }
         else { $res['message'] = ('several profiles have a worklist in ' + $WorkDir + ' (' + (@($found | ForEach-Object { [string]$_['name'] }) -join ', ') + '); say which one with -Profile <name>'); return $res }
     }
     $pr = Read-EbiProfile -Dir $dir -WorkDir $WorkDir
@@ -557,7 +655,9 @@ function Read-EbiDashboard {
     $model = @(Get-EbiDashboardModel -Rows $rows -Phases $phases -Profile $profile -KeyColumns $keyColumns -ShowColumns $show)
     $totals = Get-EbiDashboardTotals -Model $model -Phases $phases
     $unfinished = @(Find-EbiUnfinishedRuns -WorkDir $WorkDir)
-    $next = Get-EbiDashboardNext -Model $model -Phases $phases -Unfinished $unfinished
+    $today = if ($Today -ne '') { $Today } else { (Get-Date).ToString('yyyy-MM-dd') }
+    $todayRows = Get-EbiDashboardTodayRows -Rows $rows -Profile $profile -Columns $columns -Today $today
+    $next = Get-EbiDashboardNext -Model $model -Phases $phases -Unfinished $unfinished -TodayRows $todayRows -Today $today
     $runLine = ''; $runCommand = $null
     $first = $next['first']
     if ($null -ne $first -and $null -ne $first['phase']) {
@@ -566,7 +666,6 @@ function Read-EbiDashboard {
         if ($null -ne $runCommand) { $runLine = 'next: ' + $runCommand['text'] }
     }
     $keyHeader = if ($keyColumns.Count -gt 0) { [string]$keyColumns[0] } else { 'key' }
-    $today = if ($Today -ne '') { $Today } else { (Get-Date).ToString('yyyy-MM-dd') }
     $res['phases'] = $phases; $res['model'] = $model; $res['totals'] = $totals; $res['next'] = $next; $res['unfinished'] = $unfinished
     $res['showColumns'] = $show; $res['keyColumns'] = $keyColumns; $res['runLine'] = $runLine; $res['runCommand'] = $runCommand
     $res['lines'] = @(Format-EbiDashboard -Title $res['profileName'] -WorkDir $WorkDir -WorklistPath $wlPath -Model $model -Phases $phases -Totals $totals -Next $next -ShowColumns $show -KeyHeader $keyHeader -RunLine $runLine -Today $today)
@@ -619,6 +718,39 @@ function Clear-EbiWorklistVerdict {
 }
 
 # ---------------------------------------------------------------- menu
+
+function Format-EbiMenuRunResult {
+    # PURE. The menu's one line after a phase: words, not an exit-code legend.
+    param([string]$Phase, $Code)
+    $c = [string]$Code
+    $word = switch ($c) { '0' { 'done (see the run summary above; the board below is refreshed)' } '1' { 'stopped with a failure (the FAILED lines above say where)' } '2' { 'did not start: the command was wrong (the message above says why)' } '3' { 'cancelled (q)' } default { 'ended with exit code ' + $c } }
+    return ($Phase + ': ' + $word)
+}
+
+function ConvertTo-EbiProcessArgument {
+    <#
+      PURE. One argument for a Windows command line (Start-Process
+      -ArgumentList as ONE string, which PowerShell 5.1 passes as is):
+      quoted when it holds a space, a tab or a quote, with inner quotes
+      escaped and the backslashes before them / before the closing quote
+      doubled (the CommandLineToArgvW rules). '' -> "".
+    #>
+    param([string]$Value)
+    if ($Value -eq '') { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('"')
+    $bs = 0
+    foreach ($ch in $Value.ToCharArray()) {
+        if ($ch -eq [char]92) { $bs++; continue }
+        if ($ch -eq [char]34) { [void]$sb.Append(([string][char]92) * ($bs * 2 + 1)); [void]$sb.Append('"'); $bs = 0; continue }
+        if ($bs -gt 0) { [void]$sb.Append(([string][char]92) * $bs); $bs = 0 }
+        [void]$sb.Append($ch)
+    }
+    if ($bs -gt 0) { [void]$sb.Append(([string][char]92) * ($bs * 2)) }
+    [void]$sb.Append('"')
+    return $sb.ToString()
+}
 
 function Get-EbiMenuStateFile {
     param([string]$ToolDir)
@@ -735,12 +867,21 @@ function Invoke-EbiMenu {
     $read = if ($null -ne $Reader) { $Reader } else { { Read-Host } }
     $psExe = ''
     try { $psExe = (Get-Process -Id $PID).Path } catch { }
+    if ([string]::IsNullOrWhiteSpace($psExe)) { $psExe = 'powershell.exe' }
     $ebi = Join-Path $ToolDir 'ebi.ps1'
     $run = if ($null -ne $Runner) { $Runner } else {
         {
             param($CliArgs)
-            & $psExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $ebi @CliArgs
-            return $LASTEXITCODE
+            # 10/16: `& $psExe ...` inside this block put the child's whole
+            # output into the caller's $code -- nothing showed while the
+            # phase ran, then it printed as ONE line, and a gate's question
+            # could never be seen. Start-Process -NoNewWindow shares this
+            # console (live output, the gate reads the keyboard) and hands
+            # back only the exit code.
+            $all = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ebi) + @($CliArgs)
+            $line = (@($all | ForEach-Object { ConvertTo-EbiProcessArgument -Value ([string]$_) })) -join ' '
+            $proc = Start-Process -FilePath $psExe -ArgumentList $line -NoNewWindow -Wait -PassThru
+            return [int]$proc.ExitCode
         }
     }
     $tries = 0
@@ -817,6 +958,6 @@ function Invoke-EbiMenu {
         if ($DryRun) { Write-Host '  (dry run: not started)' -ForegroundColor DarkGray; continue }
         $code = & $run $cmd['args']
         Write-Host ''
-        Write-Host ('  ' + [string]$phase['name'] + ' finished with exit code ' + [string]$code + '  (0 ok, 1 failed, 3 cancelled)') -ForegroundColor $(if ([string]$code -eq '0') { 'Green' } else { 'Yellow' })
+        Write-Host ('  ' + (Format-EbiMenuRunResult -Phase ([string]$phase['name']) -Code $code)) -ForegroundColor $(if ([string]$code -eq '0') { 'Green' } else { 'Yellow' })
     }
 }

@@ -69,15 +69,21 @@
 下面第 1～4 节的四条 `run` 命令仍然是正本，但平时不用手打：
 
 - **看盘**：`ebi.ps1 status -WorkDir $W`。一屏：每本（Excel_NAME）一行，JOB / GFIX_DATE /
-  GFIX_TIME / FileCount，track / logs / evidence 三列判定（`ok` / `NG` / `-` 未做），
-  每列合计，没跑完的 run（`-Resume` 用的 id），以及 NEXT（先续跑、再清 NG、再是最早有行在等的阶段）
-  和「下一条该打的命令」。只读，不碰 CSV。
-- **入口**：仓库目录里双击 `ebi.cmd`（第一次带参数 `ebi.cmd C:\Users\<you>\work-BIX`，
-  之后记住在 `.ebi\menu.json`），或 `ebi.ps1 menu -WorkDir $W`。先显示上面的盘，再选：
+  GFIX_TIME / FileCount，track / logs / evidence / deliver 四列判定（`ok` / `NG` / `-` 未做），
+  每列合计，没跑完的 run（`-Resume` 用的 id），以及 NEXT（先续跑；**表里没有一行是今天的日期时先 plan**；
+  再清 NG、再是最早有行在等的阶段）和「下一条该打的命令」。只读，不碰 CSV。
+  注意：往日的行也一直在表里，也会被算作「待做」。所以每段选 Excel_NAME 时**手打今天的名字**，
+  不要直接回车（尤其是 deliver，回车会给所有旧行都做草稿）。
+- **入口**：仓库目录里双击 `ebi.cmd`。第一次（还没记住工作文件夹时）它会问「Which work folder?」，
+  把工作文件夹**拖进窗口**再回车即可；也可以把文件夹直接拖到 `ebi.cmd` 图标上，或 `ebi.cmd C:\Users\<you>\work-BIX`。
+  之后记住在 `.ebi\menu.json`，或 `ebi.ps1 menu -WorkDir $W`。
+  `ebi.local.json` 写坏了（少逗号、路径里单个 `\`）时会直接说是哪个文件、哪里坏了，不会再报「no profile has its worklist」。先显示上面的盘，再选：
   数字 = plan / track / logs / evidence / deliver（plan 之后的几段会再问一次 Excel_NAME，
   回车 = 所有待做的行，`A,B` = 几本），`r` = 续跑没跑完的 run，`c` = 清掉某一行某一列的判定
   （代替用记事本改 CSV），`s` = 重画，`d` = doctor，`q` = 退出。
-  选完它会**把那条 `ebi.ps1 run ...` 原样打印出来再执行**（子进程），跑完回到菜单。
+  选完它会**把那条 `ebi.ps1 run ...` 原样打印出来再执行**（子进程，输出和 GATE 的提问都实时显示在同一个窗口），
+  跑完印一行结果（done / stopped with a failure / cancelled）再回到菜单。
+  （v2.26.1 以前子进程的输出被整段吞掉、最后挤成一行，GATE 的提问看不见：track / deliver 请用 v2.26.2 以后的版本从菜单跑。）
   选了前置没做完的阶段（比如 logs 还没 ok 就选 evidence）会先 `[WARN]` 提示，
   workflow 本身也会拒绝（`file_not_found`）。
 - 只有一个 profile 的作业清单在 WorkDir 里时不用说 `-Profile`；有几个时加 `-Profile gfix-recv`。
