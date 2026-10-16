@@ -104,6 +104,17 @@ file stays small. Designed-then-shelved work lives in
     JSON プリミティブ: eyJ0b2tl..."; detect base64 that decodes to JSON
     and either accept it or say "this is base64: point mailTemplate at
     the .bat, or decode it".
+  - *deliver: a sent mail saved as .msg is the template* (operator ask,
+    10/16). When paths.mailTemplate is missing / unreadable, the panel
+    asks: "open a review mail you already sent in Outlook, File > Save As
+    > .msg into the work folder, Enter" -- then remember that file in
+    ebi.local.json. human.draft_mail already reads .msg / .oft through
+    Outlook, but a .msg carries no token ("no token: the template names
+    none"): infer it -- the W-name in the subject's last "(...)"
+    (【GIFT廃止対応】BIX_J4レビュー依頼(KJODWSPP)) that also appears in the
+    body ("..._ KJODWSPP.xlsx"; trimBefore already handles the space) --
+    and show it in the panel before the first draft. The .msg holds real
+    addresses: it stays in the work folder, never in git.
   - `ebi status` silently ignores extra arguments (`status workflows\x.json
     -Only K...` ran as plain status); warn on what it does not use.
   - *The result line should be a message for the operator*, not a code
