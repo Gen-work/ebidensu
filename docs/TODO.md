@@ -150,8 +150,8 @@ file stays small. Designed-then-shelved work lives in
   first picture is 458 high (16 lines = HOST 000001-000017) and the END
   picture 476 (17 lines = the HOST's last 17); `screen.launch_capture`
   resizes before the END view (`heightEnd`). Still open: the first office
-  run (does the END recipe End, PgUp, Down x2 still put the last line at
-  the bottom of a 17-line window? 458 is derived, not seen), and the OCR
+  run of the 17-line END window (the recipe is End, PgUp, Down ONCE --
+  the operator 10/19; it was Down x2) and of 458 (derived, not seen), and the OCR
   route above for HOST shots of other shapes. 加瀬さん has not re-checked
   the hand-fixed SJODWDB6 yet.
 - **gfix-recv: a progress view the operator can see while the browser is

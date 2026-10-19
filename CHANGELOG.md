@@ -56,7 +56,8 @@ First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).
   picture is now 458 high (16 lines = HOST 000001-000017) and
   `screen.launch_capture` resizes to the new `heightEnd` 476 before the END
   view (17 lines = the HOST's last 17, e.g. HOST 000111-000127 -> DF
-  00110-00126). The END key recipe on a 17-line window is unchecked on the
+  00110-00126). The END key recipe is now End, PgUp, Down ONCE (the
+  operator, 10/19; it was Down x2). Both heights are unchecked on the
   office PC.
 - **gfixRecv.evidence `look` gate** asked for `steps.excelSnap.out.png`,
   an output `excel.place_picture` never had (`input_invalid` after the
