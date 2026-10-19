@@ -255,6 +255,30 @@ function Get-EbiTopWindows {
     return $out.ToArray()
 }
 
+function Select-EbiWindowsByText {
+    <#
+      PURE. Windows (Get-EbiTopWindows shape, front first) + literal text
+      parts -> the windows whose title or process name CONTAINS one of them
+      (case-insensitive), in the order to bring them forward: the back-most
+      first, so the front-most match ends on top (10/19: every review-mail
+      draft brought to the front before "all sent?").
+    #>
+    param($Windows, $Texts)
+    $parts = @(@($Texts) | Where-Object { $null -ne $_ -and ([string]$_).Trim() -ne '' } | ForEach-Object { ([string]$_).Trim() })
+    if ($parts.Count -eq 0) { return @() }
+    $hit = New-Object System.Collections.ArrayList
+    foreach ($w in @($Windows)) {
+        if ($null -eq $w) { continue }
+        $t = [string]$w['title']; $pn = [string]$w['processName']
+        foreach ($p in $parts) {
+            if ($t.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $pn -ieq $p) { [void]$hit.Add($w); break }
+        }
+    }
+    $arr = $hit.ToArray()
+    [array]::Reverse($arr)
+    return $arr
+}
+
 function Start-EbiDialogWatch {
     <#
       Answer a modal dialog that pops up while THIS thread is blocked in a

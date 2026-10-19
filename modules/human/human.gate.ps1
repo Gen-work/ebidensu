@@ -27,6 +27,7 @@ $Manifest = @{
     key      = @{ type='string'; default=''; desc='which item; empty = the current item' }
     checklist = @{ type='list';  default=@(); desc='what to look at, one line each, shown as "check: ..." (10/15: the review points, kept in the profile so they can grow)' }
     alert     = @{ type='any';   default=''; desc='a line, or a list of lines, drawn RED on the panel (an automatic check that disagrees, e.g. verify.find_token alert); empty lines are left out' }
+    front     = @{ type='list';  default=@(); desc='windows to bring to the front once the panel is drawn: each entry a piece of a window title, or a process name (EXCEL, OUTLOOK); every match comes forward (10/19: all the review-mail drafts). The answer is still typed in the console' }
     skipFails = @{ type='bool';  default=$false; desc='true: the operator''s s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time)' }
   }
   outputs    = @{
@@ -92,9 +93,18 @@ function Invoke-Step {
     foreach ($e in @($In['evidence'])) { if ($null -ne $e -and [string]$e -ne '') { [void]$ev.Add([string]$e) } }
     $panel = HumanGate-WhatLines -Code $code -Reason ([string]$In['reason']) -Checklist $In['checklist'] -Alert $In['alert']
     $what = $panel['what']
+    $front = @()
+    $next = @('Enter/o: it is ok', 'n: it is ng', 'k: keep the verdict as it is', 's: skip this item, leave it pending', 'm <text>: add a note, then answer again', 'q: cancel the whole run')
+    if (@(@($In['front']) | Where-Object { [string]$_ -ne '' }).Count -gt 0 -and -not $Ctx['DryRun']) {
+        $wins = @()
+        try { $wins = @(Select-EbiWindowsByText -Windows (Get-EbiTopWindows) -Texts $In['front']) } catch { $wins = @() }
+        $front = @($wins | ForEach-Object { [IntPtr]$_['handle'] })
+        if ($front.Count -gt 0) { $next = @(('(' + $front.Count + ' window(s) brought to the front: look there, then answer here)')) + $next }
+        else { $Ctx.Log.Warn(('no window matches front: {0}' -f (@($In['front']) -join ', '))) }
+    }
     $note = ''
     while ($true) {
-        $r = Show-EbiGate -Title ('GATE ' + $key) -What $what -Next @('Enter/o: it is ok', 'n: it is ng', 'k: keep the verdict as it is', 's: skip this item, leave it pending', 'm <text>: add a note, then answer again', 'q: cancel the whole run') -Evidence $ev.ToArray() -Actions (HumanGate-Actions) -Default 'o' -Auto 'k' -DryRun ([bool]$Ctx['DryRun']) -Alert $panel['alert']
+        $r = Show-EbiGate -Title ('GATE ' + $key) -What $what -Next $next -Evidence $ev.ToArray() -Actions (HumanGate-Actions) -Default 'o' -Auto 'k' -DryRun ([bool]$Ctx['DryRun']) -Alert $panel['alert'] -FrontAfter $front
         if ([string]$r['action'] -eq 'm') { $note = [string]$r['note']; continue }
         break
     }

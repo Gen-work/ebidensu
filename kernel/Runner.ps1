@@ -174,7 +174,11 @@ function Get-EbiWorkflowProblems {
         [void]$problems.Add('"each" needs a "source" to iterate')
     }
 
-    foreach ($section in @('setup', 'each', 'teardown')) {
+    if ($Workflow.Contains('after') -and $null -ne $Workflow['after'] -and -not ($Workflow.Contains('each') -and $null -ne $Workflow['each'])) {
+        [void]$problems.Add('"after" runs once after "each": a workflow without "each" puts these steps in "setup"')
+    }
+
+    foreach ($section in @('setup', 'each', 'after', 'teardown')) {
         if (-not $Workflow.Contains($section) -or $null -eq $Workflow[$section]) { continue }
         $calls = $Workflow[$section]
         if (-not ($calls -is [System.Collections.IList])) {
@@ -1052,6 +1056,28 @@ function Invoke-EbiWorkflow {
                         if ($done -gt 0) { $done--; continue }
                         [void]$itemRecords.Add(@{ key = (Get-EbiKeyDisplay -Item $row -KeyColumns $keyColumns); group = (Get-EbiWorklistGroupOf -Row $row -GroupBy $groupBy); status = 'skip'; failure = ''; message = $(if ($cancelled) { 'run cancelled' } else { 'run aborted (onError: fail)' }) })
                     }
+                }
+            }
+        }
+
+        # ---- after: once, when every selected row has been through "each" ------
+        # 10/19 deliver: write every check-sheet row, ONE confirmation, then
+        # every mail, ONE confirmation, then every row done. Not run when the
+        # run was cancelled or aborted. run.doneKeys = the items whose "each"
+        # finished ok in this run (the rows the after steps work on).
+        if (-not $stopped -and $workflow.Contains('after') -and $null -ne $workflow['after']) {
+            $run['doneKeys'] = @($itemRecords.ToArray() | Where-Object { $_['status'] -eq 'ok' } | ForEach-Object { [string]$_['key'] })
+            $afterSteps = @{}
+            $ctx['Item'] = $null; $ctx['KeyColumns'] = $keyColumns
+            $scope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $null -Steps $afterSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
+            foreach ($call in $workflow['after']) {
+                if ($stopped) { [void]$records.Add((New-EbiSkipRecord -Section 'after' -Call $call -Key '' -Group '' -Why 'an earlier after step stopped the run' -State $state)); continue }
+                $done = . Invoke-EbiStepWithPolicy -State $state -Section 'after' -Call $call -Scope $scope -Steps $afterSteps
+                foreach ($r in $done['records']) { [void]$records.Add($r) }
+                switch ([string]$done['outcome']) {
+                    'cancelled' { $cancelled = $true; $stopped = $true; [void]$unrecovered.Add($done['last']) }
+                    'fail'      { $aborted = $true; $stopped = $true; [void]$unrecovered.Add($done['last']) }
+                    'skip'      { $stopped = $true; [void]$unrecovered.Add($done['last']) }
                 }
             }
         }

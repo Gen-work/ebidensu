@@ -100,7 +100,7 @@ function Invoke-EbiLint {
     $vars = if ($Workflow.Contains('vars') -and ($Workflow['vars'] -is [System.Collections.IDictionary])) { $Workflow['vars'] } else { @{} }
     $source = if ($Workflow.Contains('source') -and ($Workflow['source'] -is [System.Collections.IDictionary])) { $Workflow['source'] } else { $null }
     $groupBy = if ($null -ne $source -and $source.Contains('groupBy') -and $null -ne $source['groupBy']) { [string]$source['groupBy'] } else { '' }
-    $runKeys = @('runId', 'startedAt', 'date', 'dateSlash', 'mmdd', 'toolDir', 'operator', 'workDir', 'timeWindow')
+    $runKeys = @('runId', 'startedAt', 'date', 'dateSlash', 'mmdd', 'toolDir', 'operator', 'workDir', 'timeWindow', 'doneKeys')
 
     # -- 2. profile-level facts -----------------------------------------------
     if (-not $hasProfile) {
@@ -148,6 +148,7 @@ function Invoke-EbiLint {
             'run' {
                 $first = ($rest -split '\.')[0]
                 if (-not ($runKeys -contains $first)) { Err -Where $Where -Message ('{{' + $p + '}}: run has no "' + $first + '" (' + ($runKeys -join ', ') + ')') }
+                elseif ($first -eq 'doneKeys' -and $Section -ne 'after') { Err -Where $Where -Message ('{{' + $p + '}}: run.doneKeys is only set for "after" (the rows "each" finished)') }
             }
             'item' {
                 if ($Section -ne 'each') { Err -Where $Where -Message ('{{' + $p + '}}: item.* is only available in "each"') }
@@ -195,7 +196,7 @@ function Invoke-EbiLint {
         }
     }
 
-    foreach ($section in @('setup', 'each', 'teardown')) {
+    foreach ($section in @('setup', 'each', 'after', 'teardown')) {
         if (-not $Workflow.Contains($section) -or -not ($Workflow[$section] -is [System.Collections.IList])) { continue }
         $stepsSoFar = New-Object System.Collections.ArrayList
         $stepManifests = @{}
@@ -268,7 +269,11 @@ function Invoke-EbiLint {
                         $kind = if ($spec.Contains('sessionKind')) { [string]$spec['sessionKind'] } else { '' }
                         if (-not $registered.Contains($v) -or -not $registered[$v]['live']) { Err -Where $where -Message ('input "' + [string]$name + '" names session resource "' + $v + '", which no earlier call registered with "as" (or it was released)') }
                         elseif ($kind -ne '' -and [string]$registered[$v]['kind'] -ne $kind) { Err -Where $where -Message ('input "' + [string]$name + '" wants kind "' + $kind + '" but "' + $v + '" is a "' + [string]$registered[$v]['kind'] + '" (registered by ' + $registered[$v]['where'] + ')') }
-                        if ($releases -contains $kind -and $registered.Contains($v)) { $registered[$v]['live'] = $false }
+                        # a release under "when" may not happen (10/19 deliver: the check
+                        # sheet is saved + closed only after the operator's ok): the name
+                        # stays live, and teardown may release it again -- the runner
+                        # skips a teardown release of what is no longer registered
+                        if ($releases -contains $kind -and $registered.Contains($v) -and -not ($call.Contains('when') -and $null -ne $call['when'])) { $registered[$v]['live'] = $false }
                         continue
                     }
                     if (Test-EbiValueHasTemplate $v) { continue }   # cannot be typed statically

@@ -1,8 +1,31 @@
-## 2026-10-19 - evidence first office run fixes; lint checks step output names; track brings Teams to the front (v2.27.1)
+## 2026-10-19 - deliver: all rows, one check, all drafts, one check (workflow "after"); evidence first office run fixes; track brings Teams to the front (v2.28.0)
 
 First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).
 
 ### Added
+- **Workflow `after` section** (WORKFLOW-SCHEMA 1.2): runs once after every
+  selected row has been through `each`, only when the run was neither
+  cancelled nor aborted; `{{run.doneKeys}}` = the rows `each` finished ok
+  (lint: only in `after`). Not ledgered (re-runs on -Resume, like setup).
+  Lint no longer counts a release under `when` as certain, so teardown can
+  release the same name again.
+- **gfixRecv.deliver v0.2.0** (10/19 feedback: a confirm per row was too
+  many): `each` writes every job's check-sheet row WITHOUT saving; `after`
+  then asks ONCE with Excel in front (Enter = every row right -> save +
+  close), makes every review-mail draft at once, brings every draft window
+  to the front and asks ONCE (Enter = all sent -> every job deliver = ok).
+  `s` at the first question saves nothing; `s` at the second keeps the
+  saved rows and leaves deliver pending (the next run finds the rows and
+  marks the jobs ok without new drafts). Profile `layout.checkSheet`:
+  `checklistRows` / `checklistSent` replace `checklist`.
+- **`human.gate` `front`**: window title parts or process names; every
+  match comes to the front once the panel is drawn (`Select-EbiWindowsByText`,
+  `Show-EbiGate -FrontAfter` now takes several handles).
+- **`human.draft_mail` `valueList`**: one draft per entry; output `subjects`.
+- **`table.set` `keyList`**: the same value on every listed row, one flush;
+  one unknown key changes nothing.
+- **`excel.close` `dismissDialogs`**: the classification dialog a save
+  opens is answered with Esc, as excel.tidy / excel.append_row do.
 - **`human.share` `front`**: once the reply is on the clipboard, the
   window whose process name or title matches this regex comes to the
   front (the panel is still answered in the console). gfixRecv.track

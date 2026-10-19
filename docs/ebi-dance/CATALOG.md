@@ -1142,6 +1142,7 @@ Close a registered workbook (save or discard) and release it
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `dismissDialogs` | list |  | [] |  | title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do |
 | `save` | bool |  | false |  | save before closing |
 | `workbook` | session:workbook | yes |  |  |  |
 
@@ -1730,13 +1731,14 @@ Set a cell (value or named bit) of the row for a key, then flush
 | `clear` | bool |  | false |  | with bit: clear it instead of setting it |
 | `field` | string | yes |  |  |  |
 | `key` | string |  | (empty) |  | which row (key display form); empty = the current item |
+| `keyList` | list |  | [] |  | instead of key: every one of these rows gets the same value, one flush at the end (10/19 deliver: every job done after ONE "all sent") |
 | `value` | string |  | (empty) |  | logical value to store (translated through verdict.values) |
 | `worklist` | session:worklist | yes |  |  |  |
 
 | output | type | desc |
 |--------|------|------|
 | `stored` | string | what the cell holds now |
-| `updated` | int | rows changed (0 or 1) |
+| `updated` | int | rows changed (0 or 1; with keyList, how many) |
 
 failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_missing` (not transient), `bit_unknown` (not transient), `write_failed` (transient)
 
@@ -2261,16 +2263,18 @@ Make an Outlook draft from a template (token -> value), save and open it; never 
 | `to` | list |  | [] |  | addresses that replace the template's To; empty = keep the template's |
 | `token` | string |  | (empty) |  | the word in the template to replace; empty = the template's own token (a .msg/.oft has none: give it) |
 | `trimBefore` | bool |  | true |  | drop spaces between "_" or ">" and the token (a template whose file name read "_ JOB.xlsx") |
-| `value` | string | yes |  |  | what the token becomes, e.g. {{item.Excel_NAME}} |
+| `value` | string |  | (empty) |  | what the token becomes, e.g. {{item.Excel_NAME}} (one draft) |
+| `valueList` | list |  | [] |  | instead of value: one draft per entry, in order (10/19 deliver: every job's mail after the check sheet is confirmed) |
 
 | output | type | desc |
 |--------|------|------|
 | `cc` | list | CC addresses |
-| `saved` | bool | the draft is in the Drafts folder |
+| `saved` | bool | the draft is in the Drafts folder (with valueList: every one of them) |
 | `subject` | string | the draft's subject |
+| `subjects` | list | every draft's subject, in order (one entry for value) |
 | `to` | list | To addresses |
 
-failures: `file_not_found` (not transient), `template_invalid` (not transient), `outlook_unavailable` (not transient), `draft_failed` (transient)
+failures: `file_not_found` (not transient), `template_invalid` (not transient), `outlook_unavailable` (not transient), `draft_failed` (transient), `input_invalid` (not transient)
 
 ```json
 {"id":"draft_mail","use":"human.draft_mail","with":{"template":"{{profile.paths.mailTemplate}}","value":"{{item.Excel_NAME}}"}}
@@ -2293,6 +2297,7 @@ Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
 | `checklist` | list |  | [] |  | what to look at, one line each, shown as "check: ..." (10/15: the review points, kept in the profile so they can grow) |
 | `code` | string | yes |  |  | the verdict so far: ok \| ng \| unknown \| empty |
 | `evidence` | any |  | (empty) |  | a path, or a list of paths / values, to look at |
+| `front` | list |  | [] |  | windows to bring to the front once the panel is drawn: each entry a piece of a window title, or a process name (EXCEL, OUTLOOK); every match comes forward (10/19: all the review-mail drafts). The answer is still typed in the console |
 | `key` | string |  | (empty) |  | which item; empty = the current item |
 | `reason` | string |  | (empty) |  | why (verify.assert's reason), shown on the panel |
 | `skipFails` | bool |  | false |  | true: the operator's s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time) |

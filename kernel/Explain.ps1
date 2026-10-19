@@ -105,13 +105,13 @@ function Format-EbiExplain {
     $gates = 0; $destructive = 0; $unknown = 0
     $fallback = New-Object System.Collections.ArrayList
     $idWidth = 8; $useWidth = 12
-    foreach ($section in @('setup', 'each', 'teardown')) {
+    foreach ($section in @('setup', 'each', 'after', 'teardown')) {
         if (-not $Workflow.Contains($section) -or -not ($Workflow[$section] -is [System.Collections.IList])) { continue }
         foreach ($c in $Workflow[$section]) { if ($c -is [System.Collections.IDictionary]) { if ($c.Contains('id') -and ([string]$c['id']).Length -gt $idWidth) { $idWidth = ([string]$c['id']).Length }; if ($c.Contains('use') -and ([string]$c['use']).Length -gt $useWidth) { $useWidth = ([string]$c['use']).Length } } }
     }
-    foreach ($section in @('setup', 'each', 'teardown')) {
+    foreach ($section in @('setup', 'each', 'after', 'teardown')) {
         if (-not $Workflow.Contains($section) -or -not ($Workflow[$section] -is [System.Collections.IList])) { continue }
-        [void]$L.Add('+ ' + $section + $(if ($section -eq 'each') { '  (x pending rows)' } else { '' }))
+        [void]$L.Add('+ ' + $section + $(if ($section -eq 'each') { '  (x pending rows)' } elseif ($section -eq 'after') { '  (once, after every row)' } else { '' }))
         foreach ($call in $Workflow[$section]) {
             if (-not ($call -is [System.Collections.IDictionary])) { continue }
             $cid = if ($call.Contains('id')) { [string]$call['id'] } else { '?' }

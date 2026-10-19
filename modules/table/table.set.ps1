@@ -23,6 +23,7 @@ $Manifest = @{
   inputs     = @{
     worklist = @{ type='session'; sessionKind='worklist'; required=$true }
     key      = @{ type='string'; default=''; desc='which row (key display form); empty = the current item' }
+    keyList  = @{ type='list';   default=@(); desc='instead of key: every one of these rows gets the same value, one flush at the end (10/19 deliver: every job done after ONE "all sent")' }
     field    = @{ type='string'; required=$true }
     value    = @{ type='string'; default=''; desc='logical value to store (translated through verdict.values)' }
     bit      = @{ type='string'; default=''; desc='instead of value: the bit NAME to set in a bitmask column' }
@@ -30,7 +31,7 @@ $Manifest = @{
   }
   outputs    = @{
     stored  = @{ type='string'; desc='what the cell holds now' }
-    updated = @{ type='int';    desc='rows changed (0 or 1)' }
+    updated = @{ type='int';    desc='rows changed (0 or 1; with keyList, how many)' }
   }
   failures   = @(
     @{ id = 'row_not_found';   transient = $false }
@@ -83,15 +84,26 @@ function Invoke-Step {
     if ($keyColumns.Count -eq 0) { $keyColumns = @(Get-EbiWorklistKeyColumns -Profile $Ctx['Profile']) }
     $field = [string]$In['field']
     $spec = Get-EbiWorklistColumnSpec -Profile $Ctx['Profile'] -Field $field
-    $r = TableSet-Resolve -Worklist $wl -Key ([string]$In['key']) -Item $Ctx['Item'] -KeyColumns $keyColumns -Rules (Get-EbiKeyRules -Profile $Ctx['Profile']) -Field $field -Value ([string]$In['value']) -Bit ([string]$In['bit']) -Clear ([bool]$In['clear']) -Spec $spec
-    if (-not $r['ok']) { return @{ ok = $false; failure = $r['failure']; message = $r['message']; stored = ''; updated = 0 } }
-    $row = $r['row']
-    $before = if ($row.Contains($field) -and $null -ne $row[$field]) { [string]$row[$field] } else { '' }
-    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would set {0} = "{1}" (was "{2}")' -f $field, $r['stored'], $before)); return @{ ok = $true; stored = $r['stored']; updated = 0 } }
-    $row[$field] = $r['stored']
+    $keys = @(@($In['keyList']) | Where-Object { $null -ne $_ -and [string]$_ -ne '' } | ForEach-Object { [string]$_ })
+    if ($keys.Count -eq 0) { $keys = @([string]$In['key']) }   # '' = the current item
+    # resolve every row first: one unknown key changes nothing
+    $plan = New-Object System.Collections.ArrayList
+    foreach ($k in $keys) {
+        $r = TableSet-Resolve -Worklist $wl -Key $k -Item $Ctx['Item'] -KeyColumns $keyColumns -Rules (Get-EbiKeyRules -Profile $Ctx['Profile']) -Field $field -Value ([string]$In['value']) -Bit ([string]$In['bit']) -Clear ([bool]$In['clear']) -Spec $spec
+        if (-not $r['ok']) { return @{ ok = $false; failure = $r['failure']; message = $(if ($keys.Count -gt 1) { $k + ': ' + $r['message'] } else { $r['message'] }); stored = ''; updated = 0 } }
+        $row = $r['row']
+        [void]$plan.Add(@{ row = $row; stored = $r['stored']; before = $(if ($row.Contains($field) -and $null -ne $row[$field]) { [string]$row[$field] } else { '' }); key = $k })
+    }
+    $last = $plan[$plan.Count - 1]
+    if ($Ctx['DryRun']) {
+        foreach ($p in $plan) { $Ctx.Log.Info(('would set {0}{1} = "{2}" (was "{3}")' -f $(if ($p['key'] -ne '') { $p['key'] + ' ' } else { '' }), $field, $p['stored'], $p['before'])) }
+        return @{ ok = $true; stored = $last['stored']; updated = 0 }
+    }
+    foreach ($p in $plan) { $p['row'][$field] = $p['stored'] }
     if (-not [string]::IsNullOrWhiteSpace([string]$wl['path'])) {
         $s = Save-EbiWorklist -Worklist $wl
-        if (-not $s['ok']) { $row[$field] = $before; return @{ ok = $false; failure = 'write_failed'; message = $s['message']; stored = $before; updated = 0 } }
+        if (-not $s['ok']) { foreach ($p in $plan) { $p['row'][$field] = $p['before'] }; return @{ ok = $false; failure = 'write_failed'; message = $s['message']; stored = $last['before']; updated = 0 } }
     }
-    return @{ ok = $true; stored = $r['stored']; updated = 1 }
+    if ($plan.Count -gt 1) { $Ctx.Log.Info(('{0} = "{1}" for {2} row(s): {3}' -f $field, $last['stored'], $plan.Count, (@($plan | ForEach-Object { $_['key'] }) -join ', '))) }
+    return @{ ok = $true; stored = $last['stored']; updated = $plan.Count }
 }

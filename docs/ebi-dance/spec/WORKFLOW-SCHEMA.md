@@ -40,6 +40,7 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 
   "setup":    [ ... ],     // 整个 run 开始前跑一次
   "each":     [ ... ],     // 每个 item 跑一次
+  "after":    [ ... ],     // 所有 item 跑完后跑一次(run 没被取消/中止时),见 §1.2
   "teardown": [ ... ]      // 整个 run 结束后跑一次;哪些退出路径有这个保证见 §1.1
 }
 ```
@@ -55,7 +56,25 @@ diff、Agent 容易写出微妙的错,而且最终会比直接写 PowerShell 还
 | `vars` | | 工作流级常量,可被 CLI `--var k=v` 覆盖 |
 | `source` | | 没有则不遍历,只跑 `setup` + `teardown` |
 | `onError` | | 默认 `{ "policy": "ask" }` |
-| `setup` / `each` / `teardown` | | step 数组,都可省略。`teardown` 的执行保证(哪些退出路径算数)见 §1.1 |
+| `setup` / `each` / `after` / `teardown` | | step 数组,都可省略。`after` 要有 `each`(§1.2);`teardown` 的执行保证(哪些退出路径算数)见 §1.1 |
+
+### 1.2 `after`:所有 item 之后跑一次(2026-10-19)
+
+`each` 是「每行一遍」;有些事要**所有行都做完之后一起做一次**——10/19 的
+deliver:先把每本的检查表行都写进去,**一次**确认;再把每本的邮件草稿都打开,
+**一次**确认「全部送了」;最后把这些行一起记成 ok。`after` 就是这个位置。
+
+- 只在 `each` 正常走完时跑:run 被取消(`q`)或中止(`onError: fail`)时不跑,
+  直接去 `teardown`。`after` 里的 step 失败的处理与 `setup` 相同(中止,后面的
+  `after` step 记 skip,`teardown` 照跑)。
+- 作用域:没有 `item.*`;`steps.*` 只看 `after` 自己前面的 step;多一个
+  `{{run.doneKeys}}`——这次 `each` 跑完且结果 ok 的行的 key 显示形(列表),
+  只在 `after` 里有(lint 检查)。典型用法:`table.select` 的 `only` 收窄到这些行,
+  再按列值挑出还要处理的。
+- 不进 ledger:`-Resume` 时 `after` 整段重跑(和 `setup` 一样)。
+- 带 `when` 的释放 step(例:确认后才保存并关闭的 `excel.close`)不算「一定释放」,
+  `teardown` 里可以再写一次释放;运行时那个资源已经不在时 `teardown` 的释放记
+  `skipped`("nothing to release"),不是 `session_missing`。
 
 ### 1.1 `teardown` 的执行保证(P0-R10)
 

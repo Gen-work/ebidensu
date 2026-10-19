@@ -1031,6 +1031,11 @@
       "id": "excel.close",
       "idempotent": true,
       "inputs": {
+        "dismissDialogs": {
+          "default": [],
+          "desc": "title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do",
+          "type": "list"
+        },
         "save": {
           "default": false,
           "desc": "save before closing",
@@ -3395,6 +3400,10 @@
         {
           "id": "draft_failed",
           "transient": true
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
         }
       ],
       "file": "modules/human/human.draft_mail.ps1",
@@ -3433,9 +3442,14 @@
           "type": "bool"
         },
         "value": {
-          "desc": "what the token becomes, e.g. {{item.Excel_NAME}}",
-          "required": true,
+          "default": "",
+          "desc": "what the token becomes, e.g. {{item.Excel_NAME}} (one draft)",
           "type": "string"
+        },
+        "valueList": {
+          "default": [],
+          "desc": "instead of value: one draft per entry, in order (10/19 deliver: every job's mail after the check sheet is confirmed)",
+          "type": "list"
         }
       },
       "needs": [],
@@ -3446,12 +3460,16 @@
           "type": "list"
         },
         "saved": {
-          "desc": "the draft is in the Drafts folder",
+          "desc": "the draft is in the Drafts folder (with valueList: every one of them)",
           "type": "bool"
         },
         "subject": {
           "desc": "the draft's subject",
           "type": "string"
+        },
+        "subjects": {
+          "desc": "every draft's subject, in order (one entry for value)",
+          "type": "list"
         },
         "to": {
           "desc": "To addresses",
@@ -3517,6 +3535,11 @@
           "default": "",
           "desc": "a path, or a list of paths / values, to look at",
           "type": "any"
+        },
+        "front": {
+          "default": [],
+          "desc": "windows to bring to the front once the panel is drawn: each entry a piece of a window title, or a process name (EXCEL, OUTLOOK); every match comes forward (10/19: all the review-mail drafts). The answer is still typed in the console",
+          "type": "list"
         },
         "key": {
           "default": "",
@@ -5291,6 +5314,11 @@
           "desc": "which row (key display form); empty = the current item",
           "type": "string"
         },
+        "keyList": {
+          "default": [],
+          "desc": "instead of key: every one of these rows gets the same value, one flush at the end (10/19 deliver: every job done after ONE \"all sent\")",
+          "type": "list"
+        },
         "value": {
           "default": "",
           "desc": "logical value to store (translated through verdict.values)",
@@ -5309,7 +5337,7 @@
           "type": "string"
         },
         "updated": {
-          "desc": "rows changed (0 or 1)",
+          "desc": "rows changed (0 or 1; with keyList, how many)",
           "type": "int"
         }
       },
