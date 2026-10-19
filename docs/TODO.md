@@ -139,7 +139,14 @@ file stays small. Designed-then-shelved work lives in
   16 lines; measure 17/18/19 to size the window per picture); (3) a DF key
   recipe that shows a given top line (Ctrl+Home + PgDn for the 2nd page,
   the END view for the last; a middle range may need DF's line jump).
-  Not started.
+  10/19 case (review NG on SJODWDB6, check sheet row 341, 加瀬さん:
+  「GIFTデータvsGFIXデータ セルB35の比較結果が送信データと相違」): the HOST
+  picture shows 000111-000127 (17 lines), so the DF picture must show
+  00110-00126 -- the same 17 records (recv line n = send line n+1),
+  confirmed by the operator. The window is resized when the HOST picture
+  shows a different line count than the DF window holds (the operator,
+  10/19: "when it is needed, resize the DF too"). Waiting for 加瀬さん's
+  re-check of the hand-fixed book before the code starts.
 - **gfix-recv: a progress view the operator can see while the browser is
   full screen** (office run feedback, 2026-10-09). During browser / DF
   steps the console is behind Edge and the operator cannot tell whether to
