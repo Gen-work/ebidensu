@@ -1266,6 +1266,7 @@ Stack pictures down a sheet at native size and draw red boxes on them
 | `lineWeight` | int |  | 0 |  | box line weight in points; 0 = 1.5 |
 | `pictures` | list | yes |  |  | paths, or @{ path; column; gapRows; rows; rects } (excel layout plan) |
 | `rects` | list |  | [] |  | boxes for EVERY picture given as a plain path |
+| `replace` | bool |  | false |  | with tag: first delete the pictures and boxes an earlier run left on this sheet under the same tag (verifyPic_<tag>_* / verifyMark_<tag>_*), so a rerun replaces instead of stacking a second copy on top |
 | `row` | int | yes |  |  | row of the first picture |
 | `sheet` | string | yes |  |  |  |
 | `skipRows` | int |  | 0 |  | blank rows left before the first picture |
@@ -1276,6 +1277,7 @@ Stack pictures down a sheet at native size and draw red boxes on them
 |--------|------|------|
 | `boxes` | int | rectangles drawn |
 | `nextRow` | int | first row below the last picture |
+| `removed` | int | shapes of an earlier run deleted first (replace) |
 | `shapes` | list | @{ name; path; row; top; left; width; height; boxes } |
 
 failures: `sheet_not_found` (not transient), `file_not_found` (transient), `insert_failed` (transient)
@@ -1284,7 +1286,7 @@ failures: `sheet_not_found` (not transient), `file_not_found` (transient), `inse
 {"id":"insert_pictures","use":"excel.insert_pictures","with":{"pictures":["{{steps.shot.out.path}}"],"rects":"{{steps.lr.out.rects}}","row":"{{steps.log.out.nextRow}}","sheet":"result","workbook":"wb"}}
 ```
 
-Notes: Not idempotent: a second run adds the pictures again. The evidence workflows start from a clean sheet section and checkpoint after.
+Notes: Not idempotent without replace: a second run adds the pictures again. With tag + replace = true a rerun deletes its own earlier pictures and boxes (by name) first -- pictures someone put there by hand are never touched. Excel is scrolled to each picture after it is drawn and held there a moment (EBI_WATCH_MS).
 
 ### `excel.open`
 

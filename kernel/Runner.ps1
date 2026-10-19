@@ -621,7 +621,11 @@ function Invoke-EbiStepCall {
             # window the screenshot must not show (first evidence run, 10-09)
             if ($ebiCall['frontH'] -eq [IntPtr]::Zero) { $ebiCall['ctx'].Log.Warn(('front "{0}" is not a registered window: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
         }
-        $ebiCall['frontOk'] = Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (@($ebiCall['manifest']['needs']) -contains 'foreground')
+        # an Excel step leaves Excel where the previous Excel step put it (10/19:
+        # the operator watches the evidence book fill; the console used to come
+        # back between every write, so only each step's first jump was seen)
+        $ebiCall['needs'] = @($ebiCall['manifest']['needs'])
+        $ebiCall['frontOk'] = Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (($ebiCall['needs'] -contains 'foreground') -or ($ebiCall['needs'] -contains 'excel'))
         if ($ebiCall['frontH'] -ne [IntPtr]::Zero -and -not $ebiCall['frontOk']) { $ebiCall['ctx'].Log.Warn(('front "{0}" did not come to the front: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
     }
 

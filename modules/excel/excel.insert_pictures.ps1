@@ -39,11 +39,13 @@ $Manifest = @{
     rects    = @{ type='list';   default=@(); desc='boxes for EVERY picture given as a plain path' }
     lineWeight = @{ type='int';  default=0; desc='box line weight in points; 0 = 1.5' }
     tag      = @{ type='string'; default=''; desc='shape name prefix (verifyMark_<tag>_n) so a rerun can find them' }
+    replace  = @{ type='bool';   default=$false; desc='with tag: first delete the pictures and boxes an earlier run left on this sheet under the same tag (verifyPic_<tag>_* / verifyMark_<tag>_*), so a rerun replaces instead of stacking a second copy on top' }
   }
   outputs    = @{
     shapes  = @{ type='list'; desc='@{ name; path; row; top; left; width; height; boxes }' }
     nextRow = @{ type='int';  desc='first row below the last picture' }
     boxes   = @{ type='int';  desc='rectangles drawn' }
+    removed = @{ type='int';  desc='shapes of an earlier run deleted first (replace)' }
   }
   failures   = @(
     @{ id = 'sheet_not_found'; transient = $false }
@@ -51,7 +53,7 @@ $Manifest = @{
     @{ id = 'insert_failed';   transient = $true  }
   )
   example    = @{ use = 'excel.insert_pictures'; with = @{ workbook = 'wb'; sheet = 'result'; row = '{{steps.log.out.nextRow}}'; pictures = @('{{steps.shot.out.path}}'); rects = '{{steps.lr.out.rects}}' } }
-  notes      = 'Not idempotent: a second run adds the pictures again. The evidence workflows start from a clean sheet section and checkpoint after.'
+  notes      = 'Not idempotent without replace: a second run adds the pictures again. With tag + replace = true a rerun deletes its own earlier pictures and boxes (by name) first -- pictures someone put there by hand are never touched. Excel is scrolled to each picture after it is drawn and held there a moment (EBI_WATCH_MS).'
 }
 
 function ExcelInsertPictures-Entry {
@@ -63,6 +65,15 @@ function ExcelInsertPictures-Entry {
                   rects = @(if ($P.Contains('rects') -and $null -ne $P['rects']) { $P['rects'] }) }
     }
     return @{ path = [string]$P; column = $DefaultColumn; gapRows = $DefaultGap; rows = 0; rects = @($DefaultRects) }
+}
+
+function ExcelInsertPictures-IsOwnShape {
+    # PURE. A shape name -> true when an earlier run of this step drew it
+    # under this tag: verifyPic_<tag>_<n> or verifyMark_<tag>_<n>_<k>.
+    param([string]$Name, [string]$Tag)
+    if ([string]::IsNullOrWhiteSpace($Tag)) { return $false }
+    $t = [regex]::Escape($Tag)
+    return ($Name -match ('^verifyPic_' + $t + '_\d+$') -or $Name -match ('^verifyMark_' + $t + '_\d+_\d+$'))
 }
 
 function ExcelInsertPictures-ImageRect {
@@ -95,14 +106,23 @@ function Invoke-Step {
     if ($Ctx['DryRun']) {
         foreach ($e in $entries) { $Ctx.Log.Info(('would insert {0} on {1} at column {2} with {3} box(es)' -f $e['path'], $In['sheet'], $e['column'], @($e['rects']).Count)) }
         if ($entries.Count -eq 0) { $Ctx.Log.Info('would insert no picture') }
-        return @{ ok = $true; shapes = @(); nextRow = [int]$In['row']; boxes = 0 }
+        return @{ ok = $true; shapes = @(); nextRow = [int]$In['row']; boxes = 0; removed = 0 }
     }
-    foreach ($e in $entries) { if (-not (Test-Path -LiteralPath $e['path'] -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = $e['path']; shapes = @(); nextRow = [int]$In['row']; boxes = 0 } } }
+    foreach ($e in $entries) { if (-not (Test-Path -LiteralPath $e['path'] -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = $e['path']; shapes = @(); nextRow = [int]$In['row']; boxes = 0; removed = 0 } } }
     $ws = Get-EbiSheet -Workbook $In['workbook'] -Sheet $In['sheet']
-    if ($null -eq $ws) { return @{ ok = $false; failure = 'sheet_not_found'; message = ('no sheet "' + $In['sheet'] + '"'); shapes = @(); nextRow = [int]$In['row']; boxes = 0 } }
+    if ($null -eq $ws) { return @{ ok = $false; failure = 'sheet_not_found'; message = ('no sheet "' + $In['sheet'] + '"'); shapes = @(); nextRow = [int]$In['row']; boxes = 0; removed = 0 } }
     $weight = if ([int]$In['lineWeight'] -gt 0) { [double]$In['lineWeight'] } else { 1.5 }
     $tag = [string]$In['tag']
     $row = [Math]::Max(1, [int]$In['row'] + [Math]::Max(0, [int]$In['skipRows']))
+    # 10/19: a rerun on a finished book rewrote the logs but stacked a second
+    # Jenkins / DF picture on top of the first -- delete our own first
+    $removed = 0
+    if ([bool]$In['replace'] -and $tag -ne '') {
+        $old = New-Object System.Collections.ArrayList
+        try { foreach ($sh in @($ws.Shapes)) { if (ExcelInsertPictures-IsOwnShape -Name ([string]$sh.Name) -Tag $tag) { [void]$old.Add($sh) } } } catch { }
+        foreach ($sh in $old) { try { [void]$sh.Delete(); $removed++ } catch { } }
+        if ($removed -gt 0) { $Ctx.Log.Info(('{0}: deleted {1} picture(s)/box(es) an earlier run left under tag "{2}"' -f $In['sheet'], $removed, $tag)) }
+    }
     $shapes = New-Object System.Collections.ArrayList
     $boxes = 0; $n = 0
     $warn = New-Object System.Collections.ArrayList
@@ -135,9 +155,10 @@ function Invoke-Step {
             $next = Get-EbiRowAtOrBelow -Worksheet $ws -TopPoints $bottom -StartRow $row
             if ([int]$e['rows'] -gt 0) { $next = [Math]::Max($next, $row + [int]$e['rows']) }
             [void]$shapes.Add(@{ name = [string]$pic.Name; path = $e['path']; row = $row; top = $ptop; left = $pl; width = $pw; height = $ph; boxes = $k })
+            Show-EbiExcelAt -Worksheet $ws -Row $row -Front -Dwell
             $row = $next
-        } catch { return @{ ok = $false; failure = 'insert_failed'; message = ($e['path'] + ': ' + $_.Exception.Message); shapes = $shapes.ToArray(); nextRow = $row; boxes = $boxes } }
+        } catch { return @{ ok = $false; failure = 'insert_failed'; message = ($e['path'] + ': ' + $_.Exception.Message); shapes = $shapes.ToArray(); nextRow = $row; boxes = $boxes; removed = $removed } }
     }
     $Ctx.Log.Info(('inserted {0} picture(s), {1} box(es) on {2}; next free row {3}' -f $shapes.Count, $boxes, $In['sheet'], $row))
-    return @{ ok = $true; shapes = $shapes.ToArray(); nextRow = $row; boxes = $boxes; warnings = $warn.ToArray() }
+    return @{ ok = $true; shapes = $shapes.ToArray(); nextRow = $row; boxes = $boxes; removed = $removed; warnings = $warn.ToArray() }
 }

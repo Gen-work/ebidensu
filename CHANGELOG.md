@@ -11,6 +11,18 @@ First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).
   No match = a warning. `Show-EbiGate -FrontAfter` does the switch.
 - **Lint**: a `{{steps.<id>.out.<field>}}` reference must name an output
   the step's manifest declares.
+- **Watching the evidence book fill** (10/19 feedback: "the camera only
+  jumps when a step starts"): `excel.write_lines`, `excel.highlight`,
+  `excel.place_picture` and `excel.insert_pictures` scroll Excel to what
+  they just wrote / filled / placed and hold it there a moment
+  (`Show-EbiExcelAt -Dwell`, `EBI_WATCH_MS`, default 700, 0 = off); the
+  runner no longer pulls the console back in front between Excel steps.
+- **`excel.insert_pictures` `replace`**: with a tag, an earlier run's own
+  pictures and boxes (`verifyPic_<tag>_*`, `verifyMark_<tag>_*`) are
+  deleted first, so a rerun on a finished book replaces the Jenkins / DF
+  pictures instead of stacking a second copy on top (10/19). Pictures put
+  there by hand are never touched. gfixRecv.evidence sets it on `jkPic` and
+  `dfPics`.
 
 ### Fixed
 - **gfixRecv.evidence `look` gate** asked for `steps.excelSnap.out.png`,

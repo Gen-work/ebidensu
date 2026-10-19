@@ -91,7 +91,7 @@ function Invoke-Step {
         try { $startRow = [int]$ws.Cells.Item(1, 1).Row; $startRow = [int]$pic.TopLeftCell.Row } catch { }
         $next = Get-EbiRowAtOrBelow -Worksheet $ws -TopPoints ([double]$pic.Top + [double]$pic.Height) -StartRow $startRow
         if ($gone.Count -gt 0) { $Ctx.Log.Info(('{0}: replaced {1} with {2}' -f $In['sheet'], ($gone -join ', '), (Split-Path -Leaf $path))) }
-        Show-EbiExcelAt -Worksheet $ws -Row $startRow -Front
+        Show-EbiExcelAt -Worksheet $ws -Row $startRow -Front -Dwell
         $out = @{ ok = $true; name = [string]$pic.Name; nextRow = ($next + [int]$In['gapRows']); replaced = $gone.ToArray(); groups = $groups; note = $note }
         if ($note -ne '') { $out['warnings'] = @(@{ code = 'group_shape'; message = $note }) }
         return $out
