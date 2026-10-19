@@ -526,6 +526,21 @@ try {
     Assert-Equal 'ok' (Get-Rec $res 't')['status'] 'teardown: teardown still ran'
     Assert-Equal 'bye' (Get-Rec $res 't')['outputs']['echo'] 'teardown: teardown step received its with'
 
+    # -- 10/19: setup failed before the step that opens the resource; the
+    # teardown release has nothing to release -> skipped, not session_missing
+    $wf = Write-Workflow 'teardown-noopen.json' @'
+{ "id": "spike.teardown.noopen",
+  "setup":    [ { "id": "f", "use": "fake.fail", "with": { "mode": "declared" } },
+                { "id": "e", "use": "fake.ensure", "with": { "title": "a", "as": "w" } } ],
+  "teardown": [ { "id": "r", "use": "fake.release", "with": { "window": "w" } },
+                { "id": "t", "use": "fake.pure", "with": { "text": "bye" } } ] }
+'@
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-teardown-noopen'
+    Assert-Equal 'skipped' (Get-Rec $res 'r')['status'] 'teardown never opened: the release is skipped'
+    Assert-True ((Get-Rec $res 'r')['message'] -like 'nothing to release*') ('teardown never opened: the skip says why: ' + (Get-Rec $res 'r')['message'])
+    Assert-Equal 'boom' $res['failure'] 'teardown never opened: the run reports the setup failure, not session_missing'
+    Assert-Equal 'ok' (Get-Rec $res 't')['status'] 'teardown never opened: the rest of teardown still ran'
+
     # ------------------------------------------------ 8-12. contract violations
     foreach ($case in @(
         @{ mode = 'undeclared'; want = 'contract_violation'; msg = 'an undeclared failure id is a contract violation' },

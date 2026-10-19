@@ -180,7 +180,7 @@ function Export-EbiShapePng {
     } catch {
         return @{ ok = $false; path = $OutPath; message = (Format-EbiExcelError -Stage $stage -ErrorRecord $_) }
     } finally {
-        if ($null -ne $chartObj) { try { $chartObj.Delete() } catch { }; try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch { } }
+        if ($null -ne $chartObj) { try { [void]$chartObj.Delete() } catch { }; try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch { } }
     }
 }
 

@@ -1,3 +1,25 @@
+## 2026-10-19 - excel.snap_list returned an array; teardown skips releasing what was never opened (v2.27.1)
+
+First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).
+
+### Fixed
+- **`excel.snap_list`** failed every attempt with `contract_violation:
+  Invoke-Step must return a [hashtable] (got Object[])` right after
+  "snapped B4:O125": the temporary chart's `ChartObject.Delete()` in the
+  `finally` block returns a value, and output in `finally` joins the
+  function's return. Now `[void]`.
+- **`Export-EbiShapePng`** (kernel/Excel.ps1, used by `excel.copy_picture`
+  savePng) had the same un-voided `Delete()`: its result became an array,
+  `$x['ok']` read as false and the copy was reported `png_not_saved` with
+  an empty message. Likely the open "png_not_saved cause" from 10/16; to be
+  confirmed on the office PC.
+- **Runner, teardown**: a teardown step that releases a session resource
+  which was never registered (setup failed before the step that opens it
+  -- 10/19: `paths.gfixList` still the placeholder, so `excel.open` never
+  registered `list`) is now `skipped` ("nothing to release: ...") instead
+  of failing `session_missing` and asking a second time. The run still
+  reports the setup failure. Tests\Test-Runner.ps1 covers it.
+
 ## 2026-10-16 - gfix-recv evidence: picture 1 snapped from the GFIX list, on to SNDFILE when rows repeat; the STEP name (v2.27.0)
 
 加瀬さん's 10/13 review of JJDSWM10 (check sheet rows 326-328, NG), with

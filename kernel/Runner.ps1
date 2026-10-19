@@ -592,6 +592,18 @@ function Invoke-EbiStepCall {
     $ebiCall['withValues'] = [hashtable]$ebiCall['expanded']['value']
     $ebiCall['resolved'] = Resolve-EbiStepInputs -Manifest $ebiCall['manifest'] -With $ebiCall['withValues'] -Session $ebiCall['ctx']['Session']
     if (-not $ebiCall['resolved']['ok']) {
+        # A teardown release of a resource that was never opened (setup failed
+        # before the step that provides it -- 10/19: the GFIX list path was
+        # still the placeholder, so excel.open never registered 'list'): there
+        # is nothing to release, so skipped, not a session_missing failure.
+        if ($Section -eq 'teardown' -and [string]$ebiCall['resolved']['failure'] -eq 'session_missing' -and @(Get-EbiManifestArray -Manifest $ebiCall['manifest'] -Key 'releases').Count -gt 0) {
+            $ebiCall['rec']['status'] = 'skipped'; $ebiCall['rec']['message'] = ('nothing to release: ' + [string]$ebiCall['resolved']['message'])
+            $ebiCall['rec']['outputs'] = New-EbiSkippedOutputs -Manifest $ebiCall['manifest']
+            $Steps[$ebiCall['id']] = $ebiCall['rec']['outputs']
+            Write-EbiStepLine -Status 'skipped' -Section $Section -Id $ebiCall['id'] -Use $ebiCall['use'] -Key $Key -Detail $ebiCall['rec']['message']
+            Write-TraceEvent -WorkDir $ebiCall['workDir'] -RunId $ebiCall['runId'] -Phase $Section -Key $Key -Tags $ebiCall['tags'] -Action 'step' -Status 'skipped' -Message $ebiCall['rec']['message'] -Data @{ outputs = $ebiCall['rec']['outputs'] }
+            return $ebiCall['rec']
+        }
         $ebiCall['rec']['status'] = 'fail'; $ebiCall['rec']['failure'] = [string]$ebiCall['resolved']['failure']; $ebiCall['rec']['message'] = [string]$ebiCall['resolved']['message']
         Write-EbiStepLine -Status 'fail' -Section $Section -Id $ebiCall['id'] -Use $ebiCall['use'] -Key $Key -Detail ($ebiCall['rec']['failure'] + ': ' + $ebiCall['rec']['message'])
         Write-TraceEvent -WorkDir $ebiCall['workDir'] -RunId $ebiCall['runId'] -Phase $Section -Key $Key -Tags $ebiCall['tags'] -Action 'step' -Status 'fail' -Message $ebiCall['rec']['message'] -Data @{ failure = $ebiCall['rec']['failure'] }
