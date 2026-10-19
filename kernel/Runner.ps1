@@ -174,7 +174,11 @@ function Get-EbiWorkflowProblems {
         [void]$problems.Add('"each" needs a "source" to iterate')
     }
 
-    foreach ($section in @('setup', 'each', 'teardown')) {
+    if ($Workflow.Contains('after') -and $null -ne $Workflow['after'] -and -not ($Workflow.Contains('each') -and $null -ne $Workflow['each'])) {
+        [void]$problems.Add('"after" runs once after "each": a workflow without "each" puts these steps in "setup"')
+    }
+
+    foreach ($section in @('setup', 'each', 'after', 'teardown')) {
         if (-not $Workflow.Contains($section) -or $null -eq $Workflow[$section]) { continue }
         $calls = $Workflow[$section]
         if (-not ($calls -is [System.Collections.IList])) {
@@ -592,6 +596,18 @@ function Invoke-EbiStepCall {
     $ebiCall['withValues'] = [hashtable]$ebiCall['expanded']['value']
     $ebiCall['resolved'] = Resolve-EbiStepInputs -Manifest $ebiCall['manifest'] -With $ebiCall['withValues'] -Session $ebiCall['ctx']['Session']
     if (-not $ebiCall['resolved']['ok']) {
+        # A teardown release of a resource that was never opened (setup failed
+        # before the step that provides it -- 10/19: the GFIX list path was
+        # still the placeholder, so excel.open never registered 'list'): there
+        # is nothing to release, so skipped, not a session_missing failure.
+        if ($Section -eq 'teardown' -and [string]$ebiCall['resolved']['failure'] -eq 'session_missing' -and @(Get-EbiManifestArray -Manifest $ebiCall['manifest'] -Key 'releases').Count -gt 0) {
+            $ebiCall['rec']['status'] = 'skipped'; $ebiCall['rec']['message'] = ('nothing to release: ' + [string]$ebiCall['resolved']['message'])
+            $ebiCall['rec']['outputs'] = New-EbiSkippedOutputs -Manifest $ebiCall['manifest']
+            $Steps[$ebiCall['id']] = $ebiCall['rec']['outputs']
+            Write-EbiStepLine -Status 'skipped' -Section $Section -Id $ebiCall['id'] -Use $ebiCall['use'] -Key $Key -Detail $ebiCall['rec']['message']
+            Write-TraceEvent -WorkDir $ebiCall['workDir'] -RunId $ebiCall['runId'] -Phase $Section -Key $Key -Tags $ebiCall['tags'] -Action 'step' -Status 'skipped' -Message $ebiCall['rec']['message'] -Data @{ outputs = $ebiCall['rec']['outputs'] }
+            return $ebiCall['rec']
+        }
         $ebiCall['rec']['status'] = 'fail'; $ebiCall['rec']['failure'] = [string]$ebiCall['resolved']['failure']; $ebiCall['rec']['message'] = [string]$ebiCall['resolved']['message']
         Write-EbiStepLine -Status 'fail' -Section $Section -Id $ebiCall['id'] -Use $ebiCall['use'] -Key $Key -Detail ($ebiCall['rec']['failure'] + ': ' + $ebiCall['rec']['message'])
         Write-TraceEvent -WorkDir $ebiCall['workDir'] -RunId $ebiCall['runId'] -Phase $Section -Key $Key -Tags $ebiCall['tags'] -Action 'step' -Status 'fail' -Message $ebiCall['rec']['message'] -Data @{ failure = $ebiCall['rec']['failure'] }
@@ -609,7 +625,11 @@ function Invoke-EbiStepCall {
             # window the screenshot must not show (first evidence run, 10-09)
             if ($ebiCall['frontH'] -eq [IntPtr]::Zero) { $ebiCall['ctx'].Log.Warn(('front "{0}" is not a registered window: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
         }
-        $ebiCall['frontOk'] = Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (@($ebiCall['manifest']['needs']) -contains 'foreground')
+        # an Excel step leaves Excel where the previous Excel step put it (10/19:
+        # the operator watches the evidence book fill; the console used to come
+        # back between every write, so only each step's first jump was seen)
+        $ebiCall['needs'] = @($ebiCall['manifest']['needs'])
+        $ebiCall['frontOk'] = Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (($ebiCall['needs'] -contains 'foreground') -or ($ebiCall['needs'] -contains 'excel'))
         if ($ebiCall['frontH'] -ne [IntPtr]::Zero -and -not $ebiCall['frontOk']) { $ebiCall['ctx'].Log.Warn(('front "{0}" did not come to the front: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
     }
 
@@ -1036,6 +1056,28 @@ function Invoke-EbiWorkflow {
                         if ($done -gt 0) { $done--; continue }
                         [void]$itemRecords.Add(@{ key = (Get-EbiKeyDisplay -Item $row -KeyColumns $keyColumns); group = (Get-EbiWorklistGroupOf -Row $row -GroupBy $groupBy); status = 'skip'; failure = ''; message = $(if ($cancelled) { 'run cancelled' } else { 'run aborted (onError: fail)' }) })
                     }
+                }
+            }
+        }
+
+        # ---- after: once, when every selected row has been through "each" ------
+        # 10/19 deliver: write every check-sheet row, ONE confirmation, then
+        # every mail, ONE confirmation, then every row done. Not run when the
+        # run was cancelled or aborted. run.doneKeys = the items whose "each"
+        # finished ok in this run (the rows the after steps work on).
+        if (-not $stopped -and $workflow.Contains('after') -and $null -ne $workflow['after']) {
+            $run['doneKeys'] = @($itemRecords.ToArray() | Where-Object { $_['status'] -eq 'ok' } | ForEach-Object { [string]$_['key'] })
+            $afterSteps = @{}
+            $ctx['Item'] = $null; $ctx['KeyColumns'] = $keyColumns
+            $scope = New-EbiTemplateScope -Vars $wfVars -Profile $Profile -PageName $pageName -Run $run -Item $null -Steps $afterSteps -KeyColumns $keyColumns -GroupColumn $groupColumn
+            foreach ($call in $workflow['after']) {
+                if ($stopped) { [void]$records.Add((New-EbiSkipRecord -Section 'after' -Call $call -Key '' -Group '' -Why 'an earlier after step stopped the run' -State $state)); continue }
+                $done = . Invoke-EbiStepWithPolicy -State $state -Section 'after' -Call $call -Scope $scope -Steps $afterSteps
+                foreach ($r in $done['records']) { [void]$records.Add($r) }
+                switch ([string]$done['outcome']) {
+                    'cancelled' { $cancelled = $true; $stopped = $true; [void]$unrecovered.Add($done['last']) }
+                    'fail'      { $aborted = $true; $stopped = $true; [void]$unrecovered.Add($done['last']) }
+                    'skip'      { $stopped = $true; [void]$unrecovered.Add($done['last']) }
                 }
             }
         }

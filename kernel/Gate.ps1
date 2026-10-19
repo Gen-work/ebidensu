@@ -300,9 +300,13 @@ function Show-EbiGate {
                   drawn red instead of yellow (10/15: "a run from another
                   day", "the picture shows another job") -- the panel text
                   itself is unchanged, so tests and logs read the same
+        FrontAfter window handle(s) to bring to the front once the panel is
+                  drawn, in order -- the last one ends on top (10/19:
+                  human.share's Teams chat, human.gate's mail drafts); the
+                  answer is still typed here, back in the console
       Nothing here decides what an action MEANS -- the caller does.
     #>
-    param([string]$Title = '', $What = $null, $Next = $null, $Evidence = $null, $Actions = @(), [string]$Default = '', [string]$Auto = '', [scriptblock]$Reader = $null, [bool]$DryRun = $false, [switch]$Raw, [string[]]$Alert = @())
+    param([string]$Title = '', $What = $null, $Next = $null, $Evidence = $null, $Actions = @(), [string]$Default = '', [string]$Auto = '', [scriptblock]$Reader = $null, [bool]$DryRun = $false, [switch]$Raw, [string[]]$Alert = @(), $FrontAfter = @())
     foreach ($line in @(Format-EbiGatePanel -Title $Title -What $What -Next $Next -Evidence $Evidence -Actions $Actions)) {
         Write-Host ('  ' + $line) -ForegroundColor (Get-EbiGateLineColor -Line $line -Alert $Alert)
     }
@@ -319,7 +323,10 @@ function Show-EbiGate {
         return @{ action = $Auto; note = ''; auto = $true }
     }
     $read = if ($null -ne $Reader) { $Reader } else { { Read-Host } }
-    if ($null -eq $Reader) { Restore-EbiConsoleWindow }
+    if ($null -eq $Reader) {
+        Restore-EbiConsoleWindow
+        foreach ($fh in @($FrontAfter)) { if ($null -ne $fh -and [IntPtr]$fh -ne [IntPtr]::Zero) { [void](Set-EbiForeground -HWnd ([IntPtr]$fh) -SettleMs 150) } }
+    }
     $tries = 0
     while ($true) {
         $tries++

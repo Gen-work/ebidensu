@@ -121,8 +121,11 @@ function Show-EbiExcelAt {
       throws: a refused call here must not fail the step that wrote.
       Looking is fine; CLICKING in Excel while the run writes makes Excel
       refuse the next call (0x800AC472, docs/ebi-dance/KNOWLEDGE.md).
+      -Dwell (10/19: "the camera does not follow the inserts"): called
+      again AFTER a write, at what was written, and held there for
+      Get-EbiWatchDwellMs so a person can see it before the next step.
     #>
-    param($Worksheet, [int]$Row = 0, [switch]$Front)
+    param($Worksheet, [int]$Row = 0, [switch]$Front, [switch]$Dwell)
     $app = $null
     try { $app = $Worksheet.Application; if (-not [bool]$app.Visible) { return } } catch { return }
     try { [void]$Worksheet.Activate() } catch { }
@@ -130,6 +133,16 @@ function Show-EbiExcelAt {
     if ($Front -and [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT -and $null -ne (Get-Command -Name 'Set-EbiForeground' -ErrorAction SilentlyContinue)) {
         try { [void](Set-EbiForeground -HWnd ([IntPtr]([int64]$app.Hwnd)) -SettleMs 0) } catch { }
     }
+    if ($Dwell) { $ms = Get-EbiWatchDwellMs; if ($ms -gt 0) { Start-Sleep -Milliseconds $ms } }
+}
+
+function Get-EbiWatchDwellMs {
+    # PURE (reads the environment). How long Show-EbiExcelAt -Dwell holds
+    # the view on what was just written: EBI_WATCH_MS, default 700; 0 = off.
+    $v = [string]$env:EBI_WATCH_MS
+    $n = 0
+    if ($v -ne '' -and [int]::TryParse($v, [ref]$n)) { return [Math]::Max(0, $n) }
+    return 700
 }
 
 function Export-EbiShapePng {
@@ -180,7 +193,7 @@ function Export-EbiShapePng {
     } catch {
         return @{ ok = $false; path = $OutPath; message = (Format-EbiExcelError -Stage $stage -ErrorRecord $_) }
     } finally {
-        if ($null -ne $chartObj) { try { $chartObj.Delete() } catch { }; try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch { } }
+        if ($null -ne $chartObj) { try { [void]$chartObj.Delete() } catch { }; try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch { } }
     }
 }
 

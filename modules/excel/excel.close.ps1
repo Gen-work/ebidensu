@@ -3,6 +3,7 @@
 # Safe when the workbook is already gone (ExcelHelpers.ps1 Close-Workbook:
 # a $null is not an error).
 
+. (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')   # Start/Stop-EbiDialogWatch around Save
 . (Join-Path $PSScriptRoot '..\..\kernel\Excel.ps1')
 
 $Manifest = @{
@@ -18,6 +19,7 @@ $Manifest = @{
   inputs     = @{
     workbook = @{ type='session'; sessionKind='workbook'; required=$true }
     save     = @{ type='bool'; default=$false; desc='save before closing' }
+    dismissDialogs = @{ type='list'; default=@(); desc='title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do' }
   }
   outputs    = @{
     saved  = @{ type='bool' }
@@ -37,8 +39,12 @@ function Invoke-Step {
     if ($null -eq $wb) { return @{ ok = $true; saved = $false; closed = $false } }
     $saved = $false
     if ([bool]$In['save']) {
-        try { $wb.Save(); $saved = $true }
-        catch { return @{ ok = $false; failure = 'save_failed'; message = $_.Exception.Message; saved = $false; closed = $false } }
+        $err = ''
+        $watch = $null
+        if (@($In['dismissDialogs']).Count -gt 0) { $watch = Start-EbiDialogWatch -TitleParts @($In['dismissDialogs']) }
+        try { [void]$wb.Save(); $saved = $true } catch { $err = $_.Exception.Message }
+        if ($null -ne $watch) { $seen = Stop-EbiDialogWatch $watch; foreach ($t in @($seen['answered'])) { $Ctx.Log.Info(('answered "{0}" with Esc while saving' -f $t)) } }
+        if ($err -ne '') { return @{ ok = $false; failure = 'save_failed'; message = $err; saved = $false; closed = $false } }
     }
     try { $wb.Close($false) } catch { }
     Invoke-EbiComRelease $wb

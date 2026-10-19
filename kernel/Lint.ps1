@@ -100,7 +100,7 @@ function Invoke-EbiLint {
     $vars = if ($Workflow.Contains('vars') -and ($Workflow['vars'] -is [System.Collections.IDictionary])) { $Workflow['vars'] } else { @{} }
     $source = if ($Workflow.Contains('source') -and ($Workflow['source'] -is [System.Collections.IDictionary])) { $Workflow['source'] } else { $null }
     $groupBy = if ($null -ne $source -and $source.Contains('groupBy') -and $null -ne $source['groupBy']) { [string]$source['groupBy'] } else { '' }
-    $runKeys = @('runId', 'startedAt', 'date', 'dateSlash', 'mmdd', 'toolDir', 'operator', 'workDir', 'timeWindow')
+    $runKeys = @('runId', 'startedAt', 'date', 'dateSlash', 'mmdd', 'toolDir', 'operator', 'workDir', 'timeWindow', 'doneKeys')
 
     # -- 2. profile-level facts -----------------------------------------------
     if (-not $hasProfile) {
@@ -135,7 +135,7 @@ function Invoke-EbiLint {
 
     function Test-Ref {
         # One template / when reference path, in context.
-        param([string]$Path, [string]$Where, [string]$Section, $StepsSoFar)
+        param([string]$Path, [string]$Where, [string]$Section, $StepsSoFar, $Manifests = $null)
         $p = $Path.Trim()
         $dot = $p.IndexOf('.')
         $prefix = if ($dot -lt 0) { $p } else { $p.Substring(0, $dot) }
@@ -148,6 +148,7 @@ function Invoke-EbiLint {
             'run' {
                 $first = ($rest -split '\.')[0]
                 if (-not ($runKeys -contains $first)) { Err -Where $Where -Message ('{{' + $p + '}}: run has no "' + $first + '" (' + ($runKeys -join ', ') + ')') }
+                elseif ($first -eq 'doneKeys' -and $Section -ne 'after') { Err -Where $Where -Message ('{{' + $p + '}}: run.doneKeys is only set for "after" (the rows "each" finished)') }
             }
             'item' {
                 if ($Section -ne 'each') { Err -Where $Where -Message ('{{' + $p + '}}: item.* is only available in "each"') }
@@ -180,15 +181,25 @@ function Invoke-EbiLint {
                 } else {
                     $sid = $rest.Substring(0, $b)
                     if (-not ($StepsSoFar -contains $sid)) { Err -Where $Where -Message ('{{' + $p + '}}: step "' + $sid + '" is not an earlier step of this section') }
+                    elseif ($null -ne $Manifests -and $Manifests.Contains($sid) -and $null -ne $Manifests[$sid]) {
+                        # the field must be one the step declares (10/19: the gate asked
+                        # for steps.excelSnap.out.png, which excel.place_picture never had)
+                        $field = (($rest.Substring($b + 5) -split '\.')[0] -split '\[')[0]
+                        $om = $Manifests[$sid]
+                        if ($field -ne 'skipped' -and $om.Contains('outputs') -and ($om['outputs'] -is [System.Collections.IDictionary]) -and -not $om['outputs'].Contains($field)) {
+                            Err -Where $Where -Message ('{{' + $p + '}}: step "' + $sid + '" (' + [string]$om['id'] + ') has no output "' + $field + '"')
+                        }
+                    }
                 }
             }
             default { Err -Where $Where -Message ('{{' + $p + '}}: unknown scope "' + $prefix + '" (vars, profile, page, run, item, steps)') }
         }
     }
 
-    foreach ($section in @('setup', 'each', 'teardown')) {
+    foreach ($section in @('setup', 'each', 'after', 'teardown')) {
         if (-not $Workflow.Contains($section) -or -not ($Workflow[$section] -is [System.Collections.IList])) { continue }
         $stepsSoFar = New-Object System.Collections.ArrayList
+        $stepManifests = @{}
         foreach ($call in $Workflow[$section]) {
             if (-not ($call -is [System.Collections.IDictionary])) { continue }
             $id  = if ($call.Contains('id'))  { [string]$call['id'] }  else { '' }
@@ -202,12 +213,12 @@ function Invoke-EbiLint {
             # templates and when, whatever the manifest
             foreach ($k in $with.Keys) {
                 if ([string]$k -eq 'as') { continue }
-                foreach ($ref in @(Get-EbiTemplateReferences -Value $with[$k])) { Test-Ref -Path $ref -Where ($where + '.with.' + [string]$k) -Section $section -StepsSoFar $stepsSoFar }
+                foreach ($ref in @(Get-EbiTemplateReferences -Value $with[$k])) { Test-Ref -Path $ref -Where ($where + '.with.' + [string]$k) -Section $section -StepsSoFar $stepsSoFar -Manifests $stepManifests }
                 if ($with[$k] -is [string]) { $t = Get-EbiTemplateTokens -Value $with[$k]; if (-not $t['ok']) { Err -Where ($where + '.with.' + [string]$k) -Message ([string]$t['message']) } }
             }
             if ($call.Contains('when') -and $null -ne $call['when']) {
                 $w = ConvertFrom-EbiWhen -Text ([string]$call['when'])
-                if ($w['ok']) { Test-Ref -Path $w['path'] -Where ($where + '.when') -Section $section -StepsSoFar $stepsSoFar }
+                if ($w['ok']) { Test-Ref -Path $w['path'] -Where ($where + '.when') -Section $section -StepsSoFar $stepsSoFar -Manifests $stepManifests }
             }
 
             if ($null -ne $manifest) {
@@ -258,7 +269,11 @@ function Invoke-EbiLint {
                         $kind = if ($spec.Contains('sessionKind')) { [string]$spec['sessionKind'] } else { '' }
                         if (-not $registered.Contains($v) -or -not $registered[$v]['live']) { Err -Where $where -Message ('input "' + [string]$name + '" names session resource "' + $v + '", which no earlier call registered with "as" (or it was released)') }
                         elseif ($kind -ne '' -and [string]$registered[$v]['kind'] -ne $kind) { Err -Where $where -Message ('input "' + [string]$name + '" wants kind "' + $kind + '" but "' + $v + '" is a "' + [string]$registered[$v]['kind'] + '" (registered by ' + $registered[$v]['where'] + ')') }
-                        if ($releases -contains $kind -and $registered.Contains($v)) { $registered[$v]['live'] = $false }
+                        # a release under "when" may not happen (10/19 deliver: the check
+                        # sheet is saved + closed only after the operator's ok): the name
+                        # stays live, and teardown may release it again -- the runner
+                        # skips a teardown release of what is no longer registered
+                        if ($releases -contains $kind -and $registered.Contains($v) -and -not ($call.Contains('when') -and $null -ne $call['when'])) { $registered[$v]['live'] = $false }
                         continue
                     }
                     if (Test-EbiValueHasTemplate $v) { continue }   # cannot be typed statically
@@ -284,7 +299,7 @@ function Invoke-EbiLint {
                     }
                 }
             }
-            if ($id -ne '') { [void]$stepsSoFar.Add($id) }
+            if ($id -ne '') { [void]$stepsSoFar.Add($id); $stepManifests[$id] = $manifest }
         }
     }
 

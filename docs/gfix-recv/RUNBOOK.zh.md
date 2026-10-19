@@ -300,21 +300,22 @@ GATE 的面板上：
 
 ---
 
-## 4b. 交付：`gfixRecv.deliver`（v2.26.0 起）
+## 4b. 交付：`gfixRecv.deliver`（v2.26.0 起；10/19 起「先全部写、一次确认；再全部草稿、一次确认」）
 
 ```powershell
-ebi.ps1 run workflows\gfixRecv.deliver.json -WorkDir $W -Only RJODWDB6,SJODWDB6
+ebi.ps1 run workflows\gfixRecv.deliver.json -WorkDir $W -Only QJODWSPN,RJODWSPN,SJODWSPN
 ```
 
-evidence = ok 的行，每个 job：
+evidence = ok 的行：
 
-1. 先**只看**レビューチェックシート（Check Sheet_J4）的 F 列（レビュー対象 = 证据工作簿的文件名）里有没有这本。
-   **已经有了**（手工写过，比如 10/14 的 R/S）→ 当作已经委托过：不建草稿、不问，`deliver = ok`。
-2. 没有 → 用 `mailTemplate`（你的 `sendj4mail.bat` 本身、或它导出的 `review-mail.json`、或从 Outlook 存的 `.msg`）
-   建一封 **Outlook 草稿**并打开：主题和正文里的 job 名换成这本的 W名。**工具不会发送。**
-3. GATE：在 Outlook 里检查（收件人、主题、正文里的文件名），按「送信」，然后 `Enter`。
-4. 这时才往检查表追加一行（B 记入日 = 今天、C JAVA、E J4内部ﾚﾋﾞｭｰ、F 文件名、G owner、H reviewer）并保存；
-   `deliver = ok`。`s` = 等会儿再发：什么都不写，这一行保持 pending。
+1. **每本**（each）：先**只看**レビューチェックシート（Check Sheet_J4）的 F 列（レビュー対象 = 证据工作簿的文件名）里有没有这本。
+   **已经有了**（手工写过，比如 10/14 的 R/S）→ 当作已经委托过：不写行、不建草稿，`deliver = ok`。
+   没有 → 往检查表末尾**写一行**（B 记入日 = 今天、C JAVA、E J4内部ﾚﾋﾞｭｰ、F 文件名、G owner、H reviewer），**先不保存**。Excel 跟着显示写到的那一行。
+2. **全部写完后一次确认**（after / rowsOk）：Excel 被调到前面，看这几行。
+   `Enter` = 全部正确 → 保存并关闭检查表 → 下一步。`s` / `n` = 先不交付：什么都不保存，这几本保持 pending。
+3. **一次建好全部草稿**（after / mails）：用 `mailTemplate`（`sendj4mail.bat` 本身、`review-mail.json` 或 `.msg`）每本建一封 **Outlook 草稿**并打开。**工具不会发送。**
+4. **一次确认全部送出**（after / sent）：所有草稿窗口被调到前面，逐封检查（收件人、主题里的 job 名、正文里的文件名）并按「送信」，全部送完回控制台按 `Enter` → 这几本一起 `deliver = ok`。
+   `s` = 稍后再送：检查表的行已经保存，deliver 仍是 pending；从「下書き」里送完后再跑一次 deliver，它会看到检查表里已经有这几行，直接记 ok，不会再建草稿。
 
 检查表被别人开着时，`open` 会说是谁，等对方关掉再 `r`。需要 Classic Outlook（新版 Outlook 不能自动化）。
 

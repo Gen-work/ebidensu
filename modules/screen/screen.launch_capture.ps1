@@ -38,6 +38,7 @@ $Manifest = @{
     y            = @{ type='int';    default=40 }
     width        = @{ type='int';    default=0; desc='visible window width; 0 = leave as the program opens it' }
     height       = @{ type='int';    default=0 }
+    heightEnd    = @{ type='int';    default=0; desc='line rule: the visible window height for the END-view capture (a file of more than 2 x screenLines lines); 0 = height. 10/19: the HOST screen shows 17 records, so the END picture shows 17 DF lines while the first shows 16' }
     windowWaitSec = @{ type='int';   default=15 }
     windowTitle  = @{ type='string'; default=''; desc='fallback when the started process shows no window of its own (a launcher / single-instance program): the top-level window whose title contains this' }
     closeOthers  = @{ type='bool';   default=$false; desc='close every window whose title contains windowTitle before each start, so the only such window is the new one' }
@@ -73,17 +74,18 @@ function ScreenLaunchCapture-SecondPlan {
       reviewer's request): one capture shows screenLines lines; a file of up
       to 2 x screenLines lines gets its second capture starting at line
       screenLines+1 (keysMid: top, then one page down), a longer one the END
-      view (keysSecond). Without the rule: secondField decides, keysSecond.
+      view (keysSecond; view = 'end', the window is first resized to
+      heightEnd). Without the rule: secondField decides, keysSecond.
     #>
     param($Set, [int]$ScreenLines, [string]$LinesField, [string]$SecondField, [string]$KeysMid, [string]$KeysSecond)
     if ($ScreenLines -gt 0 -and $LinesField -ne '' -and $Set.Contains($LinesField) -and $null -ne $Set[$LinesField]) {
         $n = [int]$Set[$LinesField]
-        if ($n -le $ScreenLines) { return @{ two = $false; keys = '' } }
-        if ($n -le (2 * $ScreenLines)) { return @{ two = $true; keys = $KeysMid } }
-        return @{ two = $true; keys = $KeysSecond }
+        if ($n -le $ScreenLines) { return @{ two = $false; keys = ''; view = '' } }
+        if ($n -le (2 * $ScreenLines)) { return @{ two = $true; keys = $KeysMid; view = 'mid' } }
+        return @{ two = $true; keys = $KeysSecond; view = 'end' }
     }
     $two = ($SecondField -ne '' -and $Set.Contains($SecondField) -and [bool]$Set[$SecondField])
-    return @{ two = $two; keys = $(if ($two) { $KeysSecond } else { '' }) }
+    return @{ two = $two; keys = $(if ($two) { $KeysSecond } else { '' }); view = $(if ($two) { 'second' } else { '' }) }
 }
 
 function ScreenLaunchCapture-Stem {
@@ -211,6 +213,10 @@ function Invoke-Step {
             $last = ''
             $plan2 = ScreenLaunchCapture-SecondPlan -Set $s -ScreenLines ([int]$In['screenLines']) -LinesField ([string]$In['linesField']) -SecondField ([string]$In['secondField']) -KeysMid ([string]$In['keysMid']) -KeysSecond ([string]$In['keysSecond'])
             if ([bool]$plan2['two']) {
+                if ([string]$plan2['view'] -eq 'end' -and [int]$In['heightEnd'] -gt 0 -and [int]$In['heightEnd'] -ne [int]$In['height'] -and [int]$In['width'] -gt 0) {
+                    [void](Set-EbiWindowVisibleSize -HWnd $h -X ([int]$In['x']) -Y ([int]$In['y']) -W ([int]$In['width']) -H ([int]$In['heightEnd']))
+                    Start-Sleep -Milliseconds 300
+                }
                 $fg = Set-EbiForeground -HWnd $h
                 if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
                 Send-EbiKeys -Keys ([string]$plan2['keys']) -WaitMs ([int]$In['settleMs'])

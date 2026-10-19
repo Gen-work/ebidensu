@@ -130,7 +130,7 @@
     { "id": "jkPic", "use": "excel.insert_pictures",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",
                 "row": "{{steps.recvLog.out.nextRow}}", "skipRows": 1,
-                "pictures": ["{{steps.jkShot.out.path}}"], "rects": "{{steps.jkRects.out.rects}}", "tag": "jenkins" } },
+                "pictures": ["{{steps.jkShot.out.path}}"], "rects": "{{steps.jkRects.out.rects}}", "tag": "jenkins", "replace": true } },
 
     { "id": "ifName", "use": "excel.write_cell",
       "label": "GIFTデータvsGFIXデータ B3 = 送信データ!A3",
@@ -149,7 +149,7 @@
                 "markRects": "{{profile.layout.df.marks}}" } },
     { "id": "dfPics", "use": "excel.insert_pictures",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.compare}}",
-                "row": "{{profile.layout.evidence.compareFirstRow}}", "pictures": "{{steps.dfPlan.out.pictures}}", "tag": "df" } },
+                "row": "{{profile.layout.evidence.compareFirstRow}}", "pictures": "{{steps.dfPlan.out.pictures}}", "tag": "df", "replace": true } },
 
     { "id": "tidy", "use": "excel.tidy",
       "with": { "workbook": "wb", "fontSheets": ["{{profile.layout.evidence.sheets.gfixResult}}"], "dismissDialogs": "{{profile.layout.evidence.saveDialogs}}", "cell": "{{profile.layout.evidence.homeCell}}", "cellFor": "{{profile.layout.evidence.homeCellFor}}",
@@ -161,7 +161,7 @@
                 "reason": "{{steps.pic1Job.out.reason}}",
                 "checklist": "{{profile.layout.evidence.checklist}}",
                 "alert": ["{{steps.pic1Job.out.alert}}", "{{steps.excelSnap.out.note}}"],
-                "evidence": ["{{steps.book.out.path}}", "{{steps.excelSnap.out.png}}", "{{steps.jkShot.out.path}}"] } },
+                "evidence": ["{{steps.book.out.path}}", "{{steps.listSnap.out.png}}", "{{steps.jkShot.out.path}}"] } },
     { "id": "lookLog", "use": "file.write_json",
       "label": "自動チェックと人の答えを並べて残す(あとでルールに育てる材料: docs/ebi-dance/KNOWLEDGE.md)",
       "with": { "path": "{{vars.capture}}/{{item.keySafe}}/gate.json",

@@ -16,10 +16,24 @@ $repoRoot = Split-Path $here -Parent
 Reset-Tests 'ExcelSnapList'
 
 $reg = New-EbiRegistry -ModulesRoot (Join-Path $repoRoot 'modules')
-foreach ($u in @('excel.snap_list', 'excel.place_picture')) {
+foreach ($u in @('excel.snap_list', 'excel.place_picture', 'excel.insert_pictures')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
 }
+
+# excel.insert_pictures replace (10/19): only this step's own shapes under this tag
+Assert-True (ExcelInsertPictures-IsOwnShape -Name 'verifyPic_jenkins_1' -Tag 'jenkins') 'replace: our picture'
+Assert-True (ExcelInsertPictures-IsOwnShape -Name 'verifyMark_jenkins_1_2' -Tag 'jenkins') 'replace: our box'
+Assert-True (-not (ExcelInsertPictures-IsOwnShape -Name 'verifyPic_df_1' -Tag 'jenkins')) 'replace: another tag is left alone'
+Assert-True (-not (ExcelInsertPictures-IsOwnShape -Name 'Picture 3' -Tag 'jenkins')) 'replace: a picture put there by hand is left alone'
+Assert-True (-not (ExcelInsertPictures-IsOwnShape -Name 'verifyPic_jenkins_1' -Tag '')) 'replace: no tag -> nothing is ours'
+
+# Show-EbiExcelAt -Dwell (10/19): EBI_WATCH_MS, default 700, 0 = off
+$keep = $env:EBI_WATCH_MS
+$env:EBI_WATCH_MS = ''; Assert-Equal 700 (Get-EbiWatchDwellMs) 'watch: default 700 ms'
+$env:EBI_WATCH_MS = '0'; Assert-Equal 0 (Get-EbiWatchDwellMs) 'watch: 0 turns it off'
+$env:EBI_WATCH_MS = 'x'; Assert-Equal 700 (Get-EbiWatchDwellMs) 'watch: junk -> default'
+$env:EBI_WATCH_MS = $keep
 
 # the overview's two header rows as the 10/16 picture shows them (index 0 unused)
 $lay = (Read-EbiJson -Path (Join-Path $repoRoot 'profiles/gfix-recv/layout.json'))['value']['evidence']['list']

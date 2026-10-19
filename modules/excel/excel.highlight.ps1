@@ -72,5 +72,6 @@ function Invoke-Step {
     $out = @{ ok = $true; rows = $done.ToArray(); filled = $done.Count }
     if ([int]$In['expect'] -ge 0 -and $done.Count -ne [int]$In['expect']) { $out['warnings'] = @(@{ code = 'count_mismatch'; message = ('expected ' + $In['expect'] + ' highlighted row(s), filled ' + $done.Count) }) }
     $Ctx.Log.Info(('highlighted {0} row(s): {1}' -f $done.Count, (@($done | ForEach-Object { [string]$_['row'] + '..' + $_['endColumn'] }) -join ', ')))
+    foreach ($d in $done) { Show-EbiExcelAt -Worksheet $ws -Row ([int]$d['row']) -Front -Dwell }
     return $out
 }

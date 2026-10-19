@@ -1031,6 +1031,11 @@
       "id": "excel.close",
       "idempotent": true,
       "inputs": {
+        "dismissDialogs": {
+          "default": [],
+          "desc": "title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do",
+          "type": "list"
+        },
         "save": {
           "default": false,
           "desc": "save before closing",
@@ -1357,6 +1362,11 @@
           "desc": "boxes for EVERY picture given as a plain path",
           "type": "list"
         },
+        "replace": {
+          "default": false,
+          "desc": "with tag: first delete the pictures and boxes an earlier run left on this sheet under the same tag (verifyPic_<tag>_* / verifyMark_<tag>_*), so a rerun replaces instead of stacking a second copy on top",
+          "type": "bool"
+        },
         "row": {
           "desc": "row of the first picture",
           "required": true,
@@ -1385,7 +1395,7 @@
       "needs": [
         "excel"
       ],
-      "notes": "Not idempotent: a second run adds the pictures again. The evidence workflows start from a clean sheet section and checkpoint after.",
+      "notes": "Not idempotent without replace: a second run adds the pictures again. With tag + replace = true a rerun deletes its own earlier pictures and boxes (by name) first -- pictures someone put there by hand are never touched. Excel is scrolled to each picture after it is drawn and held there a moment (EBI_WATCH_MS).",
       "outputs": {
         "boxes": {
           "desc": "rectangles drawn",
@@ -1393,6 +1403,10 @@
         },
         "nextRow": {
           "desc": "first row below the last picture",
+          "type": "int"
+        },
+        "removed": {
+          "desc": "shapes of an earlier run deleted first (replace)",
           "type": "int"
         },
         "shapes": {
@@ -3386,6 +3400,10 @@
         {
           "id": "draft_failed",
           "transient": true
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
         }
       ],
       "file": "modules/human/human.draft_mail.ps1",
@@ -3424,9 +3442,14 @@
           "type": "bool"
         },
         "value": {
-          "desc": "what the token becomes, e.g. {{item.Excel_NAME}}",
-          "required": true,
+          "default": "",
+          "desc": "what the token becomes, e.g. {{item.Excel_NAME}} (one draft)",
           "type": "string"
+        },
+        "valueList": {
+          "default": [],
+          "desc": "instead of value: one draft per entry, in order (10/19 deliver: every job's mail after the check sheet is confirmed)",
+          "type": "list"
         }
       },
       "needs": [],
@@ -3437,12 +3460,16 @@
           "type": "list"
         },
         "saved": {
-          "desc": "the draft is in the Drafts folder",
+          "desc": "the draft is in the Drafts folder (with valueList: every one of them)",
           "type": "bool"
         },
         "subject": {
           "desc": "the draft's subject",
           "type": "string"
+        },
+        "subjects": {
+          "desc": "every draft's subject, in order (one entry for value)",
+          "type": "list"
         },
         "to": {
           "desc": "To addresses",
@@ -3508,6 +3535,11 @@
           "default": "",
           "desc": "a path, or a list of paths / values, to look at",
           "type": "any"
+        },
+        "front": {
+          "default": [],
+          "desc": "windows to bring to the front once the panel is drawn: each entry a piece of a window title, or a process name (EXCEL, OUTLOOK); every match comes forward (10/19: all the review-mail drafts). The answer is still typed in the console",
+          "type": "list"
         },
         "key": {
           "default": "",
@@ -3801,6 +3833,11 @@
       "id": "human.share",
       "idempotent": true,
       "inputs": {
+        "front": {
+          "default": "",
+          "desc": "bring this app to the front once the clipboard is loaded: a regex on the process name or window title (e.g. ms-teams|Teams); empty = the console stays in front",
+          "type": "string"
+        },
         "images": {
           "default": [],
           "desc": "PNG paths, in order after the text; a nested list is flattened (a path, then a step's list of paths)",
@@ -3831,7 +3868,7 @@
         }
       },
       "needs": [],
-      "notes": "Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. Foreground is the console afterwards.",
+      "notes": "Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. With front, the matching window (the frontmost one when several match) comes to the front after the panel is drawn; paste there, then answer back in the console. No match = a warning, the console stays in front. Foreground is the console afterwards.",
       "outputs": {
         "action": {
           "desc": "sent | skip",
@@ -4515,6 +4552,11 @@
         },
         "height": {
           "default": 0,
+          "type": "int"
+        },
+        "heightEnd": {
+          "default": 0,
+          "desc": "line rule: the visible window height for the END-view capture (a file of more than 2 x screenLines lines); 0 = height. 10/19: the HOST screen shows 17 records, so the END picture shows 17 DF lines while the first shows 16",
           "type": "int"
         },
         "keysFirst": {
@@ -5277,6 +5319,11 @@
           "desc": "which row (key display form); empty = the current item",
           "type": "string"
         },
+        "keyList": {
+          "default": [],
+          "desc": "instead of key: every one of these rows gets the same value, one flush at the end (10/19 deliver: every job done after ONE \"all sent\")",
+          "type": "list"
+        },
         "value": {
           "default": "",
           "desc": "logical value to store (translated through verdict.values)",
@@ -5295,7 +5342,7 @@
           "type": "string"
         },
         "updated": {
-          "desc": "rows changed (0 or 1)",
+          "desc": "rows changed (0 or 1; with keyList, how many)",
           "type": "int"
         }
       },

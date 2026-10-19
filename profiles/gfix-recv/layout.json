@@ -66,19 +66,25 @@
     "firstRow": 19,
     "language": "JAVA",
     "phase": "J4内部ﾚﾋﾞｭｰ",
-    "checklist": [
-      "the Outlook draft is open: To, the subject's job name, the file name in the body",
-      "press Send in Outlook, then Enter here: the check sheet row is written then (s = send it later: nothing written, the job stays pending)"
+    "checklistRows": [
+      "Excel is in front: one new row per job at the bottom -- B date, C JAVA, E J4内部ﾚﾋﾞｭｰ, F the evidence book, G owner, H reviewer",
+      "Enter = every row is right: the sheet is saved and closed, then one review-mail draft per job opens (s / n = not now: nothing saved, the jobs stay pending)"
     ],
-    "_checklist_doc": "a book already on the check sheet (listed by hand, e.g. R/S on 10/14) is taken as requested: no draft, no question, deliver = ok"
+    "checklistSent": [
+      "every draft is in front: To, the job name in the subject, the file name in the body",
+      "send them all in Outlook, then Enter here: every job's deliver = ok (s = later: the sheet rows are saved, deliver stays pending; send the drafts from Drafts, then run deliver again -- it finds the rows and marks the jobs ok without new drafts)"
+    ],
+    "_checklist_doc": "10/19: deliver writes every row first, ONE check (checklistRows), then every draft, ONE check (checklistSent). A book already on the check sheet (listed by hand, e.g. R/S on 10/14) is taken as requested: no row, no draft, deliver = ok"
   },
   "df": {
-    "_doc": "DF captures (leader, 2026-10-12): one picture shows 16 data lines (window 1133 x 429, the sample evidence). <= 16 lines: one picture; 17..32: a second picture after PgDn from the top, so it starts at line 17 (keysMid: Ctrl+Home, PgDn); more: the END view (keysEnd: End, PgUp, Down x2). Wave between the two. Boxes on the second (or only) picture: the last line number (last band of dark ink in the line-number strip) and the 同一内容 cell of the status bar (bottom-right). Some workbooks follow the HOST team's 19-line pictures instead: check by hand until that case is detected (see TODO).",
+    "_doc": "DF captures (leader, 2026-10-12): one picture shows 16 data lines (window 1133 x 429, the sample evidence). <= 16 lines: one picture; 17..32: a second picture after PgDn from the top, so it starts at line 17 (keysMid: Ctrl+Home, PgDn); more: the END view (keysEnd: End, PgUp, Down -- ONE Down, the operator 10/19; was Down x2). Wave between the two. Boxes on the second (or only) picture: the last line number (last band of dark ink in the line-number strip) and the 同一内容 cell of the status bar (bottom-right). Some workbooks follow the HOST team's 19-line pictures instead: check by hand until that case is detected (see TODO).",
+    "_size_doc": "10/19 (review NG on SJODWDB6, B35; measured on the operator's own fix): DF draws 18 px per line, and a 1133 x 476 window shows 17 lines -- 429 showed only 15 (00112-00126), not the 16 the 10/12 note assumed. The HOST screen shows 17 records and HOST line n = DF line n-1 (HOST counts a first line the CSV does not have), so: the first picture (HOST 000001-000017) = DF 1-16 -> height 458 (= 476 - 18, derived, not yet seen); the END picture (HOST last 17) = DF last 17 -> heightEnd 476 (measured). Pictures whose HOST range is not one of these (e.g. 19-line HOST shots) are still matched by hand: docs/TODO.md.",
     "width": 1133,
-    "height": 429,
+    "height": 458,
+    "heightEnd": 476,
     "screenLines": 16,
     "keysMid": "^{HOME}{PGDN}",
-    "keysEnd": "{END}{PGUP}{DOWN}{DOWN}",
+    "keysEnd": "{END}{PGUP}{DOWN}",
     "marks": [
       {
         "lastInk": {
@@ -112,6 +118,8 @@
     "_doc": "how human.share puts the Teams reply on the clipboard: rich = text + pictures in ONE paste (HTML + RTF); sequence = text, then each picture, one paste each. Switch in <WorkDir>/ebi.local.json { \"layout\": { \"share\": { \"mode\": \"sequence\" } } } if Teams drops the pictures of a rich paste.",
     "mode": "rich",
     "where": "Teams (J4検証 チャット)",
-    "maxWidth": 0
+    "maxWidth": 0,
+    "_front_doc": "10/19: once the reply is on the clipboard the Teams window comes to the front (regex on process name or title; new Teams = ms-teams, classic = Teams). Empty = the console stays in front.",
+    "front": "ms-teams|^Teams$|Microsoft Teams"
   }
 }

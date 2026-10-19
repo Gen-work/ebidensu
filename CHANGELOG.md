@@ -1,3 +1,85 @@
+## 2026-10-19 - deliver: all rows, one check, all drafts, one check (workflow "after"); evidence first office run fixes; track brings Teams to the front (v2.28.0)
+
+First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).
+
+### Added
+- **Workflow `after` section** (WORKFLOW-SCHEMA 1.2): runs once after every
+  selected row has been through `each`, only when the run was neither
+  cancelled nor aborted; `{{run.doneKeys}}` = the rows `each` finished ok
+  (lint: only in `after`). Not ledgered (re-runs on -Resume, like setup).
+  Lint no longer counts a release under `when` as certain, so teardown can
+  release the same name again.
+- **gfixRecv.deliver v0.2.0** (10/19 feedback: a confirm per row was too
+  many): `each` writes every job's check-sheet row WITHOUT saving; `after`
+  then asks ONCE with Excel in front (Enter = every row right -> save +
+  close), makes every review-mail draft at once, brings every draft window
+  to the front and asks ONCE (Enter = all sent -> every job deliver = ok).
+  `s` at the first question saves nothing; `s` at the second keeps the
+  saved rows and leaves deliver pending (the next run finds the rows and
+  marks the jobs ok without new drafts). Profile `layout.checkSheet`:
+  `checklistRows` / `checklistSent` replace `checklist`.
+- **`human.gate` `front`**: window title parts or process names; every
+  match comes to the front once the panel is drawn (`Select-EbiWindowsByText`,
+  `Show-EbiGate -FrontAfter` now takes several handles).
+- **`human.draft_mail` `valueList`**: one draft per entry; output `subjects`.
+- **`table.set` `keyList`**: the same value on every listed row, one flush;
+  one unknown key changes nothing.
+- **`excel.close` `dismissDialogs`**: the classification dialog a save
+  opens is answered with Esc, as excel.tidy / excel.append_row do.
+- **`human.share` `front`**: once the reply is on the clipboard, the
+  window whose process name or title matches this regex comes to the
+  front (the panel is still answered in the console). gfixRecv.track
+  passes `layout.share.front` = `ms-teams|^Teams$|Microsoft Teams`
+  (10/19 feedback: the Teams window had to be found by hand every job).
+  No match = a warning. `Show-EbiGate -FrontAfter` does the switch.
+- **Lint**: a `{{steps.<id>.out.<field>}}` reference must name an output
+  the step's manifest declares.
+- **Watching the evidence book fill** (10/19 feedback: "the camera only
+  jumps when a step starts"): `excel.write_lines`, `excel.highlight`,
+  `excel.place_picture` and `excel.insert_pictures` scroll Excel to what
+  they just wrote / filled / placed and hold it there a moment
+  (`Show-EbiExcelAt -Dwell`, `EBI_WATCH_MS`, default 700, 0 = off); the
+  runner no longer pulls the console back in front between Excel steps.
+- **`excel.insert_pictures` `replace`**: with a tag, an earlier run's own
+  pictures and boxes (`verifyPic_<tag>_*`, `verifyMark_<tag>_*`) are
+  deleted first, so a rerun on a finished book replaces the Jenkins / DF
+  pictures instead of stacking a second copy on top (10/19). Pictures put
+  there by hand are never touched. gfixRecv.evidence sets it on `jkPic` and
+  `dfPics`.
+
+### Fixed
+- **DF picture line range vs the HOST picture** (10/19 review NG on
+  SJODWDB6, check sheet row 341, cell B35): the DF window 1133 x 429 showed
+  15 lines on the operator's PC (00112-00126), not 16. Measured on the
+  operator's fixed picture: 18 px a line, 476 high = 17 lines. The HOST
+  screen shows 17 records and HOST line n = DF line n-1, so the first DF
+  picture is now 458 high (16 lines = HOST 000001-000017) and
+  `screen.launch_capture` resizes to the new `heightEnd` 476 before the END
+  view (17 lines = the HOST's last 17, e.g. HOST 000111-000127 -> DF
+  00110-00126). The END key recipe is now End, PgUp, Down ONCE (the
+  operator, 10/19; it was Down x2). Both heights are unchecked on the
+  office PC.
+- **gfixRecv.evidence `look` gate** asked for `steps.excelSnap.out.png`,
+  an output `excel.place_picture` never had (`input_invalid` after the
+  book was already saved); now `steps.listSnap.out.png`. The new lint
+  check finds exactly this.
+- **`excel.snap_list`** failed every attempt with `contract_violation:
+  Invoke-Step must return a [hashtable] (got Object[])` right after
+  "snapped B4:O125": the temporary chart's `ChartObject.Delete()` in the
+  `finally` block returns a value, and output in `finally` joins the
+  function's return. Now `[void]`.
+- **`Export-EbiShapePng`** (kernel/Excel.ps1, used by `excel.copy_picture`
+  savePng) had the same un-voided `Delete()`: its result became an array,
+  `$x['ok']` read as false and the copy was reported `png_not_saved` with
+  an empty message. Likely the open "png_not_saved cause" from 10/16; to be
+  confirmed on the office PC.
+- **Runner, teardown**: a teardown step that releases a session resource
+  which was never registered (setup failed before the step that opens it
+  -- 10/19: `paths.gfixList` still the placeholder, so `excel.open` never
+  registered `list`) is now `skipped` ("nothing to release: ...") instead
+  of failing `session_missing` and asking a second time. The run still
+  reports the setup failure. Tests\Test-Runner.ps1 covers it.
+
 ## 2026-10-16 - gfix-recv evidence: picture 1 snapped from the GFIX list, on to SNDFILE when rows repeat; the STEP name (v2.27.0)
 
 加瀬さん's 10/13 review of JJDSWM10 (check sheet rows 326-328, NG), with

@@ -182,6 +182,12 @@ $ret = Step 'table.set' @{ worklist = $wl; key = 'ABC123 / JOB_A'; field = 'nosu
 Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'column_missing') 'set: unknown column'
 $ret = Step 'table.set' @{ worklist = $wl; key = 'abc123 / job_a'; field = 'note'; value = 'via case rule'; bit = ''; clear = $false } (New-TestCtx)
 Assert-True ($ret['ok'] -and $wl['rows'][0]['note'] -eq 'via case rule') 'set: the row is found through the case-insensitive rule (no -eq of its own)'
+# keys (10/19 deliver): every row the same value, one flush; one unknown key changes nothing
+$ret = Step 'table.set' @{ worklist = $wl; key = ''; keyList = @('ABC123 / JOB_B', 'DEF456 / JOB_A'); field = 'note'; value = 'both'; bit = ''; clear = $false } (New-TestCtx)
+Assert-True ($ret['ok'] -and $ret['updated'] -eq 2 -and $wl['rows'][1]['note'] -eq 'both' -and $wl['rows'][2]['note'] -eq 'both') 'set: keys -> every row'
+Assert-True ((Read-EbiCsv -Path $csv)['rows'][2]['note'] -eq 'both') 'set: keys flushed to disk'
+$ret = Step 'table.set' @{ worklist = $wl; key = ''; keyList = @('ABC123 / JOB_B', 'ZZZ / Q'); field = 'note'; value = 'half'; bit = ''; clear = $false } (New-TestCtx)
+Assert-True (-not $ret['ok'] -and $ret['failure'] -eq 'row_not_found' -and $ret['message'] -like 'ZZZ / Q*' -and $wl['rows'][1]['note'] -eq 'both') 'set: keys with one unknown -> nothing changed, the message names it'
 $ctx = New-TestCtx -DryRun $true
 $ret = Step 'table.set' @{ worklist = $wl; key = 'ABC123 / JOB_A'; field = 'note'; value = 'dry'; bit = ''; clear = $false } $ctx
 Assert-True ($ret['ok'] -and $ret['updated'] -eq 0 -and $wl['rows'][0]['note'] -eq 'via case rule' -and $ctx['Log'].Lines.Count -eq 1) 'set: dry run changes nothing'

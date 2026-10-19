@@ -211,7 +211,7 @@ function Invoke-Step {
     } catch {
         $r = $none.Clone(); $r['ok'] = $false; $r['failure'] = 'copy_failed'; $r['message'] = (Format-EbiExcelError -Stage 'filter' -ErrorRecord $_); return $r
     } finally {
-        if ($null -ne $chartObj) { try { $chartObj.Delete() } catch { }; try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch { } }
+        if ($null -ne $chartObj) { try { [void]$chartObj.Delete() } catch { }; try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chartObj) } catch { } }
         try { if ($ws.AutoFilterMode) { $ws.AutoFilterMode = $false } } catch { }
         try { $ws.Application.CutCopyMode = $false } catch { }
     }

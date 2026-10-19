@@ -526,6 +526,21 @@ try {
     Assert-Equal 'ok' (Get-Rec $res 't')['status'] 'teardown: teardown still ran'
     Assert-Equal 'bye' (Get-Rec $res 't')['outputs']['echo'] 'teardown: teardown step received its with'
 
+    # -- 10/19: setup failed before the step that opens the resource; the
+    # teardown release has nothing to release -> skipped, not session_missing
+    $wf = Write-Workflow 'teardown-noopen.json' @'
+{ "id": "spike.teardown.noopen",
+  "setup":    [ { "id": "f", "use": "fake.fail", "with": { "mode": "declared" } },
+                { "id": "e", "use": "fake.ensure", "with": { "title": "a", "as": "w" } } ],
+  "teardown": [ { "id": "r", "use": "fake.release", "with": { "window": "w" } },
+                { "id": "t", "use": "fake.pure", "with": { "text": "bye" } } ] }
+'@
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-teardown-noopen'
+    Assert-Equal 'skipped' (Get-Rec $res 'r')['status'] 'teardown never opened: the release is skipped'
+    Assert-True ((Get-Rec $res 'r')['message'] -like 'nothing to release*') ('teardown never opened: the skip says why: ' + (Get-Rec $res 'r')['message'])
+    Assert-Equal 'boom' $res['failure'] 'teardown never opened: the run reports the setup failure, not session_missing'
+    Assert-Equal 'ok' (Get-Rec $res 't')['status'] 'teardown never opened: the rest of teardown still ran'
+
     # ------------------------------------------------ 8-12. contract violations
     foreach ($case in @(
         @{ mode = 'undeclared'; want = 'contract_violation'; msg = 'an undeclared failure id is a contract violation' },
@@ -1055,6 +1070,31 @@ try {
     $nhCloses = Get-ItemRecs $res 'close'
     Assert-Equal 'ok,skip' (@($nhCloses | ForEach-Object { $_['status'] }) -join ',') 'groupEnd no head: JOB_A closed; JOB_C (its only item skipped before open) -> close skipped, no session_missing'
     Assert-True ($nhCloses[1]['message'] -like '*nothing was opened*') ('groupEnd no head: the skip says why: ' + $nhCloses[1]['message'])
+
+    # -- after (10/19 deliver): once, after every row; run.doneKeys = the rows "each" finished ok
+    Set-Answers @()
+    $afterRows = '[ { "Correl_ID_S": "A1", "JOB_NAME": "JOB_A", "status": "0" }, { "Correl_ID_S": "declared", "JOB_NAME": "JOB_B", "status": "0" }, { "Correl_ID_S": "A3", "JOB_NAME": "JOB_C", "status": "0" } ]'
+    $wf = Write-Workflow 'after.json' ('{ "schema": 1, "id": "p104.after", "onError": { "policy": "skip" }, ' +
+        '"source": { "table": "wl", "select": { "field": "status", "pendingWhen": "always" } }, ' +
+        '"setup": [ { "id": "load", "use": "fake.load", "with": { "rows": ' + $afterRows + ', "as": "wl" } } ], ' +
+        '"each": [ { "id": "work", "use": "fake.fail", "with": { "mode": "{{item.Correl_ID_S}}" } } ], ' +
+        '"after": [ { "id": "all", "use": "fake.item", "with": { "a": "{{run.doneKeys}}" } }, { "id": "then", "use": "fake.item", "with": { "a": "{{steps.all.out.a}}" } } ], ' +
+        '"teardown": [ { "id": "bye", "use": "fake.pure", "with": { "text": "bye" } } ] }')
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-after' -Profile $profile -AskHandler $handler
+    $allRec = Get-Rec $res 'all'
+    Assert-Equal 'ok' $allRec['status'] 'after: runs once after every row'
+    Assert-Equal 2 @($allRec['outputs']['a']).Count 'after: run.doneKeys holds the two rows "each" finished ok'
+    Assert-True (-not ((@($allRec['outputs']['a']) -join ',') -like '*declared*')) ('after: the skipped row is not in doneKeys: ' + (@($allRec['outputs']['a']) -join ','))
+    Assert-Equal 2 @((Get-Rec $res 'then')['outputs']['a']).Count 'after: a later after step sees the earlier one''s outputs'
+    Assert-Equal 'ok' (Get-Rec $res 'bye')['status'] 'after: teardown still runs after it'
+    $wf = Write-Workflow 'after-abort.json' ('{ "schema": 1, "id": "p104.afterabort", "onError": { "policy": "fail" }, ' +
+        '"source": { "table": "wl", "select": { "field": "status", "pendingWhen": "always" } }, ' +
+        '"setup": [ { "id": "load", "use": "fake.load", "with": { "rows": ' + $afterRows + ', "as": "wl" } } ], ' +
+        '"each": [ { "id": "work", "use": "fake.fail", "with": { "mode": "{{item.Correl_ID_S}}" } } ], ' +
+        '"after": [ { "id": "all", "use": "fake.item", "with": { "a": "{{run.doneKeys}}" } } ] }')
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-after-abort' -Profile $profile -AskHandler $handler
+    Assert-True ($null -eq (Get-Rec $res 'all')) 'after: an aborted run does not reach "after"'
+    Assert-True (@(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; after = @( @{ id = 'a'; use = 'fake.pure' } ) }).Count -gt 0) 'after: without "each" it is a workflow problem'
 
     # -- operator.owner (10/14): rows whose owner column names someone else are not selected;
     # a blank owner stays; -Only names rows explicitly and is not filtered

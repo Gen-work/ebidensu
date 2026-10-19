@@ -569,6 +569,7 @@ Run a program per argument set, capture its window (and again after keys), close
 | `closeOthers` | bool |  | false |  | close every window whose title contains windowTitle before each start, so the only such window is the new one |
 | `exe` | path | yes |  |  | the program |
 | `height` | int |  | 0 |  |  |
+| `heightEnd` | int |  | 0 |  | line rule: the visible window height for the END-view capture (a file of more than 2 x screenLines lines); 0 = height. 10/19: the HOST screen shows 17 records, so the END picture shows 17 DF lines while the first shows 16 |
 | `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (SendKeys syntax) |
 | `keysMid` | string |  | ^{HOME}{PGDN} |  | keys before the second capture of a file of screenLines+1 .. 2 x screenLines lines: the next page, so it starts at line screenLines+1 |
 | `keysSecond` | string |  | ^{END} |  | keys before the second capture (the END view) |
@@ -1142,6 +1143,7 @@ Close a registered workbook (save or discard) and release it
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `dismissDialogs` | list |  | [] |  | title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do |
 | `save` | bool |  | false |  | save before closing |
 | `workbook` | session:workbook | yes |  |  |  |
 
@@ -1266,6 +1268,7 @@ Stack pictures down a sheet at native size and draw red boxes on them
 | `lineWeight` | int |  | 0 |  | box line weight in points; 0 = 1.5 |
 | `pictures` | list | yes |  |  | paths, or @{ path; column; gapRows; rows; rects } (excel layout plan) |
 | `rects` | list |  | [] |  | boxes for EVERY picture given as a plain path |
+| `replace` | bool |  | false |  | with tag: first delete the pictures and boxes an earlier run left on this sheet under the same tag (verifyPic_<tag>_* / verifyMark_<tag>_*), so a rerun replaces instead of stacking a second copy on top |
 | `row` | int | yes |  |  | row of the first picture |
 | `sheet` | string | yes |  |  |  |
 | `skipRows` | int |  | 0 |  | blank rows left before the first picture |
@@ -1276,6 +1279,7 @@ Stack pictures down a sheet at native size and draw red boxes on them
 |--------|------|------|
 | `boxes` | int | rectangles drawn |
 | `nextRow` | int | first row below the last picture |
+| `removed` | int | shapes of an earlier run deleted first (replace) |
 | `shapes` | list | @{ name; path; row; top; left; width; height; boxes } |
 
 failures: `sheet_not_found` (not transient), `file_not_found` (transient), `insert_failed` (transient)
@@ -1284,7 +1288,7 @@ failures: `sheet_not_found` (not transient), `file_not_found` (transient), `inse
 {"id":"insert_pictures","use":"excel.insert_pictures","with":{"pictures":["{{steps.shot.out.path}}"],"rects":"{{steps.lr.out.rects}}","row":"{{steps.log.out.nextRow}}","sheet":"result","workbook":"wb"}}
 ```
 
-Notes: Not idempotent: a second run adds the pictures again. The evidence workflows start from a clean sheet section and checkpoint after.
+Notes: Not idempotent without replace: a second run adds the pictures again. With tag + replace = true a rerun deletes its own earlier pictures and boxes (by name) first -- pictures someone put there by hand are never touched. Excel is scrolled to each picture after it is drawn and held there a moment (EBI_WATCH_MS).
 
 ### `excel.open`
 
@@ -1728,13 +1732,14 @@ Set a cell (value or named bit) of the row for a key, then flush
 | `clear` | bool |  | false |  | with bit: clear it instead of setting it |
 | `field` | string | yes |  |  |  |
 | `key` | string |  | (empty) |  | which row (key display form); empty = the current item |
+| `keyList` | list |  | [] |  | instead of key: every one of these rows gets the same value, one flush at the end (10/19 deliver: every job done after ONE "all sent") |
 | `value` | string |  | (empty) |  | logical value to store (translated through verdict.values) |
 | `worklist` | session:worklist | yes |  |  |  |
 
 | output | type | desc |
 |--------|------|------|
 | `stored` | string | what the cell holds now |
-| `updated` | int | rows changed (0 or 1) |
+| `updated` | int | rows changed (0 or 1; with keyList, how many) |
 
 failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_missing` (not transient), `bit_unknown` (not transient), `write_failed` (transient)
 
@@ -2259,16 +2264,18 @@ Make an Outlook draft from a template (token -> value), save and open it; never 
 | `to` | list |  | [] |  | addresses that replace the template's To; empty = keep the template's |
 | `token` | string |  | (empty) |  | the word in the template to replace; empty = the template's own token (a .msg/.oft has none: give it) |
 | `trimBefore` | bool |  | true |  | drop spaces between "_" or ">" and the token (a template whose file name read "_ JOB.xlsx") |
-| `value` | string | yes |  |  | what the token becomes, e.g. {{item.Excel_NAME}} |
+| `value` | string |  | (empty) |  | what the token becomes, e.g. {{item.Excel_NAME}} (one draft) |
+| `valueList` | list |  | [] |  | instead of value: one draft per entry, in order (10/19 deliver: every job's mail after the check sheet is confirmed) |
 
 | output | type | desc |
 |--------|------|------|
 | `cc` | list | CC addresses |
-| `saved` | bool | the draft is in the Drafts folder |
+| `saved` | bool | the draft is in the Drafts folder (with valueList: every one of them) |
 | `subject` | string | the draft's subject |
+| `subjects` | list | every draft's subject, in order (one entry for value) |
 | `to` | list | To addresses |
 
-failures: `file_not_found` (not transient), `template_invalid` (not transient), `outlook_unavailable` (not transient), `draft_failed` (transient)
+failures: `file_not_found` (not transient), `template_invalid` (not transient), `outlook_unavailable` (not transient), `draft_failed` (transient), `input_invalid` (not transient)
 
 ```json
 {"id":"draft_mail","use":"human.draft_mail","with":{"template":"{{profile.paths.mailTemplate}}","value":"{{item.Excel_NAME}}"}}
@@ -2291,6 +2298,7 @@ Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
 | `checklist` | list |  | [] |  | what to look at, one line each, shown as "check: ..." (10/15: the review points, kept in the profile so they can grow) |
 | `code` | string | yes |  |  | the verdict so far: ok \| ng \| unknown \| empty |
 | `evidence` | any |  | (empty) |  | a path, or a list of paths / values, to look at |
+| `front` | list |  | [] |  | windows to bring to the front once the panel is drawn: each entry a piece of a window title, or a process name (EXCEL, OUTLOOK); every match comes forward (10/19: all the review-mail drafts). The answer is still typed in the console |
 | `key` | string |  | (empty) |  | which item; empty = the current item |
 | `reason` | string |  | (empty) |  | why (verify.assert's reason), shown on the panel |
 | `skipFails` | bool |  | false |  | true: the operator's s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time) |
@@ -2411,6 +2419,7 @@ Put text and pictures on the clipboard for the operator to paste and send
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `front` | string |  | (empty) |  | bring this app to the front once the clipboard is loaded: a regex on the process name or window title (e.g. ms-teams\|Teams); empty = the console stays in front |
 | `images` | list |  | [] |  | PNG paths, in order after the text; a nested list is flattened (a path, then a step's list of paths) |
 | `lines` | list |  | [] |  | text lines, in order |
 | `maxWidth` | int |  | 0 |  | rich mode: show pictures at most this wide (px); 0 = natural size |
@@ -2429,7 +2438,7 @@ failures: `operator_quit` (not transient), `file_not_found` (not transient), `cl
 {"id":"share","use":"human.share","with":{"images":"{{steps.shots.out.paths}}","lines":["{{profile.messages.done}}"],"where":"Teams"}}
 ```
 
-Notes: Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. Foreground is the console afterwards.
+Notes: Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. With front, the matching window (the frontmost one when several match) comes to the front after the panel is drawn; paste there, then answer back in the console. No match = a warning, the console stays in front. Foreground is the console afterwards.
 
 ## progress
 

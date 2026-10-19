@@ -48,7 +48,7 @@ foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'ver
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
                  'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy',
                  'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open', 'verify.assert_each', 'flow.require',
-                 'verify.find_token', 'screen.ocr', 'human.gate', 'excel.append_row', 'human.draft_mail')) {
+                 'verify.find_token', 'screen.ocr', 'human.gate', 'excel.append_row', 'human.draft_mail', 'human.share')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -292,6 +292,15 @@ try {
     Assert-Equal '1016,410' ('' + $a['x'] + ',' + $a['y']) 'layout: a bottom-right anchored box lands on the status bar cell'
     $sr = ConvertTo-EbiSheetRect -PicLeft 10 -PicTop 100 -PicWidth 849.75 -PicHeight 321.75 -ImageWidth 1133 -ImageHeight 429 -Rect @{ x = 100; y = 40; w = 48; h = 18 }
     Assert-Equal '85,130,36,13.5' ('' + $sr['left'] + ',' + $sr['top'] + ',' + $sr['width'] + ',' + $sr['height']) 'layout: image px -> sheet points through the picture scale'
+
+    # ============================================================ human.share front (10/19)
+    $wins = @(@{ handle = 1; title = 'Inbox - Outlook'; processName = 'OUTLOOK' },
+              @{ handle = 2; title = 'J4 chat | Microsoft Teams'; processName = 'ms-teams' },
+              @{ handle = 3; title = 'Teams (classic)'; processName = 'Teams' })
+    Assert-Equal 2 (HumanShare-PickWindow -Windows $wins -Pattern 'ms-teams|^Teams$|Microsoft Teams')['handle'] 'share front: the frontmost Teams window is picked'
+    Assert-Equal 3 (HumanShare-PickWindow -Windows $wins -Pattern '^Teams$')['handle'] 'share front: process name matches too'
+    Assert-True ($null -eq (HumanShare-PickWindow -Windows $wins -Pattern 'Slack')) 'share front: no match -> null'
+    Assert-True ($null -eq (HumanShare-PickWindow -Windows $wins -Pattern '')) 'share front: empty pattern -> null (console stays in front)'
 
     # ============================================================ kernel/RichClip.ps1
     $png = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAYAAAC56t6BAAAAEUlEQVR42mP8z8Dwn4EIwDiqEAD8xwMBmkAeOAAAAABJRU5ErkJggg==')
@@ -558,6 +567,11 @@ try {
     Assert-Equal 'END' (& $sp 39)['keys'] 'df rule: 39 lines -> the END view'
     $old = ScreenLaunchCapture-SecondPlan -Set @{ lines = 30; long = $true } -ScreenLines 0 -LinesField 'lines' -SecondField 'long' -KeysMid 'MID' -KeysSecond 'END'
     Assert-True ($old['two'] -and $old['keys'] -eq 'END') 'df rule: off (screenLines 0) -> the long flag and keysSecond as before'
+    Assert-Equal 'end' (& $sp 39)['view'] 'df rule: the END view is named, so the window is resized to heightEnd first (10/19)'
+    Assert-Equal 'mid' (& $sp 20)['view'] 'df rule: the PgDn page keeps the first height'
+    # 10/19 measured: 18 px a line, 476 = 17 lines; the HOST shows 17 records, HOST n = DF n-1
+    $lay = (Read-EbiJson -Path (Join-Path $repoRoot 'profiles/gfix-recv/layout.json'))['value']['df']
+    Assert-Equal 18 (([int]$lay['heightEnd'] - [int]$lay['height'])) 'df size: the END picture is one 18 px line taller than the first (17 vs 16 lines)'
 
     # ---------------------------------------------------------------- home cell (10-12)
     $send = [string][char]0x9001 + [char]0x4FE1 + [char]0x21D2   # send-arrow sheet

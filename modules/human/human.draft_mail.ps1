@@ -20,7 +20,8 @@ $Manifest = @{
   idempotent = $false
   inputs     = @{
     template   = @{ type='path';   required=$true; desc='.json, .bat/.cmd (a #==TEMPLATE_JSON== section) or .msg/.oft; relative paths resolve under the work dir' }
-    value      = @{ type='string'; required=$true; desc='what the token becomes, e.g. {{item.Excel_NAME}}' }
+    value      = @{ type='string'; default=''; desc='what the token becomes, e.g. {{item.Excel_NAME}} (one draft)' }
+    valueList  = @{ type='list';   default=@(); desc='instead of value: one draft per entry, in order (10/19 deliver: every job''s mail after the check sheet is confirmed)' }
     token      = @{ type='string'; default=''; desc='the word in the template to replace; empty = the template''s own token (a .msg/.oft has none: give it)' }
     to         = @{ type='list';   default=@(); desc='addresses that replace the template''s To; empty = keep the template''s' }
     cc         = @{ type='list';   default=@(); desc='addresses that replace the template''s CC; empty = keep the template''s' }
@@ -31,13 +32,15 @@ $Manifest = @{
     subject = @{ type='string'; desc='the draft''s subject' }
     to      = @{ type='list';   desc='To addresses' }
     cc      = @{ type='list';   desc='CC addresses' }
-    saved   = @{ type='bool';   desc='the draft is in the Drafts folder' }
+    saved   = @{ type='bool';   desc='the draft is in the Drafts folder (with valueList: every one of them)' }
+    subjects = @{ type='list';  desc='every draft''s subject, in order (one entry for value)' }
   }
   failures   = @(
     @{ id = 'file_not_found';      transient = $false }
     @{ id = 'template_invalid';    transient = $false }
     @{ id = 'outlook_unavailable'; transient = $false }
     @{ id = 'draft_failed';        transient = $true  }
+    @{ id = 'input_invalid';       transient = $false }
   )
   example    = @{ use = 'human.draft_mail'; with = @{ template = '{{profile.paths.mailTemplate}}'; value = '{{item.Excel_NAME}}' } }
   notes      = 'Not idempotent: every run makes one more draft (a rerun after a failure leaves the earlier draft in Drafts -- delete it there). The template file stays on the PC (addresses and names are not committed); profiles/gfix-recv/README.md says where.'
@@ -74,47 +77,60 @@ function HumanDraftMail-ReadOutlookTemplate {
 
 function Invoke-Step {
     param($In, $Ctx)
+    $list = @(@($In['valueList']) | Where-Object { $null -ne $_ -and [string]$_ -ne '' } | ForEach-Object { [string]$_ })
+    if ($list.Count -eq 0 -and [string]$In['value'] -ne '') { $list = @([string]$In['value']) }
+    if ($list.Count -eq 0) { return @{ ok = $false; failure = 'input_invalid'; message = 'give value or valueList (what the template token becomes)'; subject = ''; to = @(); cc = @(); saved = $false; subjects = @() } }
     $path = Resolve-EbiWorkPath -PathValue ([string]$In['template']) -WorkDir ([string]$Ctx['WorkDir'])
-    $none = @{ ok = $true; subject = ''; to = @(); cc = @(); saved = $false }
+    $none = @{ ok = $true; subject = ''; to = @(); cc = @(); saved = $false; subjects = @() }
     $kind = Get-EbiMailTemplateKind -Path $path
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        if ($Ctx['DryRun']) { $Ctx.Log.Info(('would make a draft from {0} (not there yet)' -f $path)); return $none }
-        return @{ ok = $false; failure = 'file_not_found'; message = ('no mail template at ' + $path + ' (set paths.mailTemplate in ebi.local.json)'); subject = ''; to = @(); cc = @(); saved = $false }
+        if ($Ctx['DryRun']) { $Ctx.Log.Info(('would make {0} draft(s) from {1} (not there yet)' -f $list.Count, $path)); return $none }
+        return @{ ok = $false; failure = 'file_not_found'; message = ('no mail template at ' + $path + ' (set paths.mailTemplate in ebi.local.json)'); subject = ''; to = @(); cc = @(); saved = $false; subjects = @() }
     }
     $tpl = $null
     if ($kind -ne 'outlook') {
         $r = Read-EbiMailTemplate -Path $path
-        if (-not $r['ok']) { return @{ ok = $false; failure = 'template_invalid'; message = $r['message']; subject = ''; to = @(); cc = @(); saved = $false } }
+        if (-not $r['ok']) { return @{ ok = $false; failure = 'template_invalid'; message = $r['message']; subject = ''; to = @(); cc = @(); saved = $false; subjects = @() } }
         $tpl = $r['template']
     }
     if ($Ctx['DryRun'] -and $null -ne $tpl) {
-        $x = Expand-EbiMailTemplate -Template $tpl -Token ([string]$In['token']) -Value ([string]$In['value']) -TrimBefore:([bool]$In['trimBefore'])
+        $subjects = New-Object System.Collections.ArrayList
+        foreach ($v in $list) {
+            $x = Expand-EbiMailTemplate -Template $tpl -Token ([string]$In['token']) -Value $v -TrimBefore:([bool]$In['trimBefore'])
+            [void]$subjects.Add([string]$x['subject'])
+            $Ctx.Log.Info(('would make a draft: {0}' -f $x['subject']))
+        }
         $rcp = @(HumanDraftMail-Recipients -Recipients $tpl['recipients'] -To $In['to'] -Cc $In['cc'])
-        $Ctx.Log.Info(('would make a draft: {0}' -f $x['subject']))
-        return @{ ok = $true; subject = [string]$x['subject']; to = @($rcp | Where-Object { $_['type'] -eq 1 } | ForEach-Object { $_['address'] }); cc = @($rcp | Where-Object { $_['type'] -eq 2 } | ForEach-Object { $_['address'] }); saved = $false }
+        return @{ ok = $true; subject = [string]$subjects[$subjects.Count - 1]; to = @($rcp | Where-Object { $_['type'] -eq 1 } | ForEach-Object { $_['address'] }); cc = @($rcp | Where-Object { $_['type'] -eq 2 } | ForEach-Object { $_['address'] }); saved = $false; subjects = $subjects.ToArray() }
     }
-    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would make a draft from {0}' -f $path)); return $none }
+    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would make {0} draft(s) from {1}' -f $list.Count, $path)); return $none }
     $ol = $null
-    try { $ol = New-Object -ComObject Outlook.Application } catch { return @{ ok = $false; failure = 'outlook_unavailable'; message = 'Classic Outlook could not be started (the new Outlook cannot be automated): install / switch to Classic Outlook'; subject = ''; to = @(); cc = @(); saved = $false } }
+    try { $ol = New-Object -ComObject Outlook.Application } catch { return @{ ok = $false; failure = 'outlook_unavailable'; message = 'Classic Outlook could not be started (the new Outlook cannot be automated): install / switch to Classic Outlook'; subject = ''; to = @(); cc = @(); saved = $false; subjects = @() } }
     if ($null -eq $tpl) {
-        try { $tpl = HumanDraftMail-ReadOutlookTemplate -Outlook $ol -Path $path } catch { return @{ ok = $false; failure = 'template_invalid'; message = ('Outlook could not read ' + $path + ': ' + $_.Exception.Message); subject = ''; to = @(); cc = @(); saved = $false } }
+        try { $tpl = HumanDraftMail-ReadOutlookTemplate -Outlook $ol -Path $path } catch { return @{ ok = $false; failure = 'template_invalid'; message = ('Outlook could not read ' + $path + ': ' + $_.Exception.Message); subject = ''; to = @(); cc = @(); saved = $false; subjects = @() } }
     }
-    $x = Expand-EbiMailTemplate -Template $tpl -Token ([string]$In['token']) -Value ([string]$In['value']) -TrimBefore:([bool]$In['trimBefore'])
-    if (-not $x['ok']) { return @{ ok = $false; failure = 'template_invalid'; message = $x['message']; subject = ''; to = @(); cc = @(); saved = $false } }
     $rcp = @(HumanDraftMail-Recipients -Recipients $tpl['recipients'] -To $In['to'] -Cc $In['cc'])
-    if (@($rcp | Where-Object { $_['type'] -eq 1 }).Count -eq 0) { return @{ ok = $false; failure = 'template_invalid'; message = 'the draft would have no To address'; subject = ''; to = @(); cc = @(); saved = $false } }
-    $mail = $null; $saved = $false
-    try {
-        $mail = $ol.CreateItem(0)
-        foreach ($r in $rcp) { $a = $mail.Recipients.Add([string]$r['address']); $a.Type = [int]$r['type'] }
-        [void]$mail.Recipients.ResolveAll()
-        $mail.Subject = [string]$x['subject']
-        if ([string]$x['html'] -ne '') { $mail.BodyFormat = 2; $mail.HTMLBody = [string]$x['html'] } else { $mail.Body = [string]$x['body'] }
-        $mail.Save(); $saved = $true                       # Drafts; Send is the operator's
-        if ([bool]$In['display']) { $mail.Display($false) }
-    } catch {
-        return @{ ok = $false; failure = 'draft_failed'; message = $_.Exception.Message; subject = [string]$x['subject']; to = @(); cc = @(); saved = $saved }
+    if (@($rcp | Where-Object { $_['type'] -eq 1 }).Count -eq 0) { return @{ ok = $false; failure = 'template_invalid'; message = 'the draft would have no To address'; subject = ''; to = @(); cc = @(); saved = $false; subjects = @() } }
+    $toList = @($rcp | Where-Object { $_['type'] -eq 1 } | ForEach-Object { $_['address'] }); $ccList = @($rcp | Where-Object { $_['type'] -eq 2 } | ForEach-Object { $_['address'] })
+    $subjects = New-Object System.Collections.ArrayList
+    foreach ($v in $list) {
+        $x = Expand-EbiMailTemplate -Template $tpl -Token ([string]$In['token']) -Value $v -TrimBefore:([bool]$In['trimBefore'])
+        if (-not $x['ok']) { return @{ ok = $false; failure = 'template_invalid'; message = $x['message']; subject = ''; to = @(); cc = @(); saved = $false; subjects = $subjects.ToArray() } }
+        $mail = $null; $saved = $false
+        try {
+            $mail = $ol.CreateItem(0)
+            foreach ($r in $rcp) { $a = $mail.Recipients.Add([string]$r['address']); $a.Type = [int]$r['type'] }
+            [void]$mail.Recipients.ResolveAll()
+            $mail.Subject = [string]$x['subject']
+            if ([string]$x['html'] -ne '') { $mail.BodyFormat = 2; $mail.HTMLBody = [string]$x['html'] } else { $mail.Body = [string]$x['body'] }
+            $mail.Save(); $saved = $true                       # Drafts; Send is the operator's
+            if ([bool]$In['display']) { $mail.Display($false) }
+        } catch {
+            # the drafts made before this one stay in Drafts; their subjects say which
+            return @{ ok = $false; failure = 'draft_failed'; message = ($v + ': ' + $_.Exception.Message); subject = [string]$x['subject']; to = @(); cc = @(); saved = $saved; subjects = $subjects.ToArray() }
+        }
+        [void]$subjects.Add([string]$x['subject'])
+        $Ctx.Log.Info(('draft saved{0}: {1} (nothing sent)' -f $(if ([bool]$In['display']) { ' and opened' } else { '' }), $x['subject']))
     }
-    $Ctx.Log.Info(('draft saved{0}: {1} (nothing sent)' -f $(if ([bool]$In['display']) { ' and opened' } else { '' }), $x['subject']))
-    return @{ ok = $true; subject = [string]$x['subject']; to = @($rcp | Where-Object { $_['type'] -eq 1 } | ForEach-Object { $_['address'] }); cc = @($rcp | Where-Object { $_['type'] -eq 2 } | ForEach-Object { $_['address'] }); saved = $saved }
+    return @{ ok = $true; subject = [string]$subjects[$subjects.Count - 1]; to = $toList; cc = $ccList; saved = $true; subjects = $subjects.ToArray() }
 }

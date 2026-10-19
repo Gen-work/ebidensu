@@ -430,6 +430,7 @@
         "argSets": "{{steps.cmp.out.pairs}}",
         "width": "{{profile.layout.df.width}}",
         "height": "{{profile.layout.df.height}}",
+        "heightEnd": "{{profile.layout.df.heightEnd}}",
         "settleMs": "{{profile.layout.df.settleMs}}",
         "screenLines": "{{profile.layout.df.screenLines}}",
         "keysMid": "{{profile.layout.df.keysMid}}",
@@ -505,7 +506,8 @@
         ],
         "mode": "{{profile.layout.share.mode}}",
         "where": "{{profile.layout.share.where}}",
-        "maxWidth": "{{profile.layout.share.maxWidth}}"
+        "maxWidth": "{{profile.layout.share.maxWidth}}",
+        "front": "{{profile.layout.share.front}}"
       }
     },
     {
@@ -523,7 +525,8 @@
         ],
         "mode": "{{profile.layout.share.mode}}",
         "where": "{{profile.layout.share.where}}",
-        "maxWidth": "{{profile.layout.share.maxWidth}}"
+        "maxWidth": "{{profile.layout.share.maxWidth}}",
+        "front": "{{profile.layout.share.front}}"
       }
     },
     {

@@ -90,5 +90,6 @@ function Invoke-Step {
         }
     } catch { return @{ ok = $false; failure = 'write_failed'; message = $_.Exception.Message; labelRow = $labelRow; firstRow = $firstRow; lastRow = $lastRow; nextRow = ($lastRow + 1); written = 0 } }
     $Ctx.Log.Info(('wrote {0} line(s) to {1}!rows {2}..{3}' -f $all.Count, $In['sheet'], $firstRow, $lastRow))
+    Show-EbiExcelAt -Worksheet $ws -Row $row -Front -Dwell
     return $result
 }
