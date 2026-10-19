@@ -569,6 +569,7 @@ Run a program per argument set, capture its window (and again after keys), close
 | `closeOthers` | bool |  | false |  | close every window whose title contains windowTitle before each start, so the only such window is the new one |
 | `exe` | path | yes |  |  | the program |
 | `height` | int |  | 0 |  |  |
+| `heightEnd` | int |  | 0 |  | line rule: the visible window height for the END-view capture (a file of more than 2 x screenLines lines); 0 = height. 10/19: the HOST screen shows 17 records, so the END picture shows 17 DF lines while the first shows 16 |
 | `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (SendKeys syntax) |
 | `keysMid` | string |  | ^{HOME}{PGDN} |  | keys before the second capture of a file of screenLines+1 .. 2 x screenLines lines: the next page, so it starts at line screenLines+1 |
 | `keysSecond` | string |  | ^{END} |  | keys before the second capture (the END view) |

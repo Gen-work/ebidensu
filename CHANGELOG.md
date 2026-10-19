@@ -48,6 +48,16 @@ First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).
   `dfPics`.
 
 ### Fixed
+- **DF picture line range vs the HOST picture** (10/19 review NG on
+  SJODWDB6, check sheet row 341, cell B35): the DF window 1133 x 429 showed
+  15 lines on the operator's PC (00112-00126), not 16. Measured on the
+  operator's fixed picture: 18 px a line, 476 high = 17 lines. The HOST
+  screen shows 17 records and HOST line n = DF line n-1, so the first DF
+  picture is now 458 high (16 lines = HOST 000001-000017) and
+  `screen.launch_capture` resizes to the new `heightEnd` 476 before the END
+  view (17 lines = the HOST's last 17, e.g. HOST 000111-000127 -> DF
+  00110-00126). The END key recipe on a 17-line window is unchecked on the
+  office PC.
 - **gfixRecv.evidence `look` gate** asked for `steps.excelSnap.out.png`,
   an output `excel.place_picture` never had (`input_invalid` after the
   book was already saved); now `steps.listSnap.out.png`. The new lint

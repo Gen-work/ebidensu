@@ -567,6 +567,11 @@ try {
     Assert-Equal 'END' (& $sp 39)['keys'] 'df rule: 39 lines -> the END view'
     $old = ScreenLaunchCapture-SecondPlan -Set @{ lines = 30; long = $true } -ScreenLines 0 -LinesField 'lines' -SecondField 'long' -KeysMid 'MID' -KeysSecond 'END'
     Assert-True ($old['two'] -and $old['keys'] -eq 'END') 'df rule: off (screenLines 0) -> the long flag and keysSecond as before'
+    Assert-Equal 'end' (& $sp 39)['view'] 'df rule: the END view is named, so the window is resized to heightEnd first (10/19)'
+    Assert-Equal 'mid' (& $sp 20)['view'] 'df rule: the PgDn page keeps the first height'
+    # 10/19 measured: 18 px a line, 476 = 17 lines; the HOST shows 17 records, HOST n = DF n-1
+    $lay = (Read-EbiJson -Path (Join-Path $repoRoot 'profiles/gfix-recv/layout.json'))['value']['df']
+    Assert-Equal 18 (([int]$lay['heightEnd'] - [int]$lay['height'])) 'df size: the END picture is one 18 px line taller than the first (17 vs 16 lines)'
 
     # ---------------------------------------------------------------- home cell (10-12)
     $send = [string][char]0x9001 + [char]0x4FE1 + [char]0x21D2   # send-arrow sheet

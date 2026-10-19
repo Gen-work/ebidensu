@@ -430,6 +430,7 @@
         "argSets": "{{steps.cmp.out.pairs}}",
         "width": "{{profile.layout.df.width}}",
         "height": "{{profile.layout.df.height}}",
+        "heightEnd": "{{profile.layout.df.heightEnd}}",
         "settleMs": "{{profile.layout.df.settleMs}}",
         "screenLines": "{{profile.layout.df.screenLines}}",
         "keysMid": "{{profile.layout.df.keysMid}}",

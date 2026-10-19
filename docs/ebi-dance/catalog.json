@@ -4554,6 +4554,11 @@
           "default": 0,
           "type": "int"
         },
+        "heightEnd": {
+          "default": 0,
+          "desc": "line rule: the visible window height for the END-view capture (a file of more than 2 x screenLines lines); 0 = height. 10/19: the HOST screen shows 17 records, so the END picture shows 17 DF lines while the first shows 16",
+          "type": "int"
+        },
         "keysFirst": {
           "default": "^{HOME}",
           "desc": "keys before the first capture (SendKeys syntax)",
