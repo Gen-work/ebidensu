@@ -2411,6 +2411,7 @@ Put text and pictures on the clipboard for the operator to paste and send
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `front` | string |  | (empty) |  | bring this app to the front once the clipboard is loaded: a regex on the process name or window title (e.g. ms-teams\|Teams); empty = the console stays in front |
 | `images` | list |  | [] |  | PNG paths, in order after the text; a nested list is flattened (a path, then a step's list of paths) |
 | `lines` | list |  | [] |  | text lines, in order |
 | `maxWidth` | int |  | 0 |  | rich mode: show pictures at most this wide (px); 0 = natural size |
@@ -2429,7 +2430,7 @@ failures: `operator_quit` (not transient), `file_not_found` (not transient), `cl
 {"id":"share","use":"human.share","with":{"images":"{{steps.shots.out.paths}}","lines":["{{profile.messages.done}}"],"where":"Teams"}}
 ```
 
-Notes: Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. Foreground is the console afterwards.
+Notes: Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. With front, the matching window (the frontmost one when several match) comes to the front after the panel is drawn; paste there, then answer back in the console. No match = a warning, the console stays in front. Foreground is the console afterwards.
 
 ## progress
 

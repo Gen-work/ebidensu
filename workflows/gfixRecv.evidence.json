@@ -161,7 +161,7 @@
                 "reason": "{{steps.pic1Job.out.reason}}",
                 "checklist": "{{profile.layout.evidence.checklist}}",
                 "alert": ["{{steps.pic1Job.out.alert}}", "{{steps.excelSnap.out.note}}"],
-                "evidence": ["{{steps.book.out.path}}", "{{steps.excelSnap.out.png}}", "{{steps.jkShot.out.path}}"] } },
+                "evidence": ["{{steps.book.out.path}}", "{{steps.listSnap.out.png}}", "{{steps.jkShot.out.path}}"] } },
     { "id": "lookLog", "use": "file.write_json",
       "label": "自動チェックと人の答えを並べて残す(あとでルールに育てる材料: docs/ebi-dance/KNOWLEDGE.md)",
       "with": { "path": "{{vars.capture}}/{{item.keySafe}}/gate.json",

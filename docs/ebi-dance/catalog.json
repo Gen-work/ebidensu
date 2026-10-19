@@ -3801,6 +3801,11 @@
       "id": "human.share",
       "idempotent": true,
       "inputs": {
+        "front": {
+          "default": "",
+          "desc": "bring this app to the front once the clipboard is loaded: a regex on the process name or window title (e.g. ms-teams|Teams); empty = the console stays in front",
+          "type": "string"
+        },
         "images": {
           "default": [],
           "desc": "PNG paths, in order after the text; a nested list is flattened (a path, then a step's list of paths)",
@@ -3831,7 +3836,7 @@
         }
       },
       "needs": [],
-      "notes": "Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. Foreground is the console afterwards.",
+      "notes": "Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. With front, the matching window (the frontmost one when several match) comes to the front after the panel is drawn; paste there, then answer back in the console. No match = a warning, the console stays in front. Foreground is the console afterwards.",
       "outputs": {
         "action": {
           "desc": "sent | skip",

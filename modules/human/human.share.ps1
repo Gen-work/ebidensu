@@ -30,6 +30,7 @@ $Manifest = @{
     mode     = @{ type='string'; default='rich'; enum=@('rich', 'sequence') }
     where    = @{ type='string'; default='the chat'; desc='where to paste, for the prompt' }
     maxWidth = @{ type='int';    default=0; desc='rich mode: show pictures at most this wide (px); 0 = natural size' }
+    front    = @{ type='string'; default=''; desc='bring this app to the front once the clipboard is loaded: a regex on the process name or window title (e.g. ms-teams|Teams); empty = the console stays in front' }
   }
   outputs    = @{
     action = @{ type='string'; desc='sent | skip' }
@@ -42,7 +43,7 @@ $Manifest = @{
     @{ id = 'clipboard_error'; transient = $true  }
   )
   example    = @{ use = 'human.share'; with = @{ lines = @('{{profile.messages.done}}'); images = '{{steps.shots.out.paths}}'; where = 'Teams' } }
-  notes      = 'Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. Foreground is the console afterwards.'
+  notes      = 'Answers: Enter = pasted and sent, s = not sent (the item stays pending for whatever checkpoint follows), m <text> = sent with a note, q = cancel the run. Dry run / no console answers Enter. With front, the matching window (the frontmost one when several match) comes to the front after the panel is drawn; paste there, then answer back in the console. No match = a warning, the console stays in front. Foreground is the console afterwards.'
 }
 
 function HumanShare-Actions { return @(@{ key = 'c'; label = 'sent (Enter)' }, @{ key = 's'; label = 'not sent' }, @{ key = 'm'; label = 'sent + note' }, @{ key = 'q'; label = 'quit' }) }
@@ -56,9 +57,23 @@ function HumanShare-Picture {
     return @{ bytes = $bytes; width = $w; height = $h }
 }
 
+function HumanShare-PickWindow {
+    # PURE. Windows (Get-EbiTopWindows shape, front first) + a regex -> the
+    # first one whose process name or title matches, or $null.
+    param($Windows, [string]$Pattern)
+    if ([string]::IsNullOrWhiteSpace($Pattern)) { return $null }
+    foreach ($w in @($Windows)) {
+        if ($null -eq $w) { continue }
+        if ([string]$w['processName'] -match $Pattern -or [string]$w['title'] -match $Pattern) { return $w }
+    }
+    return $null
+}
+
 function HumanShare-Ask {
-    param([string]$What, [string[]]$Evidence, $Ctx)
-    return (Show-EbiGate -Title 'SHARE' -What $What -Evidence $Evidence -Next @('Enter: pasted and sent', 's: not sent (leave the item pending)', 'm <text>: sent, with a note', 'q: cancel the whole run') -Actions (HumanShare-Actions) -Default 'c' -Auto 'c' -DryRun ([bool]$Ctx['DryRun']))
+    param([string]$What, [string[]]$Evidence, $Ctx, [IntPtr]$Front = [IntPtr]::Zero)
+    $next = @('Enter: pasted and sent', 's: not sent (leave the item pending)', 'm <text>: sent, with a note', 'q: cancel the whole run')
+    if ($Front -ne [IntPtr]::Zero) { $next = @('(the chat is brought to the front: paste and send there, then come back here)') + $next }
+    return (Show-EbiGate -Title 'SHARE' -What $What -Evidence $Evidence -Next $next -Actions (HumanShare-Actions) -Default 'c' -Auto 'c' -DryRun ([bool]$Ctx['DryRun']) -FrontAfter $Front)
 }
 
 function Invoke-Step {
@@ -74,6 +89,14 @@ function Invoke-Step {
         return @{ ok = $true; action = 'sent'; note = ''; pieces = 0 }
     }
     foreach ($p in $imgs) { if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = $p; action = ''; note = ''; pieces = 0 } } }
+    # 10/19: the operator had to find the Teams window by hand for every job
+    $front = [IntPtr]::Zero
+    if (-not [string]::IsNullOrWhiteSpace([string]$In['front'])) {
+        $hit = $null
+        try { $hit = HumanShare-PickWindow -Windows (Get-EbiTopWindows) -Pattern ([string]$In['front']) } catch { $hit = $null }
+        if ($null -ne $hit) { $front = [IntPtr]$hit['handle'] }
+        else { $Ctx.Log.Warn(('no window matches front "{0}": switch to {1} yourself' -f $In['front'], $where)) }
+    }
     $text = $lines -join "`r`n"
     $pieces = 0
     if ([string]$In['mode'] -eq 'sequence') {
@@ -90,7 +113,7 @@ function Invoke-Step {
             $what = ('piece {0}/{1} is on the clipboard ({2}): paste it into {3}{4}' -f $i, $steps.Count, $s['kind'], $where, $(if ($last) { ', then send' } else { ' (do not send yet), then Enter for the next piece' }))
             $evText = [string]$s['value']
             if ($evText.Length -gt 200) { $evText = $evText.Substring(0, 200) }
-            $ans = HumanShare-Ask -What $what -Evidence @($evText) -Ctx $Ctx
+            $ans = HumanShare-Ask -What $what -Evidence @($evText) -Ctx $Ctx -Front $front
             if ($ans['action'] -eq 'q') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q'; action = ''; note = ''; pieces = $pieces } }
             if ($ans['action'] -eq 's') { return @{ ok = $true; action = 'skip'; note = ''; pieces = $pieces } }
             if ($last) { return @{ ok = $true; action = 'sent'; note = [string]$ans['note']; pieces = $pieces } }
@@ -105,7 +128,7 @@ function Invoke-Step {
     $ev = New-Object System.Collections.ArrayList
     foreach ($l in $lines) { [void]$ev.Add($l) }
     foreach ($p in $imgs) { [void]$ev.Add($p) }
-    $ans = HumanShare-Ask -What ('text + ' + $imgs.Count + ' picture(s) are on the clipboard: paste (Ctrl+V) into ' + $where + ', check it, send') -Evidence $ev.ToArray() -Ctx $Ctx
+    $ans = HumanShare-Ask -What ('text + ' + $imgs.Count + ' picture(s) are on the clipboard: paste (Ctrl+V) into ' + $where + ', check it, send') -Evidence $ev.ToArray() -Ctx $Ctx -Front $front
     if ($ans['action'] -eq 'q') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q'; action = ''; note = ''; pieces = 1 } }
     if ($ans['action'] -eq 's') { return @{ ok = $true; action = 'skip'; note = ''; pieces = 1 } }
     return @{ ok = $true; action = 'sent'; note = [string]$ans['note']; pieces = 1 }

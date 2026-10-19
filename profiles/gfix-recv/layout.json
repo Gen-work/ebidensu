@@ -112,6 +112,8 @@
     "_doc": "how human.share puts the Teams reply on the clipboard: rich = text + pictures in ONE paste (HTML + RTF); sequence = text, then each picture, one paste each. Switch in <WorkDir>/ebi.local.json { \"layout\": { \"share\": { \"mode\": \"sequence\" } } } if Teams drops the pictures of a rich paste.",
     "mode": "rich",
     "where": "Teams (J4検証 チャット)",
-    "maxWidth": 0
+    "maxWidth": 0,
+    "_front_doc": "10/19: once the reply is on the clipboard the Teams window comes to the front (regex on process name or title; new Teams = ms-teams, classic = Teams). Empty = the console stays in front.",
+    "front": "ms-teams|^Teams$|Microsoft Teams"
   }
 }

@@ -1,8 +1,22 @@
-## 2026-10-19 - excel.snap_list returned an array; teardown skips releasing what was never opened (v2.27.1)
+## 2026-10-19 - evidence first office run fixes; lint checks step output names; track brings Teams to the front (v2.27.1)
 
 First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).
 
+### Added
+- **`human.share` `front`**: once the reply is on the clipboard, the
+  window whose process name or title matches this regex comes to the
+  front (the panel is still answered in the console). gfixRecv.track
+  passes `layout.share.front` = `ms-teams|^Teams$|Microsoft Teams`
+  (10/19 feedback: the Teams window had to be found by hand every job).
+  No match = a warning. `Show-EbiGate -FrontAfter` does the switch.
+- **Lint**: a `{{steps.<id>.out.<field>}}` reference must name an output
+  the step's manifest declares.
+
 ### Fixed
+- **gfixRecv.evidence `look` gate** asked for `steps.excelSnap.out.png`,
+  an output `excel.place_picture` never had (`input_invalid` after the
+  book was already saved); now `steps.listSnap.out.png`. The new lint
+  check finds exactly this.
 - **`excel.snap_list`** failed every attempt with `contract_violation:
   Invoke-Step must return a [hashtable] (got Object[])` right after
   "snapped B4:O125": the temporary chart's `ChartObject.Delete()` in the

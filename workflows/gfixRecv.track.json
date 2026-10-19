@@ -505,7 +505,8 @@
         ],
         "mode": "{{profile.layout.share.mode}}",
         "where": "{{profile.layout.share.where}}",
-        "maxWidth": "{{profile.layout.share.maxWidth}}"
+        "maxWidth": "{{profile.layout.share.maxWidth}}",
+        "front": "{{profile.layout.share.front}}"
       }
     },
     {
@@ -523,7 +524,8 @@
         ],
         "mode": "{{profile.layout.share.mode}}",
         "where": "{{profile.layout.share.where}}",
-        "maxWidth": "{{profile.layout.share.maxWidth}}"
+        "maxWidth": "{{profile.layout.share.maxWidth}}",
+        "front": "{{profile.layout.share.front}}"
       }
     },
     {
