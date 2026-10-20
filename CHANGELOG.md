@@ -1,3 +1,22 @@
+## 2026-10-20 - human.pick: one picked name is still a list (gift could not download a single GIFT file) (v2.29.1)
+
+First office run of the v2.29.0 gift phase (LJODWSPQ): picking ONE file
+(`F202609140003`) failed at the download with `input_invalid: input
+'names' expects list, got string`, on every retry.
+
+### Fixed
+- **human.pick**: `picked` was built with `$x = if (...) { ... } else { ... }`,
+  and a PowerShell if-expression unrolls a one-element array to the bare
+  string (and an empty one to null). All three places now wrap it,
+  `@(if (...) { ... })`, so one pick is a one-element list and "0 =
+  nothing today" an empty list. Plan was not hit only because its picks
+  usually hold several jobs.
+
+### Tests
+- `Tests\Test-PlanSets.ps1`: a one-name pick is an IList that passes the
+  registry's `list` input check; `0` gives an empty list, not null. Both
+  fail on v2.29.0.
+
 ## 2026-10-20 - plan picks today's jobs from sets (today / late / ahead), a gift phase finds missing GIFT files on Jenkins, the board and phases take today's rows only, hold, mark ok by hand, deliver writes the WBS actual dates (v2.29.0)
 
 From the 10/19-10/20 WBS (DETOUR-GFIX-001.10): jobs done early on 10/16

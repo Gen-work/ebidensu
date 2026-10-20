@@ -202,6 +202,12 @@ Assert-True ($p['ok'] -and (@($p['hold']) -join ',') -eq 'MJODWDBC' -and $p['hol
 $script:answers.Clear(); foreach ($a in @('2', 'DBC', '')) { $script:answers.Enqueue($a) }
 $p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
 Assert-Equal 'MJODWDBC,RJODWDBC' (@($p['picked']) -join ',') 'pick: an answer typed at the read-back replaces the first one'
+$script:answers.Clear(); foreach ($a in @('MJODWDBC', '')) { $script:answers.Enqueue($a) }
+$p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
+Assert-True ($p['picked'] -is [System.Collections.IList] -and @($p['picked']).Count -eq 1 -and (ConvertTo-EbiInputValue -Type 'list' -Value $p['picked'])['ok']) ('pick: ONE name picked is still a list (10/20 gift: file.download names got a string): ' + (Get-EbiValueTypeName $p['picked']))
+$script:answers.Clear(); foreach ($a in @('0', '')) { $script:answers.Enqueue($a) }
+$p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
+Assert-True ($p['ok'] -and $p['picked'] -is [System.Collections.IList] -and @($p['picked']).Count -eq 0 -and -not $p['any']) 'pick: 0 = nothing today is an empty list, not null'
 $script:answers.Clear(); foreach ($a in @('m', 'b', 'q')) { $script:answers.Enqueue($a) }
 $p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
 Assert-Equal 'operator_quit' $p['failure'] 'pick: m, b, q -> stopped'
