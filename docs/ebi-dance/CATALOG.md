@@ -1140,7 +1140,7 @@ Append one row under the last used row, unless the key is already listed; option
 | `cells` | map | yes |  |  | column letter -> value, e.g. { "B": "2026-10-16", "F": "<file name>" }; empty values are left blank |
 | `checkOnly` | bool |  | false |  | only look: is the key listed? (existing / verdict / line), never write or save -- for a flow that writes the row after a person confirmed (gfixRecv.deliver: after the mail was sent) |
 | `dateColumns` | list |  | [] |  | columns whose value (yyyy-MM-dd or yyyy/MM/dd) is written as a real date, formatted like the row above |
-| `dismissDialogs` | list |  | [] |  | title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does |
+| `dismissDialogs` | list |  | [] |  | title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs |
 | `firstRow` | int |  | 2 |  | first data row: the key search starts here |
 | `keyColumn` | string |  | (empty) |  | column whose text identifies a row (e.g. F, the review target); a row already holding cells[keyColumn] there means "already listed": nothing is written. Empty = always append |
 | `lastBy` | string |  | B |  | column whose last used cell marks the end of the list (pre-filled number columns would fool a whole-row search) |
@@ -1174,7 +1174,7 @@ Close a registered workbook (save or discard) and release it
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
-| `dismissDialogs` | list |  | [] |  | title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do |
+| `dismissDialogs` | list |  | [] |  | title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs |
 | `save` | bool |  | false |  | save before closing |
 | `workbook` | session:workbook | yes |  |  |  |
 
@@ -1561,7 +1561,7 @@ Select the home cell (A1 or per sheet) on every sheet, activate the first, repor
 | `activate` | string |  | 1 |  | sheet to leave active (name or 1-based index) |
 | `cell` | string |  | A1 |  | the cell selected on every sheet |
 | `cellFor` | map |  | {} |  | sheet-name prefix -> cell, overriding cell for those sheets (e.g. A3 everywhere but the send / receive arrow sheets on A1) |
-| `dismissDialogs` | list |  | [] |  | title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving |
+| `dismissDialogs` | list |  | [] |  | title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs |
 | `fontName` | string |  | (empty) |  |  |
 | `fontSheets` | list |  | [] |  | sheets whose column-B text is checked against fontName / fontSize |
 | `fontSize` | int |  | 0 |  |  |

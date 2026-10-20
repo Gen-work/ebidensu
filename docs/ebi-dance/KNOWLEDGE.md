@@ -193,10 +193,11 @@
 
 ### K-24 deliver 写 WBS 实绩:日志说写了,WBS 里没有
 - **症状**:10/20 deliver 印出 `wrote MJODJSPQ row 3854: AK=2026-10-20`(三本都是),`excel.close saved=True`;之后打开 WBS,AK 是空的。只写了 修正後実施 一行,结果まとめ 行、工数 AQ 都没写。
-- **原因**:未确认。最可能的是保存时弹出「文書分類/機密区分の登録」,WBS 的保存没有像检查表那样用 Esc 回答(没配 `dismissDialogs`),对话框取消了保存但没报错;`Workbook.Save()` 照常返回,工具就以为存好了。打开 WBS 时两次「只读」也说明当时有人(或别的 Excel 窗口)开着它。
+- **原因**:未确认。起初猜是保存时的「文書分類/機密区分の登録」对话框取消了保存;操作员说**不是**:WBS 早就登录过分类,不会再弹。操作员看到的是:关卡上按 Enter **之前** Excel 里就看不到写进去的值,怀疑当时 WBS 开着筛选(filter)。打开 WBS 时两次「只读」也说明当时有人(或别的 Excel 窗口)开着它。
 - **现在的对策**(v2.29.3):
+  - `excel.mark_rows` 写完把每个格子**读回来**,读回是空的就判 `write_failed`(还没保存,看一眼表再 `r`),不再只凭「写了」就往下走——下次再出现,日志会说是哪几格。
   - `excel.close` 保存后核对:有改动的工作簿,文件的更新时间必须变新,否则判 `save_failed`(工作簿留着,手动存或 `r`),不再说「saved」。
-  - WBS 保存加上 `dismissDialogs`。
+  - 保存时的 Esc:WBS 保存加上 `dismissDialogs`;另外 `excel.close` / `excel.tidy` / `excel.append_row` 没给 `dismissDialogs` 时用 profile 的 `layout.saveDialogs`(没有就用 `layout.evidence.saveDialogs`),以后哪个 workflow 忘写也不会漏(操作员 10/20:「加个 Esc 不会坏」)。旧的 VerifyTool 相位脚本(Mark / ReplaceEvidence / FillCheckSheet 等)的 `Save()` 不在这条线上,弹了对话框会停下等人,不会悄悄丢。
   - 写哪些行:B = 受信,G = **修正後実施 和 結果まとめ** 两行,P = 自己(`owner` / `owner←○○` / `○○→owner`,和 plan 同一条规则),别人的行不写。
   - 写什么:AJ = AK = 实绩日(问一次,Enter = 今天,也可以打 `10/21`),AQ = 实绩工数(Enter = 0.1,写成数字)。只写空格子,手填过的不动。
 - **写新 workflow 时**:写共享表之后,要证明**文件**变了,不要只信 API 的返回值;写之前先说清楚写哪几行、哪几列(操作员 10/20:G、P、AJ、AK、AQ)。

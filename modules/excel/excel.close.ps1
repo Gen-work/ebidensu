@@ -19,7 +19,7 @@ $Manifest = @{
   inputs     = @{
     workbook = @{ type='session'; sessionKind='workbook'; required=$true }
     save     = @{ type='bool'; default=$false; desc='save before closing' }
-    dismissDialogs = @{ type='list'; default=@(); desc='title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do' }
+    dismissDialogs = @{ type='list'; default=@(); desc='title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs' }
   }
   outputs    = @{
     saved  = @{ type='bool' }
@@ -41,7 +41,8 @@ function Invoke-Step {
     if ([bool]$In['save']) {
         $err = ''
         $watch = $null
-        if (@($In['dismissDialogs']).Count -gt 0) { $watch = Start-EbiDialogWatch -TitleParts @($In['dismissDialogs']) }
+        $dlg = @(Get-EbiSaveDialogs -Given $In['dismissDialogs'] -Profile $Ctx['Profile'])
+        if ($dlg.Count -gt 0) { $watch = Start-EbiDialogWatch -TitleParts $dlg }
         # 10/20: the WBS save "succeeded" but the file kept no change (a save
         # dialog -- the classification add-in -- cancelled it without an
         # error). A workbook with changes must leave a newer file behind.

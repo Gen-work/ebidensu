@@ -291,6 +291,9 @@ $w = (@($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] + '=' + $_['
 Assert-Equal 'AJ9=2026-10-21,AK8=2026-10-21,AK9=2026-10-21,AQ8=0.1#,AQ9=0.1#' $w ('mark_rows: a list where = both task rows; whereMatch keeps own / own<-other rows only; M/d is this year; AQ is a number; the hand-typed AJ stays: ' + $w)
 Assert-Equal 'QJODJSPP' (@($plan['notFound']) -join ',') 'mark_rows: a job whose rows are all someone else''s is not found (not written)'
 Assert-Equal '2026-10-21' (ExcelMarkRows-Day -Text '10/21' -Today ([datetime]'2026-10-20')) 'mark_rows: 10/21 -> this year'
+Assert-Equal 'X' (@(Get-EbiSaveDialogs -Given @() -Profile @{ layout = @{ evidence = @{ saveDialogs = @('X') } } }) -join ',') 'save dialogs: a save step with no list takes the profile''s (no save may forget the Esc)'
+Assert-Equal 'Y' (@(Get-EbiSaveDialogs -Given @('Y') -Profile @{ layout = @{ saveDialogs = @('X') } }) -join ',') 'save dialogs: the step''s own list wins'
+Assert-Equal 0 @(Get-EbiSaveDialogs -Given $null -Profile $null).Count 'save dialogs: none anywhere -> none'
 Assert-Equal '' (ExcelMarkRows-Day -Text 'tomorrow') 'mark_rows: not a date -> empty'
 
 $ctx['DryRun'] = $true

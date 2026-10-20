@@ -205,6 +205,19 @@ function Invoke-Step {
             }
         }
     } catch { $r = $empty.Clone(); $r['ok'] = $false; $r['failure'] = 'write_failed'; $r['message'] = $_.Exception.Message; return $r }
+    # 10/20: the log said written, the WBS showed nothing -- read every
+    # written cell back, so a write that did not stick is a failure here
+    $lost = New-Object System.Collections.ArrayList
+    foreach ($w in @($plan['writes'])) {
+        $back = $null
+        try { $back = $ws.Range(('{0}{1}' -f $w['letter'], $w['row'])).Value2 } catch { }
+        if ($null -eq $back -or ([string]$back).Trim() -eq '') { [void]$lost.Add(('{0}{1}' -f $w['letter'], $w['row'])) }
+    }
+    if ($lost.Count -gt 0) {
+        $r = $empty.Clone(); $r['ok'] = $false; $r['failure'] = 'write_failed'
+        $r['message'] = ('written but still empty when read back: ' + ($lost.ToArray() -join ', ') + ' (a filter, a protected sheet, or the wrong workbook?) -- nothing saved yet; look at the sheet, then r')
+        return $r
+    }
     Invoke-EbiComRelease $ws
     foreach ($l in @($plan['written'])) { $Ctx.Log.Info(('wrote ' + $l)) }
     $warn = @(foreach ($k in @($plan['notFound'])) { @{ code = 'row_not_found'; message = ('no ' + $In['sheet'] + ' row for ' + $k + ' (type it by hand)') } })

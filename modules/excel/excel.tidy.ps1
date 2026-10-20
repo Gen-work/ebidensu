@@ -25,7 +25,7 @@ $Manifest = @{
     fontSheets = @{ type='list';   default=@(); desc='sheets whose column-B text is checked against fontName / fontSize' }
     fontName   = @{ type='string'; default='' }
     fontSize   = @{ type='int';    default=0 }
-    dismissDialogs = @{ type='list'; default=@(); desc='title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving' }
+    dismissDialogs = @{ type='list'; default=@(); desc='title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs' }
     cell       = @{ type='string'; default='A1'; desc='the cell selected on every sheet' }
     cellFor    = @{ type='map';    default=@{}; desc='sheet-name prefix -> cell, overriding cell for those sheets (e.g. A3 everywhere but the send / receive arrow sheets on A1)' }
   }
@@ -92,7 +92,7 @@ function Invoke-Step {
     if ($null -ne $first) { try { [void]$first.Activate() } catch { } }
     $saved = $false
     if ([bool]$In['save']) {
-        $watch = Start-EbiDialogWatch -TitleParts @($In['dismissDialogs'])
+        $watch = Start-EbiDialogWatch -TitleParts @(Get-EbiSaveDialogs -Given $In['dismissDialogs'] -Profile $Ctx['Profile'])
         try { $wb.Save(); $saved = $true } catch { $err = $_.Exception.Message }
         $seen = Stop-EbiDialogWatch $watch
         foreach ($t in @($seen['answered'])) { $Ctx.Log.Info(('answered "{0}" with Esc while saving' -f $t)) }

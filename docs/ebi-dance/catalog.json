@@ -947,7 +947,7 @@
         },
         "dismissDialogs": {
           "default": [],
-          "desc": "title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does",
+          "desc": "title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs",
           "type": "list"
         },
         "firstRow": {
@@ -1033,7 +1033,7 @@
       "inputs": {
         "dismissDialogs": {
           "default": [],
-          "desc": "title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do",
+          "desc": "title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs",
           "type": "list"
         },
         "save": {
@@ -2128,7 +2128,7 @@
         },
         "dismissDialogs": {
           "default": [],
-          "desc": "title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving",
+          "desc": "title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs",
           "type": "list"
         },
         "fontName": {

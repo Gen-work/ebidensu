@@ -1,3 +1,21 @@
+## 2026-10-20 - every save answers the save dialogs; mark_rows reads its writes back (v2.30.1)
+
+10/20 follow-up: the WBS has its classification registered, so the save
+dialog was not what lost the AK dates; before Enter at the WBS gate the
+values were already not visible (a filter on, the operator thinks).
+
+### Changed
+- **`Get-EbiSaveDialogs`** (kernel/Excel.ps1): `excel.close`, `excel.tidy`
+  and `excel.append_row` given no `dismissDialogs` use the profile's
+  `layout.saveDialogs`, else `layout.evidence.saveDialogs` -- no save step
+  can forget the Esc.
+- **excel.mark_rows**: every written cell is read back; one still empty
+  is `write_failed` naming the cells (nothing saved yet: look, then r).
+
+### Docs / tests
+- KNOWLEDGE K-24 updated with the operator's account. `Test-PlanSets`:
+  the dialog fallback.
+
 ## 2026-10-20 - file.wait_unlocked (the operator's isWbsReady.bat as a step); menu k = self check (v2.30.0)
 
 10/20 feedback 3 and 4: shared workbooks came back read-only with nobody
