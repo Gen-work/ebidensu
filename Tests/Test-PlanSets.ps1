@@ -202,6 +202,12 @@ Assert-True ($p['ok'] -and (@($p['hold']) -join ',') -eq 'MJODWDBC' -and $p['hol
 $script:answers.Clear(); foreach ($a in @('2', 'DBC', '')) { $script:answers.Enqueue($a) }
 $p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
 Assert-Equal 'MJODWDBC,RJODWDBC' (@($p['picked']) -join ',') 'pick: an answer typed at the read-back replaces the first one'
+$script:answers.Clear(); foreach ($a in @('MJODWDBC', '')) { $script:answers.Enqueue($a) }
+$p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
+Assert-True ($p['picked'] -is [System.Collections.IList] -and @($p['picked']).Count -eq 1 -and (ConvertTo-EbiInputValue -Type 'list' -Value $p['picked'])['ok']) ('pick: ONE name picked is still a list (10/20 gift: file.download names got a string): ' + (Get-EbiValueTypeName $p['picked']))
+$script:answers.Clear(); foreach ($a in @('0', '')) { $script:answers.Enqueue($a) }
+$p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
+Assert-True ($p['ok'] -and $p['picked'] -is [System.Collections.IList] -and @($p['picked']).Count -eq 0 -and -not $p['any']) 'pick: 0 = nothing today is an empty list, not null'
 $script:answers.Clear(); foreach ($a in @('m', 'b', 'q')) { $script:answers.Enqueue($a) }
 $p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
 Assert-Equal 'operator_quit' $p['failure'] 'pick: m, b, q -> stopped'
@@ -267,6 +273,29 @@ Assert-Equal 'RJODJDB6 row 10: AJ already 2026-10-16' (@($plan['kept']) -join ',
 Assert-Equal 'NOROW' (@($plan['notFound']) -join ',') 'mark_rows: a job with no row is reported'
 $plan = ExcelMarkRows-Plan -Grid $grid -FirstRow 7 -KeyColumn 'A' -Items $items -KeyField 'JOB' -Where @{ B = $recv; G = $task } -SetFields @{ AJ = 'GFIX_DATE' } -SetValues @{} -DateColumns @('AJ') -OnlyBlank $false
 Assert-True ((@($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] }) -join ',') -eq 'AJ8,AJ10') 'mark_rows: onlyBlank false overwrites'
+# 10/20 second day: both task rows (after + summary) of the operator's own rows, one asked date, hours as a number
+$own = 'OWN'; $oth = 'OTHER'
+$g2 = @{
+    A  = @('LJODJSPQ', 'LJODJSPQ', 'LJODJSPQ', 'QJODJSPP', 'QJODJSPP')
+    B  = @($recv, $recv, $recv, $recv, $recv)
+    G  = @('before', 'after', 'summary', 'after', 'summary')
+    P  = @($own, ($own + '<-' + $oth), $own, $oth, ($oth + '<-' + $own))
+    AJ = @($null, [double]46315, $null, $null, $null)      # 46315 = 2026-10-20, typed by hand in the morning
+    AK = @($null, $null, $null, $null, $null)
+    AQ = @($null, $null, $null, $null, $null)
+}
+$it2 = @( @{ JOB = 'LJODJSPQ' }, @{ JOB = 'QJODJSPP' } )
+$ownPat = '^\s*' + $own + '\s*($|<-)'
+$plan = ExcelMarkRows-Plan -Grid $g2 -FirstRow 7 -KeyColumn 'A' -Items $it2 -KeyField 'JOB' -Where @{ B = $recv; G = @('after', 'summary') } -WhereMatch @{ P = $ownPat } -SetFields @{} -SetValues @{ AJ = '10/21'; AK = '10/21'; AQ = '0.1' } -DateColumns @('AJ', 'AK') -NumberColumns @('AQ') -Today ([datetime]'2026-10-20')
+$w = (@($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] + '=' + $_['value'] + $(if ($_['number']) { '#' } else { '' }) }) | Sort-Object) -join ','
+Assert-Equal 'AJ9=2026-10-21,AK8=2026-10-21,AK9=2026-10-21,AQ8=0.1#,AQ9=0.1#' $w ('mark_rows: a list where = both task rows; whereMatch keeps own / own<-other rows only; M/d is this year; AQ is a number; the hand-typed AJ stays: ' + $w)
+Assert-Equal 'QJODJSPP' (@($plan['notFound']) -join ',') 'mark_rows: a job whose rows are all someone else''s is not found (not written)'
+Assert-Equal '2026-10-21' (ExcelMarkRows-Day -Text '10/21' -Today ([datetime]'2026-10-20')) 'mark_rows: 10/21 -> this year'
+Assert-Equal 'X' (@(Get-EbiSaveDialogs -Given @() -Profile @{ layout = @{ evidence = @{ saveDialogs = @('X') } } }) -join ',') 'save dialogs: a save step with no list takes the profile''s (no save may forget the Esc)'
+Assert-Equal 'Y' (@(Get-EbiSaveDialogs -Given @('Y') -Profile @{ layout = @{ saveDialogs = @('X') } }) -join ',') 'save dialogs: the step''s own list wins'
+Assert-Equal 0 @(Get-EbiSaveDialogs -Given $null -Profile $null).Count 'save dialogs: none anywhere -> none'
+Assert-Equal '' (ExcelMarkRows-Day -Text 'tomorrow') 'mark_rows: not a date -> empty'
+
 $ctx['DryRun'] = $true
 $ctx['Session']['x'] = @{ kind = 'workbook'; value = $null }
 $m = Invoke-TestStep 'excel.mark_rows' @{ workbook = 'x'; sheet = 'WBS'; keyColumn = 'A'; items = $items; keyField = 'JOB'; setValues = @{ AK = '2026-10-20' } }

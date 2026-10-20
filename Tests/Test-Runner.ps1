@@ -246,6 +246,30 @@ function Invoke-Step {
 }
 '@
 
+# human.ask: a person's answer, counted like fake.count. Lives in its own
+# group dir: the runner tells human steps by their use (human.*) -- on
+# -Resume they are asked again, never replayed (10/20).
+New-Item -ItemType Directory -Path (Join-Path $modules 'human') -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path (Join-Path $modules 'human') 'human.ask.ps1'), @'
+$Manifest = @{
+  id = 'human.ask'; group = 'human'; summary = 'fixture: a counted answer'; tier = 'core'
+  effects = 'ui'; needs = @(); provides = @(); releases = @(); idempotent = $true
+  inputs  = @{ name = @{ type='string'; required=$true } }
+  outputs = @{ n = @{ type='int' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='human.ask'; with=@{ name='x' } }
+}
+function Invoke-Step {
+    param($In, $Ctx)
+    $f = Join-Path $Ctx['WorkDir'] ('count-' + $In['name'] + '.txt')
+    $n = 0
+    if (Test-Path -LiteralPath $f) { $n = [int]([System.IO.File]::ReadAllText($f).Trim()) }
+    $n++
+    [System.IO.File]::WriteAllText($f, [string]$n)
+    return @{ ok = $true; n = $n }
+}
+'@, (New-Object System.Text.UTF8Encoding($false)))
+
 # fake.destroy: a destructive step (gets the confirm gate).
 Write-Fixture 'fake.destroy.ps1' @'
 $Manifest = @{
@@ -1007,6 +1031,20 @@ try {
     Assert-Equal 1 $a2[0]['outputs']['a'] 'resume: A2''s use step got its own fresh count output'
     Assert-Equal 'True' ([string](Read-EbiRunFile -WorkDir $work -RunId 'r-p104-resume')['value']['finished']) 'resume: run.json now says finished'
     Assert-Equal 0 @(Find-EbiUnfinishedRuns -WorkDir $work -WorkflowId 'p104.resume').Count 'resume: no unfinished run is left'
+    # 10/20: a person's answer is asked again on resume, not replayed (the
+    # replayed start time was the wrong one; the operator wants to retype it)
+    Reset-Counters
+    $wf = New-PolicyWorkflow -Name 'resumeask' -OnError '{ "policy": "fail" }' -Rows $threeRows `
+        -Each '[ { "id": "ask",   "use": "human.ask", "with": { "name": "a-{{item.Correl_ID_S}}" } },
+                 { "id": "count", "use": "fake.count", "with": { "name": "k-{{item.Correl_ID_S}}" } },
+                 { "id": "maybe", "use": "fake.fail",  "with": { "mode": "{{item.Correl_ID_S}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-resumeask' -Profile $profile -AskHandler $handler
+    Assert-Equal 'boom' $res['failure'] 'resume ask: run 1 aborts on the second item'
+    $fixed2 = Write-Workflow 'resumeask.json' ([System.IO.File]::ReadAllText($wf).Replace('"Correl_ID_S": "declared"', '"Correl_ID_S": "A2"'))
+    $res = Invoke-EbiWorkflow -Path $fixed2 -WorkDir $work -ModulesRoot $modules -RunId 'r-resumeask' -Profile $profile -AskHandler $handler -Resume
+    Assert-True $res['ok'] 'resume ask: run 2 completes'
+    Assert-Equal 2 (Get-Count 'a-A1') 'resume ask: A1''s human step was asked again'
+    Assert-Equal 1 (Get-Count 'k-A1') 'resume ask: ... while its other completed step was replayed'
     $res = Invoke-EbiWorkflow -Path $fixed -WorkDir $work -ModulesRoot $modules -RunId 'r-never-ran' -Profile $profile -Resume
     Assert-Equal 'workflow_invalid' $res['failure'] 'resume: a run id with no run.json cannot be resumed'
     $other = New-PolicyWorkflow -Name 'other' -Each '[ { "id": "e", "use": "fake.item" } ]'

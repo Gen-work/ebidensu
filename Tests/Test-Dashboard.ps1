@@ -275,7 +275,7 @@ try {
 
     # the loop: run track for A1, clear A1's logs, redraw, quit -- answers scripted, the child run captured
     $answers = New-Object System.Collections.Queue
-    foreach ($x in @('2', 'A1', 'c', 'A1', 'logs', '', 's', 'zz', 'q')) { $answers.Enqueue($x) }
+    foreach ($x in @('2', 'A1', 'c', 'A1', 'logs', '', 's', 'zz', 'k', '', 'q')) { $answers.Enqueue($x) }
     $script:ranArgs = New-Object System.Collections.ArrayList
     $m = Invoke-EbiMenu -ToolDir $tool -WorkDir $work -Operator 'op1' -Reader { $answers.Dequeue() } -Runner { param($CliArgs) [void]$script:ranArgs.Add(@($CliArgs) -join ' '); return 0 } 6>$null
     Assert-True ($m['ok'] -and $m['message'] -eq 'quit') ('menu: ran to q: ' + $m['message'])
@@ -315,6 +315,44 @@ try {
     # the child `ebi.ps1 menu` remembered the temp work dir in the repo's .ebi/menu.json: forget it, but never an operator's own entry
     $stateFile = Get-EbiMenuStateFile -ToolDir $repoRoot
     if ((Test-Path -LiteralPath $stateFile) -and (Read-EbiMenuState -ToolDir $repoRoot)['workDir'] -eq (Join-Path $tmp 'cliwork')) { Remove-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue }
+}
+
+# ---------------------------------------------------------------- self check (menu k, 10/20)
+$scWork = Join-Path ([System.IO.Path]::GetTempPath()) ('ebi-selfcheck-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+New-Item -ItemType Directory -Path $scWork -Force | Out-Null
+try {
+    $scProf = @{
+        name = 'demo'; paths = @{ bix = (Join-Path $scWork 'bix') }
+        worklist = @{ key = @{ columns = @('Excel_NAME') }; columns = @(
+            @{ name = 'Excel_NAME'; role = 'key' }, @{ name = 'JOB'; role = 'text' },
+            @{ name = 'gift'; role = 'verdict'; values = $verdict; needFiles = @('{{profile.paths.bix}}/GIFT/{{item.JOB}}/*.csv') },
+            @{ name = 'track'; role = 'verdict'; values = $verdict; doneFile = 'cap/{{item.keySafe}}/track.json' },
+            @{ name = 'deliver'; role = 'verdict'; values = $verdict }) }
+    }
+    $scPhases = @(Get-EbiDayPhases -Workflows @((New-Wf 'demo.gift' 'gift'), (New-Wf 'demo.track' 'track'), (New-Wf 'demo.deliver' 'deliver')) -ProfileName 'demo' -Columns $scProf['worklist']['columns'])
+    New-Item -ItemType Directory -Path (Join-Path $scWork 'cap/B2') -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $scWork 'cap/B2/track.json'), '{}')
+    New-Item -ItemType Directory -Path (Join-Path $scWork 'bix/GIFT/C3J') -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $scWork 'bix/GIFT/C3J/F1.csv'), 'x')
+    $scRows = @(
+        @{ Excel_NAME = 'A1'; JOB = 'A1J'; gift = 'ok'; track = 'ok'; deliver = '' },     # track ok, no track.json -> lostFile
+        @{ Excel_NAME = 'B2'; JOB = 'B2J'; gift = 'ok'; track = ''; deliver = '' },       # track blank, track.json there -> looksDone; no GIFT csv -> lostGift
+        @{ Excel_NAME = 'C3'; JOB = 'C3J'; gift = 'ok'; track = ''; deliver = '' },       # GIFT csv there -> nothing
+        @{ Excel_NAME = 'D4'; JOB = 'D4J'; gift = ''; track = ''; deliver = 'ok' }        # delivered, earlier blank -> doneBlank x2
+    )
+    $found = @(Get-EbiSelfCheck -Rows $scRows -Profile $scProf -Phases $scPhases -WorkDir $scWork -KeyColumns @('Excel_NAME'))
+    $got = (@($found | ForEach-Object { $_['kind'] + ':' + $_['key'] + ':' + $_['field'] + ':' + $_['op'] }) | Sort-Object) -join ','
+    Assert-Equal 'doneBlank:D4:gift:mark,doneBlank:D4:track:mark,looksDone:B2:track:mark,lostFile:A1:track:clear,lostGift:B2:gift:clear' $got ('self check: lost file / looks done / lost GIFT files / done but blank, nothing for C3: ' + $got)
+    Assert-Equal 'gfixRecv.wbscheck.json' (Get-EbiSelfCheckWorkflowName -ProfileName 'gfix-recv') 'self check: the WBS check workflow of gfix-recv'
+    $rep = Join-Path $scWork 'wbs.json'
+    [void](Write-EbiJson -Path $rep -Value @{ at = '2026-10-20'; doneOnWbs = @('X1'); blankOnWbs = @() })
+    $wl = @(Read-EbiWbsCheckReport -Path $rep)
+    Assert-True ($wl.Count -eq 1 -and $wl[0] -like 'WBS AK filled, not finished here: X1*') ('self check: the WBS report line: ' + ($wl -join ' | '))
+    Assert-Equal 0 @(Read-EbiWbsCheckReport -Path (Join-Path $scWork 'none.json')).Count 'self check: no report -> no lines'
+    $a = Read-EbiMenuAnswer -Text 'k' -PhaseCount 3 -HasUnfinished $false
+    Assert-True ($a['ok'] -and $a['action'] -eq 'k') 'menu: k = self check'
+} finally {
+    Remove-Item -LiteralPath $scWork -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 exit (Complete-Tests)

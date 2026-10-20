@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "util.waitWbs",
+  "title": "WBS が空くまで待って開く(isWbsReady.bat と同じ: 1 分ごと、誰が開いているか表示、q / Esc で止める)",
+  "version": "0.1.0",
+  "_doc": "10/20: the operator's isWbsReady.bat as a workflow. Not a day phase (no profile here, so the menu does not list it): run it with the profile on the command line -- ebi.ps1 run workflows\\util.waitWbs.json -WorkDir <W> -Profile gfix-recv. -Var everySec=30 to look more often.",
+  "vars": { "everySec": 60 },
+  "setup": [
+    { "id": "wait", "use": "file.wait_unlocked",
+      "with": { "path": "{{profile.paths.wbs}}", "everySec": "{{vars.everySec}}", "timeoutMin": 0, "openWhenFree": true } }
+  ]
+}

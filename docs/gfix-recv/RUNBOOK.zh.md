@@ -83,7 +83,7 @@
   **Enter = 推荐的下一步**（菜单第一行 `Enter  run track for today's rows` 写着是什么）。
   数字 = plan / track / logs / evidence / deliver（plan 之后的几段会再问一次 Excel_NAME：
   回车 = 今天的行，`A,B` = 几本，**名字的一部分也行**：`DBC` = 所有带 DBC 的；`a` = 所有日子的待做行 `-AllDays`），
-  `r` = 续跑没跑完的 run，
+  `r` = 续跑没跑完的 run，`k` = 自检（表上 ok 但文件没了、GIFT 文件夹空了、已交付但前面的列空着；`w` 再对一遍 WBS 的实绩，见 KNOWLEDGE K-26），
   `m`（mark）= **手动标 ok**：在工具外面做完了的（手工补的证据、别人代做的），选行（名字或一部分）→ 选列（`1` track `2` logs …）→ Enter；
   `c`（clear）= 清掉判定让那段重做；
   `h`（hold，保留）= 把行**保留**（等 HOST 修复之类，理由默认 `waiting for HOST`）；对已经保留的行再按 `h` = **解除**；

@@ -8,6 +8,10 @@
 # task). Only blank cells are written unless onlyBlank is false, so a date
 # someone typed by hand is never overwritten. Nothing is saved here:
 # the workflow shows the rows and saves with excel.close after a gate.
+# 10/20 (second day): a where value may be a LIST (any of: the after-fix
+# AND the summary task rows), whereMatch checks a column against a regex (the
+# owner column: "owner" / "owner<-other"), numberColumns are written as
+# numbers (AQ hours 0.1), and a date may be typed as M/d (this year).
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Excel.ps1')
 . (Join-Path $PSScriptRoot '..\..\kernel\Key.ps1')         # ConvertTo-EbiHalfWidth
@@ -31,10 +35,12 @@ $Manifest = @{
     keyColumn   = @{ type='string'; required=$true; desc='column letter holding the key (the job name)' }
     items       = @{ type='list';   required=$true; desc='records, one per key (table.select rows)' }
     keyField    = @{ type='string'; required=$true; desc='item field matched against keyColumn' }
-    where       = @{ type='map';    default=@{}; desc='column letter -> value the row must also hold' }
+    where       = @{ type='map';    default=@{}; desc='column letter -> value the row must also hold (a list: any of them)' }
+    whereMatch  = @{ type='map';    default=@{}; desc='column letter -> .NET regex the cell text must match (case-insensitive), e.g. the owner pattern' }
     setFields   = @{ type='map';    default=@{}; desc='column letter -> item field written there' }
     setValues   = @{ type='map';    default=@{}; desc='column letter -> one value written for every item' }
-    dateColumns = @{ type='list';   default=@(); desc='letters written as real dates (yyyy-MM-dd / yyyy/M/d in, an Excel date out; the cell''s format is kept)' }
+    dateColumns = @{ type='list';   default=@(); desc='letters written as real dates (yyyy-MM-dd / yyyy/M/d / M/d (this year) in, an Excel date out; the cell''s format is kept)' }
+    numberColumns = @{ type='list'; default=@(); desc='letters written as numbers (0.1 in, a number out, not the text "0.1")' }
     onlyBlank   = @{ type='bool';   default=$true; desc='false: overwrite cells that already hold a value' }
   }
   outputs    = @{
@@ -49,7 +55,7 @@ $Manifest = @{
     @{ id = 'read_failed';     transient = $true  }
     @{ id = 'write_failed';    transient = $true  }
   )
-  example    = @{ use = 'excel.mark_rows'; with = @{ workbook = 'wbs'; sheet = 'WBS'; firstRow = 7; keyColumn = 'A'; items = '{{steps.pick.out.rows}}'; keyField = 'JOB'; where = @{ B = 'recv' }; setFields = @{ AJ = 'GFIX_DATE' }; setValues = @{ AK = '{{run.date}}' }; dateColumns = @('AJ', 'AK') } }
+  example    = @{ use = 'excel.mark_rows'; with = @{ workbook = 'wbs'; sheet = 'WBS'; firstRow = 7; keyColumn = 'A'; items = '{{steps.pick.out.rows}}'; keyField = 'JOB'; where = @{ B = 'recv'; G = @('after', 'summary') }; whereMatch = @{ P = '^owner' }; setValues = @{ AJ = '{{run.date}}'; AK = '{{run.date}}'; AQ = '0.1' }; dateColumns = @('AJ', 'AK'); numberColumns = @('AQ') } }
   notes      = 'A key with several matching rows (two files listed twice) gets every one written. A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.'
 }
 
@@ -68,6 +74,39 @@ function ExcelMarkRows-CellText {
     return ([string]$Value).Trim()
 }
 
+function ExcelMarkRows-Day {
+    # PURE. A date answer -> yyyy-MM-dd ('' when it is not one). M/d takes the year of Today.
+    param([string]$Text, [datetime]$Today = (Get-Date))
+    $d = ConvertTo-EbiWorklistDay -Text $Text
+    if ($d -ne '') { return $d }
+    $t = (ConvertTo-EbiHalfWidth -Value ([string]$Text)).Trim()
+    if ($t -match '^(\d{1,2})[/-](\d{1,2})$') {
+        try { return ([datetime]::new($Today.Year, [int]$Matches[1], [int]$Matches[2])).ToString('yyyy-MM-dd') } catch { return '' }
+    }
+    return ''
+}
+
+function ExcelMarkRows-WhereOk {
+    # PURE. Does row i hold every where value (a list = any of) and match every whereMatch regex?
+    param($Grid, [int]$Index, $Where, $WhereMatch)
+    foreach ($w in @($Where.Keys)) {
+        $cell = ExcelMarkRows-Norm $Grid[([string]$w).ToUpperInvariant()][$Index]
+        $want = $Where[$w]
+        $alts = if ($want -is [System.Collections.IList] -and -not ($want -is [string])) { @($want) } else { @($want) }
+        $any = $false
+        foreach ($a in $alts) { if ($cell -eq (ExcelMarkRows-Norm $a)) { $any = $true; break } }
+        if (-not $any) { return $false }
+    }
+    foreach ($w in @($WhereMatch.Keys)) {
+        $raw = $Grid[([string]$w).ToUpperInvariant()][$Index]
+        $text = if ($null -eq $raw) { '' } else { (ConvertTo-EbiHalfWidth -Value ([string]$raw)).Trim() }
+        $pat = [string]$WhereMatch[$w]
+        if ($pat -eq '') { continue }
+        if (-not [regex]::IsMatch($text, $pat, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) { return $false }
+    }
+    return $true
+}
+
 function ExcelMarkRows-Plan {
     <#
       PURE. Which cells to write.
@@ -76,9 +115,11 @@ function ExcelMarkRows-Plan {
       Returns @{ writes (@{ row; letter; value; key }); written; kept;
       notFound } -- written / kept are the report lines.
     #>
-    param($Grid, [int]$FirstRow, [string]$KeyColumn, $Items, [string]$KeyField, $Where, $SetFields, $SetValues, $DateColumns = @(), [bool]$OnlyBlank = $true)
+    param($Grid, [int]$FirstRow, [string]$KeyColumn, $Items, [string]$KeyField, $Where, $SetFields, $SetValues, $DateColumns = @(), [bool]$OnlyBlank = $true, $WhereMatch = @{}, $NumberColumns = @(), [datetime]$Today = (Get-Date))
     $keyCol = $KeyColumn.ToUpperInvariant()
     $dates = @(@($DateColumns) | ForEach-Object { ([string]$_).ToUpperInvariant() })
+    $numbers = @(@($NumberColumns) | ForEach-Object { ([string]$_).ToUpperInvariant() })
+    if ($null -eq $WhereMatch) { $WhereMatch = @{} }
     $keys = $Grid[$keyCol]
     $n = @($keys).Count
     $writes = New-Object System.Collections.ArrayList
@@ -95,9 +136,7 @@ function ExcelMarkRows-Plan {
         $hit = $false
         for ($i = 0; $i -lt $n; $i++) {
             if ((ExcelMarkRows-Norm $keys[$i]) -ne $nk) { continue }
-            $match = $true
-            foreach ($w in @($Where.Keys)) { if ((ExcelMarkRows-Norm $Grid[([string]$w).ToUpperInvariant()][$i]) -ne (ExcelMarkRows-Norm $Where[$w])) { $match = $false; break } }
-            if (-not $match) { continue }
+            if (-not (ExcelMarkRows-WhereOk -Grid $Grid -Index $i -Where $Where -WhereMatch $WhereMatch)) { continue }
             $hit = $true
             $row = $FirstRow + $i
             $did = New-Object System.Collections.ArrayList
@@ -108,10 +147,11 @@ function ExcelMarkRows-Plan {
                 if ($null -ne $sf) { $want = if ($it.Contains($sf) -and $null -ne $it[$sf]) { ([string]$it[$sf]).Trim() } else { '' } }
                 foreach ($k in @($SetValues.Keys)) { if (([string]$k).ToUpperInvariant() -eq $l) { $want = ([string]$SetValues[$k]).Trim() } }
                 if ($want -eq '') { continue }
-                if ($isDate) { $d = ConvertTo-EbiWorklistDay -Text $want; if ($d -ne '') { $want = $d } }
+                if ($isDate) { $d = ExcelMarkRows-Day -Text $want -Today $Today; if ($d -ne '') { $want = $d } }
+                $isNum = ($numbers -contains $l)
                 $cur = ExcelMarkRows-CellText -Value $Grid[$l][$i] -IsDate $isDate
                 if ($cur -ne '' -and $OnlyBlank) { [void]$kept.Add(($key + ' row ' + $row + ': ' + $l + ' already ' + $cur)); continue }
-                [void]$writes.Add(@{ row = $row; letter = $l; value = $want; key = $key; date = $isDate })
+                [void]$writes.Add(@{ row = $row; letter = $l; value = $want; key = $key; date = $isDate; number = $isNum })
                 [void]$did.Add(($l + '=' + $want))
             }
             if ($did.Count -gt 0) { [void]$written.Add(($key + ' row ' + $row + ': ' + ($did.ToArray() -join ' '))) }
@@ -125,7 +165,8 @@ function Invoke-Step {
     param($In, $Ctx)
     $empty = @{ written = @(); writtenCount = 0; kept = @(); notFound = @() }
     $letters = New-Object System.Collections.ArrayList
-    foreach ($l in @([string]$In['keyColumn']) + @($In['where'].Keys) + @($In['setFields'].Keys) + @($In['setValues'].Keys)) {
+    $wm = if ($In['whereMatch'] -is [System.Collections.IDictionary]) { $In['whereMatch'] } else { @{} }
+    foreach ($l in @([string]$In['keyColumn']) + @($In['where'].Keys) + @($wm.Keys) + @($In['setFields'].Keys) + @($In['setValues'].Keys)) {
         $u = ([string]$l).ToUpperInvariant()
         if ((ConvertTo-EbiColumnNumber $u) -le 0) { $r = $empty.Clone(); $r['ok'] = $false; $r['failure'] = 'input_invalid'; $r['message'] = ('"' + $l + '" is not a column letter'); return $r }
         if (-not $letters.Contains($u)) { [void]$letters.Add($u) }
@@ -151,17 +192,32 @@ function Invoke-Step {
             $grid[$l] = $arr
         }
     } catch { $r = $empty.Clone(); $r['ok'] = $false; $r['failure'] = 'read_failed'; $r['message'] = $_.Exception.Message; return $r }
-    $plan = ExcelMarkRows-Plan -Grid $grid -FirstRow $first -KeyColumn ([string]$In['keyColumn']) -Items $In['items'] -KeyField ([string]$In['keyField']) -Where $In['where'] -SetFields $In['setFields'] -SetValues $In['setValues'] -DateColumns $In['dateColumns'] -OnlyBlank ([bool]$In['onlyBlank'])
+    $plan = ExcelMarkRows-Plan -Grid $grid -FirstRow $first -KeyColumn ([string]$In['keyColumn']) -Items $In['items'] -KeyField ([string]$In['keyField']) -Where $In['where'] -SetFields $In['setFields'] -SetValues $In['setValues'] -DateColumns $In['dateColumns'] -OnlyBlank ([bool]$In['onlyBlank']) -WhereMatch $wm -NumberColumns $In['numberColumns']
     try {
         foreach ($w in @($plan['writes'])) {
             $cell = $ws.Range(('{0}{1}' -f $w['letter'], $w['row']))
             if ([bool]$w['date'] -and [string]$w['value'] -match '^\d{4}-\d{2}-\d{2}$') {
                 $cell.Value2 = ([datetime]::ParseExact([string]$w['value'], 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)).ToOADate()
+            } elseif ([bool]$w['number'] -and [string]$w['value'] -match '^-?\d+(\.\d+)?$') {
+                $cell.Value2 = [double]::Parse([string]$w['value'], [System.Globalization.CultureInfo]::InvariantCulture)
             } else {
                 $cell.Value2 = [string]$w['value']
             }
         }
     } catch { $r = $empty.Clone(); $r['ok'] = $false; $r['failure'] = 'write_failed'; $r['message'] = $_.Exception.Message; return $r }
+    # 10/20: the log said written, the WBS showed nothing -- read every
+    # written cell back, so a write that did not stick is a failure here
+    $lost = New-Object System.Collections.ArrayList
+    foreach ($w in @($plan['writes'])) {
+        $back = $null
+        try { $back = $ws.Range(('{0}{1}' -f $w['letter'], $w['row'])).Value2 } catch { }
+        if ($null -eq $back -or ([string]$back).Trim() -eq '') { [void]$lost.Add(('{0}{1}' -f $w['letter'], $w['row'])) }
+    }
+    if ($lost.Count -gt 0) {
+        $r = $empty.Clone(); $r['ok'] = $false; $r['failure'] = 'write_failed'
+        $r['message'] = ('written but still empty when read back: ' + ($lost.ToArray() -join ', ') + ' (a filter, a protected sheet, or the wrong workbook?) -- nothing saved yet; look at the sheet, then r')
+        return $r
+    }
     Invoke-EbiComRelease $ws
     foreach ($l in @($plan['written'])) { $Ctx.Log.Info(('wrote ' + $l)) }
     $warn = @(foreach ($k in @($plan['notFound'])) { @{ code = 'row_not_found'; message = ('no ' + $In['sheet'] + ' row for ' + $k + ' (type it by hand)') } })

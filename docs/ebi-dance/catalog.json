@@ -947,7 +947,7 @@
         },
         "dismissDialogs": {
           "default": [],
-          "desc": "title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does",
+          "desc": "title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs",
           "type": "list"
         },
         "firstRow": {
@@ -1033,7 +1033,7 @@
       "inputs": {
         "dismissDialogs": {
           "default": [],
-          "desc": "title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do",
+          "desc": "title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs",
           "type": "list"
         },
         "save": {
@@ -1432,15 +1432,24 @@
           "items": "{{steps.pick.out.rows}}",
           "keyColumn": "A",
           "keyField": "JOB",
-          "setFields": {
-            "AJ": "GFIX_DATE"
-          },
+          "numberColumns": [
+            "AQ"
+          ],
           "setValues": {
-            "AK": "{{run.date}}"
+            "AJ": "{{run.date}}",
+            "AK": "{{run.date}}",
+            "AQ": "0.1"
           },
           "sheet": "WBS",
           "where": {
-            "B": "recv"
+            "B": "recv",
+            "G": [
+              "after",
+              "summary"
+            ]
+          },
+          "whereMatch": {
+            "P": "^owner"
           },
           "workbook": "wbs"
         }
@@ -1470,7 +1479,7 @@
       "inputs": {
         "dateColumns": {
           "default": [],
-          "desc": "letters written as real dates (yyyy-MM-dd / yyyy/M/d in, an Excel date out; the cell's format is kept)",
+          "desc": "letters written as real dates (yyyy-MM-dd / yyyy/M/d / M/d (this year) in, an Excel date out; the cell's format is kept)",
           "type": "list"
         },
         "firstRow": {
@@ -1491,6 +1500,11 @@
           "desc": "item field matched against keyColumn",
           "required": true,
           "type": "string"
+        },
+        "numberColumns": {
+          "default": [],
+          "desc": "letters written as numbers (0.1 in, a number out, not the text \"0.1\")",
+          "type": "list"
         },
         "onlyBlank": {
           "default": true,
@@ -1513,7 +1527,12 @@
         },
         "where": {
           "default": {},
-          "desc": "column letter -> value the row must also hold",
+          "desc": "column letter -> value the row must also hold (a list: any of them)",
+          "type": "map"
+        },
+        "whereMatch": {
+          "default": {},
+          "desc": "column letter -> .NET regex the cell text must match (case-insensitive), e.g. the owner pattern",
           "type": "map"
         },
         "workbook": {
@@ -2109,7 +2128,7 @@
         },
         "dismissDialogs": {
           "default": [],
-          "desc": "title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving",
+          "desc": "title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs",
           "type": "list"
         },
         "fontName": {
@@ -3250,6 +3269,82 @@
       "summary": "Wait for a new file in a folder whose size has stopped changing",
       "tier": "core"
     },
+    "file.wait_unlocked": {
+      "effects": "ui",
+      "example": {
+        "use": "file.wait_unlocked",
+        "with": {
+          "everySec": 60,
+          "path": "{{profile.paths.wbs}}",
+          "timeoutMin": 30
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "locked",
+          "transient": true
+        },
+        {
+          "id": "operator_quit",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.wait_unlocked.ps1",
+      "group": "file",
+      "id": "file.wait_unlocked",
+      "idempotent": true,
+      "inputs": {
+        "everySec": {
+          "default": 60,
+          "desc": "seconds between two looks (the .bat waited a minute)",
+          "type": "int"
+        },
+        "openWhenFree": {
+          "default": false,
+          "desc": "open the file in its own program once it is free (standalone use)",
+          "type": "bool"
+        },
+        "path": {
+          "desc": "the shared file; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "timeoutMin": {
+          "default": 30,
+          "desc": "give up after this many minutes (failure locked, r waits again); 0 = until it is free or q",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "A file the run itself has open (an excel.open earlier in the same run) counts as held: put this step BEFORE that open. Under DryRun nothing is opened or waited for (free=true).",
+      "outputs": {
+        "free": {
+          "desc": "the file could be opened exclusively",
+          "type": "bool"
+        },
+        "heldBy": {
+          "desc": "who held it at the last look that failed (\"\" when Excel's owner file says nothing or it was free at once)",
+          "type": "string"
+        },
+        "path": {
+          "type": "path"
+        },
+        "polls": {
+          "type": "int"
+        },
+        "waitedSec": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Wait until a shared file can be opened exclusively; say who holds it meanwhile",
+      "tier": "core"
+    },
     "file.write_json": {
       "effects": "write",
       "example": {
@@ -3824,6 +3919,11 @@
       "id": "human.paste",
       "idempotent": true,
       "inputs": {
+        "countsGroup": {
+          "default": "counts",
+          "desc": "the named group that holds the counts: counts typed by hand (\"5 ken 13:30\") land in it",
+          "type": "string"
+        },
         "defaultClock": {
           "default": "",
           "desc": "a start time already known (the worklist row): Enter takes it, n takes now",
@@ -3874,7 +3974,7 @@
           "type": "bool"
         },
         "source": {
-          "desc": "now | typed | worklist | without | auto",
+          "desc": "now | typed | worklist | without | auto (pasted / typed text with no time in it is now)",
           "type": "string"
         },
         "text": {

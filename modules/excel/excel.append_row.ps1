@@ -31,7 +31,7 @@ $Manifest = @{
     dateColumns = @{ type='list';   default=@(); desc='columns whose value (yyyy-MM-dd or yyyy/MM/dd) is written as a real date, formatted like the row above' }
     save        = @{ type='bool';   default=$true; desc='save the workbook right after writing (a shared list: keep the time it is changed short)' }
     checkOnly   = @{ type='bool';   default=$false; desc='only look: is the key listed? (existing / verdict / line), never write or save -- for a flow that writes the row after a person confirmed (gfixRecv.deliver: after the mail was sent)' }
-    dismissDialogs = @{ type='list'; default=@(); desc='title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does' }
+    dismissDialogs = @{ type='list'; default=@(); desc='title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs' }
   }
   outputs    = @{
     row      = @{ type='int';  desc='the row written, or the row that already held the key; 0 in a dry run' }
@@ -143,7 +143,7 @@ function Invoke-Step {
     } catch { return @{ ok = $false; failure = 'write_failed'; message = $_.Exception.Message; row = 0; added = $false; existing = $false } }
     if ([bool]$In['save']) {
         $err = ''
-        $watch = Start-EbiDialogWatch -TitleParts @($In['dismissDialogs'])
+        $watch = Start-EbiDialogWatch -TitleParts @(Get-EbiSaveDialogs -Given $In['dismissDialogs'] -Profile $Ctx['Profile'])
         try { [void]$wb.Save() } catch { $err = $_.Exception.Message }
         $seen = Stop-EbiDialogWatch $watch
         foreach ($t in @($seen['answered'])) { $Ctx.Log.Info(('answered "{0}" with Esc while saving' -f $t)) }

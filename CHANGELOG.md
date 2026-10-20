@@ -1,3 +1,138 @@
+## 2026-10-20 - every save answers the save dialogs; mark_rows reads its writes back (v2.30.1)
+
+10/20 follow-up: the WBS has its classification registered, so the save
+dialog was not what lost the AK dates; before Enter at the WBS gate the
+values were already not visible (a filter on, the operator thinks).
+
+### Changed
+- **`Get-EbiSaveDialogs`** (kernel/Excel.ps1): `excel.close`, `excel.tidy`
+  and `excel.append_row` given no `dismissDialogs` use the profile's
+  `layout.saveDialogs`, else `layout.evidence.saveDialogs` -- no save step
+  can forget the Esc.
+- **excel.mark_rows**: every written cell is read back; one still empty
+  is `write_failed` naming the cells (nothing saved yet: look, then r).
+
+### Docs / tests
+- KNOWLEDGE K-24 updated with the operator's account. `Test-PlanSets`:
+  the dialog fallback.
+
+## 2026-10-20 - file.wait_unlocked (the operator's isWbsReady.bat as a step); menu k = self check (v2.30.0)
+
+10/20 feedback 3 and 4: shared workbooks came back read-only with nobody
+named; things that needed a hand (a verdict with no file behind it, an
+empty GIFT folder, a delivered row whose earlier columns were blank, the
+WBS saying done while the worklist did not) had to be found by eye.
+
+### Added
+- **`file.wait_unlocked`** (modules/file): opens the file read+write with
+  no sharing every `everySec` (default 60); while that fails it prints who
+  holds it (Excel's `~$` owner file) and waits; `q` / `Esc` stops;
+  `timeoutMin` (default 30, 0 = until free) -> `locked` (transient, r
+  waits again); `openWhenFree` opens it in its own program.
+  `workflows/util.waitWbs.json` is the .bat: `ebi.ps1 run
+  workflows\util.waitWbs.json -WorkDir <W> -Profile gfix-recv`.
+- gfixRecv.deliver waits for the review check sheet (30 s) and the WBS
+  (60 s) before opening them; gfixRecv.evidence v0.5.2 waits for each
+  evidence book (10 s, 10 min) before opening it.
+- **Menu `k` (self check)**, files and worklist only: a verdict ok but its
+  `doneFile` gone (-> clear), blank but its `doneFile` there (-> mark
+  ok), a column's new `needFiles` globs all empty while the next phase is
+  not done (gift: `DATA/GIFT/<J>|<W>/*.csv` -> clear gift), the last
+  verdict ok with earlier ones blank (-> mark ok). Enter fixes them all.
+  `w` runs **`gfixRecv.wbscheck.json`** (read-only): WBS AK filled but not
+  finished here / finished here but WBS AK blank, shown, nothing written.
+
+### Docs / tests
+- KNOWLEDGE K-13 (10/20), K-25 the picture check stays strict (operator:
+  a wrong picture did happen; a person decides), K-26 the self check.
+  RUNBOOK menu keys. Tests: `Test-Steps` (owner file, free / held file,
+  one look, no file), `Test-Dashboard` (the four kinds, the WBS report,
+  menu k).
+
+## 2026-10-20 - deliver writes the WBS actuals on both task rows of your own rows, checks the save really reached the file (v2.29.3)
+
+10/20 deliver said `wrote ... AK=2026-10-20` and `saved=True` for three
+jobs, and the WBS had nothing in AK.
+
+### Fixed
+- **excel.close**: a workbook with changes must leave a newer file after
+  `Save()`; if the file is unchanged and Excel still calls it dirty, the
+  step fails `save_failed` (the workbook stays open: save by hand, then r)
+  instead of reporting saved. A save dialog (the classification add-in)
+  can cancel a save without an error.
+- **gfixRecv.deliver v0.3.0**: the WBS save answers the save dialogs with
+  Esc (`dismissDialogs`, as the check sheet does).
+
+### Changed
+- **gfixRecv.deliver v0.3.0**: the WBS rows written are B = 受信, G =
+  修正後実施 AND 結果まとめ, P = the operator (owner / owner<-other /
+  other->owner, the plan's `verify.owner_pattern`). AJ = AK = the day asked
+  once (Enter = today, `10/21` works), AQ = the hours asked once (Enter =
+  0.1, written as a number). Blank cells only, as before.
+- **excel.mark_rows**: a `where` value may be a list (any of);
+  `whereMatch` (column -> regex on the cell text); `numberColumns`; a date
+  typed as M/d takes this year.
+
+### Docs / tests
+- KNOWLEDGE K-24. `Tests\Test-PlanSets.ps1`: both task rows, own rows only
+  (someone else's -> not found), M/d, AQ as a number, a hand-typed AJ kept.
+
+## 2026-10-20 - resume asks a person again; PASTE takes the pasted message or "5件 13:30"; the 10/20 holes in KNOWLEDGE (v2.29.2)
+
+10/20 receive day feedback (LJ / MJ / SJODWSPQ; the plan's times were not
+the day's: MJODWSPQ planned 11:30, ran 13:30).
+
+### Changed
+- **Runner `-Resume`**: a `human.*` step completed before the resume is
+  asked again, not replayed from the ledger (line: `answered before this
+  resume: asked again`). The resumed track had replayed the wrong start
+  time 11:30 and failed the same way; only "forget + new run" let the
+  operator type 13:30. Other completed steps are replayed as before.
+- **human.paste**: at the prompt the operator can also type or paste the
+  start message itself (a time may follow: `<message> 13:30`), or the
+  counts by hand (`5件 13:30`, `13:30 815件、46件`). Only the pattern's
+  named groups are read, so Teams reaction lines ("2 件の いいね!") are
+  not counts; a message for another job is refused naming both. No time
+  in it = now. New input `countsGroup` (default `counts`). The panel is
+  one answer per line, and the Enter line says the row's time may be the
+  PLAN. Any other text is now checked like the clipboard instead of "not
+  understood".
+
+### Docs
+- `docs/ebi-dance/KNOWLEDGE.md`: K-18 resume replayed the wrong answer,
+  K-19 PASTE answers (and: multi-line text pasted into the console splits
+  into several answers -- copy in Teams, then Enter), K-20 a verdict
+  edited by hand without its sidecar, K-21 the start time is the only link
+  between a GoAnywhere row and a job (no job name on the row, near-identical
+  test data, HOST runs a job every 15 min), K-22 DATA\GIFT lives under
+  paths.bix, K-23 whose job: WBS, not the mapping owner column. Checklist
+  items 9 and 10.
+
+### Tests
+- `Tests\Test-Runner.ps1`: a human.* fixture is counted twice across a
+  resume while a fake step next to it is replayed.
+- `Tests\Test-GfixRecvSteps.ps1`: message + time, message alone, reaction
+  lines, typed counts (one / two files, time before or after), a time alone.
+
+## 2026-10-20 - human.pick: one picked name is still a list (gift could not download a single GIFT file) (v2.29.1)
+
+First office run of the v2.29.0 gift phase (LJODWSPQ): picking ONE file
+(`F202609140003`) failed at the download with `input_invalid: input
+'names' expects list, got string`, on every retry.
+
+### Fixed
+- **human.pick**: `picked` was built with `$x = if (...) { ... } else { ... }`,
+  and a PowerShell if-expression unrolls a one-element array to the bare
+  string (and an empty one to null). All three places now wrap it,
+  `@(if (...) { ... })`, so one pick is a one-element list and "0 =
+  nothing today" an empty list. Plan was not hit only because its picks
+  usually hold several jobs.
+
+### Tests
+- `Tests\Test-PlanSets.ps1`: a one-name pick is an IList that passes the
+  registry's `list` input check; `0` gives an empty list, not null. Both
+  fail on v2.29.0.
+
 ## 2026-10-20 - plan picks today's jobs from sets (today / late / ahead), a gift phase finds missing GIFT files on Jenkins, the board and phases take today's rows only, hold, mark ok by hand, deliver writes the WBS actual dates (v2.29.0)
 
 From the 10/19-10/20 WBS (DETOUR-GFIX-001.10): jobs done early on 10/16

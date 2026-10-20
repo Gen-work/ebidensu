@@ -11,6 +11,11 @@
 # written back after a live start) is what Enter takes, so a rerun or a
 # replay of an old day needs no message at all.
 #
+# 10/20: the message (or just its counts) can also be pasted / typed AT
+# the prompt, with or without a time: "<message> 13:30", "5<ken> 13:30".
+# Only what the pattern names is read (job, counts); the rest of the text --
+# Teams adds reaction lines -- is ignored.
+#
 # The panel stays until the clipboard holds a matching message for the
 # expected job, the operator goes on without one (k: the time is now), or
 # skips the item (s -> operator_skip, which a workflow maps to policy skip)
@@ -37,13 +42,14 @@ $Manifest = @{
     expectGroup = @{ type='string'; default='job' }
     defaultClock = @{ type='string'; default=''; desc='a start time already known (the worklist row): Enter takes it, n takes now' }
     messageWithTime = @{ type='string'; default=''; desc='shown instead of message when defaultClock is set (the copy-the-message text does not fit a rerun)' }
+    countsGroup = @{ type='string'; default='counts'; desc='the named group that holds the counts: counts typed by hand ("5 ken 13:30") land in it' }
   }
   outputs    = @{
     text    = @{ type='string'; desc='the clipboard text used ("" when going on without one)' }
     fields  = @{ type='map';    desc='every named group of the pattern ("" when it did not match / no message)' }
     clock   = @{ type='string'; desc='HH:mm:ss: when Enter was pressed, or the time typed' }
     date    = @{ type='string'; desc='yyyy-MM-dd of that moment' }
-    source  = @{ type='string'; desc='now | typed | worklist | without | auto' }
+    source  = @{ type='string'; desc='now | typed | worklist | without | auto (pasted / typed text with no time in it is now)' }
     fresh   = @{ type='bool';   desc='the time was decided just now (now / typed) and should be written back to the row' }
   }
   failures   = @(
@@ -91,16 +97,39 @@ function HumanPaste-Check {
 }
 
 function HumanPaste-Typed {
-    # PURE. A typed answer -> @{ kind = enter|n|k|s|time|other; clock }.
+    <#
+      PURE. A typed answer -> @{ kind = enter|n|k|s|time|counts|text|other;
+      clock; text; counts }.
+        time    10:30 / 1030 / 10:30:25 alone
+        counts  counts typed by hand, a time optional: "5<ken> 13:30",
+                "815<ken>,46<ken>"
+        text    anything else with a time taken out of it (or none): the
+                caller checks it like the clipboard (a pasted message)
+    #>
     param([string]$Answer)
     $a = if ($null -eq $Answer) { '' } else { (ConvertTo-EbiHalfWidth -Value $Answer).Trim() }
-    if ($a -eq '') { return @{ kind = 'enter'; clock = '' } }
-    if ($a -eq 'k' -or $a -eq 's' -or $a -eq 'n') { return @{ kind = $a; clock = '' } }
+    if ($a -eq '') { return @{ kind = 'enter'; clock = ''; text = ''; counts = '' } }
+    if ($a -eq 'k' -or $a -eq 's' -or $a -eq 'n') { return @{ kind = $a; clock = ''; text = ''; counts = '' } }
     if ($a -match '^([01]?\d|2[0-3])[:.]?([0-5]\d)(?:[:.]([0-5]\d))?$') {
         $sec = if ($Matches[3]) { [int]$Matches[3] } else { 0 }
-        return @{ kind = 'time'; clock = ('{0:00}:{1:00}:{2:00}' -f [int]$Matches[1], [int]$Matches[2], $sec) }
+        return @{ kind = 'time'; clock = ('{0:00}:{1:00}:{2:00}' -f [int]$Matches[1], [int]$Matches[2], $sec); text = ''; counts = '' }
     }
-    return @{ kind = 'other'; clock = '' }
+    $clock = ''
+    $rest = $a
+    $tm = [regex]::Match($a, '(?<![\d:.])([01]?\d|2[0-3])[:.]([0-5]\d)(?:[:.]([0-5]\d))?(?![\d:.])')
+    if ($tm.Success) {
+        $sec = if ($tm.Groups[3].Success) { [int]$tm.Groups[3].Value } else { 0 }
+        $clock = ('{0:00}:{1:00}:{2:00}' -f [int]$tm.Groups[1].Value, [int]$tm.Groups[2].Value, $sec)
+        $rest = $a.Remove($tm.Index, $tm.Length).Trim()
+    }
+    $ken = [string][char]0x4EF6
+    $sep = '[' + [string][char]0x3001 + ',' + [string][char]0xFF0C + ']'
+    if ($rest -match ('^\d+\s*' + $ken + '(?:\s*' + $sep + '?\s*\d+\s*' + $ken + ')*$')) {
+        $parts = @([regex]::Matches($rest, ('\d+\s*' + $ken)) | ForEach-Object { ($_.Value -replace '\s', '') })
+        return @{ kind = 'counts'; clock = $clock; text = ''; counts = ($parts -join ([string][char]0x3001)) }
+    }
+    if ($rest -ne '') { return @{ kind = 'text'; clock = $clock; text = $rest; counts = '' } }
+    return @{ kind = 'other'; clock = ''; text = ''; counts = '' }
 }
 
 function HumanPaste-Decide {
@@ -145,22 +174,24 @@ function Invoke-Step {
     $msg = if ($default -ne '' -and -not [string]::IsNullOrWhiteSpace([string]$In['messageWithTime'])) { [string]$In['messageWithTime'] } else { [string]$In['message'] }
     [void]$head.Add($msg)
     if ($expect -ne '') { [void]$head.Add(('this item: ' + $expect + $(if ($default -ne '') { '   time on the row: ' + $default } else { '' }))) }
+    $ken = [string][char]0x4EF6
     $next = if ($default -ne '') {
-        @(('Enter: start time = ' + $default + ' (the row in the worklist; the clipboard is only checked)'),
-          'n: start time = NOW (copy the start message first)',
-          '10:30 (a time): start time = the time typed',
-          'k: go on without a message (start time = the row''s time)',
-          's: skip this item (leave it pending)   q: cancel the whole run')
+        @(('Enter            start = ' + $default + ' (the time on the row; it may be the PLAN, not today)'),
+          '13:30            start = the time you type',
+          'n                start = now (Ctrl+C the start message in Teams first)',
+          ('paste the msg    start = now, counts from it; add 13:30 at the end for another time'),
+          ('5' + $ken + ' 13:30       counts and start time typed by hand'),
+          'k = no message (the row''s time)   s = skip this job   q = stop the run')
     } else {
-        @('Enter: read the clipboard; the start time is NOW',
-          '10:30 (a time): start time = the time typed (the clipboard is only checked)',
-          'k: go on without a message (start time = now)',
-          's: skip this item (leave it pending)',
-          'q: cancel the whole run')
+        @('Enter            start = now (Ctrl+C the start message in Teams first)',
+          '13:30            start = the time you type',
+          ('paste the msg    start = now, counts from it; add 13:30 at the end for another time'),
+          ('5' + $ken + ' 13:30       counts and start time typed by hand'),
+          'k = no message (start = now)   s = skip this job   q = stop the run')
     }
     $what = $head.ToArray()
     while ($true) {
-        $r = Show-EbiGate -Title 'PASTE' -What $what -Next $next -Actions @(@{ key = 'c'; label = 'Enter / n / 10:30 / k / s / q' }) -Default 'c' -Auto 'c' -DryRun ([bool]$Ctx['DryRun']) -Raw
+        $r = Show-EbiGate -Title 'PASTE' -What $what -Next $next -Actions @(@{ key = 'c'; label = 'Enter / 13:30 / n / message / k / s / q' }) -Default 'c' -Auto 'c' -DryRun ([bool]$Ctx['DryRun']) -Raw
         $now = Get-Date
         $empty = HumanPaste-EmptyFields -Pattern $pattern
         if ($r['auto']) {
@@ -169,9 +200,27 @@ function Invoke-Step {
             return @{ ok = $true; text = ''; fields = $empty; clock = $ac; date = $now.ToString('yyyy-MM-dd'); source = 'auto'; fresh = $false }
         }
         if ([string]$r['action'] -eq 'q') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q'; text = ''; fields = $empty; clock = ''; date = ''; source = ''; fresh = $false } }
-        $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer ([string]$r['note'])) -Default $default -NowClock $now.ToString('HH:mm:ss')
+        $ty = HumanPaste-Typed -Answer ([string]$r['note'])
+        if ($ty['kind'] -eq 'counts' -or $ty['kind'] -eq 'text') {
+            $tc = if ([string]$ty['clock'] -ne '') { [string]$ty['clock'] } else { $now.ToString('HH:mm:ss') }
+            $ts = if ([string]$ty['clock'] -ne '') { 'typed' } else { 'now' }
+            if ($ty['kind'] -eq 'counts') {
+                $f = HumanPaste-EmptyFields -Pattern $pattern
+                $f[[string]$In['countsGroup']] = [string]$ty['counts']
+                $Ctx.Log.Info(('{0}: start time {1} ({2}); counts {3} typed' -f $expect, $tc, $ts, $ty['counts']))
+                return @{ ok = $true; text = ''; fields = $f; clock = $tc; date = $now.ToString('yyyy-MM-dd'); source = $ts; fresh = $true }
+            }
+            $c = HumanPaste-Check -Text ([string]$ty['text']) -Pattern $pattern -Expect $expect -ExpectGroup $eg
+            if ($c['ok']) {
+                $Ctx.Log.Info(('{0}: start time {1} ({2}); start message pasted at the prompt' -f $expect, $tc, $ts))
+                return @{ ok = $true; text = [string]$ty['text']; fields = $c['fields']; clock = $tc; date = $now.ToString('yyyy-MM-dd'); source = $ts; fresh = $true }
+            }
+            $what = @($head.ToArray()) + @(('typed: ' + $c['reason'] + ' -- Enter, a time like 13:30, the start message, 5' + $ken + ' 13:30, k, s or q'))
+            continue
+        }
+        $d = HumanPaste-Decide -Typed $ty -Default $default -NowClock $now.ToString('HH:mm:ss')
         if ($d['kind'] -eq 'skip') { return @{ ok = $false; failure = 'operator_skip'; message = 'operator skipped this item'; text = ''; fields = $empty; clock = ''; date = ''; source = ''; fresh = $false } }
-        if ($d['kind'] -eq 'again') { $what = @($head.ToArray()) + @(('not understood: "' + [string]$r['note'] + '" -- Enter, n, a time like 10:30, k, s or q')); continue }
+        if ($d['kind'] -eq 'again') { $what = @($head.ToArray()) + @(('not understood: "' + [string]$r['note'] + '" -- Enter, a time like 13:30, the start message, 5' + $ken + ' 13:30, k, s or q')); continue }
         if ($d['source'] -eq 'without') { return @{ ok = $true; text = ''; fields = $empty; clock = $d['clock']; date = $now.ToString('yyyy-MM-dd'); source = 'without'; fresh = ($default -eq '') } }
         $text = Get-EbiClipboardText
         $c = HumanPaste-Check -Text $text -Pattern $pattern -Expect $expect -ExpectGroup $eg

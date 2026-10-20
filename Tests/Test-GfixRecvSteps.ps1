@@ -494,7 +494,7 @@ try {
     Assert-Equal 'time|10:30:00' ((HumanPaste-Typed -Answer '10:30')['kind'] + '|' + (HumanPaste-Typed -Answer '10:30')['clock']) 'paste: a typed time replaces now'
     Assert-Equal '09:05:00' (HumanPaste-Typed -Answer '905')['clock'] 'paste: 905 -> 09:05:00'
     $kinds = @(foreach ($a in @('', 'n', 'k', 's', 'zz')) { (HumanPaste-Typed -Answer $a)['kind'] })
-    Assert-Equal 'enter|n|k|s|other' ($kinds -join '|') 'paste: Enter / n / k / s / anything else'
+    Assert-Equal 'enter|n|k|s|text' ($kinds -join '|') 'paste: Enter / n / k / s / anything else is text, checked like the clipboard'
     $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer '') -Default '11:45:29' -NowClock '13:00:00'
     Assert-True ($d['clock'] -eq '11:45:29' -and $d['source'] -eq 'worklist' -and -not $d['needMessage']) 'paste: Enter with a time on the row takes the row (a rerun / an old day needs no message)'
     $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer '') -Default '' -NowClock '13:00:00'
@@ -530,6 +530,26 @@ try {
     Assert-True ($gl['ok'] -and $gl['total'] -eq 1) 'gift: after the files are put in, r goes on'
     $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer 'k') -Default '10:30:25' -NowClock '14:56:48'
     Assert-True ($d['clock'] -eq '10:30:25' -and $d['source'] -eq 'without') 'paste: k on a row with a time keeps that time (the second office run took now and overwrote it)'
+
+    Write-Host '  -- 10/20: the start message / its counts typed or pasted AT the prompt'
+    $no = [string][char]0x306E; $iine = -join @([char]0x3044, [char]0x3044, [char]0x306D)
+    $msgSJ = $kana + ':SJODWSPQ' + $wo + $jisshi + '(' + $yotei + ':5' + $ken + ')'
+    $ty = HumanPaste-Typed -Answer ($msgSJ + ' 13:30')
+    Assert-True ($ty['kind'] -eq 'text' -and $ty['clock'] -eq '13:30:00' -and $ty['text'] -eq $msgSJ) ('paste: "<message> 13:30" -> the time comes out, the message stays: ' + $ty['kind'] + ' ' + $ty['clock'])
+    $c = HumanPaste-Check -Text $ty['text'] -Pattern $pat -Expect 'SJODWSPQ' -ExpectGroup 'job'
+    Assert-True ($c['ok'] -and $c['fields']['counts'] -eq ('5' + $ken)) 'paste: ... and it is checked like the clipboard (job + counts)'
+    $ty = HumanPaste-Typed -Answer $msgSJ
+    Assert-True ($ty['kind'] -eq 'text' -and $ty['clock'] -eq '') 'paste: the message with no time -> text, no clock (the caller takes now)'
+    $withReaction = $msgSJ + "`r`n2 " + $ken + $no + ' ' + $iine + "!`r`n2"
+    $c = HumanPaste-Check -Text $withReaction -Pattern $pat -Expect 'SJODWSPQ' -ExpectGroup 'job'
+    Assert-True ($c['ok'] -and $c['fields']['counts'] -eq ('5' + $ken)) ('paste: Teams reaction lines ("2 ' + 'ken of likes") are not counts: ' + $c['fields']['counts'])
+    $ty = HumanPaste-Typed -Answer ('5' + $ken + ' 13:30')
+    Assert-True ($ty['kind'] -eq 'counts' -and $ty['counts'] -eq ('5' + $ken) -and $ty['clock'] -eq '13:30:00') 'paste: "5 ken 13:30" -> counts and time typed by hand'
+    $ty = HumanPaste-Typed -Answer ('13:30 815' + $ken + $ten + '46 ' + $ken)
+    Assert-True ($ty['kind'] -eq 'counts' -and $ty['counts'] -eq ('815' + $ken + $ten + '46' + $ken)) ('paste: time first, two counts -> both counts: ' + $ty['counts'])
+    $ty = HumanPaste-Typed -Answer ('5' + $ken)
+    Assert-True ($ty['kind'] -eq 'counts' -and $ty['clock'] -eq '') 'paste: counts alone -> no clock (the caller takes now)'
+    Assert-Equal 'time' (HumanPaste-Typed -Answer '13:30')['kind'] 'paste: a time alone is still the time answer'
 
     Write-Host '  -- GIFT Shift_JIS vs GFIX UTF-8 (office run 3: DF said same content, the compare said ng at line 1)'
     $line1 = -join @([char]0xFF33, [char]0xFF33, ',', [char]0x8A08, [char]0x753B, [char]0x5206, [char]0x985E, ',', [char]0xFF33, [char]0xFF30, [char]0x90E8, [char]0x756A, [char]0x51E6, [char]0x7406)

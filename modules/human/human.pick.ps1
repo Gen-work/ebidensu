@@ -187,7 +187,7 @@ function Invoke-Step {
     $info = @(@($In['info']) | Where-Object { [string]$_ -ne '' } | ForEach-Object { [string]$_ })
     $held = @(); $heldReason = ''
     if ([bool]$In['autoPick']) {
-        $keys = if ($presets.Count -gt 0) { @($presets[0]['names']) } else { @() }
+        $keys = @(if ($presets.Count -gt 0) { @($presets[0]['names']) })   # @(if ...): a lone name stays a list
         $Ctx.Log.Info(('taken without asking: ' + ($keys -join ', ')))
         return @{ ok = $true; picked = $keys; pickedCount = @($keys).Count; any = (@($keys).Count -gt 0); hold = @(); holdReason = ''; answer = ''; auto = $true }
     }
@@ -221,7 +221,7 @@ function Invoke-Step {
             }
             $r = Show-EbiGate -Title ([string]$In['title'] + $(if ($level -eq 'more') { ': every set' } else { '' })) -What $what -Next $next -Actions @(@{ key = 'i'; label = 'answer (Enter = 1)' }, @{ key = 'q'; label = 'quit' }) -Default 'i' -Auto 'i' -DryRun ([bool]$Ctx['DryRun']) -Reader $reader -Raw
             if ($r['auto']) {
-                $keys = if ($presets.Count -gt 0) { @($presets[0]['names']) } else { @() }
+                $keys = @(if ($presets.Count -gt 0) { @($presets[0]['names']) })   # @(if ...): a lone name stays a list
                 $Ctx.Log.Info(('no one to ask: took choice 1 (' + @($keys).Count + ' ' + $noun + 's)'))
                 return @{ ok = $true; picked = $keys; pickedCount = @($keys).Count; any = (@($keys).Count -gt 0); hold = @(); holdReason = ''; answer = ''; auto = $true }
             }
@@ -260,7 +260,7 @@ function Invoke-Step {
             $info = @($info) + @(('on hold now: ' + ($keys -join ' ') + ' (' + $reason + ')'))
             continue
         }
-        $final = if ([string]$res['kind'] -eq 'none') { @() } else { $keys }
+        $final = @(if ([string]$res['kind'] -ne 'none') { $keys })   # @(if ...): an if expression unrolls a one-name list to a string (10/20: file.download names)
         return @{ ok = $true; picked = $final; pickedCount = @($final).Count; any = (@($final).Count -gt 0); hold = $held; holdReason = $heldReason; answer = $typed; auto = $false }
     }
 }

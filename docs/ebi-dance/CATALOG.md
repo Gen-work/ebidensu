@@ -4,13 +4,13 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-86 step(s) in 9 group(s).
+87 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.row_region`, `screen.save` |
-| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
+| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
 | verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
@@ -1071,6 +1071,37 @@ failures: `timeout` (transient), `file_not_found` (not transient)
 
 Notes: Steps run one at a time, so this cannot start before the click that triggers the download: it also accepts a file written up to 30 s before it started. file_not_found: the folder itself is missing.
 
+### `file.wait_unlocked`
+
+Wait until a shared file can be opened exclusively; say who holds it meanwhile
+
+- file: `modules/file/file.wait_unlocked.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `everySec` | int |  | 60 |  | seconds between two looks (the .bat waited a minute) |
+| `openWhenFree` | bool |  | false |  | open the file in its own program once it is free (standalone use) |
+| `path` | path | yes |  |  | the shared file; relative paths resolve under the work dir |
+| `timeoutMin` | int |  | 30 |  | give up after this many minutes (failure locked, r waits again); 0 = until it is free or q |
+
+| output | type | desc |
+|--------|------|------|
+| `free` | bool | the file could be opened exclusively |
+| `heldBy` | string | who held it at the last look that failed ("" when Excel's owner file says nothing or it was free at once) |
+| `path` | path |  |
+| `polls` | int |  |
+| `waitedSec` | int |  |
+
+failures: `file_not_found` (not transient), `locked` (transient), `operator_quit` (not transient)
+
+```json
+{"id":"wait_unlocked","use":"file.wait_unlocked","with":{"everySec":60,"path":"{{profile.paths.wbs}}","timeoutMin":30}}
+```
+
+Notes: A file the run itself has open (an excel.open earlier in the same run) counts as held: put this step BEFORE that open. Under DryRun nothing is opened or waited for (free=true).
+
 ### `file.write_json`
 
 Write a value to a JSON file (atomic, UTF-8 without BOM)
@@ -1109,7 +1140,7 @@ Append one row under the last used row, unless the key is already listed; option
 | `cells` | map | yes |  |  | column letter -> value, e.g. { "B": "2026-10-16", "F": "<file name>" }; empty values are left blank |
 | `checkOnly` | bool |  | false |  | only look: is the key listed? (existing / verdict / line), never write or save -- for a flow that writes the row after a person confirmed (gfixRecv.deliver: after the mail was sent) |
 | `dateColumns` | list |  | [] |  | columns whose value (yyyy-MM-dd or yyyy/MM/dd) is written as a real date, formatted like the row above |
-| `dismissDialogs` | list |  | [] |  | title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does |
+| `dismissDialogs` | list |  | [] |  | title parts of dialogs a save opens (the classification add-in) answered with Esc, as excel.tidy does; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs |
 | `firstRow` | int |  | 2 |  | first data row: the key search starts here |
 | `keyColumn` | string |  | (empty) |  | column whose text identifies a row (e.g. F, the review target); a row already holding cells[keyColumn] there means "already listed": nothing is written. Empty = always append |
 | `lastBy` | string |  | B |  | column whose last used cell marks the end of the list (pre-filled number columns would fool a whole-row search) |
@@ -1143,7 +1174,7 @@ Close a registered workbook (save or discard) and release it
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
-| `dismissDialogs` | list |  | [] |  | title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do |
+| `dismissDialogs` | list |  | [] |  | title parts of dialogs the save opens (the classification add-in) answered with Esc, as excel.tidy / excel.append_row do; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs |
 | `save` | bool |  | false |  | save before closing |
 | `workbook` | session:workbook | yes |  |  |  |
 
@@ -1300,16 +1331,18 @@ Write per-key values (dates) into the matching rows of a sheet, blank cells only
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
-| `dateColumns` | list |  | [] |  | letters written as real dates (yyyy-MM-dd / yyyy/M/d in, an Excel date out; the cell's format is kept) |
+| `dateColumns` | list |  | [] |  | letters written as real dates (yyyy-MM-dd / yyyy/M/d / M/d (this year) in, an Excel date out; the cell's format is kept) |
 | `firstRow` | int |  | 2 |  |  |
 | `items` | list | yes |  |  | records, one per key (table.select rows) |
 | `keyColumn` | string | yes |  |  | column letter holding the key (the job name) |
 | `keyField` | string | yes |  |  | item field matched against keyColumn |
+| `numberColumns` | list |  | [] |  | letters written as numbers (0.1 in, a number out, not the text "0.1") |
 | `onlyBlank` | bool |  | true |  | false: overwrite cells that already hold a value |
 | `setFields` | map |  | {} |  | column letter -> item field written there |
 | `setValues` | map |  | {} |  | column letter -> one value written for every item |
 | `sheet` | string | yes |  |  |  |
-| `where` | map |  | {} |  | column letter -> value the row must also hold |
+| `where` | map |  | {} |  | column letter -> value the row must also hold (a list: any of them) |
+| `whereMatch` | map |  | {} |  | column letter -> .NET regex the cell text must match (case-insensitive), e.g. the owner pattern |
 | `workbook` | session:workbook | yes |  |  |  |
 
 | output | type | desc |
@@ -1322,7 +1355,7 @@ Write per-key values (dates) into the matching rows of a sheet, blank cells only
 failures: `sheet_not_found` (not transient), `input_invalid` (not transient), `read_failed` (transient), `write_failed` (transient)
 
 ```json
-{"id":"mark_rows","use":"excel.mark_rows","with":{"dateColumns":["AJ","AK"],"firstRow":7,"items":"{{steps.pick.out.rows}}","keyColumn":"A","keyField":"JOB","setFields":{"AJ":"GFIX_DATE"},"setValues":{"AK":"{{run.date}}"},"sheet":"WBS","where":{"B":"recv"},"workbook":"wbs"}}
+{"id":"mark_rows","use":"excel.mark_rows","with":{"dateColumns":["AJ","AK"],"firstRow":7,"items":"{{steps.pick.out.rows}}","keyColumn":"A","keyField":"JOB","numberColumns":["AQ"],"setValues":{"AJ":"{{run.date}}","AK":"{{run.date}}","AQ":"0.1"},"sheet":"WBS","where":{"B":"recv","G":["after","summary"]},"whereMatch":{"P":"^owner"},"workbook":"wbs"}}
 ```
 
 Notes: A key with several matching rows (two files listed twice) gets every one written. A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.
@@ -1528,7 +1561,7 @@ Select the home cell (A1 or per sheet) on every sheet, activate the first, repor
 | `activate` | string |  | 1 |  | sheet to leave active (name or 1-based index) |
 | `cell` | string |  | A1 |  | the cell selected on every sheet |
 | `cellFor` | map |  | {} |  | sheet-name prefix -> cell, overriding cell for those sheets (e.g. A3 everywhere but the send / receive arrow sheets on A1) |
-| `dismissDialogs` | list |  | [] |  | title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving |
+| `dismissDialogs` | list |  | [] |  | title parts of a dialog that Save may pop up (an add-in); answered with Esc while saving; empty = the profile layout.saveDialogs / layout.evidence.saveDialogs |
 | `fontName` | string |  | (empty) |  |  |
 | `fontSheets` | list |  | [] |  | sheets whose column-B text is checked against fontName / fontSize |
 | `fontSize` | int |  | 0 |  |  |
@@ -2481,6 +2514,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `countsGroup` | string |  | counts |  | the named group that holds the counts: counts typed by hand ("5 ken 13:30") land in it |
 | `defaultClock` | string |  | (empty) |  | a start time already known (the worklist row): Enter takes it, n takes now |
 | `expect` | string |  | (empty) |  | value the expectGroup must have (full-width folded, case-insensitive); empty = any |
 | `expectGroup` | string |  | job |  |  |
@@ -2494,7 +2528,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 | `date` | string | yyyy-MM-dd of that moment |
 | `fields` | map | every named group of the pattern ("" when it did not match / no message) |
 | `fresh` | bool | the time was decided just now (now / typed) and should be written back to the row |
-| `source` | string | now \| typed \| worklist \| without \| auto |
+| `source` | string | now \| typed \| worklist \| without \| auto (pasted / typed text with no time in it is now) |
 | `text` | string | the clipboard text used ("" when going on without one) |
 
 failures: `operator_quit` (not transient), `operator_skip` (not transient)

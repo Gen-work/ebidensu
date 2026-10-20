@@ -23,6 +23,26 @@
 #    Invoke-EbiComRelease    ReleaseComObject, swallowing errors
 # ============================================================
 
+function Get-EbiSaveDialogs {
+    <#
+      PURE. The dialog titles a save answers with Esc: the step's own
+      dismissDialogs when given, else the profile's (layout.saveDialogs,
+      then layout.evidence.saveDialogs) -- 10/20: no save step may forget
+      the classification dialog.
+    #>
+    param($Given, $Profile)
+    $g = @(@($Given) | Where-Object { $null -ne $_ -and [string]$_ -ne '' } | ForEach-Object { [string]$_ })
+    if ($g.Count -gt 0) { return $g }
+    try {
+        $lay = if ($Profile -is [System.Collections.IDictionary] -and $Profile.Contains('layout')) { $Profile['layout'] } else { $null }
+        if ($lay -is [System.Collections.IDictionary]) {
+            if ($lay.Contains('saveDialogs')) { return @(@($lay['saveDialogs']) | Where-Object { [string]$_ -ne '' } | ForEach-Object { [string]$_ }) }
+            if ($lay.Contains('evidence') -and $lay['evidence'] -is [System.Collections.IDictionary] -and $lay['evidence'].Contains('saveDialogs')) { return @(@($lay['evidence']['saveDialogs']) | Where-Object { [string]$_ -ne '' } | ForEach-Object { [string]$_ }) }
+        }
+    } catch { }
+    return @()
+}
+
 function Invoke-EbiComRelease {
     param($Object)
     if ($null -eq $Object) { return }
