@@ -1,9 +1,25 @@
 name: Mirror to GitLab
 
+# Reusable for another GitHub -> GitLab pair: copy this file into the other
+# GitHub repo, then in that repo's Settings -> Secrets and variables -> Actions
+#   secret   GITLAB_TOKEN  a GitLab token with write_repository (role Developer
+#                          or higher on the target project; Maintainer if the
+#                          target's default branch is protected)
+#   variable GITLAB_REPO   e.g. gitlab.com/<group>/<project>  (no https://, no .git)
+# Without GITLAB_REPO this repo's own target below is used.
+
 on:
   push:
     branches: ["**"]
   delete:
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-to-gitlab
+  cancel-in-progress: false
+
+env:
+  GITLAB_REPO: ${{ vars.GITLAB_REPO || 'gitlab.com/Tokumei_M/ebidensu' }}
 
 jobs:
   mirror:
@@ -13,9 +29,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Push to GitLab
+      - name: Check the GitLab token
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
         run: |
-          git remote add gitlab https://oauth2:${{ secrets.GITLAB_TOKEN }}@gitlab.com/Tokumei_M/ebidensu.git
+          if [ -z "$GITLAB_TOKEN" ]; then
+            echo "::error::secret GITLAB_TOKEN is empty or missing in this GitHub repo"
+            exit 1
+          fi
+          # Read access first: tells "token rejected" apart from "token can
+          # read but not push" (the push step below reports the second).
+          if ! git ls-remote "https://oauth2:${GITLAB_TOKEN}@${GITLAB_REPO}.git" HEAD > /dev/null 2>&1; then
+            echo "::error::GitLab rejected GITLAB_TOKEN for ${GITLAB_REPO}: expired, revoked or rotated, or not allowed to read this project. Check the token's status and 'Last used' on GitLab, then paste the current value into this repo's GITLAB_TOKEN secret."
+            exit 1
+          fi
+          echo "token accepted for ${GITLAB_REPO}"
+
+      - name: Push to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@${GITLAB_REPO}.git"
           # Mirror the remote-tracking refs: on a branch push the checkout only
           # creates that one local branch, so pushing refs/heads/* with --prune
           # asked GitLab to delete every other branch (incl. the protected

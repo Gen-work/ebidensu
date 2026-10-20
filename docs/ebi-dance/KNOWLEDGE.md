@@ -191,6 +191,13 @@
 - **写新 workflow 时**:每个 verdict 列给 `doneFile`,需要输入文件的列给 `needFiles`(`profiles/<p>/worklist.json`),自检就自动覆盖到它。
 - **来源**:10/20 反馈第 4 条。
 
+### K-27 review NG 后重跑:旧记录会把清掉的 ok「找回来」
+- **发生了什么**:10/20 SJODWSPN 的 DF 图又被加瀬さん判 NG。操作员改了 CSV、重跑 track,再跑 evidence 时菜单弹「LOOKS DONE ALREADY: gate.json 10/19 写过」,默认 Enter = 标 ok,于是刚清掉的 evidence 被标回 ok、这次 run 什么都没做。旧的 gate.json 是 10/19 那张 NG 证迹的记录,track 已在 10/20 重跑过,它早就不算数了。
+- **现在的对策**(v2.30.2):一段的 `doneFile` 如果比它**前面**某段的 `doneFile` 旧(track.json 比 gate.json 新),就当作过期:菜单不再提议标 ok;自检 `k` 对「ok 但过期」的行报 `stale` → 清掉重跑。手动点名的行(输入了名字)「LOOKS DONE」面板的 Enter 改为「重跑」。
+- **同一次 run 顺带**:送信データ B3 是空的 JOD 证迹簿,G3 不再被写成空(`excel.write_cell keepIfEmpty`,warning `source_empty`,要手填);没有开始消息(用行上的时刻)时件数不再报 `count_disagree`。DF 的 END 图按键改回 End→PgUp→Down→Down(操作员 10/20 截图:00045–00061)。
+- **写新 workflow 时**:重跑前一段 = 后面各段的记录都过期;靠各列的 `doneFile` 顺序自动判断,所以 `worklist.json` 里 verdict 列的顺序要和流程顺序一致。
+- **来源**:10/20 SJODWSPN 重跑日志。
+
 ### K-24 deliver 写 WBS 实绩:日志说写了,WBS 里没有
 - **症状**:10/20 deliver 印出 `wrote MJODJSPQ row 3854: AK=2026-10-20`(三本都是),`excel.close saved=True`;之后打开 WBS,AK 是空的。只写了 修正後実施 一行,结果まとめ 行、工数 AQ 都没写。
 - **原因**:未确认。起初猜是保存时的「文書分類/機密区分の登録」对话框取消了保存;操作员说**不是**:WBS 早就登录过分类,不会再弹。操作员看到的是:关卡上按 Enter **之前** Excel 里就看不到写进去的值,怀疑当时 WBS 开着筛选(filter)。打开 WBS 时两次「只读」也说明当时有人(或别的 Excel 窗口)开着它。

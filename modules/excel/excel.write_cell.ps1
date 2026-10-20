@@ -25,6 +25,7 @@ $Manifest = @{
     fontName  = @{ type='string'; default='' }
     fontSize  = @{ type='int';    default=0 }
     trim      = @{ type='bool';   default=$false; desc='drop the spaces around the value (10/16: the send-data sheet''s STEP cell sometimes ends in one)' }
+    keepIfEmpty = @{ type='bool'; default=$false; desc='fromCell is empty -> leave the target cell as it is and warn source_empty (10/20: a JOD book''s send-data B3 was blank and the run blanked G3)' }
   }
   outputs    = @{
     value = @{ type='string'; desc='what the cell holds now' }
@@ -50,6 +51,12 @@ function Invoke-Step {
         try { $val = [string]$src.Range([string]$In['fromCell']).Text } catch { return @{ ok = $false; failure = 'write_failed'; message = $_.Exception.Message; value = ''; row = 0 } }
     }
     if ([bool]$In['trim']) { $val = $val.Trim() }
+    if ([bool]$In['keepIfEmpty'] -and [string]$In['fromSheet'] -ne '' -and $val.Trim() -eq '') {
+        $c0 = $null; try { $c0 = $ws.Range([string]$In['cell']) } catch { }
+        $kept = ''; $row0 = 0
+        if ($null -ne $c0) { try { $kept = [string]$c0.Text; $row0 = [int]$c0.Row } catch { } }
+        return @{ ok = $true; value = $kept; row = $row0; warnings = @(@{ code = 'source_empty'; message = ($In['fromSheet'] + '!' + $In['fromCell'] + ' is empty: ' + $In['sheet'] + '!' + $In['cell'] + ' left as it was ("' + $kept + '") -- fill it by hand') }) }
+    }
     try {
         $c = $ws.Range([string]$In['cell'])
         Set-EbiCellTextPlain -Cell $c -Text $val -FontName ([string]$In['fontName']) -FontSize ([double]$In['fontSize'])

@@ -166,11 +166,12 @@ file stays small. Designed-then-shelved work lives in
   Done in v2.28.0 for the usual shapes: 18 px a line (measured), so the
   first picture is 458 high (16 lines = HOST 000001-000017) and the END
   picture 476 (17 lines = the HOST's last 17); `screen.launch_capture`
-  resizes before the END view (`heightEnd`). Still open: the first office
-  run of the 17-line END window (the recipe is End, PgUp, Down ONCE --
-  the operator 10/19; it was Down x2) and of 458 (derived, not seen), and the OCR
-  route above for HOST shots of other shapes. 加瀬さん has not re-checked
-  the hand-fixed SJODWDB6 yet.
+  resizes before the END view (`heightEnd`). 10/20 office run (SJODWSPN,
+  61 lines, review NG again): the END recipe is End, PgUp, Down, Down --
+  ONE Down started the picture one line early; with two it shows 00045-00061
+  (the operator's screenshot), now in v2.30.2. Still open: 458 (derived,
+  not seen) and the OCR route above for HOST shots of other shapes.
+  加瀬さん has not re-checked the hand-fixed SJODWDB6 yet.
 - **gfix-recv: a progress view the operator can see while the browser is
   full screen** (office run feedback, 2026-10-09). During browser / DF
   steps the console is behind Edge and the operator cannot tell whether to

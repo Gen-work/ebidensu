@@ -1,3 +1,27 @@
+## 2026-10-20 - a rerun after a review NG redoes the later phases; DF END view Down x2 (v2.30.2)
+
+10/20 SJODWSPN: the DF pictures were NG again; the operator cleared the row,
+ran track again, and the menu's LOOKS DONE ALREADY panel (Enter = mark ok)
+put evidence back to ok from the 10/19 gate.json, so evidence never ran.
+
+### Fixed
+- **Stale records** (kernel/Dashboard.ps1): a phase's `doneFile` older than
+  an EARLIER phase's `doneFile` (track.json newer than gate.json) no longer
+  counts as done -- the menu does not offer to mark it ok, and the self
+  check `k` reports `stale` (ok but an earlier phase was run again) -> clear.
+  Rows named by hand: the LOOKS DONE panel's Enter is "run again".
+- **DF END view**: `keysEnd` End, PgUp, Down, Down (operator 10/20: with one
+  Down the 17-line picture started a line early; 00045-00061 is right).
+- **excel.write_cell `keepIfEmpty`**: an empty source cell leaves the target
+  as it is with warning `source_empty`; evidence G3 (STEP name from
+  送信データ B3) uses it -- a JOD book's blank B3 had blanked G3.
+- **verify.record_counts**: no start message (the row's time was used) ->
+  nothing to compare, no `count_disagree` warning.
+
+### Docs / tests
+- KNOWLEDGE K-27. Test-Dashboard: stale / looks-done with a redone track.
+  Test-GfixRecvSteps: counts without a message. Catalog regenerated.
+
 ## 2026-10-20 - every save answers the save dialogs; mark_rows reads its writes back (v2.30.1)
 
 10/20 follow-up: the WBS has its classification registered, so the save
