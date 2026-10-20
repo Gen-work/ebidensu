@@ -1,3 +1,22 @@
+## 2026-10-20 - GoAnywhereLogFetch: one-off fetch of GoAnywhere receive logs into the LOG folders (v2.29.1)
+
+### Added
+- **`GoAnywhereLogFetch.ps1`** (standalone, not a phase) +
+  **`GoAnywhereLogFetchLib.ps1`** (pure): for a correl list in a local
+  config JSON, capture the GoAnywhere completed-jobs page once per filter,
+  download each candidate receive job's log (same keystrokes as
+  GfixLogDownload: Ctrl+F job number -> detail -> download link), decide
+  which correl owns each log from its content (`/gfix/recv/<id>`, last
+  character free), and copy it into `destRoot\<receive system>\`.
+  Candidates are aimed at by IF number + receive folder only (VER1 / DEV1
+  both count). Reruns: the newest wins, older ones are listed. No log names
+  the correl: the operator picks one by number or leaves it NG.
+  `report.csv` per run; staged logs are not downloaded again; destination
+  files are never overwritten without `-Force`. docs/GoAnywhereLogFetch.md,
+  Tests\Test-GoAnywhereLogFetch.ps1.
+- The list parser finds folder and times by shape, not position: the
+  current page has no User column and a trailing resolved column.
+
 ## 2026-10-20 - plan picks today's jobs from sets (today / late / ahead), a gift phase finds missing GIFT files on Jenkins, the board and phases take today's rows only, hold, mark ok by hand, deliver writes the WBS actual dates (v2.29.0)
 
 From the 10/19-10/20 WBS (DETOUR-GFIX-001.10): jobs done early on 10/16

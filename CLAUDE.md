@@ -667,7 +667,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `ProjectLabels.ps1`, `ProgressLog.ps1`, `AlignCompare.ps1`, `ConfigOverlay.ps1`,
 `Common.ps1`, `WorkbookResolver.ps1`, `SendMetadata.ps1`, `OcrWindows.ps1`,
 `EvidenceImageExport.ps1`, `SnapLocalize.ps1`, `Find-ActiveHighlightRow.ps1`,
-`ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. In `modules/verify/`:
+`ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`, `GoAnywhereLogFetchLib.ps1` (docs/GoAnywhereLogFetch.md). In `modules/verify/`:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,
