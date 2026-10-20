@@ -273,6 +273,26 @@ Assert-Equal 'RJODJDB6 row 10: AJ already 2026-10-16' (@($plan['kept']) -join ',
 Assert-Equal 'NOROW' (@($plan['notFound']) -join ',') 'mark_rows: a job with no row is reported'
 $plan = ExcelMarkRows-Plan -Grid $grid -FirstRow 7 -KeyColumn 'A' -Items $items -KeyField 'JOB' -Where @{ B = $recv; G = $task } -SetFields @{ AJ = 'GFIX_DATE' } -SetValues @{} -DateColumns @('AJ') -OnlyBlank $false
 Assert-True ((@($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] }) -join ',') -eq 'AJ8,AJ10') 'mark_rows: onlyBlank false overwrites'
+# 10/20 second day: both task rows (after + summary) of the operator's own rows, one asked date, hours as a number
+$own = 'OWN'; $oth = 'OTHER'
+$g2 = @{
+    A  = @('LJODJSPQ', 'LJODJSPQ', 'LJODJSPQ', 'QJODJSPP', 'QJODJSPP')
+    B  = @($recv, $recv, $recv, $recv, $recv)
+    G  = @('before', 'after', 'summary', 'after', 'summary')
+    P  = @($own, ($own + '<-' + $oth), $own, $oth, ($oth + '<-' + $own))
+    AJ = @($null, [double]46315, $null, $null, $null)      # 46315 = 2026-10-20, typed by hand in the morning
+    AK = @($null, $null, $null, $null, $null)
+    AQ = @($null, $null, $null, $null, $null)
+}
+$it2 = @( @{ JOB = 'LJODJSPQ' }, @{ JOB = 'QJODJSPP' } )
+$ownPat = '^\s*' + $own + '\s*($|<-)'
+$plan = ExcelMarkRows-Plan -Grid $g2 -FirstRow 7 -KeyColumn 'A' -Items $it2 -KeyField 'JOB' -Where @{ B = $recv; G = @('after', 'summary') } -WhereMatch @{ P = $ownPat } -SetFields @{} -SetValues @{ AJ = '10/21'; AK = '10/21'; AQ = '0.1' } -DateColumns @('AJ', 'AK') -NumberColumns @('AQ') -Today ([datetime]'2026-10-20')
+$w = @($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] + '=' + $_['value'] + $(if ($_['number']) { '#' } else { '' }) }) -join ','
+Assert-Equal 'AK8=2026-10-21,AQ8=0.1#,AJ9=2026-10-21,AK9=2026-10-21,AQ9=0.1#' $w ('mark_rows: a list where = both task rows; whereMatch keeps own / own<-other rows only; M/d is this year; AQ is a number; the hand-typed AJ stays: ' + $w)
+Assert-Equal 'QJODJSPP' (@($plan['notFound']) -join ',') 'mark_rows: a job whose rows are all someone else''s is not found (not written)'
+Assert-Equal '2026-10-21' (ExcelMarkRows-Day -Text '10/21' -Today ([datetime]'2026-10-20')) 'mark_rows: 10/21 -> this year'
+Assert-Equal '' (ExcelMarkRows-Day -Text 'tomorrow') 'mark_rows: not a date -> empty'
+
 $ctx['DryRun'] = $true
 $ctx['Session']['x'] = @{ kind = 'workbook'; value = $null }
 $m = Invoke-TestStep 'excel.mark_rows' @{ workbook = 'x'; sheet = 'WBS'; keyColumn = 'A'; items = $items; keyField = 'JOB'; setValues = @{ AK = '2026-10-20' } }

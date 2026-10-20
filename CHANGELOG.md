@@ -1,3 +1,31 @@
+## 2026-10-20 - deliver writes the WBS actuals on both task rows of your own rows, checks the save really reached the file (v2.29.3)
+
+10/20 deliver said `wrote ... AK=2026-10-20` and `saved=True` for three
+jobs, and the WBS had nothing in AK.
+
+### Fixed
+- **excel.close**: a workbook with changes must leave a newer file after
+  `Save()`; if the file is unchanged and Excel still calls it dirty, the
+  step fails `save_failed` (the workbook stays open: save by hand, then r)
+  instead of reporting saved. A save dialog (the classification add-in)
+  can cancel a save without an error.
+- **gfixRecv.deliver v0.3.0**: the WBS save answers the save dialogs with
+  Esc (`dismissDialogs`, as the check sheet does).
+
+### Changed
+- **gfixRecv.deliver v0.3.0**: the WBS rows written are B = 受信, G =
+  修正後実施 AND 結果まとめ, P = the operator (owner / owner<-other /
+  other->owner, the plan's `verify.owner_pattern`). AJ = AK = the day asked
+  once (Enter = today, `10/21` works), AQ = the hours asked once (Enter =
+  0.1, written as a number). Blank cells only, as before.
+- **excel.mark_rows**: a `where` value may be a list (any of);
+  `whereMatch` (column -> regex on the cell text); `numberColumns`; a date
+  typed as M/d takes this year.
+
+### Docs / tests
+- KNOWLEDGE K-24. `Tests\Test-PlanSets.ps1`: both task rows, own rows only
+  (someone else's -> not found), M/d, AQ as a number, a hand-typed AJ kept.
+
 ## 2026-10-20 - resume asks a person again; PASTE takes the pasted message or "5件 13:30"; the 10/20 holes in KNOWLEDGE (v2.29.2)
 
 10/20 receive day feedback (LJ / MJ / SJODWSPQ; the plan's times were not

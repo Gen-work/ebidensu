@@ -1300,16 +1300,18 @@ Write per-key values (dates) into the matching rows of a sheet, blank cells only
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
-| `dateColumns` | list |  | [] |  | letters written as real dates (yyyy-MM-dd / yyyy/M/d in, an Excel date out; the cell's format is kept) |
+| `dateColumns` | list |  | [] |  | letters written as real dates (yyyy-MM-dd / yyyy/M/d / M/d (this year) in, an Excel date out; the cell's format is kept) |
 | `firstRow` | int |  | 2 |  |  |
 | `items` | list | yes |  |  | records, one per key (table.select rows) |
 | `keyColumn` | string | yes |  |  | column letter holding the key (the job name) |
 | `keyField` | string | yes |  |  | item field matched against keyColumn |
+| `numberColumns` | list |  | [] |  | letters written as numbers (0.1 in, a number out, not the text "0.1") |
 | `onlyBlank` | bool |  | true |  | false: overwrite cells that already hold a value |
 | `setFields` | map |  | {} |  | column letter -> item field written there |
 | `setValues` | map |  | {} |  | column letter -> one value written for every item |
 | `sheet` | string | yes |  |  |  |
-| `where` | map |  | {} |  | column letter -> value the row must also hold |
+| `where` | map |  | {} |  | column letter -> value the row must also hold (a list: any of them) |
+| `whereMatch` | map |  | {} |  | column letter -> .NET regex the cell text must match (case-insensitive), e.g. the owner pattern |
 | `workbook` | session:workbook | yes |  |  |  |
 
 | output | type | desc |
@@ -1322,7 +1324,7 @@ Write per-key values (dates) into the matching rows of a sheet, blank cells only
 failures: `sheet_not_found` (not transient), `input_invalid` (not transient), `read_failed` (transient), `write_failed` (transient)
 
 ```json
-{"id":"mark_rows","use":"excel.mark_rows","with":{"dateColumns":["AJ","AK"],"firstRow":7,"items":"{{steps.pick.out.rows}}","keyColumn":"A","keyField":"JOB","setFields":{"AJ":"GFIX_DATE"},"setValues":{"AK":"{{run.date}}"},"sheet":"WBS","where":{"B":"recv"},"workbook":"wbs"}}
+{"id":"mark_rows","use":"excel.mark_rows","with":{"dateColumns":["AJ","AK"],"firstRow":7,"items":"{{steps.pick.out.rows}}","keyColumn":"A","keyField":"JOB","numberColumns":["AQ"],"setValues":{"AJ":"{{run.date}}","AK":"{{run.date}}","AQ":"0.1"},"sheet":"WBS","where":{"B":"recv","G":["after","summary"]},"whereMatch":{"P":"^owner"},"workbook":"wbs"}}
 ```
 
 Notes: A key with several matching rows (two files listed twice) gets every one written. A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.

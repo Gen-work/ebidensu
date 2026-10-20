@@ -42,8 +42,20 @@ function Invoke-Step {
         $err = ''
         $watch = $null
         if (@($In['dismissDialogs']).Count -gt 0) { $watch = Start-EbiDialogWatch -TitleParts @($In['dismissDialogs']) }
+        # 10/20: the WBS save "succeeded" but the file kept no change (a save
+        # dialog -- the classification add-in -- cancelled it without an
+        # error). A workbook with changes must leave a newer file behind.
+        $changed = $false; $file = ''; $before = [datetime]::MinValue
+        try { $changed = -not [bool]$wb.Saved; $file = [string]$wb.FullName; if (Test-Path -LiteralPath $file) { $before = (Get-Item -LiteralPath $file).LastWriteTimeUtc } } catch { }
         try { [void]$wb.Save(); $saved = $true } catch { $err = $_.Exception.Message }
         if ($null -ne $watch) { $seen = Stop-EbiDialogWatch $watch; foreach ($t in @($seen['answered'])) { $Ctx.Log.Info(('answered "{0}" with Esc while saving' -f $t)) } }
+        if ($err -eq '' -and $changed -and $file -ne '' -and $before -ne [datetime]::MinValue) {
+            $after = $before
+            try { $after = (Get-Item -LiteralPath $file).LastWriteTimeUtc } catch { }
+            $stillDirty = $true
+            try { $stillDirty = -not [bool]$wb.Saved } catch { }
+            if ($after -le $before -and $stillDirty) { $err = ('the save did not reach the file (' + $file + ' unchanged; a dialog cancelled it?) -- the workbook stays open: save it by hand, then r') }
+        }
         if ($err -ne '') { return @{ ok = $false; failure = 'save_failed'; message = $err; saved = $false; closed = $false } }
     }
     try { $wb.Close($false) } catch { }

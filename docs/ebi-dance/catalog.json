@@ -1432,15 +1432,24 @@
           "items": "{{steps.pick.out.rows}}",
           "keyColumn": "A",
           "keyField": "JOB",
-          "setFields": {
-            "AJ": "GFIX_DATE"
-          },
+          "numberColumns": [
+            "AQ"
+          ],
           "setValues": {
-            "AK": "{{run.date}}"
+            "AJ": "{{run.date}}",
+            "AK": "{{run.date}}",
+            "AQ": "0.1"
           },
           "sheet": "WBS",
           "where": {
-            "B": "recv"
+            "B": "recv",
+            "G": [
+              "after",
+              "summary"
+            ]
+          },
+          "whereMatch": {
+            "P": "^owner"
           },
           "workbook": "wbs"
         }
@@ -1470,7 +1479,7 @@
       "inputs": {
         "dateColumns": {
           "default": [],
-          "desc": "letters written as real dates (yyyy-MM-dd / yyyy/M/d in, an Excel date out; the cell's format is kept)",
+          "desc": "letters written as real dates (yyyy-MM-dd / yyyy/M/d / M/d (this year) in, an Excel date out; the cell's format is kept)",
           "type": "list"
         },
         "firstRow": {
@@ -1491,6 +1500,11 @@
           "desc": "item field matched against keyColumn",
           "required": true,
           "type": "string"
+        },
+        "numberColumns": {
+          "default": [],
+          "desc": "letters written as numbers (0.1 in, a number out, not the text \"0.1\")",
+          "type": "list"
         },
         "onlyBlank": {
           "default": true,
@@ -1513,7 +1527,12 @@
         },
         "where": {
           "default": {},
-          "desc": "column letter -> value the row must also hold",
+          "desc": "column letter -> value the row must also hold (a list: any of them)",
+          "type": "map"
+        },
+        "whereMatch": {
+          "default": {},
+          "desc": "column letter -> .NET regex the cell text must match (case-insensitive), e.g. the owner pattern",
           "type": "map"
         },
         "workbook": {
