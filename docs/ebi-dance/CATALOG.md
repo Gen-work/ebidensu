@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-85 step(s) in 9 group(s).
+86 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,7 +13,7 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.require` |
@@ -1632,7 +1632,7 @@ Sort plan rows into today / late / ahead / others / mapping / hold sets against 
 |-------|------|----------|---------|------|------|
 | `aheadDays` | int |  | 2 |  | working days (Mon-Fri) looked ahead |
 | `backDays` | int |  | 21 |  | calendar days looked back for late rows |
-| `carryField` | string |  | (empty) |  | verdict column whose ok fixes the run date (blank = the first verdict column) |
+| `carryField` | string |  | (empty) |  | verdict column whose ok fixes the run date (gfix-recv: track; blank = the first verdict column) |
 | `dateColumn` | string |  | GFIX_DATE |  | worklist column the job's run date lives in |
 | `doneField` | string |  | done |  | actual start date: set = somebody did the job |
 | `endField` | string |  | end |  | planned end date (blank = the start) |
@@ -2264,6 +2264,47 @@ failures: `input_invalid` (not transient)
 
 Notes: A disagreement is a warning (count_disagree), never a failure: the line compare decides whether the files are right; this only says what the reply should show.
 
+### `verify.time_candidates`
+
+Listing entries around a run time: certain when the count fits, else sets to pick from
+
+- file: `modules/verify/verify.time_candidates.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `afterMinutes` | int |  | 13 |  |  |
+| `beforeMinutes` | int |  | 2 |  |  |
+| `clock` | string |  | (empty) |  | the run time (HH:mm[:ss] or an Excel day fraction); blank or unreadable = no window, the whole day is offered |
+| `date` | string |  | (empty) |  | the run day (yyyy-MM-dd, yyyy/M/d, ...); blank = no_date |
+| `expect` | int |  | -1 |  | how many files the job has; -1 = unknown (then one is certain) |
+| `expectFallback` | string |  | (empty) |  | used when expect is -1 (a worklist FileCount cell); not a number = none |
+| `keyField` | string |  | key |  |  |
+| `label` | string |  | run |  | what the time is, in the set labels ("GIFT run") |
+| `namePattern` | string |  | (empty) |  | regex an entry name must match (blank = any) |
+| `records` | list | yes |  |  | verify.parse_text records of the listing |
+| `timeField` | string |  | time |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `certain` | bool | a run time was given and exactly the expected number of entries are in its window |
+| `dayCount` | int | entries on that day matching namePattern |
+| `info` | list | lines for the pick panel |
+| `picked` | list | those names when certain, else empty |
+| `presets` | list | human.pick presets, the same order |
+| `reason` | string |  |
+| `sets` | list | human.pick sets: the window, then that day by hour |
+| `window` | list | the names inside the window (empty without a run time) |
+
+failures: `no_date` (not transient), `rules_invalid` (not transient)
+
+```json
+{"id":"time_candidates","use":"verify.time_candidates","with":{"clock":"{{item.GIFT_TIME}}","date":"{{item.GIFT_DATE}}","expectFallback":"{{item.FileCount}}","label":"GIFT run","namePattern":"^F\\d{12}\\.(csv|txt|zip)$","records":"{{steps.jkRec.out.records}}"}}
+```
+
+Notes: no_date: the job has no run day (mapping.xlsx GIFT date blank) -- put the files in by hand, or fill the date and r. Entries are compared by their own time field, to the second.
+
 ### `verify.time_window`
 
 Build a from/to time window around a date and a clock time
@@ -2474,6 +2515,7 @@ Pick names from recommended combinations or numbered sets, or by typing (part of
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `autoPick` | bool |  | false |  | true: take choice 1 without asking (the caller already knows it is right, e.g. verify.time_candidates certain); the panel is not shown |
 | `holdReason` | string |  | waiting |  | what Enter means when asked why names go on hold |
 | `info` | list |  | [] |  | lines shown above the choices |
 | `noun` | string |  | job |  | what a name is, in the read-back ("4 jobs") |
@@ -2484,10 +2526,12 @@ Pick names from recommended combinations or numbered sets, or by typing (part of
 | output | type | desc |
 |--------|------|------|
 | `answer` | string | the confirmed answer as typed |
+| `any` | bool | at least one picked (a later step's when: any == true is false too when this step was skipped) |
 | `auto` | bool | nobody could answer (dry run / no console): preset 1 was taken |
 | `hold` | list | names the operator put on hold (h ...) |
 | `holdReason` | string |  |
 | `picked` | list | the picked names, in set order |
+| `pickedCount` | int | how many were picked |
 
 failures: `operator_quit` (not transient), `input_invalid` (not transient)
 

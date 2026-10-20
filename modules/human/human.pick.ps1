@@ -29,9 +29,12 @@ $Manifest = @{
     info      = @{ type='list';   default=@(); desc='lines shown above the choices' }
     noun      = @{ type='string'; default='job'; desc='what a name is, in the read-back ("4 jobs")' }
     holdReason = @{ type='string'; default='waiting'; desc='what Enter means when asked why names go on hold' }
+    autoPick   = @{ type='bool';   default=$false; desc='true: take choice 1 without asking (the caller already knows it is right, e.g. verify.time_candidates certain); the panel is not shown' }
   }
   outputs    = @{
     picked     = @{ type='list';   desc='the picked names, in set order' }
+    pickedCount = @{ type='int';   desc='how many were picked' }
+    any         = @{ type='bool';   desc='at least one picked (a later step''s when: any == true is false too when this step was skipped)' }
     hold       = @{ type='list';   desc='names the operator put on hold (h ...)' }
     holdReason = @{ type='string' }
     answer     = @{ type='string'; desc='the confirmed answer as typed' }
@@ -104,7 +107,10 @@ function HumanPick-Resolve {
         $w = $tok
         if ($w.StartsWith('-') -and $w.Length -gt 1) { $drop = $true; $w = $w.Substring(1) }
         $hits = New-Object System.Collections.ArrayList
-        if ($w -match '^\d+$' -and $kind -eq 'pick') {
+        # a number is a choice; one with a leading zero, or past the last
+        # choice, is a part of a name (file names are digits: F202609110026)
+        $maxNum = if ($Level -eq 'first') { $presetList.Count } else { @(@($Sets) | ForEach-Object { [int]$_['n'] } | Measure-Object -Maximum).Maximum }
+        if ($w -match '^[1-9]\d*$' -and $kind -eq 'pick' -and [int64]$w -le [int64]$maxNum) {
             $num = [int]$w
             if ($Level -eq 'first') {
                 if ($num -lt 1 -or $num -gt $presetList.Count) { [void]$bad.Add(($w + ' (no such choice)')); continue }
@@ -179,11 +185,16 @@ function Invoke-Step {
     $level = 'first'
     $info = @(@($In['info']) | Where-Object { [string]$_ -ne '' } | ForEach-Object { [string]$_ })
     $held = @(); $heldReason = ''
+    if ([bool]$In['autoPick']) {
+        $keys = if ($presets.Count -gt 0) { @($presets[0]['names']) } else { @() }
+        $Ctx.Log.Info(('taken without asking: ' + ($keys -join ', ')))
+        return @{ ok = $true; picked = $keys; pickedCount = @($keys).Count; any = (@($keys).Count -gt 0); hold = @(); holdReason = ''; answer = ''; auto = $true }
+    }
     $again = $null          # an answer typed at the read-back instead of Enter
     $tries = 0
     while ($true) {
         $tries++
-        if ($tries -gt 40) { return @{ ok = $false; failure = 'operator_quit'; message = 'no usable answer after 40 tries'; picked = @(); hold = $held; holdReason = $heldReason; answer = ''; auto = $false } }
+        if ($tries -gt 40) { return @{ ok = $false; failure = 'operator_quit'; message = 'no usable answer after 40 tries'; picked = @(); pickedCount = 0; any = $false; hold = $held; holdReason = $heldReason; answer = ''; auto = $false } }
         if ($null -ne $again) { $typed = $again; $again = $null }
         else {
             $what = @($info) + @(HumanPick-Lines -Sets $sets -Presets $presets -Level $level -Noun $noun)
@@ -196,14 +207,14 @@ function Invoke-Step {
             if ($r['auto']) {
                 $keys = if ($presets.Count -gt 0) { @($presets[0]['names']) } else { @() }
                 $Ctx.Log.Info(('no one to ask: took choice 1 (' + @($keys).Count + ' ' + $noun + 's)'))
-                return @{ ok = $true; picked = $keys; hold = @(); holdReason = ''; answer = ''; auto = $true }
+                return @{ ok = $true; picked = $keys; pickedCount = @($keys).Count; any = (@($keys).Count -gt 0); hold = @(); holdReason = ''; answer = ''; auto = $true }
             }
             $typed = if ([string]$r['action'] -eq 'q') { 'q' } else { [string]$r['note'] }
         }
         $res = HumanPick-Resolve -Text $typed -Sets $sets -Presets $presets -Level $level
         if (-not $res['ok']) { Write-Host ('  ' + $res['message']) -ForegroundColor DarkYellow; continue }
         # (if, not switch: a continue inside switch would only leave the switch)
-        if ([string]$res['kind'] -eq 'quit') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q at the pick'; picked = @(); hold = $held; holdReason = $heldReason; answer = 'q'; auto = $false } }
+        if ([string]$res['kind'] -eq 'quit') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q at the pick'; picked = @(); pickedCount = 0; any = $false; hold = $held; holdReason = $heldReason; answer = 'q'; auto = $false } }
         if ([string]$res['kind'] -eq 'more') { $level = 'more'; continue }
         if ([string]$res['kind'] -eq 'back') { $level = 'first'; continue }
         $keys = @($res['keys'])
@@ -233,6 +244,7 @@ function Invoke-Step {
             $info = @($info) + @(('on hold now: ' + ($keys -join ' ') + ' (' + $reason + ')'))
             continue
         }
-        return @{ ok = $true; picked = $(if ([string]$res['kind'] -eq 'none') { @() } else { $keys }); hold = $held; holdReason = $heldReason; answer = $typed; auto = $false }
+        $final = if ([string]$res['kind'] -eq 'none') { @() } else { $keys }
+        return @{ ok = $true; picked = $final; pickedCount = @($final).Count; any = (@($final).Count -gt 0); hold = $held; holdReason = $heldReason; answer = $typed; auto = $false }
     }
 }

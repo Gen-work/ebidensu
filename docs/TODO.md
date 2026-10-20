@@ -13,7 +13,10 @@ file stays small. Designed-then-shelved work lives in
   a per-row fingerprint in the ledger key (e.g. the source's `orderBy` /
   a declared `source.ledgerKey` column such as GFIX_DATE).
 - **gfix-recv: first office run of the v2.29.0 plan / menu / WBS dates**
-  (DETOUR-GFIX-001.10). On the office PC: (a) `plan` on the real WBS --
+  (DETOUR-GFIX-001.10). On the office PC: (0) `gift` for M/SJODWSPQ,
+  QJODWSPP (10/20): the GIFT date / time came over from mapping.xlsx M / N,
+  the window finds the right F...csv, the download lands in
+  DATA\GIFT\<J名>, track then compares equal; (a) `plan` on the real WBS --
   the sets match the sheet (today / late DBC / ahead), `done already`
   lists the early jobs and any AJ typed by mistake, Enter / 2 / `DBC` /
   `m` / `h` read back what they take; (b) the board shows today's rows
@@ -82,7 +85,13 @@ file stays small. Designed-then-shelved work lives in
     window is found. Start with raise only; the operator is fine with a
     Ctrl+V into Teams later (a Teams message can be recalled).
   - *track: fetch a missing GIFT file from Jenkins* (operator ask, 10/16
-    CJODWSPQ). Today `gift` (file.list) creates DATA\GIFT\<J名> and stops
+    CJODWSPQ) -- FIRST CUT in v2.29.0: `gfixRecv.gift` (after plan) takes
+    the GIFT date / time from mapping.xlsx M / N, reads the Jenkins list,
+    downloads the files in -2..+13 min when their number fits, else asks
+    (verify.time_candidates + human.pick). Still open below: the
+    処理時間(BIX).xlsx start / end and Teams as time sources, and reading
+    only around the hit on a very long page. Before: track's `gift`
+    (file.list) created DATA\GIFT\<J名> and stopped
     for a hand copy. Wanted: when the folder is missing / empty, ask the
     GIFT run date + time (or take them from mapping.xlsx when it has
     them), read the GIFT-side Jenkins listing, keep the files in a window

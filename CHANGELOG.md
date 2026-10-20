@@ -1,4 +1,4 @@
-## 2026-10-20 - plan picks today's jobs from sets (today / late / ahead), the board and phases take today's rows only, hold, mark ok by hand, deliver writes the WBS actual dates (v2.29.0)
+## 2026-10-20 - plan picks today's jobs from sets (today / late / ahead), a gift phase finds missing GIFT files on Jenkins, the board and phases take today's rows only, hold, mark ok by hand, deliver writes the WBS actual dates (v2.29.0)
 
 From the 10/19-10/20 WBS (DETOUR-GFIX-001.10): jobs done early on 10/16
 kept their planned start 10/20 (plan would have run them again), the DBC
@@ -39,7 +39,17 @@ unfinished row counted as pending everywhere.
   phase's file is there, the cell blank -> Enter marks ok) and EARLIER
   DAYS, NOT FINISHED (t = today too, h = hold). The phase prompt takes
   parts of names and `a` = every day.
+- **gfixRecv.gift** (new phase between plan and track; worklist columns
+  `GIFT_DATE`, `GIFT_TIME`, verdict `gift`): a job whose DATA/GIFT/<J>
+  (or <W>) folder has files is ok at once; for the others the Jenkins
+  data/report list is read and **`verify.time_candidates`** takes the
+  entries in GIFT run time -2..+13 min -- the expected number (FileCount,
+  else one) is downloaded without asking (`human.pick autoPick`), anything
+  else is a pick (the window, then that day by hour, each file with its
+  time). No GIFT date -> no_date (fill mapping.xlsx and r, or s).
 - `verify.filter_records emptyOk`: nothing matching is an answer.
+- `human.pick` outputs `pickedCount` / `any`; a number with a leading zero or
+  past the last choice is read as part of a name (`0026`).
 
 ### Changed
 - **gfixRecv.plan v0.5.0**: reads every receive / 修正後実施 row (AF, AG,
@@ -49,6 +59,12 @@ unfinished row counted as pending everywhere.
   WBS-vs-mapping compare step is gone (the sets show both).
 - plan's resetOnChange also clears `deliver` (a job back on another day
   kept an old deliver = ok).
+- **gfixRecv.plan v0.6.0**: mapping.xlsx is read whole (M / N GIFT date /
+  time added); today's rows (GFIX date = today) still give time / count,
+  every picked job gets its GIFT date / time; the next line says gift.
+- table.day_sets: a row whose LAST verdict (deliver) is ok counts as done
+  even when a column added later (gift) is blank; plan passes
+  carryField = track.
 
 ### Office PC
 - Not run yet on Windows: the plan panel on the real WBS, the menu keys,

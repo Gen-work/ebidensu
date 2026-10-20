@@ -30,7 +30,7 @@ $log | Add-Member -MemberType ScriptMethod -Name Debug -Value { param($m) }
 $ctx = @{ WorkDir = [System.IO.Path]::GetTempPath(); RunId = 'test'; Profile = $prof; Log = $log; DryRun = $false; Session = @{}; Item = $null; KeyColumns = @('Excel_NAME') }
 
 $loaded = @{}
-foreach ($u in @('table.day_sets', 'human.pick', 'excel.mark_rows', 'verify.filter_records')) {
+foreach ($u in @('table.day_sets', 'human.pick', 'excel.mark_rows', 'verify.filter_records', 'verify.time_candidates', 'verify.parse_text')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -83,13 +83,13 @@ $wbs = @(
 $wl = @{ path = ''; columns = @('Excel_NAME', 'GFIX_DATE', 'WORKDAY', 'hold', 'track', 'logs', 'evidence', 'deliver'); rows = @(
     @{ Excel_NAME = 'SJODWDBC'; GFIX_DATE = '2026-10-15'; WORKDAY = '2026-10-15'; hold = 'HOST'; track = ''; logs = ''; evidence = ''; deliver = '' },
     @{ Excel_NAME = 'RJODWDBC'; GFIX_DATE = '2026/10/16'; WORKDAY = ''; hold = ''; track = 'ok'; logs = 'ok'; evidence = ''; deliver = '' },
-    @{ Excel_NAME = 'QJODWSPN'; GFIX_DATE = '2026-10-19'; WORKDAY = '2026-10-19'; hold = ''; track = 'ok'; logs = 'ok'; evidence = 'ok'; deliver = 'ok' },
+    @{ Excel_NAME = 'QJODWSPN'; GFIX_DATE = '2026-10-19'; WORKDAY = '2026-10-19'; hold = ''; gift = ''; track = 'ok'; logs = 'ok'; evidence = 'ok'; deliver = 'ok' },
     @{ Excel_NAME = 'YJODWPCK'; GFIX_DATE = '2026-10-20'; WORKDAY = '2026-10-20'; hold = ''; track = ''; logs = ''; evidence = ''; deliver = '' },
     @{ Excel_NAME = 'MJDSWM40'; GFIX_DATE = '2026-10-20'; WORKDAY = '2026-10-20'; hold = ''; track = 'ok'; logs = ''; evidence = ''; deliver = '' }
 ) }
 $ctx['Session']['wl'] = @{ kind = 'worklist'; value = $wl }
 $mapping = @( @{ Excel_NAME = 'XJDSWM99'; GFIX_TIME = '13:00:00' }, @{ Excel_NAME = 'FJODWWBV'; GFIX_TIME = '10:30:00' } )
-$r = Invoke-TestStep 'table.day_sets' @{ worklist = 'wl'; records = $wbs; today = '2026-10-20'; ownerPattern = $pat; extra = $mapping }
+$r = Invoke-TestStep 'table.day_sets' @{ worklist = 'wl'; records = $wbs; today = '2026-10-20'; ownerPattern = $pat; extra = $mapping; carryField = 'track' }
 Assert-True ($r['ok']) 'sets: ok'
 Assert-Equal 'JJDSWPA1,TJODWDUP,YJODWPCK,MJDSWM40' (Get-Names (Get-Set $r 'today')) 'sets: today = the multi-day row, the two-file job with one row open, the rows picked earlier today (MJDSWM40 is in no WBS row)'
 Assert-Equal 'picked earlier today; track ok' (Get-Set $r 'today')['notes']['MJDSWM40'] 'sets: ... with what is done'
@@ -148,8 +148,8 @@ $x = HumanPick-Resolve -Text 'h DBC' -Sets $sets -Presets $presets -Level 'first
 Assert-True ($x['kind'] -eq 'hold' -and (@($x['keys']) -join ',') -eq 'MJODWDBC,RJODWDBC') 'pick: h DBC = put them on hold'
 $x = HumanPick-Resolve -Text 'NOSUCH' -Sets $sets -Presets $presets -Level 'first'
 Assert-True (-not $x['ok'] -and $x['message'] -like '*NOSUCH (not in any set)*') 'pick: an unknown name is said, nothing is picked'
-$x = HumanPick-Resolve -Text '9' -Sets $sets -Presets $presets -Level 'first'
-Assert-True (-not $x['ok']) 'pick: a choice that does not exist is refused'
+$x = HumanPick-Resolve -Text '7' -Sets $sets -Presets $presets -Level 'first'
+Assert-True (-not $x['ok']) 'pick: a number past the last choice that no name holds is refused'
 $x = HumanPick-Resolve -Text '0' -Sets $sets -Presets $presets -Level 'first'
 Assert-Equal 'none' $x['kind'] 'pick: 0 = nothing today'
 $lines = @(HumanPick-Lines -Sets $sets -Presets $presets -Level 'first')
@@ -177,6 +177,42 @@ $ctx['DryRun'] = $true
 $p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN' }
 Assert-True ($p['ok'] -and $p['auto'] -and @($p['picked']).Count -eq 4) 'pick: nobody to ask -> choice 1'
 $ctx['DryRun'] = $false
+
+$p = Invoke-TestStep 'human.pick' @{ sets = $sets; presets = $presets; title = 'PLAN'; autoPick = $true }
+Assert-True ($p['ok'] -and $p['auto'] -and $p['pickedCount'] -eq 4 -and $p['any']) 'pick: autoPick takes choice 1 without a panel; pickedCount / any say how many'
+
+# ---------------------------------------------------------------- GIFT files on the Jenkins list (gfixRecv.gift)
+$tab = [string][char]9
+$jkText = (@(
+    ('F202609110030.csv' + $tab + '2026/09/11 10:30:29' + $tab + '12 KB' + $tab + 'view'),
+    ('F202609110031.csv' + $tab + '2026/09/11 10:44:10' + $tab + '3 KB' + $tab + 'view'),
+    ('F202609110025.csv' + $tab + '2026/09/11 9:58:00' + $tab + '1 KB' + $tab + 'view'),
+    ('F202609110026.csv' + $tab + '2026/09/11 9:59:30' + $tab + '1 KB' + $tab + 'view'),
+    ('F202609100001.csv' + $tab + '2026/09/10 10:31:00' + $tab + '1 KB' + $tab + 'view'),
+    ('notes.txt' + $tab + '2026/09/11 10:31:00' + $tab + '1 KB' + $tab + 'view')
+) -join "`r`n")
+$jr = Invoke-TestStep 'verify.parse_text' @{ text = $jkText; grammar = $prof['grammar']['jenkinsReport'] }
+Assert-Equal 6 $jr['recordCount'] 'gift: the sample Jenkins lines parse with the real grammar'
+$pat = [string]$prof['pages']['jenkinsReport']['fileNamePattern']
+$c = VerifyTimeCandidates-Find -Records $jr['records'] -Date '2026/9/11' -Clock '10:30' -NamePattern $pat -Label 'GIFT run'
+Assert-True ($c['ok'] -and $c['certain'] -and (@($c['picked']) -join ',') -eq 'F202609110030.csv') ('gift: one file in 10:28..10:43 and none expected otherwise -> certain: ' + $c['reason'])
+Assert-Equal 4 $c['dayCount'] 'gift: that day''s files matching the name pattern (other days and notes.txt left out)'
+$c = VerifyTimeCandidates-Find -Records $jr['records'] -Date '2026-09-11' -Clock '0.4375' -NamePattern $pat
+Assert-True ($c['certain']) 'gift: an Excel day fraction (0.4375 = 10:30) is a time'
+$c = VerifyTimeCandidates-Find -Records $jr['records'] -Date '2026/9/11' -Clock '10:30' -NamePattern $pat -Expect 2 -Label 'GIFT run'
+Assert-True (-not $c['certain'] -and @($c['picked']).Count -eq 0) 'gift: 2 expected, 1 in the window -> not certain, nothing taken'
+Assert-Equal 'window,hour:09,hour:10' (@($c['sets'] | ForEach-Object { $_['id'] }) -join ',') 'gift: sets = the window, then the rest of that day by hour, earliest first'
+Assert-Equal 'F202609110025.csv,F202609110026.csv' (@($c['sets'][1]['names']) -join ',') 'gift: the 09 hour holds both 9:5x files'
+Assert-Equal '09:58:00' $c['sets'][1]['notes']['F202609110025.csv'] 'gift: each name notes its time'
+Assert-Equal 'F202609110031.csv' (@($c['sets'][2]['names']) -join ',') 'gift: the 10 hour keeps only what is outside the window'
+Assert-True ($c['presets'][0]['label'] -like 'GIFT run 09/11 10:30:00: 10:28-10:43 (expect 2)*') ('gift: preset 1 is the window: ' + $c['presets'][0]['label'])
+$c = VerifyTimeCandidates-Find -Records $jr['records'] -Date '2026/9/11' -Clock '-' -NamePattern $pat
+Assert-True (-not $c['certain'] -and @($c['window']).Count -eq 0 -and (@($c['info']) -join ' ') -like '*"-" is not a time*') 'gift: GIFT TIME "-" -> no window, pick by hour'
+$c = VerifyTimeCandidates-Find -Records $jr['records'] -Date '' -Clock '10:30' -NamePattern $pat
+Assert-Equal 'no_date' $c['failure'] 'gift: no GIFT date -> no_date'
+$daySets = @((VerifyTimeCandidates-Find -Records $jr['records'] -Date '2026/9/11' -Clock '' -NamePattern $pat)['sets'])
+$x = HumanPick-Resolve -Text '0026' -Sets $daySets -Presets @() -Level 'first'
+Assert-Equal 'F202609110026.csv' (@($x['keys']) -join ',') 'gift: a file is picked by part of its name'
 
 $f = Invoke-TestStep 'verify.filter_records' @{ records = @($r['records']); where = @(@{ field = 'Excel_NAME'; op = 'in'; value = @() }); emptyOk = $true }
 Assert-True ($f['ok'] -and $f['matched'] -eq 0) 'filter_records emptyOk: picking nothing is an answer, not not_found'

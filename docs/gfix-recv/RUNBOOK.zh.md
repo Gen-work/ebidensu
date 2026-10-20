@@ -138,7 +138,28 @@ ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
 - mapping.xlsx 只是补充：O 列（GFIX実行日）= 今天的行，给选中的行补上 GFIX 时刻和文件数；
   只在 mapping 里、不在 WBS 里的 job 在 `mapping.xlsx only` 集合里（owner 留空时它在推荐里）。
   没补 mapping 也没关系：文件数显示 `-1`（不知道），时刻在 track 时从 Teams 消息里取。
-- 结果：`$W\gfixrecv.csv`（作业清单，用 Excel 打开也行）。
+- 选中的行还会从 mapping.xlsx（所有行，不只今天的）带上 `GIFT_DATE`（M 列 GIFT実行日）和 `GIFT_TIME`（N 列 GIFT TIME），下一段 gift 用。
+- 结果：`$W\gfixrecv.csv`（作业清单，用 Excel 打开也行）。跑完的 next 是 gift。
+
+---
+
+## 1b. plan 之后：`gfixRecv.gift`（GIFT 文件在不在，v2.29.0 起）
+
+```powershell
+ebi.ps1 run workflows\gfixRecv.gift.json -WorkDir $W
+```
+
+菜单里 plan 跑完直接回车就是这一段（`2  gift`）。track 要用的 GIFT 文件（`DATA\GIFT\<J名>`，没有就 `<W名>`）在这里先查好：
+
+- **文件夹里有文件** → `gift = ok`，什么都不问。
+- **没有** → 读 Jenkins data/report 一览（就是 track 用的那个窗口，要先开着；没开会停下，开了按 `r`），
+  用 plan 从 mapping.xlsx 带过来的 **GIFT実行日（M 列）/ GIFT TIME（N 列）**，找那个时刻 −2～+13 分钟里放进 report 的文件：
+  - 窗口里**正好是该有的个数**（mapping 的文件数，不知道就当 1 个）→ 不问，直接下载到 `DATA\GIFT\<J名>\`，`gift = ok`。
+  - 个数不对，或者 GIFT TIME 是空的 / `-` → 出选择面板（和 plan 的一样）：`1` = 时刻窗口里的那几个（回车），
+    后面是那一天其余的文件**按小时分组**（`2` = 09 点那一组 …），每个文件后面写着时刻；也可以打文件名的一部分（`0026`）。
+    回车前会复述一遍要下载哪几个。`0` = 都不要（这一本保持 pending，自己放文件）。
+  - GIFT実行日 是空的 → 停下来说「no GIFT run day」：在 mapping.xlsx 补上日期按 `r`，或者自己把文件放进去按 `s`。
+- 下载完 track 照常从 `DATA\GIFT\<J名>` 取文件、逐行比较；放错了文件，比较会是 ng，照旧会问你。
 
 ---
 

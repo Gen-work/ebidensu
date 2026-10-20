@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.plan",
   "title": "GFIX受信: WBS から今日やるジョブの候補(今日 / 遅れ / 先取り)を出して選ぶ -> 作業リスト (gfixrecv.csv) へ(mapping.xlsx の時刻・ファイル数も)",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "profile": "gfix-recv",
   "vars": {
     "wbsSheet": "WBS",
@@ -129,7 +129,7 @@
     {
       "id": "mine",
       "use": "excel.read_rows",
-      "label": "mapping.xlsx: GFIX実行日 = 今日 の行(あれば時刻とファイル数を足す。WBS にないジョブもここから入る)",
+      "label": "mapping.xlsx の全行(GIFT 実行日 M / GIFT TIME N も)。GFIX実行日 = 今日の行は時刻とファイル数に使う",
       "with": {
         "workbook": "map",
         "sheet": "{{vars.mappingSheet}}",
@@ -140,21 +140,19 @@
           "USER": "C",
           "RCVFILE": "D",
           "GFIX_DATE": "O",
-          "GFIX_TIME": "P"
+          "GFIX_TIME": "P",
+          "GIFT_DATE": "M",
+          "GIFT_TIME": "N"
         },
         "dateFields": [
-          "GFIX_DATE"
+          "GFIX_DATE",
+          "GIFT_DATE"
         ],
         "timeFields": [
-          "GFIX_TIME"
+          "GFIX_TIME",
+          "GIFT_TIME"
         ],
-        "where": [
-          {
-            "field": "GFIX_DATE",
-            "op": "equals",
-            "value": "{{run.date}}"
-          }
-        ],
+        "where": [],
         "pluck": "JOB"
       }
     },
@@ -166,6 +164,22 @@
       }
     },
     {
+      "id": "mineToday",
+      "use": "verify.filter_records",
+      "label": "mapping.xlsx: GFIX実行日 = 今日 の行",
+      "with": {
+        "records": "{{steps.mine.out.records}}",
+        "where": [
+          {
+            "field": "GFIX_DATE",
+            "op": "equals",
+            "value": "{{run.date}}"
+          }
+        ],
+        "emptyOk": true
+      }
+    },
+    {
       "id": "sets",
       "use": "table.day_sets",
       "label": "候補に分ける: 今日 / 遅れ(前の日の予定で未実施)/ 先取り(次の営業日)/ 他の人の今日 / mapping.xlsx だけ / 保留。WBS の AJ(実績)か作業リストで済みの行は出さない",
@@ -174,9 +188,10 @@
         "records": "{{steps.derive.out.records}}",
         "today": "{{run.date}}",
         "ownerPattern": "{{steps.ownerPat.out.pattern}}",
-        "extra": "{{steps.mine.out.records}}",
+        "extra": "{{steps.mineToday.out.records}}",
         "aheadDays": "{{vars.aheadDays}}",
-        "backDays": "{{vars.backDays}}"
+        "backDays": "{{vars.backDays}}",
+        "carryField": "track"
       }
     },
     {
@@ -241,7 +256,7 @@
       "use": "verify.filter_records",
       "label": "mapping.xlsx の今日の行のうち選んだジョブ",
       "with": {
-        "records": "{{steps.mine.out.records}}",
+        "records": "{{steps.mineToday.out.records}}",
         "where": [
           {
             "field": "Excel_NAME",
@@ -345,6 +360,41 @@
         }
       },
       "label": "mapping.xlsx の今日の行(選んだジョブだけ): GFIX時刻とファイル数で上書き"
+    },
+    {
+      "id": "keepGift",
+      "use": "verify.filter_records",
+      "label": "選んだジョブの mapping.xlsx 行(GIFT 実行日時)",
+      "with": {
+        "records": "{{steps.mine.out.records}}",
+        "where": [
+          {
+            "field": "Excel_NAME",
+            "op": "in",
+            "value": "{{steps.pick.out.picked}}"
+          }
+        ],
+        "emptyOk": true
+      }
+    },
+    {
+      "id": "upsertGift",
+      "use": "table.upsert",
+      "label": "選んだジョブに GIFT 実行日時(gfixRecv.gift が GIFT ファイルを探すとき使う)",
+      "with": {
+        "worklist": "wl",
+        "rows": "{{steps.keepGift.out.records}}",
+        "fields": {
+          "Excel_NAME": "Excel_NAME",
+          "GIFT_DATE": "GIFT_DATE",
+          "GIFT_TIME": "GIFT_TIME"
+        },
+        "overwrite": [
+          "GIFT_DATE",
+          "GIFT_TIME"
+        ],
+        "addNew": false
+      }
     }
   ],
   "teardown": [
@@ -360,9 +410,9 @@
       "use": "progress.status",
       "with": {
         "worklist": "wl",
-        "field": "track",
+        "field": "gift",
         "next": [
-          "ebi.ps1 run workflows\\gfixRecv.track.json -WorkDir {{run.workDir}}   (HOST のジョブごと; 1 本だけなら -Only <W名>)"
+          "ebi.ps1 run workflows\\gfixRecv.gift.json -WorkDir {{run.workDir}}   (GIFT 側のファイルがあるか。無ければ Jenkins から探す)"
         ]
       }
     }

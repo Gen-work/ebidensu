@@ -1,5 +1,5 @@
 {
-  "_doc": "One row per deliverable (Excel_NAME = the GFIX-side job name, e.g. RJDSWM40). Built by gfixRecv.plan from the WBS rows the operator PICKS for the day (today / late / ahead sets; + mapping.xlsx rows dated today, for GFIX_TIME / FileCount; FileCount -1 = not known); the day-flows checkpoint into track / logs / evidence / deliver and take only rows whose WORKDAY is today and whose hold is blank.",
+  "_doc": "One row per deliverable (Excel_NAME = the GFIX-side job name, e.g. RJDSWM40). Built by gfixRecv.plan from the WBS rows the operator PICKS for the day (today / late / ahead sets; + mapping.xlsx rows dated today, for GFIX_TIME / FileCount; FileCount -1 = not known); the day-flows checkpoint into gift / track / logs / evidence / deliver and take only rows whose WORKDAY is today and whose hold is blank.",
   "_doneFile_doc": "a verdict column's doneFile is the phase's own record of a finished row: when the cell is blank but the file was written on or after the row's day, the menu offers to mark it ok before the phase runs again (10/20)",
   "file": "gfixrecv.csv",
   "encoding": "utf8-bom",
@@ -25,6 +25,9 @@
     { "name": "Owner", "role": "owner", "default": "" },
     { "name": "WORKDAY", "role": "day", "fallback": "GFIX_DATE", "default": "", "_doc": "the day the plan picked this row for (yyyy-MM-dd). The day phases take only today's rows (-AllDays for every day); GFIX_DATE stays the day the GFIX job ran" },
     { "name": "hold", "role": "hold", "default": "", "_doc": "not blank = on hold, with the reason (HOST 待ち): every phase leaves the row out until it is cleared (menu h)" },
+    { "name": "GIFT_DATE", "role": "text", "default": "", "_doc": "the day the GIFT job ran (mapping.xlsx M, GIFT実行日; plan copies it): gfixRecv.gift looks for the GIFT files around it" },
+    { "name": "GIFT_TIME", "role": "time", "default": "", "_doc": "the GIFT run time (mapping.xlsx N, GIFT TIME); blank = gfixRecv.gift offers the whole day by hour" },
+    { "name": "gift", "role": "verdict", "default": "", "_doc": "DATA/GIFT/<J> (or <W>) holds the GIFT files: gfixRecv.gift (found, or downloaded from the Jenkins list)", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "track", "role": "verdict", "default": "", "doneFile": "capture/gfix/{{item.keySafe}}/track.json", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "logs", "role": "verdict", "default": "", "doneFile": "capture/gfix/{{item.keySafe}}/logs.json", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "evidence", "role": "verdict", "default": "", "doneFile": "capture/gfix/{{item.keySafe}}/gate.json", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },

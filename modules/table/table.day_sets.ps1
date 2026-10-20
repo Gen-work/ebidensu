@@ -45,7 +45,7 @@ $Manifest = @{
     aheadDays    = @{ type='int';    default=2; desc='working days (Mon-Fri) looked ahead' }
     backDays     = @{ type='int';    default=21; desc='calendar days looked back for late rows' }
     dateColumn   = @{ type='string'; default='GFIX_DATE'; desc='worklist column the job''s run date lives in' }
-    carryField   = @{ type='string'; default=''; desc='verdict column whose ok fixes the run date (blank = the first verdict column)' }
+    carryField   = @{ type='string'; default=''; desc='verdict column whose ok fixes the run date (gfix-recv: track; blank = the first verdict column)' }
   }
   outputs    = @{
     sets        = @{ type='list'; desc='@{ n (1.. pickable, 0 not); id; label; names; notes (name -> text); default }' }
@@ -89,7 +89,7 @@ function TableDaySets-AddWorkdays {
 function TableDaySets-WorklistState {
     <#
       PURE. Worklist rows -> normalized key -> @{ verdicts (field -> logical);
-      okAll; progress (verdicts written, "track ok, logs ng"); carry; date;
+      okAll (every verdict ok, or the last one); progress (verdicts written, "track ok, logs ng"); carry; date;
       day; hold }.
     #>
     param($Worklist, $Profile, [string]$DateColumn, [string]$CarryField)
@@ -116,6 +116,9 @@ function TableDaySets-WorklistState {
             if ($l -ne 'ok') { $okAll = $false }
             if ($l -ne '') { [void]$parts.Add(($f + ' ' + $l)) }
         }
+        # the last verdict ok = the job is finished, whatever an earlier column
+        # added later says (10/20: a new first column, gift, is blank on old rows)
+        if ($verdictCols.Count -gt 0 -and [string]$v[[string]$verdictCols[$verdictCols.Count - 1]] -eq 'ok') { $okAll = $true }
         $date = if ($DateColumn -ne '' -and $row.Contains($DateColumn)) { ConvertTo-EbiWorklistDay -Text ([string]$row[$DateColumn]) } else { '' }
         $state[$k] = @{
             shown = (Get-EbiKeyDisplay -Item $row -KeyColumns $keyCols)

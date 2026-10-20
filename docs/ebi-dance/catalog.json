@@ -3913,6 +3913,11 @@
       "id": "human.pick",
       "idempotent": true,
       "inputs": {
+        "autoPick": {
+          "default": false,
+          "desc": "true: take choice 1 without asking (the caller already knows it is right, e.g. verify.time_candidates certain); the panel is not shown",
+          "type": "bool"
+        },
         "holdReason": {
           "default": "waiting",
           "desc": "what Enter means when asked why names go on hold",
@@ -3950,6 +3955,10 @@
           "desc": "the confirmed answer as typed",
           "type": "string"
         },
+        "any": {
+          "desc": "at least one picked (a later step's when: any == true is false too when this step was skipped)",
+          "type": "bool"
+        },
         "auto": {
           "desc": "nobody could answer (dry run / no console): preset 1 was taken",
           "type": "bool"
@@ -3964,6 +3973,10 @@
         "picked": {
           "desc": "the picked names, in set order",
           "type": "list"
+        },
+        "pickedCount": {
+          "desc": "how many were picked",
+          "type": "int"
         }
       },
       "provides": [],
@@ -5207,7 +5220,7 @@
         },
         "carryField": {
           "default": "",
-          "desc": "verdict column whose ok fixes the run date (blank = the first verdict column)",
+          "desc": "verdict column whose ok fixes the run date (gfix-recv: track; blank = the first verdict column)",
           "type": "string"
         },
         "dateColumn": {
@@ -6741,6 +6754,126 @@
       "provides": [],
       "releases": [],
       "summary": "Parse the per-file record counts of a start message; compare with the files' line counts",
+      "tier": "core"
+    },
+    "verify.time_candidates": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.time_candidates",
+        "with": {
+          "clock": "{{item.GIFT_TIME}}",
+          "date": "{{item.GIFT_DATE}}",
+          "expectFallback": "{{item.FileCount}}",
+          "label": "GIFT run",
+          "namePattern": "^F\\d{12}\\.(csv|txt|zip)$",
+          "records": "{{steps.jkRec.out.records}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "no_date",
+          "transient": false
+        },
+        {
+          "id": "rules_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.time_candidates.ps1",
+      "group": "verify",
+      "id": "verify.time_candidates",
+      "idempotent": true,
+      "inputs": {
+        "afterMinutes": {
+          "default": 13,
+          "type": "int"
+        },
+        "beforeMinutes": {
+          "default": 2,
+          "type": "int"
+        },
+        "clock": {
+          "default": "",
+          "desc": "the run time (HH:mm[:ss] or an Excel day fraction); blank or unreadable = no window, the whole day is offered",
+          "type": "string"
+        },
+        "date": {
+          "default": "",
+          "desc": "the run day (yyyy-MM-dd, yyyy/M/d, ...); blank = no_date",
+          "type": "string"
+        },
+        "expect": {
+          "default": -1,
+          "desc": "how many files the job has; -1 = unknown (then one is certain)",
+          "type": "int"
+        },
+        "expectFallback": {
+          "default": "",
+          "desc": "used when expect is -1 (a worklist FileCount cell); not a number = none",
+          "type": "string"
+        },
+        "keyField": {
+          "default": "key",
+          "type": "string"
+        },
+        "label": {
+          "default": "run",
+          "desc": "what the time is, in the set labels (\"GIFT run\")",
+          "type": "string"
+        },
+        "namePattern": {
+          "default": "",
+          "desc": "regex an entry name must match (blank = any)",
+          "type": "string"
+        },
+        "records": {
+          "desc": "verify.parse_text records of the listing",
+          "required": true,
+          "type": "list"
+        },
+        "timeField": {
+          "default": "time",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "no_date: the job has no run day (mapping.xlsx GIFT date blank) -- put the files in by hand, or fill the date and r. Entries are compared by their own time field, to the second.",
+      "outputs": {
+        "certain": {
+          "desc": "a run time was given and exactly the expected number of entries are in its window",
+          "type": "bool"
+        },
+        "dayCount": {
+          "desc": "entries on that day matching namePattern",
+          "type": "int"
+        },
+        "info": {
+          "desc": "lines for the pick panel",
+          "type": "list"
+        },
+        "picked": {
+          "desc": "those names when certain, else empty",
+          "type": "list"
+        },
+        "presets": {
+          "desc": "human.pick presets, the same order",
+          "type": "list"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "sets": {
+          "desc": "human.pick sets: the window, then that day by hour",
+          "type": "list"
+        },
+        "window": {
+          "desc": "the names inside the window (empty without a run time)",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Listing entries around a run time: certain when the count fits, else sets to pick from",
       "tier": "core"
     },
     "verify.time_window": {

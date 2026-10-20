@@ -123,6 +123,13 @@
 - **写新 workflow 时**:「今天做哪些」要分清计划和实绩两个来源,把「做完了」的信号写回原表,而不是只在工具里记。
 - **来源**:10/19～10/20 WBS 实数据(DETOUR-GFIX-001.10)+ 操作员说明(DBC 全部在等;AJ 靠人手填)。
 
+### K-17 GIFT 文件不在 DATA\GIFT 里
+- **症状**:10/20 M/SJODJSPQ、QJODJSPP 跑 track 时 `DATA\GIFT\<J名>` 没有文件,track 建好空文件夹停下来等人放。
+- **原因**:GIFT 侧文件要人手先从 Jenkins data/report 下载;它们和 GFIX 侧同一个页面、同样是 `F<yyyyMMdd><nnnn>` 的名字,名字里看不出是哪个 job,只能按 GIFT 运行的时刻找(操作员 10/16)。
+- **现在的对策**(v2.29.0):plan 从 mapping.xlsx 带上 GIFT実行日(M)/ GIFT TIME(N);新的一段 `gfixRecv.gift` 在 track 之前检查文件夹,没有就读 Jenkins 一览,时刻 −2～+13 分钟里正好是该有的个数就直接下载,否则让人选(时刻窗口、那天按小时分组)。
+- **还没做**:处理時間(BIX).xlsx 的开始/结束时刻当来源(更准),Teams「実施します」消息当来源。
+- **来源**:10/20 操作员(余晖的 10/20 受信日指示)+ docs/TODO.md 10/16 的卡片。
+
 ---
 
 ## 4. 交付(gfixRecv.deliver)
