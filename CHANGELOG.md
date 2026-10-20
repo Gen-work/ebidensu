@@ -1,3 +1,26 @@
+## 2026-10-20 - logs / evidence: a lost track.json / logs.json sends the row back to its earlier flow (v2.28.1)
+
+10/20 receive day: gfixrecv.csv said MJODWSPQ track = ok, but
+`capture\gfix\MJODWSPQ\track.json` was not there. logs stopped on a FAILED
+panel (file_not_found), and track would not take the row again (not
+pending: track = "ok"), so the only way out was editing the CSV by hand.
+
+### Changed
+- **gfixRecv.logs v0.3.1 / gfixRecv.evidence v0.5.1**: the sidecar of the
+  earlier flow is read without failing; when it is not there, that flow's
+  column is set back to pending (`table.set`, blank) and the row is skipped
+  (`flow.require` -> not_met -> skip) with one line naming the command to
+  run (`run gfixRecv.track -Only <job>, then this flow again`). logs checks
+  track.json; evidence checks track.json and logs.json. Other rows of the
+  same run go on. status / menu then show the row as track (or logs)
+  pending, and the next track run picks it up.
+
+### Tests
+- `Tests\Test-GfixRecvLostArtifact.ps1`: runs the first steps of the
+  SHIPPED logs / evidence workflows (real modules, real gfix-recv profile)
+  on a temp gfixrecv.csv: the row without its sidecar is skipped and its
+  verdict cleared, a row with it goes on and keeps ok.
+
 ## 2026-10-19 - deliver: all rows, one check, all drafts, one check (workflow "after"); evidence first office run fixes; track brings Teams to the front (v2.28.0)
 
 First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).
