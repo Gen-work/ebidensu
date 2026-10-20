@@ -173,6 +173,11 @@ CLI `--only <key>[,<key>...]`(P0-R16)按 `{{item.key}}` 的显示形在
 `Get-EbiOwnerPattern`),该列为空的行保留,控制台列出被筛掉的行。
 `--only` 点名的行不受这层筛选。`operator.owner` 为空 = 不筛。
 
+**作业日与保留(10/20 补)。** 工作清单声明了 `role: "hold"` 的列时,该列不为空的行不选;
+声明了 `role: "day"` 的列(`PROFILE-SCHEMA.md` §6.1b)时,只选作业日 = `run.date` 的行
+(该列为空的行读它的 `fallback` 列),控制台列出被筛掉的行和它们的日子。
+CLI `-AllDays` 取消作业日这一层(保留仍然生效);`--only` 点名的行两层都不受限。
+
 ### 3.1 `pendingWhen` 的允许写法(**穷举,不许扩展**)
 
 | 写法 | 含义 |
@@ -211,7 +216,7 @@ CLI `--only <key>[,<key>...]`(P0-R16)按 `{{item.key}}` 的显示形在
 | `{{vars.X}}` | 工作流常量 | 全部 |
 | `{{profile.X.Y}}` | profile 数据 | 全部 |
 | `{{page.X}}` | 顶层 `page` 绑定的那个 page 的数据(`profile.pages[<page>].X` 的简写),`{{page.id}}` 是 page 名本身 | 全部,且顶层声明了 `page` 字段时才可用(P0-R6) |
-| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `date`(`yyyy-MM-dd`)/ `dateSlash`(`yyyy/MM/dd`)/ `mmdd`(`MMdd`,日志文件名用)/ `toolDir`(本工具的根目录,引用随仓库发布的素材,如 profile 里的图片)/ `operator` / `workDir` / `timeWindow`)。`date` / `dateSlash` / `mmdd` 取 run 开始那一刻,`--resume` 时沿用原 run 的值(第二天续跑,文件名仍是原来那天)。**持久化在 `run/<runId>/run.json`**(P0-R16):runner 启动时写入,`human.input` / `--time-window` 改 `timeWindow` 时同步更新,`--resume` 时从它恢复,不再问人 | 全部 |
+| `{{run.X}}` | 运行元数据(`runId` / `startedAt` / `date`(`yyyy-MM-dd`)/ `dateSlash`(`yyyy/MM/dd`)/ `mmdd`(`MMdd`,日志文件名用)/ `toolDir`(本工具的根目录,引用随仓库发布的素材,如 profile 里的图片)/ `operator` / `workDir` / `timeWindow` / `only`(CLI `-Only` 的 key 列表;没有 `source` 的工作流——plan——把它当作选择面板的答案,10/20))。`date` / `dateSlash` / `mmdd` 取 run 开始那一刻,`--resume` 时沿用原 run 的值(第二天续跑,文件名仍是原来那天)。**持久化在 `run/<runId>/run.json`**(P0-R16):runner 启动时写入,`human.input` / `--time-window` 改 `timeWindow` 时同步更新,`--resume` 时从它恢复,不再问人 | 全部 |
 | `{{item.X}}` | 当前行的某列 | 仅 `each` |
 | `{{item.key}}` | 当前行的主键显示形(复合键按声明顺序用 `" / "` 拼接) | 仅 `each` |
 | `{{item.keySafe}}` | 当前行的主键**文件名安全形**,文件/目录名一律用它,见 `PROFILE-SCHEMA.md` §6.6 | 仅 `each` |

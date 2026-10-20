@@ -427,6 +427,20 @@ page 名**,和 `pages.json` / `grammar.json` 一致 —— 不同的 `list` 页�
 
 `ebi lint` 检查:所有 `role: key` 的列都出现在 `key.columns` 里,反之亦然。
 
+### 6.1b 作业日、保留、完成记录(10/20)
+
+三个可选的列声明,让 runner 和 `ebi status` / `ebi menu` 知道「哪些行是今天的活」:
+
+- `"role": "day"` —— 这一行是哪天的活(`yyyy-MM-dd`,由 plan 写)。可加
+  `"fallback": "<列名>"`:这一列为空的行(加这列以前写的)改读那一列。声明了它,
+  每个有 `source` 的工作流**只拿今天的行**(`WORKFLOW-SCHEMA.md` §3),看盘只画今天的行。
+- `"role": "hold"` —— 不为空 = 保留中(内容是理由)。所有工作流都不拿它,看盘单独列出。
+- verdict 列的 `"doneFile"` —— 这一段自己的完成记录(模板,如
+  `capture/gfix/{{item.keySafe}}/track.json`)。判定为空、而文件是这一行的日子当天或以后写的,
+  菜单在开跑前问要不要直接标 ok(跑到一半断掉、判定没写上的行)。
+
+gfix-recv 的例子:`WORKDAY`(fallback `GFIX_DATE`)、`hold`、track / logs / evidence 的 `doneFile`。
+
 ### 6.2 变体规则是**长出来的**,不是一次写死的
 
 这是这一节最重要的设计,来自一个明确的现场判断:**没人能预先声明全部变体规则。**

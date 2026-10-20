@@ -116,6 +116,21 @@
 - **现在的对策**:`excel.open` 的 `read_only` 会读 `~$` 锁文件,说出是谁在用;问一声,对方关了再 `r`。`excel.append_row` 遇到只读的工作簿,不会去写。
 - **来源**:10/13。
 
+### K-16 WBS 的「计划开始」不等于「今天要做」
+- **症状**:10/16 提前做了 10/20 的 CJODWSPQ、K/R/SJODWSPP,WBS 的 AF(最新計画 開始)还是 10/20 → 只看 AF 的 plan 在 10/20 会把做完的又拉进清单;DBC 几本 AF 是 10/15～10/19 却一直没做(等 HOST 修复),只看「AF = 今天」永远看不到它们;往日没做完的行又一直算 pending。
+- **原因**:WBS 里计划(AF/AG)和实绩(AJ/AK)是两组列,实绩靠人手填、会晚填、会填错(10/16 把还在等的 K/LJODJDBC 填了 AJ)。
+- **现在的对策**(v2.29.0):plan 读 AF/AG/AJ,分成 today / late / ahead / others / mapping / hold 候选集合(`table.day_sets`),AJ 有日期或作业清单全 ok 的只列在「done already」一行;操作员用 `human.pick` 选(回车 = 今天的)。作业清单加 `WORKDAY`(这一行是哪天的活)和 `hold`(保留),各段只拿今天的、不拿保留的;deliver 送完后把 AJ/AK 自动写回 WBS(只写空格子)。
+- **10/20 补**:AJ 不能单独当「做完」:操作员早上开工前就给 M/SJODJSPQ 填了 AJ 10/20。现在「做完」以作业清单为准(最后一列 deliver ok);AJ 只在作业清单从没有这本、且日期早于今天时才当作做完,否则照样列出并注明 `WBS AJ MM/dd`。`plan -Only A,B` = 直接选这几本(以前 plan 不认 -Only,10/21 的和 WBS 担当写别人的那几本进不了清单)。
+- **写新 workflow 时**:「今天做哪些」要分清计划和实绩两个来源,把「做完了」的信号写回原表,而不是只在工具里记;人手填的实绩只当参考。
+- **来源**:10/19～10/20 WBS 实数据(DETOUR-GFIX-001.10)+ 操作员说明(DBC 全部在等;AJ 靠人手填)。
+
+### K-17 GIFT 文件不在 DATA\GIFT 里
+- **症状**:10/20 M/SJODJSPQ、QJODJSPP 跑 track 时 `DATA\GIFT\<J名>` 没有文件,track 建好空文件夹停下来等人放。
+- **原因**:GIFT 侧文件要人手先从 Jenkins data/report 下载;它们和 GFIX 侧同一个页面、同样是 `F<yyyyMMdd><nnnn>` 的名字,名字里看不出是哪个 job,只能按 GIFT 运行的时刻找(操作员 10/16)。
+- **现在的对策**(v2.29.0):plan 从 mapping.xlsx 带上 GIFT実行日(M)/ GIFT TIME(N);新的一段 `gfixRecv.gift` 在 track 之前检查文件夹,没有就读 Jenkins 一览,时刻 −2～+13 分钟里正好是该有的个数就直接下载,否则让人选(时刻窗口、那天按小时分组)。
+- **还没做**:处理時間(BIX).xlsx 的开始/结束时刻当来源(更准),Teams「実施します」消息当来源。
+- **来源**:10/20 操作员(余晖的 10/20 受信日指示)+ docs/TODO.md 10/16 的卡片。
+
 ---
 
 ## 4. 交付(gfixRecv.deliver)

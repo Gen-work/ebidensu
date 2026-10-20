@@ -770,12 +770,14 @@ function Invoke-EbiWorkflow {
         [int]$Limit = 0,
         [switch]$Resume,
         [scriptblock]$AskHandler = $null,
-        $TimeWindow = $null
+        $TimeWindow = $null,
+        [switch]$AllDays
     )
 
     $dryRunFlag = [bool]$DryRun.IsPresent
     if (-not $dryRunFlag) { Save-EbiConsoleWindow }   # kernel/Gate.ps1: questions bring this window back
     $resumeFlag = [bool]$Resume.IsPresent
+    $allDaysFlag = [bool]$AllDays.IsPresent
     if ([string]::IsNullOrWhiteSpace($ModulesRoot)) { $ModulesRoot = Get-EbiDefaultModulesRoot }
     if ([string]::IsNullOrWhiteSpace($RunId))       { $RunId = New-EbiRunId }
     if ([string]::IsNullOrWhiteSpace($WorkDir))     { $WorkDir = (Get-Location).ProviderPath }
@@ -827,6 +829,9 @@ function Invoke-EbiWorkflow {
     $wfId = [string]$workflow['id']
     $ebiNow = Get-Date
     $run = @{ runId = $RunId; startedAt = $ebiNow.ToString('o'); date = $ebiNow.ToString('yyyy-MM-dd'); dateSlash = $ebiNow.ToString('yyyy/MM/dd'); mmdd = $ebiNow.ToString('MMdd'); toolDir = (Split-Path $PSScriptRoot -Parent); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
+    # run.only (10/20): -Only for a workflow without rows (the plan) is the
+    # answer to its pick panel ("plan -Only A,B" = take A and B today)
+    $run['only'] = @(if ($null -ne $Only) { @($Only) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' } })
     $timeWindowSeen = $run['timeWindow']
     $ledgerDone = @{}
     if ($resumeFlag) {
@@ -952,6 +957,26 @@ function Invoke-EbiWorkflow {
                         Write-Host ('  owner {0}: {1} pending row(s) of other owners left out: {2}' -f $ownerName, @($owned['leftOut']).Count, (@($owned['leftOut']) -join ', ')) -ForegroundColor Cyan
                     }
                     $selected['rows'] = $owned['rows']
+                }
+                # hold and work day (10/20): a row put on hold waits for someone
+                # else and is never taken; a row the plan did not give TODAY is
+                # an earlier day's (or tomorrow's) and is left out unless
+                # -AllDays. -Only names rows explicitly and passes both.
+                $holdColumn = Get-EbiWorklistRoleColumn -Profile $Profile -Role 'hold'
+                if ($holdColumn -ne '' -and -not $onlyGiven) {
+                    $unheld = Select-EbiUnheldRows -Rows $selected['rows'] -Column $holdColumn -KeyColumns $keyColumns
+                    if (@($unheld['held']).Count -gt 0) {
+                        Write-Host ('  on hold: {0} row(s) left out: {1}  (menu h releases one)' -f @($unheld['held']).Count, (@($unheld['held']) -join ', ')) -ForegroundColor Cyan
+                    }
+                    $selected['rows'] = $unheld['rows']
+                }
+                $daySpec = Get-EbiWorklistDaySpec -Profile $Profile
+                if ($null -ne $daySpec -and -not $onlyGiven -and -not $allDaysFlag) {
+                    $dayRows = Select-EbiDayRows -Rows $selected['rows'] -DaySpec $daySpec -Day ([string]$run['date']) -KeyColumns $keyColumns
+                    if (@($dayRows['leftOut']).Count -gt 0) {
+                        Write-Host ('  day {0}: {1} pending row(s) of other days left out: {2}  (plan picks them for today; or -AllDays)' -f [string]$run['date'], @($dayRows['leftOut']).Count, (@($dayRows['leftOut']) -join ', ')) -ForegroundColor Cyan
+                    }
+                    $selected['rows'] = $dayRows['rows']
                 }
                 $orderBy = if ($source.Contains('orderBy') -and $null -ne $source['orderBy']) { [string]$source['orderBy'] } else { '' }
                 $ordered = @(Sort-EbiWorklistRows -Rows $selected['rows'] -GroupBy $groupBy -OrderBy $orderBy -KeyColumns $keyColumns)

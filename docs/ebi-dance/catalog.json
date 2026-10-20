@@ -1419,6 +1419,135 @@
       "summary": "Stack pictures down a sheet at native size and draw red boxes on them",
       "tier": "core"
     },
+    "excel.mark_rows": {
+      "effects": "write",
+      "example": {
+        "use": "excel.mark_rows",
+        "with": {
+          "dateColumns": [
+            "AJ",
+            "AK"
+          ],
+          "firstRow": 7,
+          "items": "{{steps.pick.out.rows}}",
+          "keyColumn": "A",
+          "keyField": "JOB",
+          "setFields": {
+            "AJ": "GFIX_DATE"
+          },
+          "setValues": {
+            "AK": "{{run.date}}"
+          },
+          "sheet": "WBS",
+          "where": {
+            "B": "recv"
+          },
+          "workbook": "wbs"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        },
+        {
+          "id": "read_failed",
+          "transient": true
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.mark_rows.ps1",
+      "group": "excel",
+      "id": "excel.mark_rows",
+      "idempotent": true,
+      "inputs": {
+        "dateColumns": {
+          "default": [],
+          "desc": "letters written as real dates (yyyy-MM-dd / yyyy/M/d in, an Excel date out; the cell's format is kept)",
+          "type": "list"
+        },
+        "firstRow": {
+          "default": 2,
+          "type": "int"
+        },
+        "items": {
+          "desc": "records, one per key (table.select rows)",
+          "required": true,
+          "type": "list"
+        },
+        "keyColumn": {
+          "desc": "column letter holding the key (the job name)",
+          "required": true,
+          "type": "string"
+        },
+        "keyField": {
+          "desc": "item field matched against keyColumn",
+          "required": true,
+          "type": "string"
+        },
+        "onlyBlank": {
+          "default": true,
+          "desc": "false: overwrite cells that already hold a value",
+          "type": "bool"
+        },
+        "setFields": {
+          "default": {},
+          "desc": "column letter -> item field written there",
+          "type": "map"
+        },
+        "setValues": {
+          "default": {},
+          "desc": "column letter -> one value written for every item",
+          "type": "map"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "where": {
+          "default": {},
+          "desc": "column letter -> value the row must also hold",
+          "type": "map"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "A key with several matching rows (two files listed twice) gets every one written. A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.",
+      "outputs": {
+        "kept": {
+          "desc": "\"KEY row 123: AJ already 2026-10-16\" for cells left as they were",
+          "type": "list"
+        },
+        "notFound": {
+          "desc": "keys with no matching row",
+          "type": "list"
+        },
+        "written": {
+          "desc": "\"KEY row 123: AJ=2026-10-16 AK=2026-10-20\" per row written",
+          "type": "list"
+        },
+        "writtenCount": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write per-key values (dates) into the matching rows of a sheet, blank cells only",
+      "tier": "core"
+    },
     "excel.open": {
       "effects": "ui",
       "example": {
@@ -3758,6 +3887,108 @@
       "summary": "Operator copies a chat message; read it from the clipboard, check it, note the time",
       "tier": "core"
     },
+    "human.pick": {
+      "effects": "ui",
+      "example": {
+        "use": "human.pick",
+        "with": {
+          "info": "{{steps.sets.out.info}}",
+          "presets": "{{steps.sets.out.presets}}",
+          "sets": "{{steps.sets.out.sets}}",
+          "title": "PLAN today"
+        }
+      },
+      "failures": [
+        {
+          "id": "operator_quit",
+          "transient": false
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/human/human.pick.ps1",
+      "group": "human",
+      "id": "human.pick",
+      "idempotent": true,
+      "inputs": {
+        "answer": {
+          "default": [],
+          "desc": "names given before the panel (ebi.ps1 run <plan> -Only A,B -> {{run.only}}): taken as the typed answer, read back and confirmed; a name no set offers shows the panel instead",
+          "type": "list"
+        },
+        "autoPick": {
+          "default": false,
+          "desc": "true: take choice 1 without asking (the caller already knows it is right, e.g. verify.time_candidates certain); the panel is not shown",
+          "type": "bool"
+        },
+        "holdReason": {
+          "default": "waiting",
+          "desc": "what Enter means when asked why names go on hold",
+          "type": "string"
+        },
+        "info": {
+          "default": [],
+          "desc": "lines shown above the choices",
+          "type": "list"
+        },
+        "noun": {
+          "default": "job",
+          "desc": "what a name is, in the read-back (\"4 jobs\")",
+          "type": "string"
+        },
+        "presets": {
+          "default": [],
+          "desc": "@{ label; names; hint } shown first, numbered from 1; empty = the default sets as one preset",
+          "type": "list"
+        },
+        "sets": {
+          "desc": "@{ n (0 = shown, not pickable); id; label; names; notes (name -> text); default } (table.day_sets)",
+          "required": true,
+          "type": "list"
+        },
+        "title": {
+          "default": "PICK",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Runs in setup, once per run. Under DryRun or without a console the first preset is taken (auto=true). q stops the whole run (operator_quit); 0 picks nothing.",
+      "outputs": {
+        "answer": {
+          "desc": "the confirmed answer as typed",
+          "type": "string"
+        },
+        "any": {
+          "desc": "at least one picked (a later step's when: any == true is false too when this step was skipped)",
+          "type": "bool"
+        },
+        "auto": {
+          "desc": "nobody could answer (dry run / no console): preset 1 was taken",
+          "type": "bool"
+        },
+        "hold": {
+          "desc": "names the operator put on hold (h ...)",
+          "type": "list"
+        },
+        "holdReason": {
+          "type": "string"
+        },
+        "picked": {
+          "desc": "the picked names, in set order",
+          "type": "list"
+        },
+        "pickedCount": {
+          "desc": "how many were picked",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Pick names from recommended combinations or numbered sets, or by typing (part of) names",
+      "tier": "core"
+    },
     "human.prepare": {
       "effects": "ui",
       "example": {
@@ -4959,6 +5190,134 @@
       "summary": "Move or copy an image to <dir>/<keySafe>[__<tag>].<ext>",
       "tier": "core"
     },
+    "table.day_sets": {
+      "effects": "pure",
+      "example": {
+        "use": "table.day_sets",
+        "with": {
+          "extra": "{{steps.mine.out.records}}",
+          "ownerPattern": "{{steps.ownerPat.out.pattern}}",
+          "records": "{{steps.derive.out.records}}",
+          "today": "{{run.date}}",
+          "worklist": "wl"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/table/table.day_sets.ps1",
+      "group": "table",
+      "id": "table.day_sets",
+      "idempotent": true,
+      "inputs": {
+        "aheadDays": {
+          "default": 2,
+          "desc": "working days (Mon-Fri) looked ahead",
+          "type": "int"
+        },
+        "backDays": {
+          "default": 21,
+          "desc": "calendar days looked back for late rows",
+          "type": "int"
+        },
+        "carryField": {
+          "default": "",
+          "desc": "verdict column whose ok fixes the run date (gfix-recv: track; blank = the first verdict column)",
+          "type": "string"
+        },
+        "dateColumn": {
+          "default": "GFIX_DATE",
+          "desc": "worklist column the job's run date lives in",
+          "type": "string"
+        },
+        "doneField": {
+          "default": "done",
+          "desc": "actual start date: set = somebody did the job",
+          "type": "string"
+        },
+        "endField": {
+          "default": "end",
+          "desc": "planned end date (blank = the start)",
+          "type": "string"
+        },
+        "extra": {
+          "default": [],
+          "desc": "records of another list for today (mapping.xlsx), same keyField",
+          "type": "list"
+        },
+        "extraNote": {
+          "default": "GFIX_TIME",
+          "desc": "extra field shown next to the key",
+          "type": "string"
+        },
+        "keyField": {
+          "default": "Excel_NAME",
+          "desc": "record field holding the worklist key",
+          "type": "string"
+        },
+        "ownerField": {
+          "default": "owner",
+          "type": "string"
+        },
+        "ownerPattern": {
+          "default": "",
+          "desc": "regex an owner cell of yours matches (verify.owner_pattern); blank = every row is yours",
+          "type": "string"
+        },
+        "records": {
+          "desc": "plan rows (excel.read_rows -> verify.derive_fields), one or more per key",
+          "required": true,
+          "type": "list"
+        },
+        "startField": {
+          "default": "start",
+          "desc": "planned start date",
+          "type": "string"
+        },
+        "today": {
+          "desc": "yyyy-MM-dd ({{run.date}})",
+          "required": true,
+          "type": "string"
+        },
+        "worklist": {
+          "desc": "what this tool already did (verdicts, hold, work day)",
+          "required": true,
+          "sessionKind": "worklist",
+          "type": "session"
+        }
+      },
+      "needs": [],
+      "notes": "Pure: reads the worklist, writes nothing. A key counts as having an actual start only when every one of its rows has one (two files of one job). A row picked earlier today (worklist WORKDAY = today) stays in today whatever the sheet says. Dates are compared as yyyy-MM-dd text.",
+      "outputs": {
+        "defaultKeys": {
+          "desc": "keys of the default sets (today; mapping too when no owner pattern)",
+          "type": "list"
+        },
+        "info": {
+          "desc": "lines about rows that are done or have no date",
+          "type": "list"
+        },
+        "presets": {
+          "desc": "the recommended combinations for human.pick: today, today + late, today + the next working day ahead",
+          "type": "list"
+        },
+        "records": {
+          "desc": "one record per pickable key: the first plan row + set, the run date column, WORKDAY",
+          "type": "list"
+        },
+        "sets": {
+          "desc": "@{ n (1.. pickable, 0 not); id; label; names; notes (name -> text); default }",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Sort plan rows into today / late / ahead / others / mapping / hold sets against the worklist",
+      "tier": "core"
+    },
     "table.ensure_columns": {
       "effects": "write",
       "example": {
@@ -5795,6 +6154,11 @@
       "id": "verify.filter_records",
       "idempotent": true,
       "inputs": {
+        "emptyOk": {
+          "default": false,
+          "desc": "true: nothing matching is an answer (ok, empty lists), not not_found -- e.g. the jobs the operator picked out of a list, when they picked none",
+          "type": "bool"
+        },
         "expect": {
           "default": -1,
           "desc": "how many records should match; -1 = any number. A different count is a warning, not a failure",
@@ -6395,6 +6759,126 @@
       "provides": [],
       "releases": [],
       "summary": "Parse the per-file record counts of a start message; compare with the files' line counts",
+      "tier": "core"
+    },
+    "verify.time_candidates": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.time_candidates",
+        "with": {
+          "clock": "{{item.GIFT_TIME}}",
+          "date": "{{item.GIFT_DATE}}",
+          "expectFallback": "{{item.FileCount}}",
+          "label": "GIFT run",
+          "namePattern": "^F\\d{12}\\.(csv|txt|zip)$",
+          "records": "{{steps.jkRec.out.records}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "no_date",
+          "transient": false
+        },
+        {
+          "id": "rules_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.time_candidates.ps1",
+      "group": "verify",
+      "id": "verify.time_candidates",
+      "idempotent": true,
+      "inputs": {
+        "afterMinutes": {
+          "default": 13,
+          "type": "int"
+        },
+        "beforeMinutes": {
+          "default": 2,
+          "type": "int"
+        },
+        "clock": {
+          "default": "",
+          "desc": "the run time (HH:mm[:ss] or an Excel day fraction); blank or unreadable = no window, the whole day is offered",
+          "type": "string"
+        },
+        "date": {
+          "default": "",
+          "desc": "the run day (yyyy-MM-dd, yyyy/M/d, ...); blank = no_date",
+          "type": "string"
+        },
+        "expect": {
+          "default": -1,
+          "desc": "how many files the job has; -1 = unknown (then one is certain)",
+          "type": "int"
+        },
+        "expectFallback": {
+          "default": "",
+          "desc": "used when expect is -1 (a worklist FileCount cell); not a number = none",
+          "type": "string"
+        },
+        "keyField": {
+          "default": "key",
+          "type": "string"
+        },
+        "label": {
+          "default": "run",
+          "desc": "what the time is, in the set labels (\"GIFT run\")",
+          "type": "string"
+        },
+        "namePattern": {
+          "default": "",
+          "desc": "regex an entry name must match (blank = any)",
+          "type": "string"
+        },
+        "records": {
+          "desc": "verify.parse_text records of the listing",
+          "required": true,
+          "type": "list"
+        },
+        "timeField": {
+          "default": "time",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "no_date: the job has no run day (mapping.xlsx GIFT date blank) -- put the files in by hand, or fill the date and r. Entries are compared by their own time field, to the second.",
+      "outputs": {
+        "certain": {
+          "desc": "a run time was given and exactly the expected number of entries are in its window",
+          "type": "bool"
+        },
+        "dayCount": {
+          "desc": "entries on that day matching namePattern",
+          "type": "int"
+        },
+        "info": {
+          "desc": "lines for the pick panel",
+          "type": "list"
+        },
+        "picked": {
+          "desc": "those names when certain, else empty",
+          "type": "list"
+        },
+        "presets": {
+          "desc": "human.pick presets, the same order",
+          "type": "list"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "sets": {
+          "desc": "human.pick sets: the window, then that day by hour",
+          "type": "list"
+        },
+        "window": {
+          "desc": "the names inside the window (empty without a run time)",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Listing entries around a run time: certain when the count fits, else sets to pick from",
       "tier": "core"
     },
     "verify.time_window": {

@@ -1,15 +1,17 @@
 {
   "schema": 1,
   "id": "gfixRecv.plan",
-  "title": "GFIX受信: 今日やるジョブを WBS から拾って作業リスト (gfixrecv.csv) へ(mapping.xlsx に今日の行があれば時刻・ファイル数も)",
-  "version": "0.4.0",
+  "title": "GFIX受信: WBS から今日やるジョブの候補(今日 / 遅れ / 先取り)を出して選ぶ -> 作業リスト (gfixrecv.csv) へ(mapping.xlsx の時刻・ファイル数も)",
+  "version": "0.6.0",
   "profile": "gfix-recv",
   "vars": {
     "wbsSheet": "WBS",
     "wbsFirstRow": 7,
     "mappingSheet": "mapping",
     "side": "受信",
-    "task": "修正後実施"
+    "task": "修正後実施",
+    "aheadDays": 2,
+    "backDays": 21
   },
   "onError": {
     "policy": "ask"
@@ -51,9 +53,9 @@
       }
     },
     {
-      "id": "today",
+      "id": "rows",
       "use": "excel.read_rows",
-      "label": "WBS: 受信 / 修正後実施 / 担当が operator.owner「名前」「名前←○○」「○○→名前」(OwnerFilter と同じ矢印ルール。owner が空なら全員) / 最新計画の開始 = 今日",
+      "label": "WBS: 受信 / 修正後実施 の行を全部(担当と日付の判断は次の sets で。AJ = 実績開始 があれば済み)",
       "with": {
         "workbook": "wbs",
         "sheet": "{{vars.wbsSheet}}",
@@ -63,10 +65,14 @@
           "side": "B",
           "task": "G",
           "owner": "P",
-          "start": "AF"
+          "start": "AF",
+          "end": "AG",
+          "done": "AJ"
         },
         "dateFields": [
-          "start"
+          "start",
+          "end",
+          "done"
         ],
         "where": [
           {
@@ -78,16 +84,6 @@
             "field": "task",
             "op": "equals",
             "value": "{{vars.task}}"
-          },
-          {
-            "field": "owner",
-            "op": "matches",
-            "value": "{{steps.ownerPat.out.pattern}}"
-          },
-          {
-            "field": "start",
-            "op": "equals",
-            "value": "{{run.date}}"
           }
         ],
         "pluck": "job"
@@ -103,9 +99,9 @@
     {
       "id": "derive",
       "use": "verify.derive_fields",
-      "label": "WBS の J名 -> 作業リストの行: Excel_NAME = W名(5文字目 J -> W)、GFIX_DATE = 今日",
+      "label": "WBS の J名 -> 作業リストの行: Excel_NAME = W名(5文字目 J -> W)",
       "with": {
-        "records": "{{steps.today.out.records}}",
+        "records": "{{steps.rows.out.records}}",
         "set": [
           {
             "to": "Excel_NAME",
@@ -116,10 +112,6 @@
           {
             "to": "JOB",
             "from": "job"
-          },
-          {
-            "to": "GFIX_DATE",
-            "value": "{{run.date}}"
           }
         ]
       }
@@ -137,7 +129,7 @@
     {
       "id": "mine",
       "use": "excel.read_rows",
-      "label": "mapping.xlsx: GFIX実行日 = 今日 の行(あれば時刻とファイル数を足す。WBS にないジョブもここから入る)",
+      "label": "mapping.xlsx の全行(GIFT 実行日 M / GIFT TIME N も)。GFIX実行日 = 今日の行は時刻とファイル数に使う",
       "with": {
         "workbook": "map",
         "sheet": "{{vars.mappingSheet}}",
@@ -148,21 +140,19 @@
           "USER": "C",
           "RCVFILE": "D",
           "GFIX_DATE": "O",
-          "GFIX_TIME": "P"
+          "GFIX_TIME": "P",
+          "GIFT_DATE": "M",
+          "GIFT_TIME": "N"
         },
         "dateFields": [
-          "GFIX_DATE"
+          "GFIX_DATE",
+          "GIFT_DATE"
         ],
         "timeFields": [
-          "GFIX_TIME"
+          "GFIX_TIME",
+          "GIFT_TIME"
         ],
-        "where": [
-          {
-            "field": "GFIX_DATE",
-            "op": "equals",
-            "value": "{{run.date}}"
-          }
-        ],
+        "where": [],
         "pluck": "JOB"
       }
     },
@@ -174,39 +164,168 @@
       }
     },
     {
-      "id": "cmp",
-      "use": "verify.compare_sets",
+      "id": "mineToday",
+      "use": "verify.filter_records",
+      "label": "mapping.xlsx: GFIX実行日 = 今日 の行",
       "with": {
-        "left": "{{steps.today.out.plucked}}",
-        "right": "{{steps.mine.out.plucked}}",
-        "leftLabel": "WBS (today, yours)",
-        "rightLabel": "mapping.xlsx (GFIX date = today)"
-      },
-      "label": "WBS と mapping.xlsx の食い違い(参考表示だけ。止まらない)"
+        "records": "{{steps.mine.out.records}}",
+        "where": [
+          {
+            "field": "GFIX_DATE",
+            "op": "equals",
+            "value": "{{run.date}}"
+          }
+        ],
+        "emptyOk": true
+      }
+    },
+    {
+      "id": "sets",
+      "use": "table.day_sets",
+      "label": "候補に分ける: 今日 / 遅れ(前の日の予定で未実施)/ 先取り(次の営業日)/ 他の人の今日 / mapping.xlsx だけ / 保留。WBS の AJ(実績)か作業リストで済みの行は出さない",
+      "with": {
+        "worklist": "wl",
+        "records": "{{steps.derive.out.records}}",
+        "today": "{{run.date}}",
+        "ownerPattern": "{{steps.ownerPat.out.pattern}}",
+        "extra": "{{steps.mineToday.out.records}}",
+        "aheadDays": "{{vars.aheadDays}}",
+        "backDays": "{{vars.backDays}}",
+        "carryField": "track"
+      }
+    },
+    {
+      "id": "pick",
+      "use": "human.pick",
+      "label": "今日やるジョブを選ぶ: Enter = おすすめ(今日の分)、2 / 3 = 遅れ・先取りも、名前の一部(DBC)でも、m = 全部の候補、h 名前 = 保留。-Only A,B を付けて起動したらそれが答え(確認だけ)",
+      "with": {
+        "title": "PLAN: pick today's jobs",
+        "sets": "{{steps.sets.out.sets}}",
+        "presets": "{{steps.sets.out.presets}}",
+        "info": "{{steps.sets.out.info}}",
+        "holdReason": "HOST 待ち",
+        "answer": "{{run.only}}"
+      }
+    },
+    {
+      "id": "keepPlan",
+      "use": "verify.filter_records",
+      "label": "選んだジョブの WBS 行",
+      "with": {
+        "records": "{{steps.sets.out.records}}",
+        "where": [
+          {
+            "field": "Excel_NAME",
+            "op": "in",
+            "value": "{{steps.pick.out.picked}}"
+          }
+        ],
+        "emptyOk": true
+      }
+    },
+    {
+      "id": "keepHold",
+      "use": "verify.filter_records",
+      "label": "保留にしたジョブの WBS 行",
+      "with": {
+        "records": "{{steps.sets.out.records}}",
+        "where": [
+          {
+            "field": "Excel_NAME",
+            "op": "in",
+            "value": "{{steps.pick.out.hold}}"
+          }
+        ],
+        "emptyOk": true
+      }
+    },
+    {
+      "id": "holdRows",
+      "use": "verify.derive_fields",
+      "with": {
+        "records": "{{steps.keepHold.out.records}}",
+        "set": [
+          {
+            "to": "hold",
+            "value": "{{steps.pick.out.holdReason}}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "keepMine",
+      "use": "verify.filter_records",
+      "label": "mapping.xlsx の今日の行のうち選んだジョブ",
+      "with": {
+        "records": "{{steps.mineToday.out.records}}",
+        "where": [
+          {
+            "field": "Excel_NAME",
+            "op": "in",
+            "value": "{{steps.pick.out.picked}}"
+          }
+        ],
+        "emptyOk": true
+      }
+    },
+    {
+      "id": "mineDay",
+      "use": "verify.derive_fields",
+      "with": {
+        "records": "{{steps.keepMine.out.records}}",
+        "set": [
+          {
+            "to": "WORKDAY",
+            "value": "{{run.date}}"
+          }
+        ]
+      }
     },
     {
       "id": "upsertPlan",
       "use": "table.upsert",
       "with": {
         "worklist": "wl",
-        "rows": "{{steps.derive.out.records}}",
+        "rows": "{{steps.keepPlan.out.records}}",
         "fields": {
           "Excel_NAME": "Excel_NAME",
           "JOB": "JOB",
           "GFIX_DATE": "GFIX_DATE",
+          "WORKDAY": "WORKDAY",
           "Owner": "owner"
         },
         "overwrite": [
-          "GFIX_DATE"
+          "GFIX_DATE",
+          "WORKDAY"
         ],
         "resetOnChange": {
           "watch": "GFIX_DATE",
           "clear": [
             "track",
             "logs",
-            "evidence"
+            "evidence",
+            "deliver"
           ]
         }
+      },
+      "label": "選んだジョブ: WORKDAY = 今日。GFIX_DATE は今日(track がもう ok の行は元の日のまま: logs / evidence の続き)。日付が変わった行は track / logs / evidence / deliver を空に"
+    },
+    {
+      "id": "upsertHold",
+      "use": "table.upsert",
+      "label": "保留にしたジョブ: hold 列に理由(メニューの h で解除するまでどのフェーズも飛ばす)",
+      "with": {
+        "worklist": "wl",
+        "rows": "{{steps.holdRows.out.records}}",
+        "fields": {
+          "Excel_NAME": "Excel_NAME",
+          "JOB": "JOB",
+          "Owner": "owner",
+          "hold": "hold"
+        },
+        "overwrite": [
+          "hold"
+        ]
       }
     },
     {
@@ -214,31 +333,69 @@
       "use": "table.upsert",
       "with": {
         "worklist": "wl",
-        "rows": "{{steps.mine.out.records}}",
+        "rows": "{{steps.mineDay.out.records}}",
         "fields": {
           "Excel_NAME": "Excel_NAME",
           "JOB": "JOB",
           "USER": "USER",
           "RCVFILE": "RCVFILE",
           "GFIX_DATE": "GFIX_DATE",
-          "GFIX_TIME": "GFIX_TIME"
+          "GFIX_TIME": "GFIX_TIME",
+          "WORKDAY": "WORKDAY"
         },
         "countAs": "FileCount",
-        "addNew": "{{steps.ownerPat.out.everyone}}",
+        "addNew": true,
         "overwrite": [
           "GFIX_DATE",
-          "GFIX_TIME"
+          "GFIX_TIME",
+          "WORKDAY"
         ],
         "resetOnChange": {
           "watch": "GFIX_DATE",
           "clear": [
             "track",
             "logs",
-            "evidence"
+            "evidence",
+            "deliver"
           ]
         }
       },
-      "label": "mapping.xlsx の今日の行: GFIX時刻とファイル数で上書き。operator.owner があるときは WBS で自分のジョブの行だけ(mapping.xlsx は全員分。10/14 に さんの行が混ざった)"
+      "label": "mapping.xlsx の今日の行(選んだジョブだけ): GFIX時刻とファイル数で上書き"
+    },
+    {
+      "id": "keepGift",
+      "use": "verify.filter_records",
+      "label": "選んだジョブの mapping.xlsx 行(GIFT 実行日時)",
+      "with": {
+        "records": "{{steps.mine.out.records}}",
+        "where": [
+          {
+            "field": "Excel_NAME",
+            "op": "in",
+            "value": "{{steps.pick.out.picked}}"
+          }
+        ],
+        "emptyOk": true
+      }
+    },
+    {
+      "id": "upsertGift",
+      "use": "table.upsert",
+      "label": "選んだジョブに GIFT 実行日時(gfixRecv.gift が GIFT ファイルを探すとき使う)",
+      "with": {
+        "worklist": "wl",
+        "rows": "{{steps.keepGift.out.records}}",
+        "fields": {
+          "Excel_NAME": "Excel_NAME",
+          "GIFT_DATE": "GIFT_DATE",
+          "GIFT_TIME": "GIFT_TIME"
+        },
+        "overwrite": [
+          "GIFT_DATE",
+          "GIFT_TIME"
+        ],
+        "addNew": false
+      }
     }
   ],
   "teardown": [
@@ -254,9 +411,9 @@
       "use": "progress.status",
       "with": {
         "worklist": "wl",
-        "field": "track",
+        "field": "gift",
         "next": [
-          "ebi.ps1 run workflows\\gfixRecv.track.json -WorkDir {{run.workDir}}   (HOST のジョブごと; 1 本だけなら -Only <W名>)"
+          "ebi.ps1 run workflows\\gfixRecv.gift.json -WorkDir {{run.workDir}}   (GIFT 側のファイルがあるか。無ければ Jenkins から探す)"
         ]
       }
     }

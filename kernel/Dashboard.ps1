@@ -126,17 +126,10 @@ function Get-EbiDashboardVerdictPhases {
 # ---------------------------------------------------------------- columns
 
 function ConvertTo-EbiDashboardDay {
-    <#
-      PURE. A worklist date cell -> 'yyyy-MM-dd', '' when it is not one.
-      The CSV holds both '2026/10/9' (older runs) and '2026-10-14'; a time
-      after the date is ignored.
-    #>
+    # PURE. A worklist date cell -> 'yyyy-MM-dd', '' when it is not one
+    # (kernel/Worklist.ps1 ConvertTo-EbiWorklistDay: the runner reads days the same way).
     param([string]$Text)
-    $t = ([string]$Text).Trim()
-    if ($t -match '^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s|T|$)') {
-        try { return ([datetime]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])).ToString('yyyy-MM-dd') } catch { return '' }
-    }
-    return ''
+    return (ConvertTo-EbiWorklistDay -Text $Text)
 }
 
 function Get-EbiDashboardTodayRows {
@@ -151,11 +144,77 @@ function Get-EbiDashboardTodayRows {
         $wl = $Profile['worklist']
         if ($wl.Contains('dashboard') -and ($wl['dashboard'] -is [System.Collections.IDictionary]) -and $wl['dashboard'].Contains('dateColumn')) { $col = [string]$wl['dashboard']['dateColumn'] }
     }
-    if ($col -eq '' -or -not (@($Columns) -contains $col)) { return -1 }
+    $daySpec = Get-EbiWorklistDaySpec -Profile $Profile
+    if ($null -ne $daySpec -and [string]$daySpec['column'] -ne $col) { $daySpec = $null }
+    $have = (@($Columns) -contains $col) -or ($null -ne $daySpec -and [string]$daySpec['fallback'] -ne '' -and (@($Columns) -contains [string]$daySpec['fallback']))
+    if ($col -eq '' -or -not $have) { return -1 }
     $day = ConvertTo-EbiDashboardDay -Text $Today
     $n = 0
-    foreach ($r in @($Rows)) { if ($null -ne $r -and $r.Contains($col) -and (ConvertTo-EbiDashboardDay -Text ([string]$r[$col])) -eq $day) { $n++ } }
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $d = if ($null -ne $daySpec) { Get-EbiWorklistRowDay -Row $r -DaySpec $daySpec } elseif ($r.Contains($col)) { ConvertTo-EbiDashboardDay -Text ([string]$r[$col]) } else { '' }
+        if ($d -eq $day) { $n++ }
+    }
     return $n
+}
+
+function Split-EbiDashboardRows {
+    <#
+      PURE. Which worklist rows the board is about (10/20). With a work-day
+      column (role "day"): today's rows, not on hold; the rest is summed up
+      under the table -- held rows with their reason, earlier days' rows
+      with a verdict not ok yet, and how many earlier rows are all ok. A
+      worklist without a day column shows every row that is not held.
+      Returns @{ today (rows); scoped; held (lines); heldKeys; open (lines);
+      openKeys; doneCount; later (lines: rows given a later day) }.
+    #>
+    param($Rows, $Profile, [string]$Today, $KeyColumns = @(), $VerdictFields = @())
+    $daySpec = Get-EbiWorklistDaySpec -Profile $Profile
+    $holdCol = Get-EbiWorklistRoleColumn -Profile $Profile -Role 'hold'
+    $out = @{ today = (New-Object System.Collections.ArrayList); scoped = ($null -ne $daySpec); held = (New-Object System.Collections.ArrayList); heldKeys = (New-Object System.Collections.ArrayList); open = (New-Object System.Collections.ArrayList); openKeys = (New-Object System.Collections.ArrayList); doneCount = 0; later = (New-Object System.Collections.ArrayList) }
+    $day = ConvertTo-EbiDashboardDay -Text $Today
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $key = Get-EbiKeyDisplay -Item $r -KeyColumns $KeyColumns
+        $h = if ($holdCol -ne '' -and $r.Contains($holdCol) -and $null -ne $r[$holdCol]) { ([string]$r[$holdCol]).Trim() } else { '' }
+        if ($h -ne '') { [void]$out['held'].Add(($key + ' (' + $h + ')')); [void]$out['heldKeys'].Add($key); continue }
+        if ($null -eq $daySpec) { [void]$out['today'].Add($r); continue }
+        $d = Get-EbiWorklistRowDay -Row $r -DaySpec $daySpec
+        if ($d -eq $day) { [void]$out['today'].Add($r); continue }
+        $parts = New-Object System.Collections.ArrayList
+        $allOk = $true
+        foreach ($f in @($VerdictFields)) {
+            $v = if ($r.Contains([string]$f) -and $null -ne $r[[string]$f]) { ([string]$r[[string]$f]).Trim() } else { '' }
+            $l = Get-EbiDashboardLogical -Value $v -Spec (Get-EbiWorklistColumnSpec -Profile $Profile -Field ([string]$f))
+            if ($l -ne 'ok') { $allOk = $false }
+            if ($l -eq 'ok') { [void]$parts.Add(([string]$f + ' ok')) } elseif ($l -eq 'ng') { [void]$parts.Add(([string]$f + ' NG')) }
+        }
+        $shown = if ($d -eq '') { 'no day' } else { $d.Substring(5).Replace('-', '/') }
+        if ($d -ne '' -and $d -gt $day) { [void]$out['later'].Add(($key + ' (' + $shown + ')')); continue }
+        if ($allOk) { $out['doneCount'] = [int]$out['doneCount'] + 1; continue }
+        [void]$out['open'].Add(($key + ' (' + $shown + $(if ($parts.Count -gt 0) { ': ' + ($parts.ToArray() -join ', ') } else { '' }) + ')'))
+        [void]$out['openKeys'].Add($key)
+    }
+    foreach ($k in @('today', 'held', 'heldKeys', 'open', 'openKeys', 'later')) { $out[$k] = $out[$k].ToArray() }
+    return $out
+}
+
+function Format-EbiDashboardAside {
+    # PURE. The lines under the table about the rows it does not show.
+    param($Split, [int]$Width = 0)
+    if ($Width -le 0) { $Width = Get-EbiDashboardWidth }
+    $L = New-Object System.Collections.ArrayList
+    if ($null -eq $Split) { return $L.ToArray() }
+    $add = {
+        param([string]$Text)
+        $first = $true
+        foreach ($w in @(ConvertTo-EbiGateWrapped -Text $Text -Width ($Width - 4))) { [void]$L.Add($(if ($first) { $w } else { '    ' + $w })); $first = $false }
+    }
+    if (@($Split['held']).Count -gt 0) { & $add ('on hold: ' + (@($Split['held']) -join ', ') + '  -- h releases') }
+    if (@($Split['open']).Count -gt 0) { & $add ('earlier days, not finished: ' + (@($Split['open']) -join ', ') + '  -- plan offers them as late') }
+    if (@($Split['later']).Count -gt 0) { & $add ('planned for a later day: ' + (@($Split['later']) -join ', ')) }
+    if ([int]$Split['doneCount'] -gt 0) { [void]$L.Add(('earlier days, all ok: ' + [int]$Split['doneCount'] + ' row(s) (not shown)')) }
+    return $L.ToArray()
 }
 
 function Get-EbiDashboardColumns {
@@ -266,7 +325,7 @@ function Get-EbiDashboardNext {
       rerun) > the earliest phase with rows waiting > an empty worklist
       (plan) > nothing left.
     #>
-    param($Model, $Phases, $Unfinished = @(), [int]$TodayRows = -1, [string]$Today = '')
+    param($Model, $Phases, $Unfinished = @(), [int]$TodayRows = -1, [string]$Today = '', [int]$OtherRows = 0)
     $lines = New-Object System.Collections.ArrayList
     $first = $null
     $byId = @{}
@@ -315,7 +374,11 @@ function Get-EbiDashboardNext {
     if (@($Model).Count -eq 0) {
         $plan = $null
         foreach ($p in @($Phases)) { if ([string]$p['field'] -eq '') { $plan = $p; break } }
-        if ($null -ne $plan) {
+        if ($null -ne $plan -and $OtherRows -gt 0) {
+            # 10/20: the board shows today's rows only; the worklist itself is not empty
+            [void]$lines.Add(('nothing is planned for today' + $(if ($Today -ne '') { ' (' + $Today + ')' } else { '' }) + ' -> run ' + [string]$plan['name'] + ' first (it also offers the late and next-day jobs)'))
+            if ($null -eq $first) { $first = @{ kind = 'plan'; phase = $plan; runId = ''; keys = @() } }
+        } elseif ($null -ne $plan) {
             [void]$lines.Add(('the worklist is empty -> run ' + [string]$plan['name'] + ' first'))
             if ($null -eq $first) { $first = @{ kind = 'plan'; phase = $plan; runId = ''; keys = @() } }
         } else {
@@ -353,7 +416,7 @@ function New-EbiRunCommand {
         Only      key display strings for -Only (empty = every pending row)
         Resume    $true -> -Resume [-RunId <RunId>]
     #>
-    param($Phase, [string]$ToolDir, [string]$WorkDir, $Only = @(), [bool]$Resume = $false, [string]$RunId = '')
+    param($Phase, [string]$ToolDir, [string]$WorkDir, $Only = @(), [bool]$Resume = $false, [string]$RunId = '', [bool]$AllDays = $false)
     $wf = [string]$Phase['path']
     $shown = $wf
     if ($ToolDir -ne '' -and $wf.StartsWith($ToolDir, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -365,6 +428,7 @@ function New-EbiRunCommand {
     if ($WorkDir -ne '') { [void]$argList.Add('-WorkDir'); [void]$argList.Add($WorkDir); $text += ' -WorkDir ' + $(if ($WorkDir.Contains(' ')) { '"' + $WorkDir + '"' } else { $WorkDir }) }
     $only = @(@($Only) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' })
     if ($only.Count -gt 0) { [void]$argList.Add('-Only'); [void]$argList.Add(($only -join ',')); $text += ' -Only ' + ($only -join ',') }
+    if ($AllDays -and $only.Count -eq 0) { [void]$argList.Add('-AllDays'); $text += ' -AllDays' }
     if ($Resume) {
         [void]$argList.Add('-Resume'); $text += ' -Resume'
         if ($RunId -ne '') { [void]$argList.Add('-RunId'); [void]$argList.Add($RunId); $text += ' -RunId ' + $RunId }
@@ -406,7 +470,7 @@ function Format-EbiDashboard {
       wider than Width, shown columns are dropped from the right; the
       key and the verdicts always stay.
     #>
-    param([string]$Title, [string]$WorkDir, [string]$WorklistPath, $Model, $Phases, $Totals, $Next, $ShowColumns = @(), [string]$KeyHeader = 'key', [string]$RunLine = '', [string]$Today = '', [int]$Width = 0)
+    param([string]$Title, [string]$WorkDir, [string]$WorklistPath, $Model, $Phases, $Totals, $Next, $ShowColumns = @(), [string]$KeyHeader = 'key', [string]$RunLine = '', [string]$Today = '', [int]$Width = 0, $Aside = @(), [int]$AllRows = -1)
     if ($Width -le 0) { $Width = Get-EbiDashboardWidth }
     $L = New-Object System.Collections.ArrayList
     $rows = @($Model)
@@ -417,7 +481,7 @@ function Format-EbiDashboard {
     if ($Today -ne '') { $head += '  ' + $Today }
     if ($WorkDir -ne '') { $head += '  ' + $WorkDir }
     [void]$L.Add((ConvertTo-EbiHelpFitDashboard -Text $head -Width $Width))
-    $wlLine = 'worklist: ' + $(if ($leaf -ne '') { $leaf } else { '(none)' }) + '  ' + $rows.Count + ' row' + $(if ($rows.Count -ne 1) { 's' } else { '' })
+    $wlLine = 'worklist: ' + $(if ($leaf -ne '') { $leaf } else { '(none)' }) + '  ' + $(if ($AllRows -ge 0) { ('' + $AllRows + ' row' + $(if ($AllRows -ne 1) { 's' } else { '' }) + ', today ' + $rows.Count) } else { ('' + $rows.Count + ' row' + $(if ($rows.Count -ne 1) { 's' } else { '' })) })
     [void]$L.Add((ConvertTo-EbiHelpFitDashboard -Text $wlLine -Width $Width))
     [void]$L.Add('-' * $Width)
 
@@ -478,6 +542,11 @@ function Format-EbiDashboard {
             }
             [void]$L.Add($line.TrimEnd())
         }
+    }
+    $aside = @(@($Aside) | Where-Object { [string]$_ -ne '' })
+    if ($aside.Count -gt 0) {
+        [void]$L.Add('')
+        foreach ($a in $aside) { [void]$L.Add((ConvertTo-EbiHelpFitDashboard -Text ([string]$a) -Width $Width)) }
     }
     if ($null -ne $Next -and @($Next['lines']).Count -gt 0) {
         [void]$L.Add('')
@@ -603,7 +672,7 @@ function Read-EbiDashboard {
       runLine; runCommand }.
     #>
     param([string]$ToolDir, [string]$WorkDir, [string]$ProfileName = '', [string]$Operator = '', [string]$Today = '')
-    $res = @{ ok = $false; message = ''; profile = $null; profileName = ''; worklistPath = ''; phases = @(); model = @(); totals = @{}; next = $null; unfinished = @(); showColumns = @(); keyColumns = @(); lines = @(); runLine = ''; runCommand = $null }
+    $res = @{ ok = $false; message = ''; profile = $null; profileName = ''; worklistPath = ''; phases = @(); model = @(); totals = @{}; next = $null; unfinished = @(); showColumns = @(); keyColumns = @(); lines = @(); runLine = ''; runCommand = $null; split = $null; rows = @(); columns = @(); allKeys = @(); today = '' }
     $profilesRoot = Join-Path $ToolDir 'profiles'
     $dir = ''
     # 10/16: a bare double-click on ebi.cmd with nothing remembered ran in
@@ -652,12 +721,16 @@ function Read-EbiDashboard {
     $allColumns = @($columns)
     foreach ($p in @(Get-EbiDashboardVerdictPhases -Phases $phases)) { if (-not ($allColumns -contains [string]$p['field'])) { $allColumns += [string]$p['field'] } }
     $show = @(Get-EbiDashboardColumns -Profile $profile -Columns $allColumns -Exclude $exclude)
-    $model = @(Get-EbiDashboardModel -Rows $rows -Phases $phases -Profile $profile -KeyColumns $keyColumns -ShowColumns $show)
+    $today = if ($Today -ne '') { $Today } else { (Get-Date).ToString('yyyy-MM-dd') }
+    $verdictFields = @(@(Get-EbiDashboardVerdictPhases -Phases $phases) | ForEach-Object { [string]$_['field'] })
+    $split = Split-EbiDashboardRows -Rows $rows -Profile $profile -Today $today -KeyColumns $keyColumns -VerdictFields $verdictFields
+    $boardRows = @($split['today'])
+    $model = @(Get-EbiDashboardModel -Rows $boardRows -Phases $phases -Profile $profile -KeyColumns $keyColumns -ShowColumns $show)
     $totals = Get-EbiDashboardTotals -Model $model -Phases $phases
     $unfinished = @(Find-EbiUnfinishedRuns -WorkDir $WorkDir)
-    $today = if ($Today -ne '') { $Today } else { (Get-Date).ToString('yyyy-MM-dd') }
     $todayRows = Get-EbiDashboardTodayRows -Rows $rows -Profile $profile -Columns $columns -Today $today
-    $next = Get-EbiDashboardNext -Model $model -Phases $phases -Unfinished $unfinished -TodayRows $todayRows -Today $today
+    if ([bool]$split['scoped']) { $todayRows = $boardRows.Count }
+    $next = Get-EbiDashboardNext -Model $model -Phases $phases -Unfinished $unfinished -TodayRows $todayRows -Today $today -OtherRows ($rows.Count - $boardRows.Count)
     $runLine = ''; $runCommand = $null
     $first = $next['first']
     if ($null -ne $first -and $null -ne $first['phase']) {
@@ -668,7 +741,11 @@ function Read-EbiDashboard {
     $keyHeader = if ($keyColumns.Count -gt 0) { [string]$keyColumns[0] } else { 'key' }
     $res['phases'] = $phases; $res['model'] = $model; $res['totals'] = $totals; $res['next'] = $next; $res['unfinished'] = $unfinished
     $res['showColumns'] = $show; $res['keyColumns'] = $keyColumns; $res['runLine'] = $runLine; $res['runCommand'] = $runCommand
-    $res['lines'] = @(Format-EbiDashboard -Title $res['profileName'] -WorkDir $WorkDir -WorklistPath $wlPath -Model $model -Phases $phases -Totals $totals -Next $next -ShowColumns $show -KeyHeader $keyHeader -RunLine $runLine -Today $today)
+    $res['split'] = $split; $res['rows'] = $rows; $res['columns'] = $columns; $res['today'] = $today
+    $res['allKeys'] = @(foreach ($r in $rows) { if ($null -ne $r) { Get-EbiKeyDisplay -Item $r -KeyColumns $keyColumns } })
+    $aside = @(Format-EbiDashboardAside -Split $split)
+    $allRows = if ([bool]$split['scoped'] -or @($split['held']).Count -gt 0) { $rows.Count } else { -1 }
+    $res['lines'] = @(Format-EbiDashboard -Title $res['profileName'] -WorkDir $WorkDir -WorklistPath $wlPath -Model $model -Phases $phases -Totals $totals -Next $next -ShowColumns $show -KeyHeader $keyHeader -RunLine $runLine -Today $today -Aside $aside -AllRows $allRows)
     $res['ok'] = $true
     return $res
 }
@@ -681,7 +758,8 @@ function Write-EbiDashboardLines {
         if ($l -eq 'NEXT' -or $l -like '  next: *' -or $l -like '  unfinished run*') { $color = 'Yellow' }
         elseif ($l -match '\bNG\b(?! 0\b)') { $color = 'Red' }      # a row with an NG cell, a non-zero NG total, an NG line in NEXT
         elseif ($l -like 'ebi status:*' -or $l -like 'ebi menu:*') { $color = 'Cyan' }
-        elseif ($l -like 'total *' -or $l -like 'worklist:*') { $color = 'DarkGray' }
+        elseif ($l -like 'total *' -or $l -like 'worklist:*' -or $l -like 'earlier days, all ok*') { $color = 'DarkGray' }
+        elseif ($l -like 'on hold:*' -or $l -like 'earlier days, not finished*') { $color = 'DarkYellow' }
         Write-Host ('  ' + $l) -ForegroundColor $color
     }
 }
@@ -715,6 +793,110 @@ function Clear-EbiWorklistVerdict {
     $w = Write-EbiCsvAtomic -Path $Path -Columns $read['columns'] -Rows $read['rows']
     if (-not $w['ok']) { return @{ ok = $false; message = $w['message']; before = $before } }
     return @{ ok = $true; message = ('cleared ' + $Key + ': ' + $Field + ' (was "' + $before + '")'); before = $before }
+}
+
+function Set-EbiWorklistCells {
+    <#
+      Write one value into one column of several rows (menu m = ok by hand,
+      h = hold reason / release, t = WORKDAY today). Atomic write. A column
+      the CSV does not have yet is added when AddColumn (hold / WORKDAY in
+      an older worklist). Returns @{ ok; message; changed ("KEY: a -> b") }.
+    #>
+    param([string]$Path, $Keys, [string]$Field, [string]$Value, $KeyColumns = @(), [bool]$AddColumn = $false, [bool]$DryRun = $false)
+    $read = Read-EbiCsv -Path $Path
+    if (-not $read['ok']) { return @{ ok = $false; message = $read['message']; changed = @() } }
+    $columns = @($read['columns'])
+    if (-not ($columns -contains $Field)) {
+        if (-not $AddColumn) { return @{ ok = $false; message = ('column "' + $Field + '" is not in ' + $Path); changed = @() } }
+        $columns += $Field
+        foreach ($row in @($read['rows'])) { if ($null -ne $row -and -not $row.Contains($Field)) { $row[$Field] = '' } }
+    }
+    $changed = New-Object System.Collections.ArrayList
+    foreach ($k in @($Keys)) {
+        $want = ([string]$k).Trim()
+        $hit = $null
+        foreach ($row in @($read['rows'])) { if ($null -ne $row -and (Get-EbiKeyDisplay -Item $row -KeyColumns $KeyColumns) -eq $want) { $hit = $row; break } }
+        if ($null -eq $hit) {
+            $m = Find-EbiKeyMatches -Records @($read['rows']) -Key $want -KeyColumns $KeyColumns
+            if (@($m['records']).Count -eq 1) { $hit = $m['records'][0] }
+        }
+        if ($null -eq $hit) { return @{ ok = $false; message = ('no row with key "' + $want + '" in ' + $Path); changed = @() } }
+        $before = if ($hit.Contains($Field) -and $null -ne $hit[$Field]) { [string]$hit[$Field] } else { '' }
+        if ($before -eq $Value) { continue }
+        [void]$changed.Add(($want + ': ' + $Field + ' "' + $before + '" -> "' + $Value + '"'))
+        if (-not $DryRun) { $hit[$Field] = $Value }
+    }
+    if ($DryRun -or $changed.Count -eq 0) { return @{ ok = $true; message = $(if ($changed.Count -eq 0) { 'nothing to change' } else { 'would change ' + $changed.Count + ' row(s)' }); changed = $changed.ToArray() } }
+    $w = Write-EbiCsvAtomic -Path $Path -Columns $columns -Rows $read['rows']
+    if (-not $w['ok']) { return @{ ok = $false; message = $w['message']; changed = @() } }
+    return @{ ok = $true; message = ('changed ' + $changed.Count + ' row(s)'); changed = $changed.ToArray() }
+}
+
+function Resolve-EbiMenuKeys {
+    <#
+      PURE. What the operator typed for "which rows?" -> @{ ok; keys; message }.
+      Tokens split on spaces / commas; each is a whole key (any case,
+      full-width folded) or a PART of keys ("DBC" = every key holding DBC).
+      An unknown token is refused, nothing is half-taken.
+    #>
+    param([string]$Text, $Keys)
+    $t = (ConvertTo-EbiHalfWidth -Value $(if ($null -eq $Text) { '' } else { $Text })).Trim()
+    if ($t -eq '') { return @{ ok = $true; keys = @(); message = '' } }
+    $pool = @(@($Keys) | ForEach-Object { [string]$_ } | Where-Object { $_ -ne '' })
+    $norm = { param($v) (ConvertTo-EbiHalfWidth -Value ([string]$v)).Trim().ToUpperInvariant() }
+    $chosen = New-Object System.Collections.ArrayList
+    $bad = New-Object System.Collections.ArrayList
+    foreach ($tok in @($t -split '[\s,;]+' | Where-Object { $_ -ne '' })) {
+        $n = & $norm $tok
+        $hits = @($pool | Where-Object { (& $norm $_) -eq $n })
+        if ($hits.Count -eq 0) { $hits = @($pool | Where-Object { (& $norm $_).Contains($n) }) }
+        if ($hits.Count -eq 0) { [void]$bad.Add($tok); continue }
+        foreach ($h in $hits) { if (-not $chosen.Contains($h)) { [void]$chosen.Add($h) } }
+    }
+    if ($bad.Count -gt 0) { return @{ ok = $false; keys = @(); message = ('not in the worklist: ' + ($bad.ToArray() -join ', ')) } }
+    return @{ ok = $true; keys = $chosen.ToArray(); message = '' }
+}
+
+function Resolve-EbiMenuField {
+    # PURE. "which column?" -> the verdict field: its number in the list or its name ('' = not one).
+    param([string]$Text, $Fields)
+    $t = if ($null -eq $Text) { '' } else { $Text.Trim() }
+    $list = @(@($Fields) | ForEach-Object { [string]$_ })
+    if ($t -match '^\d+$') { $n = [int]$t; if ($n -ge 1 -and $n -le $list.Count) { return $list[$n - 1] }; return '' }
+    foreach ($f in $list) { if ($f -ieq $t) { return $f } }
+    return ''
+}
+
+function Get-EbiDoneFileHits {
+    <#
+      Rows whose verdict for a phase is still blank although that phase's
+      own record file is there and was written on or after the row's day
+      (worklist.json verdict column "doneFile", e.g. capture/gfix/
+      {{item.keySafe}}/track.json): the phase most likely finished and the
+      cell was never written (a run cut off between the two, 10/20). An ng
+      cell is not offered (it was judged). Returns @( @{ key; file; at } ).
+    #>
+    param($Rows, $Profile, [string]$Field, [string]$WorkDir, $KeyColumns = @())
+    $out = New-Object System.Collections.ArrayList
+    $spec = Get-EbiWorklistColumnSpec -Profile $Profile -Field $Field
+    if ($null -eq $spec -or -not $spec.Contains('doneFile') -or [string]$spec['doneFile'] -eq '') { return $out.ToArray() }
+    $daySpec = Get-EbiWorklistDaySpec -Profile $Profile
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $v = if ($r.Contains($Field) -and $null -ne $r[$Field]) { ([string]$r[$Field]).Trim() } else { '' }
+        if ($v -ne '') { continue }
+        $scope = New-EbiTemplateScope -Profile $(if ($Profile -is [hashtable]) { $Profile } else { @{} }) -Item $r -KeyColumns $KeyColumns
+        $x = Expand-EbiTemplate -Value ([string]$spec['doneFile']) -Scope $scope
+        if (-not $x['ok'] -or $null -eq $x['value']) { continue }
+        $rel = [string]$x['value']
+        $path = if ([System.IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $WorkDir $rel }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        $at = (Get-Item -LiteralPath $path).LastWriteTime
+        $day = Get-EbiWorklistRowDay -Row $r -DaySpec $daySpec
+        if ($day -ne '' -and $at.ToString('yyyy-MM-dd') -lt $day) { continue }   # an older run's file (the row was planned again since)
+        [void]$out.Add(@{ key = (Get-EbiKeyDisplay -Item $r -KeyColumns $KeyColumns); file = $rel; at = $at.ToString('MM/dd HH:mm') })
+    }
+    return $out.ToArray()
 }
 
 # ---------------------------------------------------------------- menu
@@ -778,13 +960,15 @@ function Write-EbiMenuState {
 }
 
 function Format-EbiMenuChoices {
-    # PURE. The numbered phase list + the fixed keys, as lines.
-    param($Phases, $Unfinished = @(), [int]$Width = 0)
+    # PURE. The numbered phase list + the fixed keys, as lines. NextText =
+    # what Enter runs (the board's "next:" line), '' = Enter is nothing.
+    param($Phases, $Unfinished = @(), [int]$Width = 0, [string]$NextText = '', [bool]$HasHold = $false)
     if ($Width -le 0) { $Width = Get-EbiDashboardWidth }
     $L = New-Object System.Collections.ArrayList
     $i = 0
-    $nameW = 4
+    $nameW = 6
     foreach ($p in @($Phases)) { if (([string]$p['name']).Length -gt $nameW) { $nameW = ([string]$p['name']).Length } }
+    if ($NextText -ne '') { [void]$L.Add((ConvertTo-EbiHelpFitDashboard -Text ('Enter  ' + $NextText) -Width $Width)) }
     foreach ($p in @($Phases)) {
         $i++
         $t = ([string]$i).PadLeft(3) + '  ' + ([string]$p['name']).PadRight($nameW) + '  ' + [string]$p['title']
@@ -796,25 +980,31 @@ function Format-EbiMenuChoices {
         $wid = if ($u.Contains('workflow') -and ($u['workflow'] -is [System.Collections.IDictionary]) -and $u['workflow'].Contains('id')) { [string]$u['workflow']['id'] } else { '?' }
         [void]$L.Add((ConvertTo-EbiHelpFitDashboard -Text ('  r  ' + 'resume'.PadRight($nameW) + '  the unfinished run of ' + $wid + ' (' + [string]$u['runId'] + ')' + $(if ($n -gt 1) { ' +' + ($n - 1) + ' more' } else { '' })) -Width $Width))
     }
+    [void]$L.Add('  m  ' + 'mark'.PadRight($nameW) + '  set a verdict to ok by hand (done outside the tool)')
     [void]$L.Add('  c  ' + 'clear'.PadRight($nameW) + '  blank one row''s verdict so the phase redoes it')
+    [void]$L.Add('  h  ' + 'hold'.PadRight($nameW) + '  put rows on hold (waiting for the HOST side)' + $(if ($HasHold) { ' / release' } else { '' }))
     [void]$L.Add('  s  ' + 'status'.PadRight($nameW) + '  redraw the dashboard')
     [void]$L.Add('  d  ' + 'doctor'.PadRight($nameW) + '  environment self-check')
     [void]$L.Add('  q  ' + 'quit'.PadRight($nameW))
+    [void]$L.Add('     (a row can be typed by part of its name: DBC = every row with DBC)')
     return $L.ToArray()
 }
 
 function Read-EbiMenuAnswer {
-    # PURE. Typed text -> @{ ok; action ('phase' | 'r' | 'c' | 's' | 'd' | 'q'); index }.
-    param([string]$Text, [int]$PhaseCount, [bool]$HasUnfinished)
-    $t = if ($null -eq $Text) { '' } else { $Text.Trim().ToLowerInvariant() }
-    if ($t -eq '') { return @{ ok = $false; action = ''; index = 0 } }
+    # PURE. Typed text -> @{ ok; action ('phase' | 'next' | 'r' | 'c' | 'm' | 'h' | 's' | 'd' | 'q'); index }.
+    param([string]$Text, [int]$PhaseCount, [bool]$HasUnfinished, [bool]$HasNext = $false)
+    $t = if ($null -eq $Text) { '' } else { (ConvertTo-EbiHalfWidth -Value $Text).Trim().ToLowerInvariant() }
+    if ($t -eq '') {
+        if ($HasNext) { return @{ ok = $true; action = 'next'; index = 0 } }
+        return @{ ok = $false; action = ''; index = 0 }
+    }
     if ($t -match '^\d+$') {
         $n = [int]$t
         if ($n -ge 1 -and $n -le $PhaseCount) { return @{ ok = $true; action = 'phase'; index = $n } }
         return @{ ok = $false; action = ''; index = 0 }
     }
     if ($t -eq 'r' -and $HasUnfinished) { return @{ ok = $true; action = 'r'; index = 0 } }
-    if ($t -in @('c', 's', 'd', 'q')) { return @{ ok = $true; action = $t; index = 0 } }
+    if ($t -in @('c', 'm', 'h', 's', 'd', 'q')) { return @{ ok = $true; action = $t; index = 0 } }
     return @{ ok = $false; action = ''; index = 0 }
 }
 
@@ -896,19 +1086,33 @@ function Invoke-EbiMenu {
         Write-EbiDashboardLines -Lines $lines
         Write-Host ''
         $phases = @($d['phases'])
-        foreach ($l in @(Format-EbiMenuChoices -Phases $phases -Unfinished $d['unfinished'])) { Write-Host ('  ' + $l) }
+        $split = $d['split']
+        $scoped = ($null -ne $split -and [bool]$split['scoped'])
+        $keyName = if (@($d['keyColumns']).Count -gt 0) { [string]$d['keyColumns'][0] } else { 'key' }
+        $first = if ($null -ne $d['next']) { $d['next']['first'] } else { $null }
+        $nextText = ''
+        if ($null -ne $first -and $null -ne $first['phase'] -and $null -ne $d['runCommand']) {
+            $nextText = switch ([string]$first['kind']) { 'resume' { 'resume the unfinished ' + [string]$first['phase']['name'] + ' run' } 'plan' { 'run ' + [string]$first['phase']['name'] + ' (pick today''s jobs)' } default { 'run ' + [string]$first['phase']['name'] + ' for today''s rows' } }
+        }
+        $hasHold = ($null -ne $split -and @($split['held']).Count -gt 0)
+        foreach ($l in @(Format-EbiMenuChoices -Phases $phases -Unfinished $d['unfinished'] -NextText $nextText -HasHold $hasHold)) { Write-Host ('  ' + $l) }
         if ($noConsole) { Write-Host '  (no console to ask: quit)' -ForegroundColor DarkGray; return @{ ok = $true; message = 'no console'; ran = $ran.ToArray(); cleared = $cleared.ToArray() } }
         $ans = $null
         while ($true) {
             Write-Host '  > ' -ForegroundColor Magenta -NoNewline
             $typed = [string](& $read)
-            $ans = Read-EbiMenuAnswer -Text $typed -PhaseCount $phases.Count -HasUnfinished (@($d['unfinished']).Count -gt 0)
+            $ans = Read-EbiMenuAnswer -Text $typed -PhaseCount $phases.Count -HasUnfinished (@($d['unfinished']).Count -gt 0) -HasNext ($nextText -ne '')
             if ($ans['ok']) { break }
             $tries++
             if ($tries -ge 20) { return @{ ok = $true; message = 'no valid answer after 20 tries'; ran = $ran.ToArray(); cleared = $cleared.ToArray() } }
             Write-Host ('  not an option: "' + $typed + '"') -ForegroundColor DarkYellow
         }
         $a = [string]$ans['action']
+        if ($a -eq 'next') {
+            # Enter = the board's next step: a resume, or that phase for today's rows
+            if ([string]$first['kind'] -eq 'resume') { $a = 'r' }
+            else { $a = 'phase'; for ($i = 0; $i -lt $phases.Count; $i++) { if ([string]$phases[$i]['id'] -eq [string]$first['phase']['id']) { $ans['index'] = $i + 1 } } }
+        }
         if ($a -eq 'q') { return @{ ok = $true; message = 'quit'; ran = $ran.ToArray(); cleared = $cleared.ToArray() } }
         if ($a -eq 's') { continue }
         if ($a -eq 'd') {
@@ -917,24 +1121,56 @@ function Invoke-EbiMenu {
             [void]$ran.Add('ebi.ps1 doctor -WorkDir ' + $WorkDir)
             continue
         }
-        if ($a -eq 'c') {
+        if ($a -in @('c', 'm', 'h')) {
             $vp = @(Get-EbiDashboardVerdictPhases -Phases $phases)
-            if ($vp.Count -eq 0) { Write-Host '  no verdict columns to clear' -ForegroundColor DarkYellow; continue }
-            Write-Host ('  which row? (' + $(if (@($d['keyColumns']).Count -gt 0) { [string]$d['keyColumns'][0] } else { 'key' }) + ', Enter = back) ') -NoNewline
-            $key = ([string](& $read)).Trim()
-            if ($key -eq '') { continue }
-            Write-Host ('  which column? (' + (@($vp | ForEach-Object { [string]$_['field'] }) -join ' / ') + ', Enter = back) ') -NoNewline
-            $field = ([string](& $read)).Trim()
+            $fields = @($vp | ForEach-Object { [string]$_['field'] })
+            if ($a -ne 'h' -and $vp.Count -eq 0) { Write-Host '  no verdict columns' -ForegroundColor DarkYellow; continue }
+            Write-Host ('  which row(s)? (' + $keyName + ', or part of one; a,b = several; Enter = back) ') -NoNewline
+            $rk = Resolve-EbiMenuKeys -Text ([string](& $read)) -Keys $d['allKeys']
+            if (-not $rk['ok']) { Write-Host ('  ' + $rk['message']) -ForegroundColor DarkYellow; continue }
+            $keys = @($rk['keys'])
+            if ($keys.Count -eq 0) { continue }
+            $leaf = Get-EbiDashboardLeaf -Path ([string]$d['worklistPath'])
+            if ($a -eq 'h') {
+                $holdCol = Get-EbiWorklistRoleColumn -Profile $d['profile'] -Role 'hold'
+                if ($holdCol -eq '') { Write-Host '  this worklist has no hold column' -ForegroundColor DarkYellow; continue }
+                $heldKeys = if ($null -ne $split) { @($split['heldKeys']) } else { @() }
+                $release = (@($keys | Where-Object { -not ($heldKeys -contains $_) }).Count -eq 0)
+                $reason = ''
+                if (-not $release) {
+                    Write-Host '  why? (Enter = waiting for HOST) ' -NoNewline
+                    $reason = ([string](& $read)).Trim()
+                    if ($reason -eq '') { $reason = 'waiting for HOST' }
+                }
+                $what = if ($release) { ('release ' + ($keys -join ', ') + ' (the phases take them again)') } else { ('put on hold: ' + ($keys -join ', ') + ' -- ' + $reason) }
+                $g = Show-EbiGate -Title $(if ($release) { 'RELEASE' } else { 'HOLD' }) -What @($what, ('in ' + $leaf)) -Next @('Enter / y: write it', 'n: leave it') -Actions @(@{ key = 'y'; label = 'write' }, @{ key = 'n'; label = 'leave' }) -Default 'y' -Auto 'n' -Reader $read -DryRun:$DryRun
+                if ($g['action'] -ne 'y') { continue }
+                $w = Set-EbiWorklistCells -Path ([string]$d['worklistPath']) -Keys $keys -Field $holdCol -Value $reason -KeyColumns @($d['keyColumns']) -AddColumn $true -DryRun $DryRun
+                Write-Host ('  ' + $w['message']) -ForegroundColor $(if ($w['ok']) { 'Green' } else { 'Red' })
+                continue
+            }
+            $fl = @(for ($i = 0; $i -lt $fields.Count; $i++) { ('' + ($i + 1) + ' ' + $fields[$i]) })
+            Write-Host ('  which column? (' + ($fl -join '  ') + '; Enter = back) ') -NoNewline
+            $field = Resolve-EbiMenuField -Text ([string](& $read)) -Fields $fields
             if ($field -eq '') { continue }
-            if (-not (@($vp | ForEach-Object { [string]$_['field'] }) -contains $field)) { Write-Host ('  not a verdict column: "' + $field + '"') -ForegroundColor DarkYellow; continue }
-            $g = Show-EbiGate -Title 'CLEAR A VERDICT' -What @(('blank ' + $key + ': ' + $field + ' in ' + (Get-EbiDashboardLeaf -Path ([string]$d['worklistPath'])))) -Next @('Enter / y: clear it (the phase runs this row again)', 'n: leave it') -Actions @(@{ key = 'y'; label = 'clear' }, @{ key = 'n'; label = 'leave' }) -Default 'y' -Auto 'n' -Reader $read -DryRun:$DryRun
+            if ($a -eq 'm') {
+                $g = Show-EbiGate -Title 'MARK OK BY HAND' -What @(('set ' + $field + ' = ok for: ' + ($keys -join ', ')), ('in ' + $leaf)) -Next @('Enter / y: write it (the ' + $field + ' phase skips these rows from now on)', 'n: leave it') -Actions @(@{ key = 'y'; label = 'write' }, @{ key = 'n'; label = 'leave' }) -Default 'y' -Auto 'n' -Reader $read -DryRun:$DryRun
+                if ($g['action'] -ne 'y') { continue }
+                $okValue = ConvertTo-EbiStoredValue -Logical 'ok' -Spec (Get-EbiWorklistColumnSpec -Profile $d['profile'] -Field $field)
+                $w = Set-EbiWorklistCells -Path ([string]$d['worklistPath']) -Keys $keys -Field $field -Value $okValue -KeyColumns @($d['keyColumns']) -DryRun $DryRun
+                Write-Host ('  ' + $w['message']) -ForegroundColor $(if ($w['ok']) { 'Green' } else { 'Red' })
+                continue
+            }
+            $g = Show-EbiGate -Title 'CLEAR A VERDICT' -What @(('blank ' + ($keys -join ', ') + ': ' + $field + ' in ' + $leaf)) -Next @('Enter / y: clear it (the phase runs this row again)', 'n: leave it') -Actions @(@{ key = 'y'; label = 'clear' }, @{ key = 'n'; label = 'leave' }) -Default 'y' -Auto 'n' -Reader $read -DryRun:$DryRun
             if ($g['action'] -ne 'y') { continue }
-            $c = Clear-EbiWorklistVerdict -Path ([string]$d['worklistPath']) -Key $key -Field $field -KeyColumns @($d['keyColumns']) -DryRun $DryRun
-            Write-Host ('  ' + $c['message']) -ForegroundColor $(if ($c['ok']) { 'Green' } else { 'Red' })
-            if ($c['ok']) { [void]$cleared.Add(@{ key = $key; field = $field }) }
+            foreach ($key in $keys) {
+                $c = Clear-EbiWorklistVerdict -Path ([string]$d['worklistPath']) -Key $key -Field $field -KeyColumns @($d['keyColumns']) -DryRun $DryRun
+                Write-Host ('  ' + $c['message']) -ForegroundColor $(if ($c['ok']) { 'Green' } else { 'Red' })
+                if ($c['ok']) { [void]$cleared.Add(@{ key = $key; field = $field }) }
+            }
             continue
         }
-        $phase = $null; $resume = $false; $runId = ''; $only = @()
+        $phase = $null; $resume = $false; $runId = ''; $only = @(); $allDays = $false
         if ($a -eq 'r') {
             $u = $d['unfinished'][0]
             $wid = if ($u.Contains('workflow') -and ($u['workflow'] -is [System.Collections.IDictionary]) -and $u['workflow'].Contains('id')) { [string]$u['workflow']['id'] } else { '' }
@@ -943,14 +1179,65 @@ function Invoke-EbiMenu {
             $resume = $true; $runId = [string]$u['runId']
         } else {
             $phase = $phases[$ans['index'] - 1]
-            if ([string]$phase['field'] -ne '') {
-                Write-Host ('  ' + $(if (@($d['keyColumns']).Count -gt 0) { [string]$d['keyColumns'][0] } else { 'key' }) + ' to run (Enter = every pending row, a,b = several): ') -NoNewline
+            $field = [string]$phase['field']
+            if ($field -ne '') {
+                $nToday = @($d['model']).Count
+                $prompt = if ($scoped) { ('  ' + $keyName + ' to run: Enter = today''s ' + $nToday + ' row' + $(if ($nToday -ne 1) { 's' } else { '' }) + ', or names / part of a name, a = every day: ') } else { ('  ' + $keyName + ' to run (Enter = every pending row, a,b = several): ') }
+                Write-Host $prompt -NoNewline
                 $typed = ([string](& $read)).Trim()
-                if ($typed -ne '') { $only = @($typed -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) }
+                if ($typed -ieq 'a') { $allDays = $true }
+                elseif ($typed -ne '') {
+                    $rk = Resolve-EbiMenuKeys -Text $typed -Keys $d['allKeys']
+                    if (-not $rk['ok']) { Write-Host ('  ' + $rk['message']) -ForegroundColor DarkYellow; continue }
+                    $only = @($rk['keys'])
+                    if (($only -join ',') -ne (@($typed -split '[\s,;]+' | Where-Object { $_ -ne '' }) -join ',')) { Write-Host ('  -> ' + ($only -join ', ')) -ForegroundColor Green }
+                }
+                # rows that look done already: the phase's own file is there, the cell is blank
+                $scopeRows = if ($only.Count -gt 0) { @(@($d['rows']) | Where-Object { $null -ne $_ -and $only -contains (Get-EbiKeyDisplay -Item $_ -KeyColumns @($d['keyColumns'])) }) } elseif ($null -ne $split) { @($split['today']) } else { @($d['rows']) }
+                $hits = @(Get-EbiDoneFileHits -Rows $scopeRows -Profile $d['profile'] -Field $field -WorkDir $WorkDir -KeyColumns @($d['keyColumns']))
+                if ($hits.Count -gt 0) {
+                    $g = Show-EbiGate -Title 'LOOKS DONE ALREADY' -What @(foreach ($h in $hits) { ([string]$h['key'] + ': ' + $field + ' is blank, but ' + [string]$h['file'] + ' was written ' + [string]$h['at']) }) -Next @('Enter / y: mark them ' + $field + ' = ok (this run skips them)', 'n: run them again') -Actions @(@{ key = 'y'; label = 'mark ok' }, @{ key = 'n'; label = 'run again' }) -Default 'y' -Auto 'n' -Reader $read -DryRun:$DryRun
+                    if ($g['action'] -eq 'y') {
+                        $hk = @($hits | ForEach-Object { [string]$_['key'] })
+                        $okValue = ConvertTo-EbiStoredValue -Logical 'ok' -Spec (Get-EbiWorklistColumnSpec -Profile $d['profile'] -Field $field)
+                        $w = Set-EbiWorklistCells -Path ([string]$d['worklistPath']) -Keys $hk -Field $field -Value $okValue -KeyColumns @($d['keyColumns']) -DryRun $DryRun
+                        Write-Host ('  ' + $w['message']) -ForegroundColor $(if ($w['ok']) { 'Green' } else { 'Red' })
+                        if ($only.Count -gt 0) {
+                            $only = @($only | Where-Object { -not ($hk -contains $_) })
+                            if ($only.Count -eq 0) { Write-Host '  nothing left to run' -ForegroundColor DarkGray; continue }
+                        }
+                    }
+                }
+                # earlier days' rows this phase has not finished (a rerun of today: 10/20)
+                if ($scoped -and $only.Count -eq 0 -and -not $allDays) {
+                    $spec = Get-EbiWorklistColumnSpec -Profile $d['profile'] -Field $field
+                    $late = @(foreach ($r in @($d['rows'])) {
+                        if ($null -eq $r) { continue }
+                        $k = Get-EbiKeyDisplay -Item $r -KeyColumns @($d['keyColumns'])
+                        if (-not (@($split['openKeys']) -contains $k)) { continue }
+                        if ((Get-EbiDashboardLogical -Value $(if ($r.Contains($field)) { $r[$field] } else { '' }) -Spec $spec) -eq 'ok') { continue }
+                        $k
+                    })
+                    if ($late.Count -gt 0) {
+                        $lines = @(@($split['open']) | Where-Object { $late -contains (([string]$_ -split ' ')[0]) })
+                        $g = Show-EbiGate -Title 'EARLIER DAYS, NOT FINISHED' -What $lines -Next @('t: take them today too (WORKDAY = today; the day their GFIX job ran is kept)', 'h: put them on hold (waiting for HOST)', 'Enter / n: leave them (this run is today''s rows only)') -Actions @(@{ key = 't'; label = 'today too' }, @{ key = 'h'; label = 'hold' }, @{ key = 'n'; label = 'leave' }) -Default 'n' -Auto 'n' -Reader $read -DryRun:$DryRun
+                        $dayCol = ''; $ds = Get-EbiWorklistDaySpec -Profile $d['profile']; if ($null -ne $ds) { $dayCol = [string]$ds['column'] }
+                        if ($g['action'] -eq 't' -and $dayCol -ne '') {
+                            $w = Set-EbiWorklistCells -Path ([string]$d['worklistPath']) -Keys $late -Field $dayCol -Value ([string]$d['today']) -KeyColumns @($d['keyColumns']) -AddColumn $true -DryRun $DryRun
+                            Write-Host ('  ' + $w['message']) -ForegroundColor $(if ($w['ok']) { 'Green' } else { 'Red' })
+                        } elseif ($g['action'] -eq 'h') {
+                            $holdCol = Get-EbiWorklistRoleColumn -Profile $d['profile'] -Role 'hold'
+                            if ($holdCol -ne '') {
+                                $w = Set-EbiWorklistCells -Path ([string]$d['worklistPath']) -Keys $late -Field $holdCol -Value 'waiting for HOST' -KeyColumns @($d['keyColumns']) -AddColumn $true -DryRun $DryRun
+                                Write-Host ('  ' + $w['message']) -ForegroundColor $(if ($w['ok']) { 'Green' } else { 'Red' })
+                            }
+                        }
+                    }
+                }
                 foreach ($w in @(Get-EbiMenuPhaseWarnings -Model $d['model'] -Phases $phases -Phase $phase -Only $only)) { Write-Host ('  [WARN] ' + $w) -ForegroundColor Yellow }
             }
         }
-        $cmd = New-EbiRunCommand -Phase $phase -ToolDir $ToolDir -WorkDir $WorkDir -Only $only -Resume $resume -RunId $runId
+        $cmd = New-EbiRunCommand -Phase $phase -ToolDir $ToolDir -WorkDir $WorkDir -Only $only -Resume $resume -RunId $runId -AllDays $allDays
         Write-Host ''
         Write-Host ('  ' + $cmd['text']) -ForegroundColor Cyan
         Write-Host ''

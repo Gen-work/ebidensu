@@ -299,13 +299,13 @@ try {
     $psExe = (Get-Process -Id $PID).Path
     $ebi = Join-Path $repoRoot 'ebi.ps1'
     $cliWork = Join-Path $tmp 'cliwork'; New-Item -ItemType Directory -Path $cliWork -Force | Out-Null
-    [System.IO.File]::WriteAllText((Join-Path $cliWork 'gfixrecv.csv'), "Excel_NAME,JOB,USER,RCVFILE,GFIX_DATE,GFIX_TIME,FileCount,Owner,track,logs,evidence,note`r`nXDEMWM01,XDEMJM01,u,," + (Get-Date).ToString('yyyy/MM/dd') + ",09:31:05,2,op1,ok,,,`r`n", (New-Object System.Text.UTF8Encoding($true)))
+    [System.IO.File]::WriteAllText((Join-Path $cliWork 'gfixrecv.csv'), "Excel_NAME,JOB,USER,RCVFILE,GFIX_DATE,GFIX_TIME,FileCount,Owner,gift,track,logs,evidence,note`r`nXDEMWM01,XDEMJM01,u,," + (Get-Date).ToString('yyyy/MM/dd') + ",09:31:05,2,op1,ok,ok,,,`r`n", (New-Object System.Text.UTF8Encoding($true)))
     $out = '' | & $psExe -NoLogo -NoProfile -File $ebi status -WorkDir $cliWork 2>&1 | Out-String
     $code = $LASTEXITCODE
     Assert-True ($code -eq 0 -and $out.Contains('ebi status: gfix-recv') -and $out.Contains('XDEMWM01') -and $out.Contains('logs: 1 row waits (XDEMWM01)')) ('cli status: the gfix-recv dashboard, exit 0' + $(if ($code -ne 0) { "`n" + $out } else { '' }))
     Assert-True ($out.Contains('next: ebi.ps1 run ') -and $out.Contains('gfixRecv.logs.json')) 'cli status: recommends the logs run'
     $out = '' | & $psExe -NoLogo -NoProfile -File $ebi menu -WorkDir $cliWork 2>&1 | Out-String
-    Assert-True ($LASTEXITCODE -eq 0 -and $out.Contains('ebi menu: gfix-recv') -and $out.Contains('  4  evidence') -and $out.Contains('(no console to ask: quit)')) 'cli menu: redirected stdin -> draws the menu and quits, exit 0'
+    Assert-True ($LASTEXITCODE -eq 0 -and $out.Contains('ebi menu: gfix-recv') -and $out.Contains('  5  evidence') -and $out.Contains('(no console to ask: quit)')) 'cli menu: redirected stdin -> draws the menu and quits, exit 0'
     $out = '' | & $psExe -NoLogo -NoProfile -File $ebi status -WorkDir $noWork 2>&1 | Out-String
     Assert-True ($LASTEXITCODE -eq 0 -and $out.Contains('ebi status: gfix-recv') -and $out.Contains('run plan first')) ('cli status: a fresh work folder -> the one plan profile (gfix-recv), empty, "run plan first"' + "`n" + $out)
     $out = '' | & $psExe -NoLogo -NoProfile -File $ebi status -WorkDir (Join-Path $tmp 'nowhere') 2>&1 | Out-String

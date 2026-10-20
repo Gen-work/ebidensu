@@ -1,3 +1,84 @@
+## 2026-10-20 - plan picks today's jobs from sets (today / late / ahead), a gift phase finds missing GIFT files on Jenkins, the board and phases take today's rows only, hold, mark ok by hand, deliver writes the WBS actual dates (v2.29.0)
+
+From the 10/19-10/20 WBS (DETOUR-GFIX-001.10): jobs done early on 10/16
+kept their planned start 10/20 (plan would have run them again), the DBC
+jobs late since 10/15-10/19 were never offered, and every earlier day's
+unfinished row counted as pending everywhere.
+
+### Added
+- **`table.day_sets`**: the WBS rows (planned start / end AF / AG, actual
+  start AJ) sorted against the worklist into today / late (21 days back) /
+  ahead (2 working days) / others' today / mapping.xlsx only / on hold.
+  Done rows (AJ set, or every verdict ok here) are not offered: one
+  "done already" line lists the ones planned today or later (an AJ typed
+  by mistake shows there). A late row whose track is ok keeps its GFIX
+  date when picked (logs / evidence continue that day); every other picked
+  row runs today. Outputs the sets, three recommended presets and info.
+- **`human.pick`**: two screens. First: the presets (1 = today, Enter;
+  2 = today + late; 3 = today + the next working day) or typed names /
+  parts of names (`DBC`), `-NAME` drops one, `h NAME` holds, `0` nothing,
+  `q` stop. `m`: every set numbered with a note per name, `b` back. Every
+  answer is read back and confirmed with Enter.
+- **`excel.mark_rows`**: per-key values into the matching rows of a shared
+  sheet (key column + where columns), blank cells only, dates as real
+  Excel dates; reports written / kept / not found; never saves.
+- **gfixRecv.deliver v0.3.0**: after every draft is sent, the WBS receive /
+  修正後実施 row of each job gets AJ = its GFIX date and AK = today; shown
+  before saving (Enter = save, s = leave it).
+- **Worklist roles `day` and `hold`, verdict `doneFile`** (PROFILE-SCHEMA
+  6.1b). The runner takes only rows whose work day is today (fallback
+  column for older rows) and never a held row; `-Only` names rows past
+  both, **`ebi.ps1 run -AllDays`** past the day (WORKFLOW-SCHEMA 3).
+  gfix-recv: `WORKDAY` (fallback GFIX_DATE), `hold`, doneFile =
+  capture/gfix/<W>/track.json / logs.json / gate.json.
+- **Board / menu (`ebi.cmd`)**: the table is today's rows; under it the
+  held rows, earlier days not finished (with what is done), later days,
+  and a count of earlier rows all ok. Enter = the next step. `m` marks a
+  verdict ok by hand, `h` holds / releases (rows by name or part of one,
+  columns by number). Before a phase runs: LOOKS DONE ALREADY (the
+  phase's file is there, the cell blank -> Enter marks ok) and EARLIER
+  DAYS, NOT FINISHED (t = today too, h = hold). The phase prompt takes
+  parts of names and `a` = every day.
+- **gfixRecv.gift** (new phase between plan and track; worklist columns
+  `GIFT_DATE`, `GIFT_TIME`, verdict `gift`): a job whose DATA/GIFT/<J>
+  (or <W>) folder has files is ok at once; for the others the Jenkins
+  data/report list is read and **`verify.time_candidates`** takes the
+  entries in GIFT run time -2..+13 min -- the expected number (FileCount,
+  else one) is downloaded without asking (`human.pick autoPick`), anything
+  else is a pick (the window, then that day by hour, each file with its
+  time). No GIFT date -> no_date (fill mapping.xlsx and r, or s).
+- `verify.filter_records emptyOk`: nothing matching is an answer.
+- `human.pick` outputs `pickedCount` / `any`; a number with a leading zero or
+  past the last choice is read as part of a name (`0026`).
+
+### Changed
+- **gfixRecv.plan v0.5.0**: reads every receive / 修正後実施 row (AF, AG,
+  AJ added), `sets` -> `pick` -> upsert of the picked rows (WORKDAY =
+  today) and the held ones (`hold`); mapping.xlsx adds time / count to the
+  picked rows (its own jobs come as the "mapping.xlsx only" set). The
+  WBS-vs-mapping compare step is gone (the sets show both).
+- plan's resetOnChange also clears `deliver` (a job back on another day
+  kept an old deliver = ok).
+- **gfixRecv.plan v0.6.0**: mapping.xlsx is read whole (M / N GIFT date /
+  time added); today's rows (GFIX date = today) still give time / count,
+  every picked job gets its GIFT date / time; the next line says gift.
+- table.day_sets: **AJ is not proof** (10/20 office run: AJ typed in the
+  morning for M/SJODJSPQ, by mistake for K/LJODJDBC). Done = the worklist
+  says so; an AJ closes a row only when the worklist never had it and the
+  date is before today, otherwise the row is offered with "WBS AJ MM/dd".
+- **`plan -Only A,B`** = the pick panel's answer (`{{run.only}}`, new run
+  field; human.pick `answer`): any set, read back, Enter. Before, plan
+  ignored -Only and took only AF = today rows of the operator -- the
+  10/21 jobs and the ones the WBS gives to someone else never reached
+  the worklist ("-Only ...: not in the worklist" in track).
+- table.day_sets: a row whose LAST verdict (deliver) is ok counts as done
+  even when a column added later (gift) is blank; plan passes
+  carryField = track.
+
+### Office PC
+- Not run yet on Windows: the plan panel on the real WBS, the menu keys,
+  and the WBS write (shared workbook opened read-write). docs/TODO.md.
+
 ## 2026-10-19 - deliver: all rows, one check, all drafts, one check (workflow "after"); evidence first office run fixes; track brings Teams to the front (v2.28.0)
 
 First office-PC run of the v2.27.0 evidence workflow (QJODWSPN, 10/19).

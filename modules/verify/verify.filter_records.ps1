@@ -27,6 +27,7 @@ $Manifest = @{
     padBeforeSec = @{ type='int'; default=0; desc='span.from moved this much earlier' }
     padAfterSec  = @{ type='int'; default=0; desc='span.to moved this much later' }
     expect    = @{ type='int';    default=-1; desc='how many records should match; -1 = any number. A different count is a warning, not a failure' }
+    emptyOk   = @{ type='bool';   default=$false; desc='true: nothing matching is an answer (ok, empty lists), not not_found -- e.g. the jobs the operator picked out of a list, when they picked none' }
     expectFallback = @{ type='string'; default=''; desc='count used when expect is -1 (e.g. the send count read off the Teams message); blank or not a number = none. When both are known and differ, a warning (expect_disagree) says so and expect wins' }
   }
   outputs    = @{
@@ -124,7 +125,7 @@ function Invoke-Step {
     $extent = if ($idx.Count -gt 0) { $last - $first + 1 } else { 0 }
     $out = @{ ok = $true; records = $kept.ToArray(); indexes = $idx.ToArray(); first = $first; last = $last; extent = $extent; matched = $kept.Count; plucked = $values; span = $span }
     if ($kept.Count -eq 0) {
-        if ($Ctx['DryRun']) { return $out }
+        if ($Ctx['DryRun'] -or [bool]$In['emptyOk']) { return $out }
         $out['ok'] = $false; $out['failure'] = 'not_found'; $out['message'] = ('none of ' + $records.Count + ' record(s) matched ' + $conds.Count + ' condition(s)')
         return $out
     }

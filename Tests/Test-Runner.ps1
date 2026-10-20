@@ -1109,6 +1109,20 @@ try {
     $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-owner-all' -Profile $ownProfile -AskHandler $handler
     Assert-Equal 3 @($res['items']).Count 'owner: no operator.owner -> every row'
 
+    # -- work day + hold (10/20): only rows whose day column is today run (a blank
+    # day falls back to the run-date column); a held row never runs; -Only and
+    # -AllDays name rows explicitly
+    $today = (Get-Date).ToString('yyyy-MM-dd')
+    $dayProfile = @{ worklist = @{ key = @{ columns = @('Correl_ID_S') }; columns = @( @{ name = 'Correl_ID_S'; role = 'key' }, @{ name = 'WORKDAY'; role = 'day'; fallback = 'GFIX_DATE' }, @{ name = 'hold'; role = 'hold' } ) } }
+    $dayRows = '[ { "Correl_ID_S": "D1", "WORKDAY": "' + $today + '", "GFIX_DATE": "2026-10-16", "hold": "" }, { "Correl_ID_S": "D2", "WORKDAY": "2026-10-16", "GFIX_DATE": "2026-10-16", "hold": "" }, { "Correl_ID_S": "D3", "WORKDAY": "", "GFIX_DATE": "' + $today.Replace('-', '/') + '", "hold": "" }, { "Correl_ID_S": "D4", "WORKDAY": "' + $today + '", "GFIX_DATE": "", "hold": "HOST" } ]'
+    $wf = New-PolicyWorkflow -Name 'day' -Rows $dayRows -Each '[ { "id": "echo", "use": "fake.pure", "with": { "text": "{{item.Correl_ID_S}}" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-day' -Profile $dayProfile -AskHandler $handler
+    Assert-Equal 'D1,D3' (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') 'day: today''s rows run (D3 by its run date: no WORKDAY yet); an earlier day and a held row do not'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-day-all' -Profile $dayProfile -AskHandler $handler -AllDays
+    Assert-Equal 'D1,D2,D3' (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') 'day: -AllDays takes every day, still not the held row'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-day-only' -Profile $dayProfile -AskHandler $handler -Only @('D2', 'D4')
+    Assert-Equal 'D2,D4' (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') 'day: -Only names an earlier day''s row and a held one: both run'
+
     # -- resume with a group resource: the provides / releases steps run again, the rest replays (7.6)
     Reset-Counters; Set-Answers @()
     $wf = New-PolicyWorkflow -Name 'groupresume' -OnError '{ "policy": "fail" }' -Rows $groupRows -SourceExtra ', "groupBy": "JOB_NAME"' `

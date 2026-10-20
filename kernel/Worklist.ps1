@@ -192,16 +192,110 @@ function Get-EbiOwnerPattern {
     return ('^\s*' + $n + '\s*($|' + $left + ')|' + $right + '\s*' + $n + '\s*$')
 }
 
+function Get-EbiWorklistRoleSpec {
+    # PURE. The first worklist column spec whose role is Role, or $null.
+    param($Profile, [string]$Role)
+    if ($null -eq $Profile -or -not ($Profile -is [System.Collections.IDictionary]) -or -not $Profile.Contains('worklist')) { return $null }
+    $wl = $Profile['worklist']
+    if (-not ($wl -is [System.Collections.IDictionary]) -or -not $wl.Contains('columns')) { return $null }
+    foreach ($c in @($wl['columns'])) {
+        if ($c -is [System.Collections.IDictionary] -and [string]$c['role'] -eq $Role -and $c.Contains('name')) { return $c }
+    }
+    return $null
+}
+
+function Get-EbiWorklistRoleColumn {
+    # PURE. The name of the first worklist column whose role is Role ('' when none).
+    param($Profile, [string]$Role)
+    $c = Get-EbiWorklistRoleSpec -Profile $Profile -Role $Role
+    if ($null -eq $c) { return '' }
+    return [string]$c['name']
+}
+
 function Get-EbiWorklistOwnerColumn {
     # PURE. The worklist column whose role is "owner" ('' when none).
     param($Profile)
-    if ($null -eq $Profile -or -not ($Profile -is [System.Collections.IDictionary]) -or -not $Profile.Contains('worklist')) { return '' }
-    $wl = $Profile['worklist']
-    if (-not ($wl -is [System.Collections.IDictionary]) -or -not $wl.Contains('columns')) { return '' }
-    foreach ($c in @($wl['columns'])) {
-        if ($c -is [System.Collections.IDictionary] -and [string]$c['role'] -eq 'owner') { return [string]$c['name'] }
+    return (Get-EbiWorklistRoleColumn -Profile $Profile -Role 'owner')
+}
+
+function ConvertTo-EbiWorklistDay {
+    <#
+      PURE. A worklist date cell -> 'yyyy-MM-dd', '' when it is not one.
+      Older CSVs hold '2026/10/9', newer '2026-10-14'; a time after the
+      date is ignored.
+    #>
+    param([string]$Text)
+    $t = if ($null -eq $Text) { '' } else { $Text.Trim() }
+    if ($t -match '^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s|T|$)') {
+        try { return ([datetime]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])).ToString('yyyy-MM-dd') } catch { return '' }
     }
     return ''
+}
+
+function Get-EbiWorklistDaySpec {
+    <#
+      PURE. The work-day column (role "day", 10/20) as @{ column; fallback }
+      or $null when the worklist declares none. fallback is the column read
+      for a row whose day cell is blank (rows written before the day
+      column existed), '' when not declared.
+    #>
+    param($Profile)
+    $c = Get-EbiWorklistRoleSpec -Profile $Profile -Role 'day'
+    if ($null -eq $c) { return $null }
+    $fb = if ($c.Contains('fallback') -and $null -ne $c['fallback']) { [string]$c['fallback'] } else { '' }
+    return @{ column = [string]$c['name']; fallback = $fb }
+}
+
+function Get-EbiWorklistRowDay {
+    # PURE. A row's work day ('yyyy-MM-dd' or '') under a Get-EbiWorklistDaySpec.
+    param($Row, $DaySpec)
+    if ($null -eq $Row -or $null -eq $DaySpec) { return '' }
+    foreach ($col in @([string]$DaySpec['column'], [string]$DaySpec['fallback'])) {
+        if ($col -eq '' -or -not $Row.Contains($col) -or $null -eq $Row[$col]) { continue }
+        $d = ConvertTo-EbiWorklistDay -Text ([string]$Row[$col])
+        if ($d -ne '') { return $d }
+    }
+    return ''
+}
+
+function Select-EbiDayRows {
+    <#
+      PURE. Keep the rows whose work day is Day ('yyyy-MM-dd'). 10/16-10/20:
+      every earlier day's unfinished row counted as pending, so Enter at the
+      menu offered 20 rows and a stuck job came back every morning; the plan
+      now says which rows are TODAY's (it writes the day column), and a day
+      phase takes only those. Returns @{ rows; leftOut ("KEY (MM/dd)") }.
+    #>
+    param($Rows, $DaySpec, [string]$Day, $KeyColumns = @())
+    $kept = New-Object System.Collections.ArrayList
+    $left = New-Object System.Collections.ArrayList
+    foreach ($row in @($Rows)) {
+        if ($null -eq $row) { continue }
+        $d = Get-EbiWorklistRowDay -Row $row -DaySpec $DaySpec
+        if ($d -eq $Day) { [void]$kept.Add($row); continue }
+        $shown = if ($d -eq '') { 'no day' } else { $d.Substring(5).Replace('-', '/') }
+        [void]$left.Add((Get-EbiKeyDisplay -Item $row -KeyColumns $KeyColumns) + ' (' + $shown + ')')
+    }
+    return @{ rows = $kept.ToArray(); leftOut = $left.ToArray() }
+}
+
+function Select-EbiUnheldRows {
+    <#
+      PURE. Leave out the rows put on hold (role "hold" column not blank:
+      the job waits for someone else, e.g. a HOST-side fix -- 10/16 the four
+      DBC rows). Returns @{ rows; held ("KEY (reason)") }.
+    #>
+    param($Rows, [string]$Column, $KeyColumns = @())
+    $kept = New-Object System.Collections.ArrayList
+    $held = New-Object System.Collections.ArrayList
+    foreach ($row in @($Rows)) {
+        if ($null -eq $row) { continue }
+        $cell = ''
+        if ($Column -ne '' -and $row.Contains($Column) -and $null -ne $row[$Column]) { $cell = ([string]$row[$Column]).Trim() }
+        if ($cell -eq '') { [void]$kept.Add($row) }
+        else { [void]$held.Add((Get-EbiKeyDisplay -Item $row -KeyColumns $KeyColumns) + ' (' + $cell + ')') }
+    }
+    return @{ rows = $kept.ToArray(); held = $held.ToArray() }
 }
 
 function Select-EbiOwnedRows {

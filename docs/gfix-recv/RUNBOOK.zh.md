@@ -68,19 +68,32 @@
 
 下面第 1～4 节的四条 `run` 命令仍然是正本，但平时不用手打：
 
-- **看盘**：`ebi.ps1 status -WorkDir $W`。一屏：每本（Excel_NAME）一行，JOB / GFIX_DATE /
-  GFIX_TIME / FileCount，track / logs / evidence / deliver 四列判定（`ok` / `NG` / `-` 未做），
-  每列合计，没跑完的 run（`-Resume` 用的 id），以及 NEXT（先续跑；**表里没有一行是今天的日期时先 plan**；
-  再清 NG、再是最早有行在等的阶段）和「下一条该打的命令」。只读，不碰 CSV。
-  注意：往日的行也一直在表里，也会被算作「待做」。所以每段选 Excel_NAME 时**手打今天的名字**，
-  不要直接回车（尤其是 deliver，回车会给所有旧行都做草稿）。
+- **看盘**：`ebi.ps1 status -WorkDir $W`。一屏：**今天的行**（plan 给了今天的 `WORKDAY`）每本一行，JOB / GFIX_DATE /
+  GFIX_TIME / FileCount，track / logs / evidence / deliver 四列判定（`ok` / `NG` / `-` 未做），每列合计；
+  表下面另外几行说不在表里的行（v2.29.0 起）：`on hold:`（保留中，带理由）、`earlier days, not finished:`
+  （往日没做完的，带做到哪一步）、`planned for a later day:`、`earlier days, all ok: N row(s)`（只计数）。
+  然后是没跑完的 run（`-Resume` 用的 id）、NEXT（先续跑；**今天还没有一行时先 plan**；再清 NG、再是最早有行在等的阶段）
+  和「下一条该打的命令」。只读，不碰 CSV。
+  每段（track / logs / evidence / deliver）**只拿今天的行**，保留中的行永远不拿；往日的行要么在 plan 里选进今天，
+  要么开跑前的面板按 `t`（见下），要么 `-AllDays`。所以菜单里直接回车就是「今天的这几本」，不会再给旧行做草稿。
 - **入口**：仓库目录里双击 `ebi.cmd`。第一次（还没记住工作文件夹时）它会问「Which work folder?」，
   把工作文件夹**拖进窗口**再回车即可；也可以把文件夹直接拖到 `ebi.cmd` 图标上，或 `ebi.cmd C:\Users\<you>\work-BIX`。
   之后记住在 `.ebi\menu.json`，或 `ebi.ps1 menu -WorkDir $W`。
   `ebi.local.json` 写坏了（少逗号、路径里单个 `\`）时会直接说是哪个文件、哪里坏了，不会再报「no profile has its worklist」。先显示上面的盘，再选：
-  数字 = plan / track / logs / evidence / deliver（plan 之后的几段会再问一次 Excel_NAME，
-  回车 = 所有待做的行，`A,B` = 几本），`r` = 续跑没跑完的 run，`c` = 清掉某一行某一列的判定
-  （代替用记事本改 CSV），`s` = 重画，`d` = doctor，`q` = 退出。
+  **Enter = 推荐的下一步**（菜单第一行 `Enter  run track for today's rows` 写着是什么）。
+  数字 = plan / track / logs / evidence / deliver（plan 之后的几段会再问一次 Excel_NAME：
+  回车 = 今天的行，`A,B` = 几本，**名字的一部分也行**：`DBC` = 所有带 DBC 的；`a` = 所有日子的待做行 `-AllDays`），
+  `r` = 续跑没跑完的 run，
+  `m`（mark）= **手动标 ok**：在工具外面做完了的（手工补的证据、别人代做的），选行（名字或一部分）→ 选列（`1` track `2` logs …）→ Enter；
+  `c`（clear）= 清掉判定让那段重做；
+  `h`（hold，保留）= 把行**保留**（等 HOST 修复之类，理由默认 `waiting for HOST`）；对已经保留的行再按 `h` = **解除**；
+  `s` = 重画，`d` = doctor，`q` = 退出。
+  **开跑前的对账**（reconcile／突き合わせ，v2.29.0 起）：选了某一段之后、真正跑之前，菜单先看两件事——
+  ① **看起来已经做完的行**（`LOOKS DONE ALREADY`）：这一段的判定是空的，但这一段自己的记录文件已经在
+  （`capture\gfix\<W名>\track.json` / `logs.json` / `gate.json`，而且是这一行的日子当天或以后写的）。
+  多半是上次跑到一半断了、判定没写上。`Enter` = 标 ok、这次跳过；`n` = 再跑一遍。
+  ② **往日没做完的行**（`EARLIER DAYS, NOT FINISHED`）：`t` = 也算今天（`WORKDAY` 改成今天，GFIX 跑的日期不变，logs / evidence 接着做），
+  `h` = 保留，`Enter` = 不管（这次只跑今天的）。
   选完它会**把那条 `ebi.ps1 run ...` 原样打印出来再执行**（子进程，输出和 GATE 的提问都实时显示在同一个窗口），
   跑完印一行结果（done / stopped with a failure / cancelled）再回到菜单。
   （v2.26.1 以前子进程的输出被整段吞掉、最后挤成一行，GATE 的提问看不见：track / deliver 请用 v2.26.2 以后的版本从菜单跑。）
@@ -97,18 +110,60 @@
 ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
 ```
 
-- 只读打开 WBS，筛出：`B=受信`、`G=修正後実施`、`P` 是「<owner>」/「<owner>←○○」/「○○→<owner>」、`AF`（最新計画 開始）= 今天。
-  owner 来自 `ebi.local.json` 的 `operator.owner`；箭头规则和旧的 `OwnerFilter.ps1` 一样：「ニンヌ←厳」**不算**你的。owner 留空就不过滤。
+- 只读打开 WBS，读出所有 `B=受信`、`G=修正後実施` 的行：`P` 担当、`AF`／`AG`（最新計画 開始／終了）、
+  `AJ`（実績 開始：有日期 = 已经有人做完）。owner 来自 `ebi.local.json` 的 `operator.owner`；
+  箭头规则和旧的 `OwnerFilter.ps1` 一样：「ニンヌ←厳」**不算**你的。owner 留空 = 所有人的行都算你的。
+- **分成几个候选集合**（candidate set，v2.29.0 起，`table.day_sets`）：
+  - `today`：计划日包含今天（AF ≤ 今天 ≤ AG）、还没做；还有今天早些时候已经选进来的行
+  - `late`：计划在今天以前、还没做（往回看 21 天，`-Var backDays=…`）
+  - `ahead MM/dd`：接下来 2 个工作日的（提前做，`-Var aheadDays=…`）
+  - `others, today`：别人今天的（设了 owner 时）
+  - `mapping.xlsx only`：mapping.xlsx 里今天有、上面都没有的
+  - `on hold`：作业清单里保留中的（不能选；菜单 `h` 解除）
+  **已经做完的不进集合**：以**作业清单**为准——四列全 ok（或最后的 deliver ok）的只在面板上面列一行「done here」。
+  WBS 的 AJ（実績 開始）**只算参考**：AJ 是人手填的，可能早上开工前就填了（10/20 的 M/SJODJSPQ）、也可能填错（10/16 的 K/LJODJDBC）。
+  所以 AJ 有日期、但作业清单里没做完（或 AJ 就是今天）的**照样列出来**，后面注一句 `WBS AJ 10/16`，面板上面也列一行「WBS AJ filled, not done here」。
+  只有作业清单里从来没有这本、AJ 又是今天以前的，才当作「工具以外做完了」不列（「done by the WBS actual start」那一行）。
+- **选**（`human.pick`，两层）：
+  第一层是**推荐的组合**：`1` = 今天的（推荐，**直接回车**）、`2` = 今天 + late、`3` = 今天 + 下一个工作日的 ahead。
+  也可以**直接打名字或名字的一部分**：`DBC` = 所有带 DBC 的、`2 -SJODWDBC` = 2 去掉一本、`1 FJODWWBV` = 今天的再加一本；全角也行。
+  `m` = **第二层**：所有集合编号列出（每本后面有说明：since 10/15、track ok、mapping 10:30 …），数字 = 那个集合，`b` = 回第一层。
+  `h 名字` = 把它们**保留**（理由默认 `HOST 待ち`），保留之后再选今天的。`0` = 今天什么都不做，`q` = 停。
+  打完会**复述一遍**（`-> 4 jobs today: …`），`Enter` = 对，打别的 = 换一个答案。
+  **已经知道要做哪几本时**：`ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W -Only MJODWSPQ,QJODWSPP,SJODWSPQ`
+  —— `-Only` 就是这个面板的答案（不管它们在哪个集合：今天、遅れ、先取り、别人的），只复述一遍等你按 Enter。
+  （v2.28.0 以前 plan 不认 `-Only`：只拿 AF = 今天、担当是你的行，所以 10/21 的、或者 WBS 担当写着别人的那几本，plan 不会放进清单，track 的 `-Only` 就说 not in the worklist。）
+- 选中的行写进作业清单：`WORKDAY` = 今天；`GFIX_DATE` = 今天，**track 已经 ok 的行保持原来的日子**（logs / evidence 接着那天的做）。
+  `GFIX_DATE` 变了的行 track / logs / evidence / **deliver** 清空（重跑）。保留的行写 `hold` 列。
 - 跑完表格下面直接印 **next:** 下一条命令（track / logs / evidence 也一样），不用翻手册。
 - 开头出现 UNFINISHED RUN 面板（以前某天没跑完的 run）：`d` = 把它们标成 abandoned、以后不再问（`run\<id>\` 文件夹还在），然后开新 run；`n` 只是这次跳过、下次还会问。
 - **作业清单只靠 WBS 就能建**：W 名 = J 名的第 5 个字母 J → W（SJDSJM40 → SJDSWM40）。
   不合这个规则的名字会照抄并给出警告（warning）。
-- mapping.xlsx 只是补充：O 列（GFIX実行日）= 今天的行，会补上 GFIX 时刻和文件数；
-  只在 mapping 里、不在 WBS 里的 job（例：WBS 写「ニンヌ」的 MJDSJM40）也从这里进清单。
+- mapping.xlsx 只是补充：O 列（GFIX実行日）= 今天的行，给选中的行补上 GFIX 时刻和文件数；
+  只在 mapping 里、不在 WBS 里的 job 在 `mapping.xlsx only` 集合里（owner 留空时它在推荐里）。
   没补 mapping 也没关系：文件数显示 `-1`（不知道），时刻在 track 时从 Teams 消息里取。
-- WBS 和 mapping 的差别只**显示**（`setup/cmp` 那一行），不再停下来问。
-- 结果：`$W\gfixrecv.csv`（作业清单，用 Excel 打开也行）。用你的 WBS 和 mapping 模拟过：
-  F/K/L/M/Q/RJDSWM40，6 个 job、时刻和 p1 完全一致。
+- 选中的行还会从 mapping.xlsx（所有行，不只今天的）带上 `GIFT_DATE`（M 列 GIFT実行日）和 `GIFT_TIME`（N 列 GIFT TIME），下一段 gift 用。
+- 结果：`$W\gfixrecv.csv`（作业清单，用 Excel 打开也行）。跑完的 next 是 gift。
+
+---
+
+## 1b. plan 之后：`gfixRecv.gift`（GIFT 文件在不在，v2.29.0 起）
+
+```powershell
+ebi.ps1 run workflows\gfixRecv.gift.json -WorkDir $W
+```
+
+菜单里 plan 跑完直接回车就是这一段（`2  gift`）。track 要用的 GIFT 文件（`DATA\GIFT\<J名>`，没有就 `<W名>`）在这里先查好：
+
+- **文件夹里有文件** → `gift = ok`，什么都不问。
+- **没有** → 读 Jenkins data/report 一览（就是 track 用的那个窗口，要先开着；没开会停下，开了按 `r`），
+  用 plan 从 mapping.xlsx 带过来的 **GIFT実行日（M 列）/ GIFT TIME（N 列）**，找那个时刻 −2～+13 分钟里放进 report 的文件：
+  - 窗口里**正好是该有的个数**（mapping 的文件数，不知道就当 1 个）→ 不问，直接下载到 `DATA\GIFT\<J名>\`，`gift = ok`。
+  - 个数不对，或者 GIFT TIME 是空的 / `-` → 出选择面板（和 plan 的一样）：`1` = 时刻窗口里的那几个（回车），
+    后面是那一天其余的文件**按小时分组**（`2` = 09 点那一组 …），每个文件后面写着时刻；也可以打文件名的一部分（`0026`）。
+    回车前会复述一遍要下载哪几个。`0` = 都不要（这一本保持 pending，自己放文件）。
+  - GIFT実行日 是空的 → 停下来说「no GIFT run day」：在 mapping.xlsx 补上日期按 `r`，或者自己把文件放进去按 `s`。
+- 下载完 track 照常从 `DATA\GIFT\<J名>` 取文件、逐行比较；放错了文件，比较会是 ng，照旧会问你。
 
 ---
 
@@ -300,7 +355,7 @@ GATE 的面板上：
 
 ---
 
-## 4b. 交付：`gfixRecv.deliver`（v2.26.0 起；10/19 起「先全部写、一次确认；再全部草稿、一次确认」）
+## 4b. 交付：`gfixRecv.deliver`（v2.26.0 起；10/19 起「先全部写、一次确认；再全部草稿、一次确认」；10/20 起最后填 WBS 実績）
 
 ```powershell
 ebi.ps1 run workflows\gfixRecv.deliver.json -WorkDir $W -Only QJODWSPN,RJODWSPN,SJODWSPN
@@ -316,6 +371,11 @@ evidence = ok 的行：
 3. **一次建好全部草稿**（after / mails）：用 `mailTemplate`（`sendj4mail.bat` 本身、`review-mail.json` 或 `.msg`）每本建一封 **Outlook 草稿**并打开。**工具不会发送。**
 4. **一次确认全部送出**（after / sent）：所有草稿窗口被调到前面，逐封检查（收件人、主题里的 job 名、正文里的文件名）并按「送信」，全部送完回控制台按 `Enter` → 这几本一起 `deliver = ok`。
    `s` = 稍后再送：检查表的行已经保存，deliver 仍是 pending；从「下書き」里送完后再跑一次 deliver，它会看到检查表里已经有这几行，直接记 ok，不会再建草稿。
+
+5. **WBS 的実績**（v2.29.0 起，after / wbsOpen…wbsSave）：全部送出（第 4 步 `Enter`）之后，打开 WBS（共享盘，**不是**只读），
+   给这几本的「受信 / 修正後実施」那一行写 `AJ`（実績 開始）= 这本 GFIX 跑的日子（`GFIX_DATE`）、`AK`（実績 終了）= 今天。
+   **只写空格子**：已经手填过的日期不动，面板里会列出「AJ already …」。WBS 里找不到行的 job 红字列出（手填）。
+   写完先不保存，面板 `Enter` = 保存并关闭；`s` = 不保存（自己手填）。WBS 被别人开着时 `open` 会停下：`r` = 等对方关、`s` = 这次不写。
 
 检查表被别人开着时，`open` 会说是谁，等对方关掉再 `r`。需要 Classic Outlook（新版 Outlook 不能自动化）。
 
