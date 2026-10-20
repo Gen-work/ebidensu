@@ -24,6 +24,7 @@
 6. 对外发送的东西(邮件、Teams):工具只做到**草稿 / 剪贴板**,发送永远由人来按(K-15)。
 7. 关卡的自动结论和人的回答**并排存下来**(`capture/<job>/gate.json`),这是第 9 节「从人的回答里长出规则」的原料。
 8. **默认行为先问操作员的偏好**(Enter 的含义、对不上时停不停、重试几次、旧 run 怎么处理、数字容差),并告诉他在哪里改。问法见 `INTERVIEW.md` 的 6.5。不问,操作员就以为「程序只能这样」(K-05、K-06、K-10 都是跑过之后才说出来的偏好)。
+9. 从对方系统下载东西:以**唯一的编号**(job 番号)为 identity,哪个 job 的东西**看内容**判断,不看列表上的名字;要换筛选的页面,先下载完当页再换(K-18)。
 
 ---
 
@@ -130,6 +131,14 @@
 - **现在的对策**(v2.29.0):plan 从 mapping.xlsx 带上 GIFT実行日(M)/ GIFT TIME(N);新的一段 `gfixRecv.gift` 在 track 之前检查文件夹,没有就读 Jenkins 一览,时刻 −2～+13 分钟里正好是该有的个数就直接下载,否则让人选(时刻窗口、那天按小时分组)。
 - **还没做**:处理時間(BIX).xlsx 的开始/结束时刻当来源(更准),Teams「実施します」消息当来源。
 - **来源**:10/20 操作员(余晖的 10/20 受信日指示)+ docs/TODO.md 10/16 的卡片。
+
+### K-18 GoAnywhere 接收 log:IF 号和 project 名都不唯一,只有 job 番号唯一
+- **症状**(10/20,一次性的 12 件 log 收集):同一个 IF 的接收 job 在列表里有两三行(两个 correl 共用一个 IF、发送方重发);project 名 VER1 / DEV1 混着出现;不同发送方(LPS / ALC / CRY)用同一个 IF 号,又落在同一个接收文件夹;correl 末位不固定(M / S)。列表一次只能按一个 project 名筛,Ctrl+F 只找得到当前页上的 job 番号。完成ジョブ页面现在没有 User 列、末尾多一列「解決済み」。
+- **原因**:job 番号唯一;IF 号 / project 名不唯一。哪个 correl 的 log,只有 log 里的 Command 行(`/gfix/recv/<correl>`)写得清楚。
+- **现在的对策**:`GoAnywhereLogFetch.ps1`(独立脚本,不是 phase;配置 JSON 留在本地)。候选 = IF 号(可多个)+ 接收文件夹;归属 = log 内容(correl 末位任意);每筛一次就在当页下载;重跑默认取最新的,旧的写进 report;文件名保持下载时的原名;共享盘上已有的文件不覆盖(EXISTS)。列表按「形状」找列(第一个 `/` 开头的是文件夹,日期形的是时刻),不按位置。实跑结果:12 件里 OK 11、EXISTS 1、NG 0。
+- **还没定**:重跑时取哪一次(实跑中有一件两次 log 都写着同一个 correl,默认复制了较新的那次,要人看实施日再判断)。`modules/verify/GfixJobList.ps1` 按固定位置取列,在没有 User 列的新页面上 StartTime 之后的列会错位;GfixLogDownload 只用 ProjectName / Folder,是否受影响**未确认**。
+- **写新 workflow 时**:以 job 番号为 identity,不靠 project 名定位;归属一律看内容;筛选和下载放在同一轮(换筛选之前下载完);重跑的取舍交给人,报告里把几次并排列出;共享盘只复制、不移动、不覆盖。做成 step 时大致是 `browser.read_text` → 解析列表 → 每个 job 番号 `browser.find` + 下载 → `verify.match_record`(内容)→ 复制。
+- **来源**:10/20 一次性作业,分支 `claude/youthful-franklin-m983ft`(v2.29.1),docs/GoAnywhereLogFetch.md。
 
 ---
 
