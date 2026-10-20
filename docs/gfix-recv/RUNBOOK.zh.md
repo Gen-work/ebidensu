@@ -120,15 +120,19 @@ ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
   - `others, today`：别人今天的（设了 owner 时）
   - `mapping.xlsx only`：mapping.xlsx 里今天有、上面都没有的
   - `on hold`：作业清单里保留中的（不能选；菜单 `h` 解除）
-  **已经做完的不进集合**：WBS 的 AJ 有日期（例：10/20 的 CJODWSPQ、K/R/SJODWSPP 在 10/16 已做）、
-  或作业清单里四列全 ok（WBS 还没填）的，只在面板最上面列一行「done already …」，**计划日是今天或以后、却已经有 AJ 的**都在这一行，
-  AJ 填错了（还没做却填了日期，比如 10/16 的 K/LJODJDBC）就在这里看得出来。
+  **已经做完的不进集合**：以**作业清单**为准——四列全 ok（或最后的 deliver ok）的只在面板上面列一行「done here」。
+  WBS 的 AJ（実績 開始）**只算参考**：AJ 是人手填的，可能早上开工前就填了（10/20 的 M/SJODJSPQ）、也可能填错（10/16 的 K/LJODJDBC）。
+  所以 AJ 有日期、但作业清单里没做完（或 AJ 就是今天）的**照样列出来**，后面注一句 `WBS AJ 10/16`，面板上面也列一行「WBS AJ filled, not done here」。
+  只有作业清单里从来没有这本、AJ 又是今天以前的，才当作「工具以外做完了」不列（「done by the WBS actual start」那一行）。
 - **选**（`human.pick`，两层）：
   第一层是**推荐的组合**：`1` = 今天的（推荐，**直接回车**）、`2` = 今天 + late、`3` = 今天 + 下一个工作日的 ahead。
   也可以**直接打名字或名字的一部分**：`DBC` = 所有带 DBC 的、`2 -SJODWDBC` = 2 去掉一本、`1 FJODWWBV` = 今天的再加一本；全角也行。
   `m` = **第二层**：所有集合编号列出（每本后面有说明：since 10/15、track ok、mapping 10:30 …），数字 = 那个集合，`b` = 回第一层。
   `h 名字` = 把它们**保留**（理由默认 `HOST 待ち`），保留之后再选今天的。`0` = 今天什么都不做，`q` = 停。
   打完会**复述一遍**（`-> 4 jobs today: …`），`Enter` = 对，打别的 = 换一个答案。
+  **已经知道要做哪几本时**：`ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W -Only MJODWSPQ,QJODWSPP,SJODWSPQ`
+  —— `-Only` 就是这个面板的答案（不管它们在哪个集合：今天、遅れ、先取り、别人的），只复述一遍等你按 Enter。
+  （v2.28.0 以前 plan 不认 `-Only`：只拿 AF = 今天、担当是你的行，所以 10/21 的、或者 WBS 担当写着别人的那几本，plan 不会放进清单，track 的 `-Only` 就说 not in the worklist。）
 - 选中的行写进作业清单：`WORKDAY` = 今天；`GFIX_DATE` = 今天，**track 已经 ok 的行保持原来的日子**（logs / evidence 接着那天的做）。
   `GFIX_DATE` 变了的行 track / logs / evidence / **deliver** 清空（重跑）。保留的行写 `hold` 列。
 - 跑完表格下面直接印 **next:** 下一条命令（track / logs / evidence 也一样），不用翻手册。

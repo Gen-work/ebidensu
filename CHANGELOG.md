@@ -62,6 +62,15 @@ unfinished row counted as pending everywhere.
 - **gfixRecv.plan v0.6.0**: mapping.xlsx is read whole (M / N GIFT date /
   time added); today's rows (GFIX date = today) still give time / count,
   every picked job gets its GIFT date / time; the next line says gift.
+- table.day_sets: **AJ is not proof** (10/20 office run: AJ typed in the
+  morning for M/SJODJSPQ, by mistake for K/LJODJDBC). Done = the worklist
+  says so; an AJ closes a row only when the worklist never had it and the
+  date is before today, otherwise the row is offered with "WBS AJ MM/dd".
+- **`plan -Only A,B`** = the pick panel's answer (`{{run.only}}`, new run
+  field; human.pick `answer`): any set, read back, Enter. Before, plan
+  ignored -Only and took only AF = today rows of the operator -- the
+  10/21 jobs and the ones the WBS gives to someone else never reached
+  the worklist ("-Only ...: not in the worklist" in track).
 - table.day_sets: a row whose LAST verdict (deliver) is ok counts as done
   even when a column added later (gift) is blank; plan passes
   carryField = track.

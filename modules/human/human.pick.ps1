@@ -29,6 +29,7 @@ $Manifest = @{
     info      = @{ type='list';   default=@(); desc='lines shown above the choices' }
     noun      = @{ type='string'; default='job'; desc='what a name is, in the read-back ("4 jobs")' }
     holdReason = @{ type='string'; default='waiting'; desc='what Enter means when asked why names go on hold' }
+    answer     = @{ type='list';   default=@(); desc='names given before the panel (ebi.ps1 run <plan> -Only A,B -> {{run.only}}): taken as the typed answer, read back and confirmed; a name no set offers shows the panel instead' }
     autoPick   = @{ type='bool';   default=$false; desc='true: take choice 1 without asking (the caller already knows it is right, e.g. verify.time_candidates certain); the panel is not shown' }
   }
   outputs    = @{
@@ -191,6 +192,21 @@ function Invoke-Step {
         return @{ ok = $true; picked = $keys; pickedCount = @($keys).Count; any = (@($keys).Count -gt 0); hold = @(); holdReason = ''; answer = ''; auto = $true }
     }
     $again = $null          # an answer typed at the read-back instead of Enter
+    $given = @(@($In['answer']) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' })
+    if ($given.Count -gt 0) {
+        $pre = HumanPick-Resolve -Text ($given -join ' ') -Sets $sets -Presets $presets -Level 'first'
+        if ($pre['ok'] -and [string]$pre['kind'] -eq 'pick' -and @($pre['keys']).Count -gt 0) {
+            $noConsole = [bool]$Ctx['DryRun'] -or ([string]$env:EBI_NO_ASK -eq '1' -and $null -eq $reader)
+            if (-not $noConsole -and $null -eq $reader) { try { if ([Console]::IsInputRedirected) { $noConsole = $true } } catch { } }
+            if ($noConsole) {
+                $Ctx.Log.Info(('given (-Only): ' + (@($pre['keys']) -join ', ')))
+                return @{ ok = $true; picked = @($pre['keys']); pickedCount = @($pre['keys']).Count; any = $true; hold = @(); holdReason = ''; answer = ($given -join ' '); auto = $true }
+            }
+            $again = ($given -join ' ')
+        } else {
+            Write-Host ('  -Only ' + ($given -join ',') + ': ' + $(if ($pre['ok']) { 'nothing to take' } else { [string]$pre['message'] }) + ' -- pick below') -ForegroundColor DarkYellow
+        }
+    }
     $tries = 0
     while ($true) {
         $tries++

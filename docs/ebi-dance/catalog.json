@@ -3913,6 +3913,11 @@
       "id": "human.pick",
       "idempotent": true,
       "inputs": {
+        "answer": {
+          "default": [],
+          "desc": "names given before the panel (ebi.ps1 run <plan> -Only A,B -> {{run.only}}): taken as the typed answer, read back and confirmed; a name no set offers shows the panel instead",
+          "type": "list"
+        },
         "autoPick": {
           "default": false,
           "desc": "true: take choice 1 without asking (the caller already knows it is right, e.g. verify.time_candidates certain); the panel is not shown",
@@ -5285,7 +5290,7 @@
         }
       },
       "needs": [],
-      "notes": "Pure: reads the worklist, writes nothing. A key whose rows are all done in the plan sheet is done; one of them blank keeps it open (two files of one job). A row picked earlier today (worklist WORKDAY = today) stays in today whatever the sheet says. Dates are compared as yyyy-MM-dd text.",
+      "notes": "Pure: reads the worklist, writes nothing. A key counts as having an actual start only when every one of its rows has one (two files of one job). A row picked earlier today (worklist WORKDAY = today) stays in today whatever the sheet says. Dates are compared as yyyy-MM-dd text.",
       "outputs": {
         "defaultKeys": {
           "desc": "keys of the default sets (today; mapping too when no owner pattern)",

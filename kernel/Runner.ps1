@@ -829,6 +829,9 @@ function Invoke-EbiWorkflow {
     $wfId = [string]$workflow['id']
     $ebiNow = Get-Date
     $run = @{ runId = $RunId; startedAt = $ebiNow.ToString('o'); date = $ebiNow.ToString('yyyy-MM-dd'); dateSlash = $ebiNow.ToString('yyyy/MM/dd'); mmdd = $ebiNow.ToString('MMdd'); toolDir = (Split-Path $PSScriptRoot -Parent); operator = $Operator; workDir = $WorkDir; timeWindow = $(if ($TimeWindow -is [System.Collections.IDictionary] -and $TimeWindow.Count -gt 0) { $TimeWindow } else { $null }) }
+    # run.only (10/20): -Only for a workflow without rows (the plan) is the
+    # answer to its pick panel ("plan -Only A,B" = take A and B today)
+    $run['only'] = @(if ($null -ne $Only) { @($Only) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' } })
     $timeWindowSeen = $run['timeWindow']
     $ledgerDone = @{}
     if ($resumeFlag) {

@@ -197,13 +197,14 @@
     {
       "id": "pick",
       "use": "human.pick",
-      "label": "今日やるジョブを選ぶ: Enter = おすすめ(今日の分)、2 / 3 = 遅れ・先取りも、名前の一部(DBC)でも、m = 全部の候補、h 名前 = 保留",
+      "label": "今日やるジョブを選ぶ: Enter = おすすめ(今日の分)、2 / 3 = 遅れ・先取りも、名前の一部(DBC)でも、m = 全部の候補、h 名前 = 保留。-Only A,B を付けて起動したらそれが答え(確認だけ)",
       "with": {
         "title": "PLAN: pick today's jobs",
         "sets": "{{steps.sets.out.sets}}",
         "presets": "{{steps.sets.out.presets}}",
         "info": "{{steps.sets.out.info}}",
-        "holdReason": "HOST 待ち"
+        "holdReason": "HOST 待ち",
+        "answer": "{{run.only}}"
       }
     },
     {

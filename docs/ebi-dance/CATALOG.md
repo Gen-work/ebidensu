@@ -1660,7 +1660,7 @@ failures: `input_invalid` (not transient)
 {"id":"day_sets","use":"table.day_sets","with":{"extra":"{{steps.mine.out.records}}","ownerPattern":"{{steps.ownerPat.out.pattern}}","records":"{{steps.derive.out.records}}","today":"{{run.date}}","worklist":"wl"}}
 ```
 
-Notes: Pure: reads the worklist, writes nothing. A key whose rows are all done in the plan sheet is done; one of them blank keeps it open (two files of one job). A row picked earlier today (worklist WORKDAY = today) stays in today whatever the sheet says. Dates are compared as yyyy-MM-dd text.
+Notes: Pure: reads the worklist, writes nothing. A key counts as having an actual start only when every one of its rows has one (two files of one job). A row picked earlier today (worklist WORKDAY = today) stays in today whatever the sheet says. Dates are compared as yyyy-MM-dd text.
 
 ### `table.ensure_columns`
 
@@ -2515,6 +2515,7 @@ Pick names from recommended combinations or numbered sets, or by typing (part of
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `answer` | list |  | [] |  | names given before the panel (ebi.ps1 run <plan> -Only A,B -> {{run.only}}): taken as the typed answer, read back and confirmed; a name no set offers shows the panel instead |
 | `autoPick` | bool |  | false |  | true: take choice 1 without asking (the caller already knows it is right, e.g. verify.time_candidates certain); the panel is not shown |
 | `holdReason` | string |  | waiting |  | what Enter means when asked why names go on hold |
 | `info` | list |  | [] |  | lines shown above the choices |

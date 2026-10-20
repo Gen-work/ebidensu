@@ -11,8 +11,11 @@
 #     others    someone else's today (only when an owner pattern is set)
 #     mapping   in mapping.xlsx today but in none of the sets above
 #     hold      the worklist row is on hold (never pickable)
-# and done rows (WBS actual start, or every verdict ok in the worklist)
-# become info lines instead of work. The worklist tells what this tool
+# and done rows become info lines instead of work: every verdict ok in
+# the worklist (or the last one), or a WBS actual start (AJ) on a row the
+# worklist never had, dated before today. An AJ on a row the worklist has
+# not finished -- or dated today -- is offered anyway, with a note: AJ is
+# typed by hand, sometimes before the job runs (10/20). The worklist tells what this tool
 # already did: a row whose first verdict (track) is ok keeps its GFIX date
 # when it is picked again (the receive happened that day; logs / evidence
 # continue it), any other row is planned for today.
@@ -58,7 +61,7 @@ $Manifest = @{
     @{ id = 'input_invalid'; transient = $false }
   )
   example    = @{ use = 'table.day_sets'; with = @{ worklist = 'wl'; records = '{{steps.derive.out.records}}'; today = '{{run.date}}'; ownerPattern = '{{steps.ownerPat.out.pattern}}'; extra = '{{steps.mine.out.records}}' } }
-  notes      = 'Pure: reads the worklist, writes nothing. A key whose rows are all done in the plan sheet is done; one of them blank keeps it open (two files of one job). A row picked earlier today (worklist WORKDAY = today) stays in today whatever the sheet says. Dates are compared as yyyy-MM-dd text.'
+  notes      = 'Pure: reads the worklist, writes nothing. A key counts as having an actual start only when every one of its rows has one (two files of one job). A row picked earlier today (worklist WORKDAY = today) stays in today whatever the sheet says. Dates are compared as yyyy-MM-dd text.'
 }
 
 function TableDaySets-Norm {
@@ -176,6 +179,7 @@ function TableDaySets-Classify {
     $where = @{}           # norm key -> set id
     $doneWbs = New-Object System.Collections.ArrayList
     $doneHere = New-Object System.Collections.ArrayList
+    $ajOpen = New-Object System.Collections.ArrayList
     $noDate = 0
     foreach ($k in $order) {
         $a = $agg[$k]
@@ -183,7 +187,8 @@ function TableDaySets-Classify {
         $inWindow = ($a['start'] -ne '' -and $a['end'] -ge $backLimit -and $a['start'] -le $aheadLimit)
         if (-not $a['mine']) {
             if ($null -ne $st -and [string]$st['day'] -eq $Today) { [void]$sets['today'].Add($k); $where[$k] = 'today'; $notes[$k] = ('picked earlier today; ' + $a['owner']); continue }
-            if ($a['allDone'] -or $a['start'] -eq '' -or $a['start'] -gt $Today -or $a['end'] -lt $Today) { continue }
+            $closed = ($a['allDone'] -and $null -eq $st -and $a['done'] -lt $Today) -or ($null -ne $st -and [bool]$st['okAll'])
+            if ($closed -or $a['start'] -eq '' -or $a['start'] -gt $Today -or $a['end'] -lt $Today) { continue }
             if ($null -ne $st -and [string]$st['hold'] -ne '') { continue }
             [void]$sets['others'].Add($k); $where[$k] = 'others'; $notes[$k] = $a['owner']
             continue
@@ -194,17 +199,30 @@ function TableDaySets-Classify {
             $notes[$k] = $(if ($a['start'] -ne '' -and $a['start'] -le $Today -and $a['end'] -ge $Today) { [string]$st['progress'] } else { 'picked earlier today' + $(if ([string]$st['progress'] -ne '') { '; ' + [string]$st['progress'] } else { '' }) })
             continue
         }
-        if ($a['allDone']) {
-            # only the ones the plan would have offered: planned today or later, or done today
-            if ($a['start'] -ge $Today -and $a['start'] -le $aheadLimit -or $a['done'] -eq $Today) { [void]$doneWbs.Add(($a['key'] + ' ' + (TableDaySets-Short $a['done']) + $(if ($a['done'] -lt $a['start']) { ' (planned ' + (TableDaySets-Short $a['start']) + ')' } else { '' }))) }
+        # done = what THIS tool recorded (the last verdict ok). The WBS actual
+        # start (AJ) alone is not proof: it is typed by hand, sometimes in
+        # the morning before the job runs (10/20: M/SJODJSPQ got AJ 10/20
+        # before their GIFT files were even there) or by mistake (10/16:
+        # K/LJODJDBC). AJ closes a row only when the worklist has never
+        # seen it and the date is before today (done before this tool, or
+        # by hand); otherwise the row is offered with a note.
+        if ($null -ne $st -and [bool]$st['okAll']) {
+            if ($inWindow -or $a['allDone']) { [void]$doneHere.Add(($a['key'] + $(if ([string]$st['date'] -ne '') { ' ' + (TableDaySets-Short ([string]$st['date'])) } else { '' }))) }
             continue
         }
-        if ($null -ne $st -and [bool]$st['okAll']) {
-            if ($inWindow) { [void]$doneHere.Add(($a['key'] + $(if ([string]$st['date'] -ne '') { ' ' + (TableDaySets-Short ([string]$st['date'])) } else { '' }))) }
-            continue
+        $ajNote = ''
+        if ($a['allDone']) {
+            if ($null -eq $st -and $a['done'] -lt $Today) {
+                # only the ones the plan would have offered: planned today or later
+                if ($a['start'] -ge $Today -and $a['start'] -le $aheadLimit) { [void]$doneWbs.Add(($a['key'] + ' ' + (TableDaySets-Short $a['done']) + $(if ($a['done'] -lt $a['start']) { ' (planned ' + (TableDaySets-Short $a['start']) + ')' } else { '' }))) }
+                continue
+            }
+            $ajNote = ('WBS AJ ' + (TableDaySets-Short $a['done']))
+            [void]$ajOpen.Add(($a['key'] + ' ' + (TableDaySets-Short $a['done'])))
         }
         if ($a['start'] -eq '') { $noDate++; continue }
         $prog = if ($null -ne $st) { [string]$st['progress'] } else { '' }
+        if ($ajNote -ne '') { $prog = $(if ($prog -ne '') { $ajNote + '; ' + $prog } else { $ajNote }) }
         if ($a['start'] -le $Today -and $a['end'] -ge $Today) {
             [void]$sets['today'].Add($k); $where[$k] = 'today'
             $n = New-Object System.Collections.ArrayList
@@ -273,8 +291,9 @@ function TableDaySets-Classify {
     TableDaySets-AddSet -Id 'hold' -Label 'on hold' -Keys $sets['hold'] -Pick $false -Default $false
 
     $info = New-Object System.Collections.ArrayList
-    if ($doneWbs.Count -gt 0) { [void]$info.Add(('done already (WBS actual start): ' + ($doneWbs.ToArray() -join ', '))) }
-    if ($doneHere.Count -gt 0) { [void]$info.Add(('all ok here, sheet not filled yet: ' + ($doneHere.ToArray() -join ', '))) }
+    if ($doneHere.Count -gt 0) { [void]$info.Add(('done here (every phase ok): ' + ($doneHere.ToArray() -join ', '))) }
+    if ($doneWbs.Count -gt 0) { [void]$info.Add(('done by the WBS actual start (AJ), never in the worklist: ' + ($doneWbs.ToArray() -join ', '))) }
+    if ($ajOpen.Count -gt 0) { [void]$info.Add(('WBS AJ filled, not done here -- still offered: ' + ($ajOpen.ToArray() -join ', '))) }
     if ($noDate -gt 0) { [void]$info.Add(('' + $noDate + ' of your row(s) have no planned date')) }
 
     # one record per pickable key, with its run date and work day

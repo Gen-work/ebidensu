@@ -105,8 +105,8 @@ Assert-True ((Get-Set $r 'late')['notes']['RJODWDBC'] -like 'since 10/16; track 
 Assert-True ((Get-Set $r 'ahead:2026-10-21')['notes']['FJODWWBV'] -eq 'mapping 10:30:00') 'sets: a mapping.xlsx time is noted on a placed row'
 Assert-True ((Get-Set $r 'today')['notes']['JJDSWPA1'] -eq 'until 10/25') 'sets: a multi-day row says until when'
 $info = (@($r['info']) -join ' | ')
-Assert-True ($info -like '*done already (WBS actual start): CJODWSPQ 10/16 (planned 10/20), KJODWDBC 10/16 (planned 10/20)*') ('info: done early rows listed with the planned day: ' + $info)
-Assert-True ($info -like '*all ok here, sheet not filled yet: QJODWSPN 10/19*') 'info: done here, WBS not filled yet'
+Assert-True ($info -like '*done by the WBS actual start (AJ), never in the worklist: CJODWSPQ 10/16 (planned 10/20), KJODWDBC 10/16 (planned 10/20)*') ('info: done early rows listed with the planned day: ' + $info)
+Assert-True ($info -like '*done here (every phase ok): QJODWSPN 10/19*') 'info: done here, WBS not filled yet'
 Assert-True ($info -like '*1 of your row(s) have no planned date*') 'info: rows without a date are counted'
 Assert-True (-not ($info -like '*ZJODWOLD*') -and -not ((@($r['sets'] | ForEach-Object { @($_['names']) }) -join ',') -like '*ZJODWOLD*')) 'sets: a row older than backDays is nowhere'
 $recs = @{}; foreach ($x in @($r['records'])) { $recs[[string]$x['Excel_NAME']] = $x }
@@ -118,6 +118,39 @@ $pre = @($r['presets'])
 Assert-Equal 3 $pre.Count 'presets: today, today + late, today + the next working day'
 Assert-Equal 'JJDSWPA1,TJODWDUP,YJODWPCK,MJDSWM40,MJODWDBC,RJODWDBC' (@($pre[1]['names']) -join ',') 'presets: 2 = today + late'
 Assert-Equal 'JJDSWPA1,TJODWDUP,YJODWPCK,MJDSWM40,FJODWWBV' (@($pre[2]['names']) -join ',') 'presets: 3 = today + ahead 10/21'
+# AJ is typed by hand: not proof on its own (10/20 office run)
+$wbsAj = @(
+    (New-WbsRow 'MJODJSPQ' 'ME' '2026-10-21' '2026-10-21' '2026-10-20'),     # AJ typed this morning, job not run yet
+    (New-WbsRow 'LJODJDBC' 'ME' '2026-10-20' '2026-10-20' '2026-10-16'),     # AJ typed by mistake, row open in the worklist
+    (New-WbsRow 'KJODJSPP' 'ME' '2026-10-20' '2026-10-20' '2026-10-16'),     # done early: deliver ok in the worklist
+    (New-WbsRow 'QJODJSPP' 'OTHER' '2026-10-20' '2026-10-20' '2026-10-20')   # someone else's, AJ today
+)
+$ctx['Session']['wl2'] = @{ kind = 'worklist'; value = @{ path = ''; columns = @('Excel_NAME', 'GFIX_DATE', 'WORKDAY', 'hold', 'gift', 'track', 'logs', 'evidence', 'deliver'); rows = @(
+    @{ Excel_NAME = 'LJODWDBC'; GFIX_DATE = '2026-10-15'; WORKDAY = ''; hold = ''; gift = ''; track = ''; logs = ''; evidence = ''; deliver = '' },
+    @{ Excel_NAME = 'KJODWSPP'; GFIX_DATE = '2026-10-20'; WORKDAY = '2026-10-16'; hold = ''; gift = ''; track = ''; logs = ''; evidence = ''; deliver = 'ok' }
+) } }
+$ra = Invoke-TestStep 'table.day_sets' @{ worklist = 'wl2'; records = $wbsAj; today = '2026-10-20'; ownerPattern = $pat; carryField = 'track' }
+Assert-Equal 'LJODWDBC' (Get-Names (Get-Set $ra 'today')) 'AJ: a row the worklist has not finished is offered although the WBS has an AJ'
+Assert-Equal 'WBS AJ 10/16' (Get-Set $ra 'today')['notes']['LJODWDBC'] 'AJ: ... with the AJ as a note'
+Assert-Equal 'MJODWSPQ' (Get-Names (Get-Set $ra 'ahead:2026-10-21')) 'AJ: an AJ dated today on a job the worklist never had is offered (typed in the morning)'
+Assert-Equal 'QJODWSPP' (Get-Names (Get-Set $ra 'others')) 'AJ: the same for someone else''s row'
+$ia = (@($ra['info']) -join ' | ')
+Assert-True ($ia -like '*done here (every phase ok): KJODWSPP*' -and $ia -like '*WBS AJ filled, not done here -- still offered: MJODWSPQ 10/20, LJODWDBC 10/16*') ('AJ: info lines: ' + $ia)
+$rs = @($ra['sets']); $rp = @($ra['presets'])
+$ctx['DryRun'] = $true
+$p = Invoke-TestStep 'human.pick' @{ sets = $rs; presets = $rp; title = 'PLAN'; answer = @('MJODWSPQ', 'qjodwspp') }
+Assert-True ($p['ok'] -and (@($p['picked']) -join ',') -eq 'MJODWSPQ,QJODWSPP') 'pick: -Only names (run.only) are the answer -- any case, from the ahead and others sets'
+$ctx['DryRun'] = $false
+$script:answers = New-Object System.Collections.Queue
+foreach ($a in @('')) { $script:answers.Enqueue($a) }
+$ctx['Reader'] = { if ($script:answers.Count -gt 0) { return [string]$script:answers.Dequeue() }; return 'q' }
+$p = Invoke-TestStep 'human.pick' @{ sets = $rs; presets = $rp; title = 'PLAN'; answer = @('MJODWSPQ') }
+Assert-True ($p['ok'] -and (@($p['picked']) -join ',') -eq 'MJODWSPQ' -and -not $p['auto']) 'pick: with a console the given names are read back and Enter confirms them'
+$script:answers.Clear(); foreach ($a in @('1', '')) { $script:answers.Enqueue($a) }
+$p = Invoke-TestStep 'human.pick' @{ sets = $rs; presets = $rp; title = 'PLAN'; answer = @('NOSUCH') }
+Assert-True ($p['ok'] -and (@($p['picked']) -join ',') -eq 'LJODWDBC') 'pick: a given name no set offers falls back to the panel'
+$ctx['Reader'] = $null
+
 $r2 = Invoke-TestStep 'table.day_sets' @{ worklist = 'wl'; records = $wbs; today = '2026-10-20'; ownerPattern = ''; extra = $mapping }
 Assert-True ($null -eq (Get-Set $r2 'others') -and (Get-Names (Get-Set $r2 'today')) -like '*FJODWSPQ*') 'sets: no owner pattern -> every row is yours, no others set'
 Assert-True ([bool](Get-Set $r2 'mapping')['default']) 'sets: no owner pattern -> mapping.xlsx-only jobs are in the default too'
