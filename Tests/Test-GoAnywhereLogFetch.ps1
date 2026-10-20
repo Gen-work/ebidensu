@@ -39,6 +39,12 @@ Assert-True (Test-GoAnywhereIfMatch 'LXXX_VER1_IF0001_001_SSH' '0001') 'IF0001 m
 Assert-True (-not (Test-GoAnywhereIfMatch 'LXXX_VER1_IF0010_001_SSH' '0001')) 'IF0001 does not match IF0010'
 Assert-True (-not (Test-GoAnywhereIfMatch 'LXXX_VER1_IF1001_001_SSH' '0001')) 'IF0001 does not match IF1001'
 
+# Several IF numbers per target (received under one, resent under another)
+Assert-Equal '0001|0002' ((ConvertTo-GoAnywhereIfNos '1, 0002') -join '|') 'IF list: comma separated, padded'
+Assert-Equal '0001|0002' ((ConvertTo-GoAnywhereIfNos @('0001', '2', '0001')) -join '|') 'IF list: array, duplicates dropped'
+$multi = @(Get-GoAnywhereCandidateRows -Rows $rows -IfNo '0001,0010' -GoFolder '/bbb2usr/')
+Assert-Equal '1000000000104|1000000000105' ((@($multi | ForEach-Object { $_.JobNo }) | Sort-Object) -join '|') 'IF list: candidates of every listed IF'
+
 $systems = @{ AAA = @{ goFolder = '/aaausr/'; dest = 'AAA' }; BBB = @{ goFolder = '/bbb2usr/'; dest = 'BBB2' } }
 $targets = @(
     [pscustomobject]@{ Correl = 'JAAAL25M'; IfNo = '0001'; Recv = 'AAA' }
@@ -79,20 +85,22 @@ Assert-Equal 1 @($sR.Others).Count 'reruns: older one reported'
 Assert-Equal 'nocontent' (Select-GoAnywhereLogForCorrel -Correl 'JZZZZ01M' -Logs $logs).Status 'no log names it -> nocontent'
 Assert-Equal 'nolog' (Select-GoAnywhereLogForCorrel -Correl 'JAAAL25M' -Logs @()).Status 'nothing downloaded -> nolog'
 
-Assert-Equal 'JAAAL25M_1000000000102.log' (Format-GoAnywhereLogName -Format '' -Correl 'JAAAL25M' -JobNo '1000000000102' -StartTime '2026-10-05 13:59:45' -OrigName '1000000000102.log') 'default name'
+Assert-Equal '1000000000102.log' (Format-GoAnywhereLogName -Format '' -Correl 'JAAAL25M' -JobNo '1000000000102' -StartTime '2026-10-05 13:59:45' -OrigName '1000000000102.log') 'default: the name as downloaded'
+Assert-Equal 'JAAAL25M_1000000000102.log' (Format-GoAnywhereLogName -Format '{correl}_{jobNo}.log' -Correl 'JAAAL25M' -JobNo '1000000000102' -StartTime '' -OrigName 'x.log') 'correl + jobNo tokens'
 Assert-Equal 'JAAAL25M_20261005_135945.log' (Format-GoAnywhereLogName -Format '{correl}_{start}.log' -Correl 'JAAAL25M' -JobNo '1' -StartTime '2026-10-05 13:59:45' -OrigName 'x.log') 'start token'
 Assert-Equal '1000000000102.log' (Format-GoAnywhereLogName -Format '{orig}.log' -Correl 'J' -JobNo '1' -StartTime '' -OrigName '1000000000102.log') 'orig token'
 
 # Config read (UTF-8 JSON, Japanese in the path survives)
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('galf_' + [guid]::NewGuid().ToString('N') + '.json')
 $jp = [string][char]0x53D7 + [char]0x4FE1
-$json = '{ "destRoot": "\\\\srv\\' + $jp + '\\LOG", "systems": { "AAA": { "goFolder": "/aaausr/", "dest": "AAA" } }, "jobs": [ { "correl": " JAAAL25M ", "if": "1", "recv": "AAA" } ] }'
+$json = '{ "destRoot": "\\\\srv\\' + $jp + '\\LOG", "systems": { "AAA": { "goFolder": "/aaausr/", "dest": "AAA" } }, "jobs": [ { "correl": " JAAAL25M ", "if": "1", "recv": "AAA" }, { "correl": "JAAAL26M", "if": "0001,0002", "recv": "AAA" } ] }'
 [IO.File]::WriteAllText($tmp, $json, [Text.UTF8Encoding]::new($false))
 try {
     $cfg = Read-GoAnywhereLogFetchConfig $tmp
     Assert-Equal ('\\srv\' + $jp + '\LOG') $cfg.DestRoot 'config: Japanese destRoot read as UTF-8'
     Assert-Equal 'JAAAL25M' $cfg.Targets[0].Correl 'config: correl trimmed'
     Assert-Equal '0001' $cfg.Targets[0].IfNo 'config: IF padded'
+    Assert-Equal '0001,0002' $cfg.Targets[1].IfNo 'config: several IF numbers kept'
     Assert-Equal '/aaausr/' $cfg.Systems['AAA'].goFolder 'config: systems'
     Assert-Equal '' $cfg.NameFormat 'config: nameFormat optional'
 } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }

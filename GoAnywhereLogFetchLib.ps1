@@ -59,6 +59,20 @@ function ConvertTo-GoAnywhereIfNo {
     return $m.Value.PadLeft(4, '0')
 }
 
+# '0001,0002' / '1 2' / array -> @('0001','0002'): one target may be aimed
+# at by several IF numbers (e.g. received under one, resent under another).
+function ConvertTo-GoAnywhereIfNos {
+    param($Value)
+    $out = [System.Collections.Generic.List[string]]::new()
+    foreach ($v in @($Value)) {
+        foreach ($part in ([string]$v -split '[,;/\s]+')) {
+            $n = ConvertTo-GoAnywhereIfNo $part
+            if ($n -ne '' -and -not $out.Contains($n)) { $out.Add($n) }
+        }
+    }
+    return $out.ToArray()
+}
+
 # True when the project name carries exactly this IF number
 # (IF0001 matches LLPS_DEV1_IF0001_001_SSH, not ..._IF00010_...).
 function Test-GoAnywhereIfMatch {
@@ -70,12 +84,15 @@ function Test-GoAnywhereIfMatch {
     return ([string]$ProjectName -match ('(?i)IF0*' + [regex]::Escape($digits) + '(?!\d)'))
 }
 
-# Receive-side rows for one target (IF number + receive folder).
+# Receive-side rows for one target (IF number(s) + receive folder).
 function Get-GoAnywhereCandidateRows {
     param([object[]]$Rows, [string]$IfNo, [string]$GoFolder)
     $out = [System.Collections.Generic.List[object]]::new()
+    $ifNos = @(ConvertTo-GoAnywhereIfNos $IfNo)
     foreach ($r in @($Rows)) {
-        if (-not (Test-GoAnywhereIfMatch $r.ProjectName $IfNo)) { continue }
+        $hit = $false
+        foreach ($n in $ifNos) { if (Test-GoAnywhereIfMatch $r.ProjectName $n) { $hit = $true; break } }
+        if (-not $hit) { continue }
         $f = [string]$r.Folder
         if ($f -notmatch '(?i)Receive') { continue }
         if (-not [string]::IsNullOrWhiteSpace($GoFolder) -and
@@ -124,7 +141,7 @@ function Get-GoAnywhereFetchPlan {
         }
         $items.Add([pscustomobject]@{
             Correl     = [string]$t.Correl
-            IfNo       = ConvertTo-GoAnywhereIfNo $t.IfNo
+            IfNo       = (@(ConvertTo-GoAnywhereIfNos $t.IfNo) -join ',')
             Recv       = [string]$t.Recv
             KnownRecv  = ($null -ne $sys)
             Candidates = $cand
@@ -169,23 +186,24 @@ function Select-GoAnywhereLogForCorrel {
     return [pscustomobject]@{ Status = 'ok'; Chosen = $hits[0]; Others = @($hits | Select-Object -Skip 1) }
 }
 
-# Destination file name from a template: {correl} {jobNo} {start}
-# (yyyyMMdd_HHmmss) {orig} (the downloaded file's own name, no extension).
+# Destination file name from a template: {file} (the downloaded file's own
+# name, as is -- the default), {orig} (the same without extension),
+# {correl} {jobNo} {start} (yyyyMMdd_HHmmss).
 function Format-GoAnywhereLogName {
     param([string]$Format, [string]$Correl, [string]$JobNo, [string]$StartTime, [string]$OrigName)
-    if ([string]::IsNullOrWhiteSpace($Format)) { $Format = '{correl}_{jobNo}.log' }
+    if ([string]::IsNullOrWhiteSpace($Format)) { $Format = '{file}' }
     $start = ([string]$StartTime -replace '[^\d]', '')
     if ($start.Length -ge 14) { $start = $start.Substring(0, 8) + '_' + $start.Substring(8, 6) }
     $orig = [IO.Path]::GetFileNameWithoutExtension([string]$OrigName)
-    $name = $Format.Replace('{correl}', $Correl).Replace('{jobNo}', $JobNo).Replace('{start}', $start).Replace('{orig}', $orig)
+    $name = $Format.Replace('{file}', [IO.Path]::GetFileName([string]$OrigName)).Replace('{correl}', $Correl).Replace('{jobNo}', $JobNo).Replace('{start}', $start).Replace('{orig}', $orig)
     foreach ($ch in [IO.Path]::GetInvalidFileNameChars()) { $name = $name.Replace([string]$ch, '_') }
     return $name
 }
 
 # Config JSON (UTF-8, may hold Japanese paths) -> normalized hashtable.
-#   { "destRoot": "...\\LOG", "nameFormat": "{correl}_{jobNo}.log",
+#   { "destRoot": "...\\LOG", "nameFormat": "{file}",
 #     "systems": { "IDS": { "goFolder": "/idsusr/", "dest": "IDS" }, ... },
-#     "jobs": [ { "correl": "...", "if": "0001", "recv": "IDS" }, ... ] }
+#     "jobs": [ { "correl": "...", "if": "0001" | "0001,0002", "recv": "IDS" } ] }
 function Read-GoAnywhereLogFetchConfig {
     param([string]$Path)
     $raw = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
@@ -196,7 +214,7 @@ function Read-GoAnywhereLogFetchConfig {
     }
     $targets = [System.Collections.Generic.List[object]]::new()
     foreach ($x in @($j.jobs)) {
-        $targets.Add([pscustomobject]@{ Correl = ([string]$x.correl).Trim(); IfNo = ConvertTo-GoAnywhereIfNo ([string]$x.if); Recv = ([string]$x.recv).Trim() })
+        $targets.Add([pscustomobject]@{ Correl = ([string]$x.correl).Trim(); IfNo = (@(ConvertTo-GoAnywhereIfNos $x.if) -join ','); Recv = ([string]$x.recv).Trim() })
     }
     $fmt = ''
     if ($j.PSObject.Properties.Name -contains 'nameFormat') { $fmt = [string]$j.nameFormat }

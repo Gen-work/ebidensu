@@ -18,14 +18,16 @@
 #    3. The candidates ON THAT PAGE are downloaded before the next filter
 #       (Ctrl+F only finds a job number on the visible page) into
 #       <config folder>\goanywhere_logs\ (Ctrl+F job number -> detail ->
-#       download link; same keystrokes as GfixLogDownload.ps1). Each job
-#       once; a staged job is not downloaded again, so a rerun resumes.
+#       download link; same keystrokes as GfixLogDownload.ps1) as
+#       <jobNo>\<name as downloaded>. Each job once; a staged job is not
+#       downloaded again, so a rerun resumes.
 #    4. Ownership comes from the log CONTENT: '/gfix/recv/<correl, last
 #       char free>'. Several logs naming one correl (reruns) -> the newest
 #       is copied, the older ones are listed. No log naming it -> the
 #       candidates are listed and the operator may pick one by number
 #       (status MANUAL in the report) or leave it NG.
-#    5. Copy (never move, never overwrite without -Force) to the share,
+#    5. Copy under the downloaded name (config nameFormat can change it;
+#       never move, never overwrite without -Force) to the share,
 #       then write goanywhere_logs\report.csv.
 #
 #  -ListTextFile <txt>: use saved list-page text instead of capturing.
@@ -49,6 +51,9 @@ try {
     $OutputEncoding = [System.Text.UTF8Encoding]::new()
 } catch {}
 
+# 'a.txt,b.txt' arrives as ONE string under powershell -File: split it here
+$ListTextFile = @($ListTextFile | ForEach-Object { [string]$_ -split ',' } |
+    ForEach-Object { $_.Trim().Trim('"') } | Where-Object { $_ -ne '' })
 $dryRunFlag = [bool]$DryRun.IsPresent
 $forceFlag  = [bool]$Force.IsPresent
 
@@ -74,8 +79,18 @@ foreach ($t in $cfg.Targets) {
 }
 
 if (-not (Test-Path -LiteralPath $stageDir) -and -not $dryRunFlag) { New-Item -ItemType Directory -Path $stageDir | Out-Null }
+# A job's log is staged under goanywhere_logs\<jobNo>\ with the name it was
+# downloaded with (kept as is for the destination). A file dropped by hand
+# straight into goanywhere_logs\ with the job number in its name also counts.
 function Get-StagedLog([string]$jobNo) {
     if (-not (Test-Path -LiteralPath $stageDir)) { return @() }
+    $sub = Join-Path $stageDir $jobNo
+    $hit = @()
+    if (Test-Path -LiteralPath $sub) {
+        $hit = @(Get-ChildItem -LiteralPath $sub -Filter '*.log' -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    }
+    if ($hit.Count -gt 0) { return $hit }
     return @(Get-ChildItem -LiteralPath $stageDir -Filter ("*{0}*.log" -f $jobNo) -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1)
 }
@@ -109,10 +124,10 @@ function Invoke-FetchJobs([string[]]$jobNos) {
         return $null
     }
     function Move-ToStage($file, [string]$jobNo) {
-        $name = $file.Name
-        if ($name -notlike ("*{0}*" -f $jobNo)) { $name = "{0}_{1}" -f $jobNo, $name }
-        Move-Item -LiteralPath $file.FullName -Destination (Join-Path $stageDir $name) -Force
-        return $name
+        $sub = Join-Path $stageDir $jobNo
+        if (-not (Test-Path -LiteralPath $sub)) { New-Item -ItemType Directory -Path $sub | Out-Null }
+        Move-Item -LiteralPath $file.FullName -Destination (Join-Path $sub $file.Name) -Force
+        return (Join-Path $jobNo $file.Name)
     }
     Switch-ToEdge
     Start-Sleep -Milliseconds 300
@@ -148,7 +163,7 @@ function Invoke-FetchJobs([string[]]$jobNos) {
             }
             Write-Host ("  [FAIL] no new .log in Downloads for job {0}" -f $jobNo) -ForegroundColor Red
             while ($true) {
-                Write-Host ("  Download it by hand (or drop *{0}*.log into {1}), put Edge back on the LIST page," -f $jobNo, $stageDir) -ForegroundColor Yellow
+                Write-Host ("  Download it by hand (or put the .log into {1}\{0}\), put Edge back on the LIST page," -f $jobNo, $stageDir) -ForegroundColor Yellow
                 Write-Host '  then: [Enter]=check again, s=skip this job, q=stop' -ForegroundColor Magenta
                 $resp = Read-Host
                 if ($resp -eq 'q') { return $false }

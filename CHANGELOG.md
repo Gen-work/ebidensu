@@ -7,9 +7,11 @@
   download each candidate receive job's log (same keystrokes as
   GfixLogDownload: Ctrl+F job number -> detail -> download link), decide
   which correl owns each log from its content (`/gfix/recv/<id>`, last
-  character free), and copy it into `destRoot\<receive system>\`.
-  Candidates are aimed at by IF number + receive folder only (VER1 / DEV1
-  both count). Reruns: the newest wins, older ones are listed. No log names
+  character free), and copy it into `destRoot\<receive system>\` under the
+  name it was downloaded with (staged as `goanywhere_logs\<jobNo>\<name>`).
+  Candidates are aimed at by IF number(s) + receive folder only (VER1 /
+  DEV1 both count; `"if": "0001,0002"` for a job received under one and
+  resent under another). Reruns: the newest wins, older ones are listed. No log names
   the correl: the operator picks one by number or leaves it NG.
   `report.csv` per run; staged logs are not downloaded again; destination
   files are never overwritten without `-Force`. docs/GoAnywhereLogFetch.md,

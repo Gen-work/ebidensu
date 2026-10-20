@@ -16,24 +16,28 @@ in the repo. UTF-8 JSON; Japanese in paths is fine.
 ```json
 {
   "destRoot": "\\\\server\\share\\...\\LOG",
-  "nameFormat": "{correl}_{jobNo}.log",
+  "nameFormat": "{file}",
   "systems": {
     "AAA":  { "goFolder": "/aaausr/",  "dest": "AAA"  },
     "BBB2": { "goFolder": "/bbb2usr/", "dest": "BBB2" }
   },
   "jobs": [
     { "correl": "JAAAL25M", "if": "0001", "recv": "AAA" },
-    { "correl": "JBBBK16M", "if": "0006", "recv": "BBB2" }
+    { "correl": "JBBBK16M", "if": "0006", "recv": "BBB2" },
+    { "correl": "JBBBC04M", "if": "0001,0002", "recv": "BBB2" }
   ]
 }
 ```
 
 - `if`: the IF number the GoAnywhere project name carries (`..._IF0001_...`).
-  VER1 / DEV1 and the sender prefix are ignored.
+  VER1 / DEV1 and the sender prefix are ignored. Several, comma separated,
+  when a job was received under one and resent under another: extra
+  candidates are safe, the log content still decides the owner.
 - `recv` -> `systems`: `goFolder` is the GoAnywhere Folder prefix of the
   receive job (`/aaausr/Receive`), `dest` the subfolder under `destRoot`.
-- `nameFormat` tokens: `{correl}`, `{jobNo}`, `{start}` (yyyyMMdd_HHmmss),
-  `{orig}` (downloaded file name without extension).
+- `nameFormat`: default `{file}` = the name as downloaded. Other tokens:
+  `{orig}` (that name without extension), `{correl}`, `{jobNo}`, `{start}`
+  (yyyyMMdd_HHmmss).
 
 ## Run
 
@@ -51,8 +55,9 @@ in the repo. UTF-8 JSON; Japanese in paths is fine.
 5. `goanywhere_logs\report.csv` (next to the config) lists every correl:
    OK / MANUAL / EXISTS / NG, job number, start time, destination, note.
 
-Downloaded logs stay in `goanywhere_logs\`; a rerun does not download a
-staged job again and never overwrites a destination file without `-Force`.
+Downloaded logs stay in `goanywhere_logs\<jobNo>\` under their own name; a
+rerun does not download a staged job again and never overwrites a
+destination file without `-Force`.
 
-Options: `-DryRun` (plan only), `-ListTextFile page.txt` (saved list-page
+Options: `-DryRun` (plan only), `-ListTextFile a.txt,b.txt` (saved list-page
 text instead of a live capture; only staged logs are matched), `-Force`.
