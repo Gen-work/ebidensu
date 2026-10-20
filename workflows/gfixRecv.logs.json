@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.logs",
   "title": "GFIX受信: 一日の終わりにログを集める(GFIXReceive.log / Unzip / GoAnywhere 一覧・ジョブログ / Jenkins 一覧)",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "profile": "gfix-recv",
   "page": "goAnywhere",
 
@@ -57,8 +57,16 @@
 
   "each": [
     { "id": "track", "use": "file.read_json",
-      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json", "mustExist": true,
-                "missingHint": "run gfixRecv.track for this job first (s = leave it pending)" } },
+      "label": "track の結果(無ければ track を待ちに戻してこの行を飛ばす)",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/track.json" } },
+    { "id": "trackLost", "use": "table.set",
+      "label": "track.json が無いのに track = ok: track を待ち(空)に戻す(次の gfixRecv.track がこの行を拾う)",
+      "when": "steps.track.out.exists == false",
+      "with": { "worklist": "wl", "field": "track", "value": "pending" } },
+    { "id": "trackHere", "use": "flow.require",
+      "when": "steps.track.out.exists == false",
+      "with": { "value": "missing", "equals": "present",
+                "message": "track.json is not there although track was ok: track is set back to pending -- run gfixRecv.track -Only {{item.key}}, then this flow again" } },
     { "id": "trackOk", "use": "flow.require",
       "label": "track が ng(OPEN 側で異常終了)の行は集めるものが無い: この行を飛ばす",
       "with": { "value": "{{steps.track.out.data.verdict}}", "equals": "ok",
