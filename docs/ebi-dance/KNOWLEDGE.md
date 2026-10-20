@@ -116,6 +116,13 @@
 - **现在的对策**:`excel.open` 的 `read_only` 会读 `~$` 锁文件,说出是谁在用;问一声,对方关了再 `r`。`excel.append_row` 遇到只读的工作簿,不会去写。
 - **来源**:10/13。
 
+### K-16 WBS 的「计划开始」不等于「今天要做」
+- **症状**:10/16 提前做了 10/20 的 CJODWSPQ、K/R/SJODWSPP,WBS 的 AF(最新計画 開始)还是 10/20 → 只看 AF 的 plan 在 10/20 会把做完的又拉进清单;DBC 几本 AF 是 10/15～10/19 却一直没做(等 HOST 修复),只看「AF = 今天」永远看不到它们;往日没做完的行又一直算 pending。
+- **原因**:WBS 里计划(AF/AG)和实绩(AJ/AK)是两组列,实绩靠人手填、会晚填、会填错(10/16 把还在等的 K/LJODJDBC 填了 AJ)。
+- **现在的对策**(v2.29.0):plan 读 AF/AG/AJ,分成 today / late / ahead / others / mapping / hold 候选集合(`table.day_sets`),AJ 有日期或作业清单全 ok 的只列在「done already」一行;操作员用 `human.pick` 选(回车 = 今天的)。作业清单加 `WORKDAY`(这一行是哪天的活)和 `hold`(保留),各段只拿今天的、不拿保留的;deliver 送完后把 AJ/AK 自动写回 WBS(只写空格子)。
+- **写新 workflow 时**:「今天做哪些」要分清计划和实绩两个来源,把「做完了」的信号写回原表,而不是只在工具里记。
+- **来源**:10/19～10/20 WBS 实数据(DETOUR-GFIX-001.10)+ 操作员说明(DBC 全部在等;AJ 靠人手填)。
+
 ---
 
 ## 4. 交付(gfixRecv.deliver)

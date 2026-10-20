@@ -25,6 +25,7 @@
 #                          of this workflow); an unfinished run WITHOUT -Resume
 #                          asks first instead of silently starting anew (P0-R16)
 #    -Only <key,key>       only these rows (by key display), on top of pendingWhen
+#    -AllDays              also rows the plan did not give today (worklist "day" column)
 #    -Operator <name>      run.operator (default $env:USERNAME)
 #    -Limit <n>            row cap
 #    -Var k=v [-Var ...]   override workflow vars
@@ -47,6 +48,7 @@ param(
     [string[]]$Var    = @(),
     [string]$TimeWindow = '',
     [switch]$Resume,
+    [switch]$AllDays,
     [switch]$DryRun
 )
 
@@ -54,6 +56,7 @@ $ErrorActionPreference = 'Stop'
 # Capture switches BEFORE dot-sourcing anything (CLAUDE.md switch pattern).
 $dryRunFlag = [bool]$DryRun.IsPresent
 $resumeFlag = [bool]$Resume.IsPresent
+$allDaysFlag = [bool]$AllDays.IsPresent
 try {
     [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 } catch { }
@@ -72,7 +75,7 @@ function Show-EbiUsage {
     Write-Host '  ebi.ps1 lint    <workflow.json>    static checks; exit 1 on errors'
     Write-Host '  ebi.ps1 explain <workflow.json>    the execution plan (nothing runs)'
     Write-Host '  ebi.ps1 dryrun  <workflow.json>    every step in DryRun'
-    Write-Host '  ebi.ps1 run     <workflow.json>    [-Resume [-RunId <id>]] [-Only k1,k2] [-Operator n] [-Limit n] [-Var k=v] [-TimeWindow "from..to"]'
+    Write-Host '  ebi.ps1 run     <workflow.json>    [-Resume [-RunId <id>]] [-Only k1,k2] [-AllDays] [-Operator n] [-Limit n] [-Var k=v] [-TimeWindow "from..to"]'
     Write-Host '  ebi.ps1 doctor                     PS version, Excel COM, Edge, encoding policy'
     Write-Host '  ebi.ps1 catalog                    regenerate docs/ebi-dance/CATALOG.md + catalog.json'
     Write-Host '  ebi.ps1 profile check <name|dir>   schema check + every fixture through grammar -> rules'
@@ -260,6 +263,7 @@ if ($cmd -eq 'status' -or $cmd -eq 'menu') {
     if ($Limit -gt 0) { $unused += ('-Limit ' + $Limit) }
     if (@($Var).Count -gt 0) { $unused += ('-Var ' + (@($Var) -join ',')) }
     if ($resumeFlag) { $unused += '-Resume' }
+    if ($allDaysFlag) { $unused += '-AllDays' }
     if ($unused.Count -gt 0) { Write-Host ('[WARN] ' + $cmd + ' does not use: ' + ($unused -join ' ') + '  (to run a phase: ebi.ps1 run <workflow.json> ...)') -ForegroundColor Yellow }
     $wd = if (-not [string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir } elseif ($cmd -eq 'menu' -and [string]$remembered['workDir'] -ne '' -and (Test-Path -LiteralPath $remembered['workDir'])) { [string]$remembered['workDir'] } else { (Get-Location).ProviderPath }
     # 10/16: a bare double-click on ebi.cmd with nothing remembered fell
@@ -414,7 +418,7 @@ if (-not [string]::IsNullOrWhiteSpace($Only)) { $onlyList = @($Only -split ',' |
 
 $tw = ConvertFrom-EbiCliTimeWindow -Text $TimeWindow
 if (-not $tw['ok']) { Write-Host ('[ERROR] ' + $tw['message']) -ForegroundColor Red; exit 2 }
-$summary = Invoke-EbiWorkflow -Path $wf['path'] -WorkDir $wd -RunId $RunId -DryRun:$dryRunFlag -Profile $profileData -Vars (ConvertFrom-EbiCliVars -Pairs $Var) -Operator $Operator -Only $onlyList -Limit $Limit -Resume:$resumeFlag -TimeWindow $tw['value']
+$summary = Invoke-EbiWorkflow -Path $wf['path'] -WorkDir $wd -RunId $RunId -DryRun:$dryRunFlag -Profile $profileData -Vars (ConvertFrom-EbiCliVars -Pairs $Var) -Operator $Operator -Only $onlyList -Limit $Limit -Resume:$resumeFlag -TimeWindow $tw['value'] -AllDays:$allDaysFlag
 if ([string]$summary['failure'] -eq 'cancelled') { exit 3 }
 if ([bool]$summary['ok']) { exit 0 }
 exit 1

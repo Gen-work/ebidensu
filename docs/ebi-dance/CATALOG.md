@@ -4,17 +4,17 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-82 step(s) in 9 group(s).
+85 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.row_region`, `screen.save` |
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
-| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
-| table | `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
+| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
+| table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
 | verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_window` |
-| human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.prepare`, `human.share` |
+| human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.require` |
 
@@ -1290,6 +1290,43 @@ failures: `sheet_not_found` (not transient), `file_not_found` (transient), `inse
 
 Notes: Not idempotent without replace: a second run adds the pictures again. With tag + replace = true a rerun deletes its own earlier pictures and boxes (by name) first -- pictures someone put there by hand are never touched. Excel is scrolled to each picture after it is drawn and held there a moment (EBI_WATCH_MS).
 
+### `excel.mark_rows`
+
+Write per-key values (dates) into the matching rows of a sheet, blank cells only
+
+- file: `modules/excel/excel.mark_rows.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `dateColumns` | list |  | [] |  | letters written as real dates (yyyy-MM-dd / yyyy/M/d in, an Excel date out; the cell's format is kept) |
+| `firstRow` | int |  | 2 |  |  |
+| `items` | list | yes |  |  | records, one per key (table.select rows) |
+| `keyColumn` | string | yes |  |  | column letter holding the key (the job name) |
+| `keyField` | string | yes |  |  | item field matched against keyColumn |
+| `onlyBlank` | bool |  | true |  | false: overwrite cells that already hold a value |
+| `setFields` | map |  | {} |  | column letter -> item field written there |
+| `setValues` | map |  | {} |  | column letter -> one value written for every item |
+| `sheet` | string | yes |  |  |  |
+| `where` | map |  | {} |  | column letter -> value the row must also hold |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `kept` | list | "KEY row 123: AJ already 2026-10-16" for cells left as they were |
+| `notFound` | list | keys with no matching row |
+| `written` | list | "KEY row 123: AJ=2026-10-16 AK=2026-10-20" per row written |
+| `writtenCount` | int |  |
+
+failures: `sheet_not_found` (not transient), `input_invalid` (not transient), `read_failed` (transient), `write_failed` (transient)
+
+```json
+{"id":"mark_rows","use":"excel.mark_rows","with":{"dateColumns":["AJ","AK"],"firstRow":7,"items":"{{steps.pick.out.rows}}","keyColumn":"A","keyField":"JOB","setFields":{"AJ":"GFIX_DATE"},"setValues":{"AK":"{{run.date}}"},"sheet":"WBS","where":{"B":"recv"},"workbook":"wbs"}}
+```
+
+Notes: A key with several matching rows (two files listed twice) gets every one written. A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.
+
 ### `excel.open`
 
 Open a workbook in the registered Excel instance and register it
@@ -1582,6 +1619,48 @@ failures: `sheet_not_found` (not transient), `file_not_found` (transient), `writ
 Notes: Rows are written one COM call each; a few hundred lines take a few seconds.
 
 ## table
+
+### `table.day_sets`
+
+Sort plan rows into today / late / ahead / others / mapping / hold sets against the worklist
+
+- file: `modules/table/table.day_sets.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `aheadDays` | int |  | 2 |  | working days (Mon-Fri) looked ahead |
+| `backDays` | int |  | 21 |  | calendar days looked back for late rows |
+| `carryField` | string |  | (empty) |  | verdict column whose ok fixes the run date (blank = the first verdict column) |
+| `dateColumn` | string |  | GFIX_DATE |  | worklist column the job's run date lives in |
+| `doneField` | string |  | done |  | actual start date: set = somebody did the job |
+| `endField` | string |  | end |  | planned end date (blank = the start) |
+| `extra` | list |  | [] |  | records of another list for today (mapping.xlsx), same keyField |
+| `extraNote` | string |  | GFIX_TIME |  | extra field shown next to the key |
+| `keyField` | string |  | Excel_NAME |  | record field holding the worklist key |
+| `ownerField` | string |  | owner |  |  |
+| `ownerPattern` | string |  | (empty) |  | regex an owner cell of yours matches (verify.owner_pattern); blank = every row is yours |
+| `records` | list | yes |  |  | plan rows (excel.read_rows -> verify.derive_fields), one or more per key |
+| `startField` | string |  | start |  | planned start date |
+| `today` | string | yes |  |  | yyyy-MM-dd ({{run.date}}) |
+| `worklist` | session:worklist | yes |  |  | what this tool already did (verdicts, hold, work day) |
+
+| output | type | desc |
+|--------|------|------|
+| `defaultKeys` | list | keys of the default sets (today; mapping too when no owner pattern) |
+| `info` | list | lines about rows that are done or have no date |
+| `presets` | list | the recommended combinations for human.pick: today, today + late, today + the next working day ahead |
+| `records` | list | one record per pickable key: the first plan row + set, the run date column, WORKDAY |
+| `sets` | list | @{ n (1.. pickable, 0 not); id; label; names; notes (name -> text); default } |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"day_sets","use":"table.day_sets","with":{"extra":"{{steps.mine.out.records}}","ownerPattern":"{{steps.ownerPat.out.pattern}}","records":"{{steps.derive.out.records}}","today":"{{run.date}}","worklist":"wl"}}
+```
+
+Notes: Pure: reads the worklist, writes nothing. A key whose rows are all done in the plan sheet is done; one of them blank keeps it open (two files of one job). A row picked earlier today (worklist WORKDAY = today) stays in today whatever the sheet says. Dates are compared as yyyy-MM-dd text.
 
 ### `table.ensure_columns`
 
@@ -1934,6 +2013,7 @@ Keep the records matching every condition; positions, plucked values, time span
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `emptyOk` | bool |  | false |  | true: nothing matching is an answer (ok, empty lists), not not_found -- e.g. the jobs the operator picked out of a list, when they picked none |
 | `expect` | int |  | -1 |  | how many records should match; -1 = any number. A different count is a warning, not a failure |
 | `expectFallback` | string |  | (empty) |  | count used when expect is -1 (e.g. the send count read off the Teams message); blank or not a number = none. When both are known and differ, a warning (expect_disagree) says so and expect wins |
 | `padAfterSec` | int |  | 0 |  | span.to moved this much later |
@@ -2383,6 +2463,39 @@ failures: `operator_quit` (not transient), `operator_skip` (not transient)
 ```
 
 Notes: Under DryRun or without a console nobody is asked: source=auto, the time is now, fields are empty. Map operator_skip to policy skip in the workflow (onError.byFailure) so s skips the item without a second question.
+
+### `human.pick`
+
+Pick names from recommended combinations or numbered sets, or by typing (part of) names
+
+- file: `modules/human/human.pick.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `holdReason` | string |  | waiting |  | what Enter means when asked why names go on hold |
+| `info` | list |  | [] |  | lines shown above the choices |
+| `noun` | string |  | job |  | what a name is, in the read-back ("4 jobs") |
+| `presets` | list |  | [] |  | @{ label; names; hint } shown first, numbered from 1; empty = the default sets as one preset |
+| `sets` | list | yes |  |  | @{ n (0 = shown, not pickable); id; label; names; notes (name -> text); default } (table.day_sets) |
+| `title` | string |  | PICK |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `answer` | string | the confirmed answer as typed |
+| `auto` | bool | nobody could answer (dry run / no console): preset 1 was taken |
+| `hold` | list | names the operator put on hold (h ...) |
+| `holdReason` | string |  |
+| `picked` | list | the picked names, in set order |
+
+failures: `operator_quit` (not transient), `input_invalid` (not transient)
+
+```json
+{"id":"pick","use":"human.pick","with":{"info":"{{steps.sets.out.info}}","presets":"{{steps.sets.out.presets}}","sets":"{{steps.sets.out.sets}}","title":"PLAN today"}}
+```
+
+Notes: Runs in setup, once per run. Under DryRun or without a console the first preset is taken (auto=true). q stops the whole run (operator_quit); 0 picks nothing.
 
 ### `human.prepare`
 

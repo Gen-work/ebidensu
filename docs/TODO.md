@@ -12,6 +12,18 @@ file stays small. Designed-then-shelved work lives in
   look old (UNFINISHED RUN: Enter = new run, other-day runs in red). Fix:
   a per-row fingerprint in the ledger key (e.g. the source's `orderBy` /
   a declared `source.ledgerKey` column such as GFIX_DATE).
+- **gfix-recv: first office run of the v2.29.0 plan / menu / WBS dates**
+  (DETOUR-GFIX-001.10). On the office PC: (a) `plan` on the real WBS --
+  the sets match the sheet (today / late DBC / ahead), `done already`
+  lists the early jobs and any AJ typed by mistake, Enter / 2 / `DBC` /
+  `m` / `h` read back what they take; (b) the board shows today's rows
+  only, the menu's Enter / m / h, LOOKS DONE ALREADY (a cut-off run's
+  track.json) and EARLIER DAYS (t / h); (c) deliver's WBS step: opening
+  the shared WBS read-write (also while the operator has it open in her
+  own Excel -- the same Excel instance may hand back the open book), AJ /
+  AK land on the receive / 修正後実施 row as real dates in the cell's own
+  format, a typed date is kept, save works. If the WBS cannot be opened
+  read-write, s and type the dates by hand.
 - **gfix-recv: first office run of gfixRecv.deliver** (v2.26.0): the
   check-sheet row (date format copied from the row above, the classification
   dialog on save), the Outlook draft from sendj4mail.bat's template, and
@@ -39,12 +51,9 @@ file stays small. Designed-then-shelved work lives in
     with an empty reason on 10/16): v2.26.2 makes the warning name the
     stage (copy / add chart / paste / export) and the exception type /
     HRESULT -- read it on the next evidence run and fix the stage.
-  - *Delayed rows* (operator, 10/16): the 4 DBC rows (M/Q/R/S JODJDBC, WBS
-    AF = 10/16) ARE the operator's, but their test waits for a HOST-side
-    fix. Wanted: a "delay" mark on a row (e.g. a verdict value or a
-    `hold` column, set from the menu like `c`) that every day phase skips
-    and the board shows apart, until it is cleared -- together with the
-    "recent days only" scope below.
+  - *Delayed rows* -- DONE in v2.29.0: worklist column `hold` (role
+    "hold"); plan's `h NAME`, the menu's `h` (hold / release); every day
+    phase leaves held rows out, the board lists them under the table.
   - *Kase's 10/13 review, the rest* (v2.27.0 built (a) picture 1 snapped
     from the GFIX一覧 -- on to 元ファイル(SNDFILE) when rows repeat, GIFT's
     picture 1 replaced then -- and (b) the STEP name in G3 of the FIRST
@@ -52,16 +61,15 @@ file stays small. Designed-then-shelved work lives in
     second file pair's section (JJDSWM51 B26 / G26: correl id + its own
     STEP name above its DF pictures) -- needs excel.stack_plan to say
     where each set starts and the n-th "STEP:" cell of 送信データ.
-  - *Rows from other days are "pending".* `source.select` is `!= ok`
-    over every date: track lists 10/15's DBC / MJOD / QJOD rows, and
-    deliver lists all 20 rows from before deliver existed -- Enter (= all
-    pending) at the menu's Excel_NAME prompt would draft 20 mails. Scope
-    the day phases to GFIX_DATE = today by default (older rows on
-    request), or mark pre-deliver rows done once.
+  - *Rows from other days are "pending"* -- DONE in v2.29.0: worklist
+    column `WORKDAY` (role "day", fallback GFIX_DATE); the runner takes
+    only today's rows unless -Only / -AllDays; plan picks the late / ahead
+    jobs into today; the menu asks about earlier days' unfinished rows
+    before a phase runs (t = today too, h = hold).
   - *GFIX_DATE in two formats* in one CSV (`2026/10/9` and `2026-10-14`,
     older versions); normalize on write.
-  - *plan's resetOnChange clears track/logs/evidence but not deliver*: a
-    job that comes back on another day keeps an old `deliver = ok`.
+  - *plan's resetOnChange clears track/logs/evidence but not deliver* --
+    DONE in v2.29.0 (deliver is cleared too).
   - *Bring the right window to the front.* While a phase drives Edge /
     GoAnywhere / Jenkins / DF, the console ends up behind them and the
     operator does not notice a question or the end of the run. (a) Every

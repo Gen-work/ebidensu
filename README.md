@@ -56,7 +56,9 @@ START..END 抜き出し、ファイル一覧画面の挿入と受信ファイル
 最後の evidence）で回します。`ebi status` は作業リスト CSV を一画面にまとめ
 （1 行 1 案件、各フェーズの判定、合計、途中で止まった run、次に打つ 1 行）、
 `ebi menu`（`ebi.cmd` をダブルクリック）はフェーズを選ぶと手順書と同じ
-`ebi.ps1 run ...` を表示してそのまま実行します。
+`ebi.ps1 run ...` を表示してそのまま実行します。v2.29.0 から盤面は今日の行だけ
+（保留・前日までの未完了は表の下に一行ずつ）、Enter で次の一手、`m` で手動 ok、
+`h` で保留／解除。朝の plan は WBS を「今日 / 遅れ / 先取り」の候補に分けて聞きます（Enter = 今日の分）。
 
 ![ebi status の画面](docs/images/gfix-recv-status.png)
 
@@ -191,7 +193,14 @@ from the runbook and reading progress by opening the CSV in Notepad.
 verdict of every phase, totals, the runs that stopped half-way, and the one
 line to run next. **`ebi menu`** (or a double-click on `ebi.cmd`) picks a
 phase, optionally one job, prints exactly the runbook line and runs it; `r`
-resumes the unfinished run, `c` blanks one verdict for a redo.
+resumes the unfinished run, `c` blanks one verdict for a redo. Since
+v2.29.0 the board is today's rows only (held rows and earlier days'
+unfinished rows are listed under it); Enter runs the next step, `m` marks a
+verdict ok by hand, `h` holds / releases rows, and before a phase runs the
+menu offers to mark rows whose own record file is already there. The
+morning `plan` sorts the WBS rows into today / late / ahead sets and asks
+which to take (Enter = today's), and `deliver` writes the actual dates back
+into the WBS.
 
 ![ebi status: one row per deliverable, a verdict per phase, totals, unfinished runs, the next run line](docs/images/gfix-recv-status.png)
 
@@ -385,7 +394,8 @@ end of day →  Export-DailyPatch.ps1  → clipboard → commit from home
 接收日由 4 条 JSON 工作流组成（早上 plan、每个 HOST 作业一轮 track、傍晚 logs、
 最后 evidence）。`ebi status` 把作业清单 CSV 汇成一屏（一行一本、每阶段判定、合计、
 没跑完的 run、下一条该打的命令）；`ebi menu`（双击 `ebi.cmd`）选阶段后原样打印并执行
-runbook 里那行 `ebi.ps1 run ...`。
+runbook 里那行 `ebi.ps1 run ...`。v2.29.0 起盘面只画今天的行（保留中、往日没做完的列在表下），
+回车 = 下一步，`m` 手动标 ok，`h` 保留／解除；早上的 plan 把 WBS 分成「今天 / 迟了 / 提前」几组让人选（回车 = 今天的）。
 
 ![ebi status](docs/images/gfix-recv-status.png)
 

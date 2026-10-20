@@ -173,6 +173,11 @@ CLI `--only <key>[,<key>...]`(P0-R16)按 `{{item.key}}` 的显示形在
 `Get-EbiOwnerPattern`),该列为空的行保留,控制台列出被筛掉的行。
 `--only` 点名的行不受这层筛选。`operator.owner` 为空 = 不筛。
 
+**作业日与保留(10/20 补)。** 工作清单声明了 `role: "hold"` 的列时,该列不为空的行不选;
+声明了 `role: "day"` 的列(`PROFILE-SCHEMA.md` §6.1b)时,只选作业日 = `run.date` 的行
+(该列为空的行读它的 `fallback` 列),控制台列出被筛掉的行和它们的日子。
+CLI `-AllDays` 取消作业日这一层(保留仍然生效);`--only` 点名的行两层都不受限。
+
 ### 3.1 `pendingWhen` 的允许写法(**穷举,不许扩展**)
 
 | 写法 | 含义 |
