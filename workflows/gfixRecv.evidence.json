@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -63,6 +63,9 @@
 
     { "id": "book", "use": "file.find",
       "with": { "dir": "{{profile.paths.bix}}", "glob": "{{profile.layout.evidence.glob}}", "expect": "one" } },
+    { "id": "bookFree", "use": "file.wait_unlocked", "once": "group",
+      "label": "証跡ブックが空くまで待つ(10/20: 前の本を閉じた直後や、誰かが開いていると読み取り専用になった)",
+      "with": { "path": "{{steps.book.out.path}}", "everySec": 10, "timeoutMin": 10 } },
     { "id": "open", "use": "excel.open", "once": "group",
       "with": { "app": "xl", "path": "{{steps.book.out.path}}", "as": "wb" } },
 

@@ -3269,6 +3269,82 @@
       "summary": "Wait for a new file in a folder whose size has stopped changing",
       "tier": "core"
     },
+    "file.wait_unlocked": {
+      "effects": "ui",
+      "example": {
+        "use": "file.wait_unlocked",
+        "with": {
+          "everySec": 60,
+          "path": "{{profile.paths.wbs}}",
+          "timeoutMin": 30
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "locked",
+          "transient": true
+        },
+        {
+          "id": "operator_quit",
+          "transient": false
+        }
+      ],
+      "file": "modules/file/file.wait_unlocked.ps1",
+      "group": "file",
+      "id": "file.wait_unlocked",
+      "idempotent": true,
+      "inputs": {
+        "everySec": {
+          "default": 60,
+          "desc": "seconds between two looks (the .bat waited a minute)",
+          "type": "int"
+        },
+        "openWhenFree": {
+          "default": false,
+          "desc": "open the file in its own program once it is free (standalone use)",
+          "type": "bool"
+        },
+        "path": {
+          "desc": "the shared file; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "timeoutMin": {
+          "default": 30,
+          "desc": "give up after this many minutes (failure locked, r waits again); 0 = until it is free or q",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "A file the run itself has open (an excel.open earlier in the same run) counts as held: put this step BEFORE that open. Under DryRun nothing is opened or waited for (free=true).",
+      "outputs": {
+        "free": {
+          "desc": "the file could be opened exclusively",
+          "type": "bool"
+        },
+        "heldBy": {
+          "desc": "who held it at the last look that failed (\"\" when Excel's owner file says nothing or it was free at once)",
+          "type": "string"
+        },
+        "path": {
+          "type": "path"
+        },
+        "polls": {
+          "type": "int"
+        },
+        "waitedSec": {
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Wait until a shared file can be opened exclusively; say who holds it meanwhile",
+      "tier": "core"
+    },
     "file.write_json": {
       "effects": "write",
       "example": {

@@ -899,6 +899,95 @@ function Get-EbiDoneFileHits {
     return $out.ToArray()
 }
 
+function Get-EbiSelfCheck {
+    <#
+      The menu's k (10/20): what on the worklist needs a hand, from the
+      files alone (no Excel). Rows that are not finished yet (the last
+      verdict column not ok), plus every finished row for the last kind.
+        lostFile   a verdict is ok but its doneFile is gone (track.json
+                   deleted, or the cell was typed ok by hand) -> clear it
+        looksDone  a verdict is blank but its doneFile is there -> mark ok
+        lostGift   gift ok, the next phase not done, and no file under any
+                   of the gift column's needFiles globs -> clear gift
+        doneBlank  the LAST verdict is ok but an earlier one is blank (the
+                   phase was done before its column existed, or by hand)
+                   -> mark those ok
+      Returns @( @{ kind; key; field; text; op (clear | mark) } ).
+    #>
+    param($Rows, $Profile, $Phases, [string]$WorkDir, $KeyColumns = @())
+    $out = New-Object System.Collections.ArrayList
+    $vp = @(Get-EbiDashboardVerdictPhases -Phases $Phases)
+    if ($vp.Count -eq 0) { return $out.ToArray() }
+    $fields = @($vp | ForEach-Object { [string]$_['field'] })
+    $last = $fields[$fields.Count - 1]
+    $prof = if ($Profile -is [hashtable]) { $Profile } else { @{} }
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $key = Get-EbiKeyDisplay -Item $r -KeyColumns $KeyColumns
+        $logical = @{}
+        foreach ($f in $fields) { $logical[$f] = Get-EbiDashboardLogical -Value $(if ($r.Contains($f)) { $r[$f] } else { '' }) -Spec (Get-EbiWorklistColumnSpec -Profile $Profile -Field $f) }
+        if ($logical[$last] -eq 'ok') {
+            $blank = @($fields | Where-Object { $_ -ne $last -and $logical[$_] -eq 'pending' })
+            if ($blank.Count -gt 0) { foreach ($f in $blank) { [void]$out.Add(@{ kind = 'doneBlank'; key = $key; field = $f; op = 'mark'; text = ($key + ': ' + $last + ' is ok, ' + $f + ' is blank -> mark ' + $f + ' ok') }) } }
+            continue
+        }
+        $scope = New-EbiTemplateScope -Profile $prof -Item $r -KeyColumns $KeyColumns
+        for ($i = 0; $i -lt $fields.Count; $i++) {
+            $f = $fields[$i]
+            $spec = Get-EbiWorklistColumnSpec -Profile $Profile -Field $f
+            if ($null -eq $spec) { continue }
+            if ($spec.Contains('doneFile') -and [string]$spec['doneFile'] -ne '') {
+                $x = Expand-EbiTemplate -Value ([string]$spec['doneFile']) -Scope $scope
+                if ($x['ok'] -and $null -ne $x['value']) {
+                    $rel = [string]$x['value']
+                    $path = if ([System.IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $WorkDir $rel }
+                    $there = Test-Path -LiteralPath $path -PathType Leaf
+                    if ($logical[$f] -eq 'ok' -and -not $there) { [void]$out.Add(@{ kind = 'lostFile'; key = $key; field = $f; op = 'clear'; text = ($key + ': ' + $f + ' is ok but ' + $rel + ' is not there -> clear ' + $f + ' (the phase runs it again)') }) }
+                }
+            }
+            if ($spec.Contains('needFiles') -and $logical[$f] -eq 'ok' -and $i -lt ($fields.Count - 1) -and $logical[$fields[$i + 1]] -ne 'ok') {
+                $globs = @(@($spec['needFiles']) | ForEach-Object { $g = Expand-EbiTemplate -Value ([string]$_) -Scope $scope; if ($g['ok'] -and $null -ne $g['value']) { [string]$g['value'] } })
+                $any = $false
+                foreach ($g in $globs) {
+                    $gp = if ([System.IO.Path]::IsPathRooted($g)) { $g } else { Join-Path $WorkDir $g }
+                    try { if (@(Get-ChildItem -Path $gp -File -ErrorAction SilentlyContinue).Count -gt 0) { $any = $true; break } } catch { }
+                }
+                if (-not $any) { [void]$out.Add(@{ kind = 'lostGift'; key = $key; field = $f; op = 'clear'; text = ($key + ': ' + $f + ' is ok but no file under ' + ($globs -join ' / ') + ' -> clear ' + $f + ' (the phase finds them again)') }) }
+            }
+            if ($logical[$f] -eq 'pending') {
+                foreach ($h in @(Get-EbiDoneFileHits -Rows @($r) -Profile $Profile -Field $f -WorkDir $WorkDir -KeyColumns $KeyColumns)) {
+                    [void]$out.Add(@{ kind = 'looksDone'; key = $key; field = $f; op = 'mark'; text = ($key + ': ' + $f + ' is blank but ' + [string]$h['file'] + ' was written ' + [string]$h['at'] + ' -> mark ' + $f + ' ok') })
+                }
+            }
+        }
+    }
+    return $out.ToArray()
+}
+
+function Get-EbiSelfCheckWorkflowName {
+    # PURE. The WBS self-check workflow file of a profile: gfix-recv -> gfixRecv.wbscheck.json.
+    param([string]$ProfileName)
+    $parts = @(([string]$ProfileName) -split '-' | Where-Object { $_ -ne '' })
+    if ($parts.Count -eq 0) { return '' }
+    $name = $parts[0] + (-join @($parts | Select-Object -Skip 1 | ForEach-Object { $_.Substring(0, 1).ToUpperInvariant() + $_.Substring(1) }))
+    return ($name + '.wbscheck.json')
+}
+
+function Read-EbiWbsCheckReport {
+    # The JSON the WBS check workflow wrote -> lines ('' list when there is none).
+    param([string]$Path)
+    $r = Read-EbiJson -Path $Path
+    if (-not $r['exists'] -or -not $r['ok'] -or -not ($r['value'] -is [System.Collections.IDictionary])) { return @() }
+    $v = $r['value']
+    $L = New-Object System.Collections.ArrayList
+    $a = @(@($v['doneOnWbs']) | Where-Object { [string]$_ -ne '' })
+    $b = @(@($v['blankOnWbs']) | Where-Object { [string]$_ -ne '' })
+    if ($a.Count -gt 0) { [void]$L.Add(('WBS AK filled, not finished here: ' + ($a -join ', ') + ' -> m (mark deliver ok) if it really is done')) }
+    if ($b.Count -gt 0) { [void]$L.Add(('finished here, WBS AK blank: ' + ($b -join ', ') + ' -> type AK / AJ / AQ in the WBS by hand')) }
+    if ($L.Count -eq 0) { [void]$L.Add('WBS and the worklist agree') }
+    return $L.ToArray()
+}
+
 # ---------------------------------------------------------------- menu
 
 function Format-EbiMenuRunResult {
@@ -983,6 +1072,7 @@ function Format-EbiMenuChoices {
     [void]$L.Add('  m  ' + 'mark'.PadRight($nameW) + '  set a verdict to ok by hand (done outside the tool)')
     [void]$L.Add('  c  ' + 'clear'.PadRight($nameW) + '  blank one row''s verdict so the phase redoes it')
     [void]$L.Add('  h  ' + 'hold'.PadRight($nameW) + '  put rows on hold (waiting for the HOST side)' + $(if ($HasHold) { ' / release' } else { '' }))
+    [void]$L.Add('  k  ' + 'check'.PadRight($nameW) + '  self check of today''s rows: lost files, lost GIFT files, done but blank (w = the WBS too)')
     [void]$L.Add('  s  ' + 'status'.PadRight($nameW) + '  redraw the dashboard')
     [void]$L.Add('  d  ' + 'doctor'.PadRight($nameW) + '  environment self-check')
     [void]$L.Add('  q  ' + 'quit'.PadRight($nameW))
@@ -991,7 +1081,7 @@ function Format-EbiMenuChoices {
 }
 
 function Read-EbiMenuAnswer {
-    # PURE. Typed text -> @{ ok; action ('phase' | 'next' | 'r' | 'c' | 'm' | 'h' | 's' | 'd' | 'q'); index }.
+    # PURE. Typed text -> @{ ok; action ('phase' | 'next' | 'r' | 'c' | 'm' | 'h' | 'k' | 's' | 'd' | 'q'); index }.
     param([string]$Text, [int]$PhaseCount, [bool]$HasUnfinished, [bool]$HasNext = $false)
     $t = if ($null -eq $Text) { '' } else { (ConvertTo-EbiHalfWidth -Value $Text).Trim().ToLowerInvariant() }
     if ($t -eq '') {
@@ -1004,7 +1094,7 @@ function Read-EbiMenuAnswer {
         return @{ ok = $false; action = ''; index = 0 }
     }
     if ($t -eq 'r' -and $HasUnfinished) { return @{ ok = $true; action = 'r'; index = 0 } }
-    if ($t -in @('c', 'm', 'h', 's', 'd', 'q')) { return @{ ok = $true; action = $t; index = 0 } }
+    if ($t -in @('c', 'm', 'h', 'k', 's', 'd', 'q')) { return @{ ok = $true; action = $t; index = 0 } }
     return @{ ok = $false; action = ''; index = 0 }
 }
 
@@ -1119,6 +1209,47 @@ function Invoke-EbiMenu {
             Write-Host ''
             $code = & $run @('doctor', '-WorkDir', $WorkDir)
             [void]$ran.Add('ebi.ps1 doctor -WorkDir ' + $WorkDir)
+            continue
+        }
+        if ($a -eq 'k') {
+            # today's rows only: an earlier day's row predates some doneFile
+            # (gate.json is newer than 10/09) and one Enter would clear them all
+            $checkRows = if ($scoped) { @($split['today']) } else { @($d['rows']) }
+            $found = @(Get-EbiSelfCheck -Rows $checkRows -Profile $d['profile'] -Phases $phases -WorkDir $WorkDir -KeyColumns @($d['keyColumns']))
+            $what = if ($found.Count -gt 0) { @($found | ForEach-Object { [string]$_['text'] }) } else { @('nothing to fix on the worklist (files and verdicts agree)') }
+            $wbsWf = Join-Path (Join-Path $ToolDir 'workflows') ([string](Get-EbiSelfCheckWorkflowName -ProfileName $ProfileName))
+            $canWbs = Test-Path -LiteralPath $wbsWf -PathType Leaf
+            $next = @()
+            if ($found.Count -gt 0) { $next += 'Enter / y: fix them all (clear = the phase runs the row again; mark = ok by hand)' }
+            if ($canWbs) { $next += 'w: check the WBS too (opens it read-only: AK filled vs the worklist)' }
+            $next += $(if ($found.Count -gt 0) { 'n: leave them' } else { 'Enter / n: back' })
+            $acts = @(); if ($found.Count -gt 0) { $acts += @{ key = 'y'; label = 'fix' } }; if ($canWbs) { $acts += @{ key = 'w'; label = 'WBS too' } }; $acts += @{ key = 'n'; label = 'back' }
+            $g = Show-EbiGate -Title 'SELF CHECK' -What $what -Next $next -Actions $acts -Default $(if ($found.Count -gt 0) { 'y' } else { 'n' }) -Auto 'n' -Reader $read -DryRun:$DryRun
+            if ($g['action'] -eq 'y' -and $found.Count -gt 0) {
+                foreach ($f in $found) {
+                    if ([string]$f['op'] -eq 'clear') {
+                        $c = Clear-EbiWorklistVerdict -Path ([string]$d['worklistPath']) -Key ([string]$f['key']) -Field ([string]$f['field']) -KeyColumns @($d['keyColumns']) -DryRun $DryRun
+                        Write-Host ('  ' + $c['message']) -ForegroundColor $(if ($c['ok']) { 'Green' } else { 'Red' })
+                        if ($c['ok']) { [void]$cleared.Add(@{ key = [string]$f['key']; field = [string]$f['field'] }) }
+                    } else {
+                        $okValue = ConvertTo-EbiStoredValue -Logical 'ok' -Spec (Get-EbiWorklistColumnSpec -Profile $d['profile'] -Field ([string]$f['field']))
+                        $w = Set-EbiWorklistCells -Path ([string]$d['worklistPath']) -Keys @([string]$f['key']) -Field ([string]$f['field']) -Value $okValue -KeyColumns @($d['keyColumns']) -DryRun $DryRun
+                        Write-Host ('  ' + $w['message']) -ForegroundColor $(if ($w['ok']) { 'Green' } else { 'Red' })
+                    }
+                }
+            }
+            if ($g['action'] -eq 'w' -and $canWbs) {
+                $report = Join-Path $WorkDir 'capture/selfcheck/wbs.json'
+                if (Test-Path -LiteralPath $report) { Remove-Item -LiteralPath $report -Force -ErrorAction SilentlyContinue }
+                $wargs = @('run', $wbsWf, '-WorkDir', $WorkDir, '-Profile', $ProfileName)
+                Write-Host ''
+                Write-Host ('  ebi.ps1 ' + ($wargs -join ' ')) -ForegroundColor Cyan
+                [void]$ran.Add('ebi.ps1 ' + ($wargs -join ' '))
+                if (-not $DryRun) { $code = & $run $wargs }
+                $wl = @(Read-EbiWbsCheckReport -Path $report)
+                if ($wl.Count -eq 0) { $wl = @('no report (the WBS check did not finish)') }
+                [void](Show-EbiGate -Title 'SELF CHECK: WBS' -What $wl -Next @('Enter: back to the menu') -Actions @(@{ key = 'n'; label = 'back' }) -Default 'n' -Auto 'n' -Reader $read -DryRun:$DryRun)
+            }
             continue
         }
         if ($a -in @('c', 'm', 'h')) {

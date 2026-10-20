@@ -295,6 +295,28 @@ foreach ($f in @('HmSnap.ps1', 'MqSnap.ps1', 'JenkinsSnap.ps1', 'Crop-Snap.ps1')
     Assert-True ($t -match 'kernel/Image\.ps1' -and $t -match 'Invoke-EbiCropPng') ($f + ' dot-sources kernel/Image.ps1 and calls Invoke-EbiCropPng')
 }
 
+# --- 10. file.wait_unlocked (10/20: the operator's isWbsReady.bat as a step) ----
+Write-Host '  -- file.wait_unlocked'
+[void](. Import-EbiStep -Registry $reg -Use 'file.wait_unlocked')
+$wu = Get-EbiStep -Registry $reg -Use 'file.wait_unlocked'
+$name = 'Tanaka'
+$ansi = [System.Text.Encoding]::ASCII.GetBytes($name)
+$ownerBytes = New-Object byte[] (55 + 2 * $name.Length)
+$ownerBytes[0] = [byte]$name.Length; [Array]::Copy($ansi, 0, $ownerBytes, 1, $ansi.Length)
+$ownerBytes[54] = [byte]$name.Length; $uni = [System.Text.Encoding]::Unicode.GetBytes($name); [Array]::Copy($uni, 0, $ownerBytes, 55, $uni.Length)
+Assert-Equal $name (FileWaitUnlocked-Owner -Bytes $ownerBytes) 'wait_unlocked: the ~$ owner file gives the user name (UTF-16 copy)'
+Assert-Equal '' (FileWaitUnlocked-Owner -Bytes ([byte[]]@(0))) 'wait_unlocked: an owner file with no name -> ""'
+$shared = Join-Path $tmpRoot 'shared.xlsx'
+[System.IO.File]::WriteAllText($shared, 'x')
+Assert-True (FileWaitUnlocked-IsFree -Path $shared) 'wait_unlocked: a file nobody holds is free'
+$hold = [System.IO.File]::Open($shared, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+try { Assert-True (-not (FileWaitUnlocked-IsFree -Path $shared)) 'wait_unlocked: a file someone has open is not free (no sharing asked)' } finally { $hold.Close() }
+$ret = & $wu['Invoke'] @{ path = $shared; everySec = 1; timeoutMin = 1; openWhenFree = $false } (New-TestCtx)
+Assert-True ($ret['ok'] -and $ret['free'] -and $ret['polls'] -eq 1) 'wait_unlocked: free at once -> ok after one look'
+$ret = & $wu['Invoke'] @{ path = (Join-Path $tmpRoot 'none.xlsx'); everySec = 1; timeoutMin = 1; openWhenFree = $false } (New-TestCtx)
+Assert-Equal 'file_not_found' $ret['failure'] 'wait_unlocked: no file -> file_not_found'
+Remove-Item -LiteralPath $shared -Force -ErrorAction SilentlyContinue
+
 Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
 $failed = Complete-Tests
 exit $failed

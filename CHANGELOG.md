@@ -1,3 +1,36 @@
+## 2026-10-20 - file.wait_unlocked (the operator's isWbsReady.bat as a step); menu k = self check (v2.30.0)
+
+10/20 feedback 3 and 4: shared workbooks came back read-only with nobody
+named; things that needed a hand (a verdict with no file behind it, an
+empty GIFT folder, a delivered row whose earlier columns were blank, the
+WBS saying done while the worklist did not) had to be found by eye.
+
+### Added
+- **`file.wait_unlocked`** (modules/file): opens the file read+write with
+  no sharing every `everySec` (default 60); while that fails it prints who
+  holds it (Excel's `~$` owner file) and waits; `q` / `Esc` stops;
+  `timeoutMin` (default 30, 0 = until free) -> `locked` (transient, r
+  waits again); `openWhenFree` opens it in its own program.
+  `workflows/util.waitWbs.json` is the .bat: `ebi.ps1 run
+  workflows\util.waitWbs.json -WorkDir <W> -Profile gfix-recv`.
+- gfixRecv.deliver waits for the review check sheet (30 s) and the WBS
+  (60 s) before opening them; gfixRecv.evidence v0.5.2 waits for each
+  evidence book (10 s, 10 min) before opening it.
+- **Menu `k` (self check)**, files and worklist only: a verdict ok but its
+  `doneFile` gone (-> clear), blank but its `doneFile` there (-> mark
+  ok), a column's new `needFiles` globs all empty while the next phase is
+  not done (gift: `DATA/GIFT/<J>|<W>/*.csv` -> clear gift), the last
+  verdict ok with earlier ones blank (-> mark ok). Enter fixes them all.
+  `w` runs **`gfixRecv.wbscheck.json`** (read-only): WBS AK filled but not
+  finished here / finished here but WBS AK blank, shown, nothing written.
+
+### Docs / tests
+- KNOWLEDGE K-13 (10/20), K-25 the picture check stays strict (operator:
+  a wrong picture did happen; a person decides), K-26 the self check.
+  RUNBOOK menu keys. Tests: `Test-Steps` (owner file, free / held file,
+  one look, no file), `Test-Dashboard` (the four kinds, the WBS report,
+  menu k).
+
 ## 2026-10-20 - deliver writes the WBS actuals on both task rows of your own rows, checks the save really reached the file (v2.29.3)
 
 10/20 deliver said `wrote ... AK=2026-10-20` and `saved=True` for three

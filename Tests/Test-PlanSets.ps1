@@ -287,8 +287,8 @@ $g2 = @{
 $it2 = @( @{ JOB = 'LJODJSPQ' }, @{ JOB = 'QJODJSPP' } )
 $ownPat = '^\s*' + $own + '\s*($|<-)'
 $plan = ExcelMarkRows-Plan -Grid $g2 -FirstRow 7 -KeyColumn 'A' -Items $it2 -KeyField 'JOB' -Where @{ B = $recv; G = @('after', 'summary') } -WhereMatch @{ P = $ownPat } -SetFields @{} -SetValues @{ AJ = '10/21'; AK = '10/21'; AQ = '0.1' } -DateColumns @('AJ', 'AK') -NumberColumns @('AQ') -Today ([datetime]'2026-10-20')
-$w = @($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] + '=' + $_['value'] + $(if ($_['number']) { '#' } else { '' }) }) -join ','
-Assert-Equal 'AK8=2026-10-21,AQ8=0.1#,AJ9=2026-10-21,AK9=2026-10-21,AQ9=0.1#' $w ('mark_rows: a list where = both task rows; whereMatch keeps own / own<-other rows only; M/d is this year; AQ is a number; the hand-typed AJ stays: ' + $w)
+$w = (@($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] + '=' + $_['value'] + $(if ($_['number']) { '#' } else { '' }) }) | Sort-Object) -join ','
+Assert-Equal 'AJ9=2026-10-21,AK8=2026-10-21,AK9=2026-10-21,AQ8=0.1#,AQ9=0.1#' $w ('mark_rows: a list where = both task rows; whereMatch keeps own / own<-other rows only; M/d is this year; AQ is a number; the hand-typed AJ stays: ' + $w)
 Assert-Equal 'QJODJSPP' (@($plan['notFound']) -join ',') 'mark_rows: a job whose rows are all someone else''s is not found (not written)'
 Assert-Equal '2026-10-21' (ExcelMarkRows-Day -Text '10/21' -Today ([datetime]'2026-10-20')) 'mark_rows: 10/21 -> this year'
 Assert-Equal '' (ExcelMarkRows-Day -Text 'tomorrow') 'mark_rows: not a date -> empty'

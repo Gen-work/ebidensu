@@ -4,13 +4,13 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-86 step(s) in 9 group(s).
+87 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.row_region`, `screen.save` |
-| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.write_json` |
+| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
 | verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
@@ -1070,6 +1070,37 @@ failures: `timeout` (transient), `file_not_found` (not transient)
 ```
 
 Notes: Steps run one at a time, so this cannot start before the click that triggers the download: it also accepts a file written up to 30 s before it started. file_not_found: the folder itself is missing.
+
+### `file.wait_unlocked`
+
+Wait until a shared file can be opened exclusively; say who holds it meanwhile
+
+- file: `modules/file/file.wait_unlocked.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `everySec` | int |  | 60 |  | seconds between two looks (the .bat waited a minute) |
+| `openWhenFree` | bool |  | false |  | open the file in its own program once it is free (standalone use) |
+| `path` | path | yes |  |  | the shared file; relative paths resolve under the work dir |
+| `timeoutMin` | int |  | 30 |  | give up after this many minutes (failure locked, r waits again); 0 = until it is free or q |
+
+| output | type | desc |
+|--------|------|------|
+| `free` | bool | the file could be opened exclusively |
+| `heldBy` | string | who held it at the last look that failed ("" when Excel's owner file says nothing or it was free at once) |
+| `path` | path |  |
+| `polls` | int |  |
+| `waitedSec` | int |  |
+
+failures: `file_not_found` (not transient), `locked` (transient), `operator_quit` (not transient)
+
+```json
+{"id":"wait_unlocked","use":"file.wait_unlocked","with":{"everySec":60,"path":"{{profile.paths.wbs}}","timeoutMin":30}}
+```
+
+Notes: A file the run itself has open (an excel.open earlier in the same run) counts as held: put this step BEFORE that open. Under DryRun nothing is opened or waited for (free=true).
 
 ### `file.write_json`
 
