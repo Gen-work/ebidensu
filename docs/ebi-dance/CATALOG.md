@@ -1595,6 +1595,7 @@ Write a value (or another cell's value) into one cell as text
 | `fontSize` | int |  | 0 |  |  |
 | `fromCell` | string |  | (empty) |  |  |
 | `fromSheet` | string |  | (empty) |  | instead of value: copy the value of fromCell on this sheet |
+| `keepIfEmpty` | bool |  | false |  | fromCell is empty -> leave the target cell as it is and warn source_empty (10/20: a JOD book's send-data B3 was blank and the run blanked G3) |
 | `sheet` | string | yes |  |  |  |
 | `trim` | bool |  | false |  | drop the spaces around the value (10/16: the send-data sheet's STEP cell sometimes ends in one) |
 | `value` | string |  | (empty) |  | the text to write |

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -157,7 +157,7 @@
     { "id": "stepName", "use": "excel.write_cell",
       "label": "GIFTデータvsGFIXデータ G3 = 送信データ!B3(STEP 名。加瀬さん 10/13 レビュー)",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.compare}}", "cell": "{{profile.layout.evidence.stepName.cell}}",
-                "fromSheet": "{{profile.layout.evidence.sheets.sendData}}", "fromCell": "{{profile.layout.evidence.stepName.fromCell}}", "trim": true,
+                "fromSheet": "{{profile.layout.evidence.sheets.sendData}}", "fromCell": "{{profile.layout.evidence.stepName.fromCell}}", "trim": true, "keepIfEmpty": true,
                 "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
     { "id": "dfPlan", "use": "excel.stack_plan",
       "with": { "sets": "{{steps.track.out.data.dfShots}}",

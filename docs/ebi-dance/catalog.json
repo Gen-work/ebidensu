@@ -2224,6 +2224,11 @@
           "desc": "instead of value: copy the value of fromCell on this sheet",
           "type": "string"
         },
+        "keepIfEmpty": {
+          "default": false,
+          "desc": "fromCell is empty -> leave the target cell as it is and warn source_empty (10/20: a JOD book's send-data B3 was blank and the run blanked G3)",
+          "type": "bool"
+        },
         "sheet": {
           "required": true,
           "type": "string"

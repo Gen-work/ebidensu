@@ -867,6 +867,34 @@ function Resolve-EbiMenuField {
     return ''
 }
 
+function Get-EbiDoneFileNewerEarlier {
+    <#
+      The first EARLIER verdict column (worklist.columns order) whose own
+      doneFile was written after $At, as @{ field; file; at }, else $null.
+      Such a file means that earlier phase was run again after this one
+      (10/20: track redone for a review NG, the old evidence gate.json is
+      stale), so this phase's record no longer stands for the row.
+    #>
+    param($Row, $Profile, [string]$Field, [datetime]$At, [string]$WorkDir, $KeyColumns = @())
+    if ($null -eq $Profile -or -not ($Profile -is [System.Collections.IDictionary]) -or -not $Profile.Contains('worklist')) { return $null }
+    $wl = $Profile['worklist']
+    if (-not ($wl -is [System.Collections.IDictionary]) -or -not $wl.Contains('columns')) { return $null }
+    $scope = New-EbiTemplateScope -Profile $Profile -Item $Row -KeyColumns $KeyColumns
+    foreach ($c in @($wl['columns'])) {
+        if (-not ($c -is [System.Collections.IDictionary]) -or -not $c.Contains('name')) { continue }
+        if ([string]$c['name'] -eq $Field) { break }
+        if (-not $c.Contains('doneFile') -or [string]$c['doneFile'] -eq '') { continue }
+        $x = Expand-EbiTemplate -Value ([string]$c['doneFile']) -Scope $scope
+        if (-not $x['ok'] -or $null -eq $x['value']) { continue }
+        $rel = [string]$x['value']
+        $path = if ([System.IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $WorkDir $rel }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        $t = (Get-Item -LiteralPath $path).LastWriteTime
+        if ($t -gt $At) { return @{ field = [string]$c['name']; file = $rel; at = $t.ToString('MM/dd HH:mm') } }
+    }
+    return $null
+}
+
 function Get-EbiDoneFileHits {
     <#
       Rows whose verdict for a phase is still blank although that phase's
@@ -894,6 +922,7 @@ function Get-EbiDoneFileHits {
         $at = (Get-Item -LiteralPath $path).LastWriteTime
         $day = Get-EbiWorklistRowDay -Row $r -DaySpec $daySpec
         if ($day -ne '' -and $at.ToString('yyyy-MM-dd') -lt $day) { continue }   # an older run's file (the row was planned again since)
+        if ($null -ne (Get-EbiDoneFileNewerEarlier -Row $r -Profile $Profile -Field $Field -At $at -WorkDir $WorkDir -KeyColumns $KeyColumns)) { continue }   # an earlier phase was redone after it: stale
         [void]$out.Add(@{ key = (Get-EbiKeyDisplay -Item $r -KeyColumns $KeyColumns); file = $rel; at = $at.ToString('MM/dd HH:mm') })
     }
     return $out.ToArray()
@@ -906,7 +935,10 @@ function Get-EbiSelfCheck {
       verdict column not ok), plus every finished row for the last kind.
         lostFile   a verdict is ok but its doneFile is gone (track.json
                    deleted, or the cell was typed ok by hand) -> clear it
-        looksDone  a verdict is blank but its doneFile is there -> mark ok
+        stale      a verdict is ok but an earlier phase's doneFile is newer
+                   (track run again after a review NG) -> clear it
+        looksDone  a verdict is blank but its doneFile is there and no
+                   earlier phase was run again since -> mark ok
         lostGift   gift ok, the next phase not done, and no file under any
                    of the gift column's needFiles globs -> clear gift
         doneBlank  the LAST verdict is ok but an earlier one is blank (the
@@ -943,6 +975,10 @@ function Get-EbiSelfCheck {
                     $path = if ([System.IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $WorkDir $rel }
                     $there = Test-Path -LiteralPath $path -PathType Leaf
                     if ($logical[$f] -eq 'ok' -and -not $there) { [void]$out.Add(@{ kind = 'lostFile'; key = $key; field = $f; op = 'clear'; text = ($key + ': ' + $f + ' is ok but ' + $rel + ' is not there -> clear ' + $f + ' (the phase runs it again)') }) }
+                    elseif ($logical[$f] -eq 'ok' -and $there) {
+                        $newer = Get-EbiDoneFileNewerEarlier -Row $r -Profile $prof -Field $f -At (Get-Item -LiteralPath $path).LastWriteTime -WorkDir $WorkDir -KeyColumns $KeyColumns
+                        if ($null -ne $newer) { [void]$out.Add(@{ kind = 'stale'; key = $key; field = $f; op = 'clear'; text = ($key + ': ' + $f + ' is ok but ' + [string]$newer['field'] + ' was run again after it (' + [string]$newer['file'] + ' ' + [string]$newer['at'] + ') -> clear ' + $f + ' (the phase redoes it with the new ' + [string]$newer['field'] + ')') }) }
+                    }
                 }
             }
             if ($spec.Contains('needFiles') -and $logical[$f] -eq 'ok' -and $i -lt ($fields.Count - 1) -and $logical[$fields[$i + 1]] -ne 'ok') {
@@ -1327,7 +1363,10 @@ function Invoke-EbiMenu {
                 $scopeRows = if ($only.Count -gt 0) { @(@($d['rows']) | Where-Object { $null -ne $_ -and $only -contains (Get-EbiKeyDisplay -Item $_ -KeyColumns @($d['keyColumns'])) }) } elseif ($null -ne $split) { @($split['today']) } else { @($d['rows']) }
                 $hits = @(Get-EbiDoneFileHits -Rows $scopeRows -Profile $d['profile'] -Field $field -WorkDir $WorkDir -KeyColumns @($d['keyColumns']))
                 if ($hits.Count -gt 0) {
-                    $g = Show-EbiGate -Title 'LOOKS DONE ALREADY' -What @(foreach ($h in $hits) { ([string]$h['key'] + ': ' + $field + ' is blank, but ' + [string]$h['file'] + ' was written ' + [string]$h['at']) }) -Next @('Enter / y: mark them ' + $field + ' = ok (this run skips them)', 'n: run them again') -Actions @(@{ key = 'y'; label = 'mark ok' }, @{ key = 'n'; label = 'run again' }) -Default 'y' -Auto 'n' -Reader $read -DryRun:$DryRun
+                    # rows named by hand are a deliberate redo (10/20: Enter put back the ok the operator had just cleared): Enter = run again
+                    $named = ($only.Count -gt 0)
+                    $next = if ($named) { @('Enter / n: run them again (you named them)', 'y: mark them ' + $field + ' = ok (this run skips them)') } else { @('Enter / y: mark them ' + $field + ' = ok (this run skips them)', 'n: run them again') }
+                    $g = Show-EbiGate -Title 'LOOKS DONE ALREADY' -What @(foreach ($h in $hits) { ([string]$h['key'] + ': ' + $field + ' is blank, but ' + [string]$h['file'] + ' was written ' + [string]$h['at']) }) -Next $next -Actions @(@{ key = 'y'; label = 'mark ok' }, @{ key = 'n'; label = 'run again' }) -Default $(if ($named) { 'n' } else { 'y' }) -Auto 'n' -Reader $read -DryRun:$DryRun
                     if ($g['action'] -eq 'y') {
                         $hk = @($hits | ForEach-Object { [string]$_['key'] })
                         $okValue = ConvertTo-EbiStoredValue -Logical 'ok' -Spec (Get-EbiWorklistColumnSpec -Profile $d['profile'] -Field $field)

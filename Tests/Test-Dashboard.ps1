@@ -344,6 +344,33 @@ try {
     $got = (@($found | ForEach-Object { $_['kind'] + ':' + $_['key'] + ':' + $_['field'] + ':' + $_['op'] }) | Sort-Object) -join ','
     Assert-Equal 'doneBlank:D4:gift:mark,doneBlank:D4:track:mark,looksDone:B2:track:mark,lostFile:A1:track:clear,lostGift:B2:gift:clear' $got ('self check: lost file / looks done / lost GIFT files / done but blank, nothing for C3: ' + $got)
     Assert-Equal 'gfixRecv.wbscheck.json' (Get-EbiSelfCheckWorkflowName -ProfileName 'gfix-recv') 'self check: the WBS check workflow of gfix-recv'
+
+    # 10/20: track run again after a review NG -> the old evidence record is stale
+    $stProf = @{
+        name = 'demo'
+        worklist = @{ key = @{ columns = @('Excel_NAME') }; columns = @(
+            @{ name = 'Excel_NAME'; role = 'key' },
+            @{ name = 'track'; role = 'verdict'; values = $verdict; doneFile = 'cap/{{item.keySafe}}/track.json' },
+            @{ name = 'evidence'; role = 'verdict'; values = $verdict; doneFile = 'cap/{{item.keySafe}}/gate.json' },
+            @{ name = 'deliver'; role = 'verdict'; values = $verdict }) }
+    }
+    $stPhases = @(Get-EbiDayPhases -Workflows @((New-Wf 'demo.track' 'track'), (New-Wf 'demo.evidence' 'evidence'), (New-Wf 'demo.deliver' 'deliver')) -ProfileName 'demo' -Columns $stProf['worklist']['columns'])
+    $old = (Get-Date).AddHours(-30); $new = (Get-Date).AddMinutes(-5)
+    foreach ($k in @('E5', 'F6', 'G7')) { New-Item -ItemType Directory -Path (Join-Path $scWork ('cap/' + $k)) -Force | Out-Null }
+    foreach ($spec in @(@('E5', $new, $old), @('F6', $new, $old), @('G7', $old, $new))) {
+        $t = Join-Path $scWork ('cap/' + $spec[0] + '/track.json'); [System.IO.File]::WriteAllText($t, '{}'); (Get-Item -LiteralPath $t).LastWriteTime = $spec[1]
+        $g = Join-Path $scWork ('cap/' + $spec[0] + '/gate.json'); [System.IO.File]::WriteAllText($g, '{}'); (Get-Item -LiteralPath $g).LastWriteTime = $spec[2]
+    }
+    $stRows = @(
+        @{ Excel_NAME = 'E5'; track = 'ok'; evidence = 'ok'; deliver = '' },   # gate.json older than the redone track.json -> stale
+        @{ Excel_NAME = 'F6'; track = 'ok'; evidence = ''; deliver = '' },     # evidence cleared for the redo: NOT "looks done"
+        @{ Excel_NAME = 'G7'; track = 'ok'; evidence = ''; deliver = '' }      # gate.json newer than track.json -> looks done
+    )
+    $found = @(Get-EbiSelfCheck -Rows $stRows -Profile $stProf -Phases $stPhases -WorkDir $scWork -KeyColumns @('Excel_NAME'))
+    $got = (@($found | ForEach-Object { $_['kind'] + ':' + $_['key'] + ':' + $_['field'] + ':' + $_['op'] }) | Sort-Object) -join ','
+    Assert-Equal 'looksDone:G7:evidence:mark,stale:E5:evidence:clear' $got ('self check: a redone track makes the old evidence stale, and a cleared evidence is not "looks done": ' + $got)
+    $hits = @(Get-EbiDoneFileHits -Rows $stRows -Profile $stProf -Field 'evidence' -WorkDir $scWork -KeyColumns @('Excel_NAME'))
+    Assert-Equal 'G7' ((@($hits | ForEach-Object { [string]$_['key'] })) -join ',') 'menu LOOKS DONE ALREADY: only the row whose evidence record is newer than its track record'
     $rep = Join-Path $scWork 'wbs.json'
     [void](Write-EbiJson -Path $rep -Value @{ at = '2026-10-20'; doneOnWbs = @('X1'); blankOnWbs = @() })
     $wl = @(Read-EbiWbsCheckReport -Path $rep)

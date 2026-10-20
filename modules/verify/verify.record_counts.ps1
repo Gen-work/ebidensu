@@ -98,6 +98,11 @@ function Invoke-Step {
             else { [void]$parts.Add(('-(' + $exp[$i] + $unit + ')')); [void]$why.Add(('the message names a file ' + ($i + 1) + ' (' + $exp[$i] + ') that did not arrive')) }
         }
     }
+    if ($exp.Count -eq 0 -and $files.Count -gt 0) {
+        # no counts to compare with (no start message: the row's time was used, 10/20 rerun): say so, no warning
+        $matched = $true; $why.Clear()
+        $Ctx.Log.Info(('no counts from a start message: ' + (@($actual) -join ', ') + ' line(s), nothing to compare'))
+    }
     $text = ($parts -join $join)
     $suffix = if ($fileCount -ge 0 -or ($files.Count -gt 0 -and $exp.Count -gt 0)) { ' (' + [string]$In['label'] + $text + ')' } else { '' }
     foreach ($n in $notes) { $Ctx.Log.Info($n) }

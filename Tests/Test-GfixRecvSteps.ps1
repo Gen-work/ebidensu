@@ -369,6 +369,8 @@ try {
     Assert-Equal '1,1,3' (@($rc2s['short']) -join ',') 'counts shortOk: short says by how many lines'
     $rc2o = Invoke-TestStep 'verify.record_counts' @{ text = ('10' + $ken); files = @(@{ name = 'U.csv'; lines = 13 }); unit = $ken; shortOk = $true }
     Assert-True (-not [bool]$rc2o['matched'] -and $rc2o['warnings'][0]['code'] -eq 'count_disagree') 'counts shortOk: MORE lines than count + header is still a disagreement'
+    $rcN = Invoke-TestStep 'verify.record_counts' @{ text = ''; files = @(@{ name = 'F.csv'; lines = 61 }); unit = $ken }
+    Assert-True ($rcN['ok'] -and $rcN['matched'] -and -not $rcN.Contains('warnings')) 'record_counts: no start message (row time used) -> nothing to compare, no count_disagree warning'
     $rc3 = Invoke-TestStep 'verify.record_counts' @{ text = ('0' + $ken); files = @(@{ name = 'F.csv'; lines = 1 }); unit = $ken }
     Assert-True ([bool]$rc3['matched']) 'counts: an empty transfer may be one empty line'
     $rc4 = Invoke-TestStep 'verify.record_counts' @{ text = ('5' + $ken); files = $filesOk; unit = $ken; joiner = $ten }
