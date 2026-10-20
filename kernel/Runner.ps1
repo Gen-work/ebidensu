@@ -378,7 +378,12 @@ function Invoke-EbiStepWithPolicy {
                 }
             }
             if ($ebiPol['volatile']) { Write-EbiStepLine -Status 'info' -Section $Section -Id $ebiPol['id'] -Use $ebiPol['use'] -Key $Key -Detail 'in the ledger but never saved: runs again on the re-opened book' }
-            if ($State['ledgerDone'].Contains($ebiPol['ledgerKey']) -and -not $ebiPol['resourceStep'] -and -not $ebiPol['volatile']) {
+            # a person's answer is asked again, not replayed (10/20: the
+            # resumed track replayed the wrong start time 11:30 and failed the
+            # same way; the operator wants to type the right one on r)
+            $ebiPol['human'] = ($ebiPol['use'] -like 'human.*')
+            if ($ebiPol['human'] -and $State['ledgerDone'].Contains($ebiPol['ledgerKey'])) { Write-EbiStepLine -Status 'info' -Section $Section -Id $ebiPol['id'] -Use $ebiPol['use'] -Key $Key -Detail 'answered before this resume: asked again' }
+            if ($State['ledgerDone'].Contains($ebiPol['ledgerKey']) -and -not $ebiPol['resourceStep'] -and -not $ebiPol['volatile'] -and -not $ebiPol['human']) {
                 $ebiPol['old'] = $State['ledgerDone'][$ebiPol['ledgerKey']]
                 $ebiPol['outputs'] = $(if ($ebiPol['old'].Contains('outputs') -and ($ebiPol['old']['outputs'] -is [hashtable])) { $ebiPol['old']['outputs'] } else { @{} })
                 $Steps[$ebiPol['id']] = $ebiPol['outputs']

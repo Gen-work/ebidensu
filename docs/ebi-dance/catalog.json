@@ -3824,6 +3824,11 @@
       "id": "human.paste",
       "idempotent": true,
       "inputs": {
+        "countsGroup": {
+          "default": "counts",
+          "desc": "the named group that holds the counts: counts typed by hand (\"5 ken 13:30\") land in it",
+          "type": "string"
+        },
         "defaultClock": {
           "default": "",
           "desc": "a start time already known (the worklist row): Enter takes it, n takes now",
@@ -3874,7 +3879,7 @@
           "type": "bool"
         },
         "source": {
-          "desc": "now | typed | worklist | without | auto",
+          "desc": "now | typed | worklist | without | auto (pasted / typed text with no time in it is now)",
           "type": "string"
         },
         "text": {

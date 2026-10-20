@@ -1,3 +1,40 @@
+## 2026-10-20 - resume asks a person again; PASTE takes the pasted message or "5件 13:30"; the 10/20 holes in KNOWLEDGE (v2.29.2)
+
+10/20 receive day feedback (LJ / MJ / SJODWSPQ; the plan's times were not
+the day's: MJODWSPQ planned 11:30, ran 13:30).
+
+### Changed
+- **Runner `-Resume`**: a `human.*` step completed before the resume is
+  asked again, not replayed from the ledger (line: `answered before this
+  resume: asked again`). The resumed track had replayed the wrong start
+  time 11:30 and failed the same way; only "forget + new run" let the
+  operator type 13:30. Other completed steps are replayed as before.
+- **human.paste**: at the prompt the operator can also type or paste the
+  start message itself (a time may follow: `<message> 13:30`), or the
+  counts by hand (`5件 13:30`, `13:30 815件、46件`). Only the pattern's
+  named groups are read, so Teams reaction lines ("2 件の いいね!") are
+  not counts; a message for another job is refused naming both. No time
+  in it = now. New input `countsGroup` (default `counts`). The panel is
+  one answer per line, and the Enter line says the row's time may be the
+  PLAN. Any other text is now checked like the clipboard instead of "not
+  understood".
+
+### Docs
+- `docs/ebi-dance/KNOWLEDGE.md`: K-18 resume replayed the wrong answer,
+  K-19 PASTE answers (and: multi-line text pasted into the console splits
+  into several answers -- copy in Teams, then Enter), K-20 a verdict
+  edited by hand without its sidecar, K-21 the start time is the only link
+  between a GoAnywhere row and a job (no job name on the row, near-identical
+  test data, HOST runs a job every 15 min), K-22 DATA\GIFT lives under
+  paths.bix, K-23 whose job: WBS, not the mapping owner column. Checklist
+  items 9 and 10.
+
+### Tests
+- `Tests\Test-Runner.ps1`: a human.* fixture is counted twice across a
+  resume while a fake step next to it is replayed.
+- `Tests\Test-GfixRecvSteps.ps1`: message + time, message alone, reaction
+  lines, typed counts (one / two files, time before or after), a time alone.
+
 ## 2026-10-20 - human.pick: one picked name is still a list (gift could not download a single GIFT file) (v2.29.1)
 
 First office run of the v2.29.0 gift phase (LJODWSPQ): picking ONE file

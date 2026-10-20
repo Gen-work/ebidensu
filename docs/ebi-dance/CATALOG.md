@@ -2481,6 +2481,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `countsGroup` | string |  | counts |  | the named group that holds the counts: counts typed by hand ("5 ken 13:30") land in it |
 | `defaultClock` | string |  | (empty) |  | a start time already known (the worklist row): Enter takes it, n takes now |
 | `expect` | string |  | (empty) |  | value the expectGroup must have (full-width folded, case-insensitive); empty = any |
 | `expectGroup` | string |  | job |  |  |
@@ -2494,7 +2495,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 | `date` | string | yyyy-MM-dd of that moment |
 | `fields` | map | every named group of the pattern ("" when it did not match / no message) |
 | `fresh` | bool | the time was decided just now (now / typed) and should be written back to the row |
-| `source` | string | now \| typed \| worklist \| without \| auto |
+| `source` | string | now \| typed \| worklist \| without \| auto (pasted / typed text with no time in it is now) |
 | `text` | string | the clipboard text used ("" when going on without one) |
 
 failures: `operator_quit` (not transient), `operator_skip` (not transient)
