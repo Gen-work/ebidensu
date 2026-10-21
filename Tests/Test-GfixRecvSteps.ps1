@@ -733,6 +733,10 @@ try {
     $bx2 += @{ text = '****** Bottom of Data'; y = 700 + 20 * 18 }
     $ln = @(ScreenReadLineNumbers-Parse -Lines $bx2)
     Assert-True ($ln.Count -eq 2 -and $ln[0]['first'] -eq 1 -and $ln[0]['last'] -eq 19 -and $ln[1]['first'] -eq 32431 -and $ln[1]['last'] -eq 32448) 'host rows: two shots in one image, apart by more than 2.5 rows -> two runs'
+    # QJODWDBC 10/21: rows 5..11 not read at all -- still one shot
+    $bx3 = @(); foreach ($n in @(1, 2, 3, 4, 12, 13)) { $bx3 += @{ text = ('{0:000000} a' -f $n); y = 50 + 20 * ($n - 1) } }
+    $ln = @(ScreenReadLineNumbers-Parse -Lines $bx3)
+    Assert-True ($ln.Count -eq 1 -and $ln[0]['first'] -eq 1 -and $ln[0]['last'] -eq 13) 'host rows: rows OCR skipped do not split a shot whose numbers still fit'
     $ln = @(ScreenReadLineNumbers-Parse -Lines @(@{ text = '000002 a'; y = 10 }, @{ text = '000099 b'; y = 30 }, @{ text = '000777 c'; y = 50 }))
     Assert-True (-not $ln[0]['ok']) 'host rows: numbers that agree on nothing are not trusted'
     $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')
