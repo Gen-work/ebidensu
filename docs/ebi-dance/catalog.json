@@ -2840,6 +2840,11 @@
           "required": true,
           "type": "list"
         },
+        "defaultLabel": {
+          "default": "",
+          "desc": "the label when no source matched",
+          "type": "string"
+        },
         "encoding": {
           "default": "mixed",
           "enum": [
@@ -2868,6 +2873,11 @@
           "required": true,
           "type": "path"
         },
+        "sourceLabels": {
+          "default": [],
+          "desc": "@{ match; label }: the label of a block whose source file name matches the regex (first match wins) -- for the label above the lines (10/21: a block cut from the unzip log is GFIXReceiveUnzip.log, not GFIXReceive.log)",
+          "type": "list"
+        },
         "startPattern": {
           "default": "^(?<tag>\\S+) START (?<key>\\S+)\\s*$",
           "desc": "regex with a named group key",
@@ -2880,6 +2890,10 @@
         "blocks": {
           "desc": "@{ key; source; complete; lines } per block, in output order",
           "type": "list"
+        },
+        "label": {
+          "desc": "the labels of the blocks' sources (sourceLabels), in order, joined with \" / \"; defaultLabel when none matched",
+          "type": "string"
         },
         "lineCount": {
           "type": "int"
@@ -4633,8 +4647,8 @@
           "type": "int"
         },
         "okMax": {
-          "default": 8,
-          "desc": "score at or below this = the same",
+          "default": 12,
+          "desc": "score at or below this = the same (10/21: the same job read 9.25 on RJODWDBC)",
           "type": "int"
         },
         "saveBase": {
@@ -5370,8 +5384,8 @@
           "type": "string"
         },
         "minLines": {
-          "default": 3,
-          "desc": "fewer numbered lines than this = not a numbered listing (ok false)",
+          "default": 2,
+          "desc": "fewer numbered lines than this = not a numbered listing (ok false). 2: a 1-line file's HOST shot shows only 000001-000002 (10/21 RJODWDBC)",
           "type": "int"
         },
         "paths": {

@@ -33,7 +33,7 @@ $Manifest = @{
     fromFrac = @{ type='any';    default=0;  desc='left edge of the strip, 0..1 of a''s width (excel.snap_list jobFrom)' }
     toFrac   = @{ type='any';    default=1;  desc='right edge, 0..1 (jobTo)' }
     bodyFrom = @{ type='any';    default=0;  desc='top of the compared rows, 0..1 of a''s height (excel.snap_list bodyFrom: under the headers, which are the same on every job)' }
-    okMax    = @{ type='int';    default=8;  desc='score at or below this = the same' }
+    okMax    = @{ type='int';    default=12; desc='score at or below this = the same (10/21: the same job read 9.25 on RJODWDBC)' }
     ngMin    = @{ type='int';    default=25; desc='score at or above this = different' }
     minInk   = @{ type='any';    default=0.005; desc='a strip with less dark ink than this share says nothing (unknown)' }
     label    = @{ type='string'; default='the pictures'; desc='for the reason / alert wording' }

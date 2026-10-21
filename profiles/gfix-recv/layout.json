@@ -17,7 +17,12 @@
     "_logMinRow_doc": "the GFIX受信ログ label never starts above this row: the Excel snap copied to B3 is sometimes a row shorter (10/14 CJODWDB6 / FJODWDB6 ended at row 6, label on row 7); the template's place is row 8.",
     "labels": {
       "jobLog": "GFIX受信ログ",
-      "receiveLog": "GFIXReceive.log"
+      "receiveLog": "GFIXReceive.log",
+      "_receiveLogBySource_doc": "the label above the receive-log block follows the log it was cut from (operator 10/21: a block from the unzip log is GFIXReceiveUnzip.log). First match on the file name wins; none = receiveLog.",
+      "receiveLogBySource": [
+        { "match": "-unzip", "label": "GFIXReceiveUnzip.log" },
+        { "match": ".", "label": "GFIXReceive.log" }
+      ]
     },
     "font": {
       "name": "ＭＳ ゴシック",
@@ -103,10 +108,10 @@
         "padBottom": 3
       },
       {
-        "_doc": "the 同一内容 cell of the status bar, from the bottom-right corner. 10/21 KJODWWBV: x 117 / w 112 also covered the right part of 移動 (the right edges met) -> x 94 / w 91, measured on the operator's screenshot (rough: set it in ebi.local.json layout.df.marks if it is still off)",
+        "_doc": "the 同一内容 cell of the status bar, from the bottom-right corner. 10/21 KJODWWBV: x 117 / w 112 also covered the right part of 移動 (the right edges met) -> x 94 / w 91; then (RJODWDBC) its right side ran past the cell into the size grip -> w 64. Measured on the operator's screenshots (rough: set it in ebi.local.json layout.df.marks if it is still off)",
         "x": 94,
         "y": 19,
-        "w": 91,
+        "w": 64,
         "h": 19,
         "anchor": "br"
       }

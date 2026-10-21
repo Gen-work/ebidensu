@@ -1,5 +1,19 @@
 ## 2026-10-21 - picture 1 compare: the GIFT picture stretched to the new one's size (v2.32.2)
 
+RJODWDBC (2-line file): HOST shot 000001-000002 "could not be read" (fewer
+than 3 numbered lines), the same job read 9.25 ("not sure"), the 同一内容 box
+ran into the size grip. Also fixed here:
+- screen.read_line_numbers `minLines` 3 -> 2; verify.df_ranges: a single
+  HOST shot lines up when the file runs 0..maxExtra lines past it (one DF
+  picture of the whole file).
+- screen.compare_strip `okMax` 8 -> 12 (first real reading of the same job:
+  9.25; ngMin stays 25).
+- layout.df.marks[1] w 91 -> 64.
+- **The receive-log label follows its source** (file.extract_blocks
+  `sourceLabels` / `defaultLabel` -> output `label`; layout
+  `labels.receiveLogBySource`): a block cut from the unzip log is labelled
+  GFIXReceiveUnzip.log, not GFIXReceive.log (operator 10/21).
+
 10/21 MJODWWBV on v2.32.1: the same job still read DIFFERENT (46.29). The
 GIFT side's picture 1 is the same range drawn about 5 % taller (same
 width): scaling it to the new one's height alone squeezed its columns.

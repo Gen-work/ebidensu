@@ -74,7 +74,10 @@ function VerifyDfRanges-Plan {
     $s = $Set['start']; $f = $Set['finish']
     $first = [int]$s['last'] - $Offset
     if ($null -eq $f) {
-        if ($first -eq $Lines) { return @{ mode = 'align'; first = $first; end = 0; reason = ('one HOST picture 000001-{0:000000} = the whole file ({1} lines)' -f $s['last'], $Lines) } }
+        # the whole file in one shot; the file may carry up to MaxExtra lines
+        # the HOST does not show (10/21 RJODWDBC: HOST 000001-000002, 2 lines)
+        $x1 = $Lines - $first
+        if ($x1 -ge 0 -and $x1 -le $MaxExtra) { return @{ mode = 'align'; first = $Lines; end = 0; reason = ('one HOST picture 000001-{0:000000} = the whole file ({1} lines{2})' -f $s['last'], $Lines, $(if ($x1 -gt 0) { ', ' + $x1 + ' past the HOST''s last' } else { '' })) } }
         if ($first -gt $Lines) { return @{ mode = 'free'; first = 0; end = 0; reason = ('HOST {0:000000} lines but the file has {1}: not lined up (empty lines?)' -f $s['last'], $Lines) } }
         return @{ mode = 'default'; first = 0; end = 0; reason = ('only a START picture (to {0:000000}) for a {1}-line file: no END picture to line up' -f $s['last'], $Lines) }
     }

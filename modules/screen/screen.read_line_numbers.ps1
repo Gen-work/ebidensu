@@ -30,7 +30,7 @@ $Manifest = @{
   inputs     = @{
     paths    = @{ type='list';   required=$true; desc='PNGs (excel.export_pictures paths)' }
     digits   = @{ type='int';    default=6; desc='digits of a line number (HOST: 6); 5..digits are accepted, OCR drops a leading 0 at times' }
-    minLines = @{ type='int';    default=3; desc='fewer numbered lines than this = not a numbered listing (ok false)' }
+    minLines = @{ type='int';    default=2; desc='fewer numbered lines than this = not a numbered listing (ok false). 2: a 1-line file''s HOST shot shows only 000001-000002 (10/21 RJODWDBC)' }
     language = @{ type='string'; default='en-US' }
   }
   outputs    = @{
@@ -110,7 +110,7 @@ function ScreenReadLineNumbers-Parse {
       image holds two shots). A run shorter than MinLines is not trusted;
       no number at all gives one entry with ok false.
     #>
-    param($Lines, [int]$Digits = 6, [int]$MinLines = 3)
+    param($Lines, [int]$Digits = 6, [int]$MinLines = 2)
     $nums = @(ScreenReadLineNumbers-Numbers -Lines $Lines -Digits $Digits)
     if ($nums.Count -eq 0) { return @(@{ ok = $false; first = 0; last = 0; count = 0; reason = 'no line numbers read' }) }
     $out = New-Object System.Collections.ArrayList
