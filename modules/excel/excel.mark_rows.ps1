@@ -49,6 +49,7 @@ $Manifest = @{
     writtenCount = @{ type='int' }
     kept         = @{ type='list'; desc='"KEY row 123: AJ already 2026-10-16" for cells left as they were' }
     notFound     = @{ type='list'; desc='keys with no matching row' }
+    missed       = @{ type='list'; desc='why each key in notFound was not written: "KEY: no row with A = KEY", or per row holding the key the where / whereMatch column it fails ("KEY row 123: P=''x'' does not match ...")' }
     cells        = @{ type='list'; desc='addresses written, e.g. AJ3854' }
     highlight    = @{ type='string'; desc='the fill colour used ("" = none)' }
   }
@@ -89,25 +90,35 @@ function ExcelMarkRows-Day {
     return ''
 }
 
-function ExcelMarkRows-WhereOk {
-    # PURE. Does row i hold every where value (a list = any of) and match every whereMatch regex?
+function ExcelMarkRows-WhereMiss {
+    # PURE. Why row i is not one to write: one line per where / whereMatch
+    # column it fails ("G='x' is not one of a / b"); none = the row is one.
     param($Grid, [int]$Index, $Where, $WhereMatch)
+    $miss = New-Object System.Collections.ArrayList
     foreach ($w in @($Where.Keys)) {
-        $cell = ExcelMarkRows-Norm $Grid[([string]$w).ToUpperInvariant()][$Index]
+        $letter = ([string]$w).ToUpperInvariant()
+        $cell = ExcelMarkRows-Norm $Grid[$letter][$Index]
         $want = $Where[$w]
         $alts = if ($want -is [System.Collections.IList] -and -not ($want -is [string])) { @($want) } else { @($want) }
         $any = $false
         foreach ($a in $alts) { if ($cell -eq (ExcelMarkRows-Norm $a)) { $any = $true; break } }
-        if (-not $any) { return $false }
+        if (-not $any) { [void]$miss.Add(("{0}='{1}' is not {2}" -f $letter, $cell, ((@($alts) | ForEach-Object { [string]$_ }) -join ' / '))) }
     }
     foreach ($w in @($WhereMatch.Keys)) {
-        $raw = $Grid[([string]$w).ToUpperInvariant()][$Index]
+        $letter = ([string]$w).ToUpperInvariant()
+        $raw = $Grid[$letter][$Index]
         $text = if ($null -eq $raw) { '' } else { (ConvertTo-EbiHalfWidth -Value ([string]$raw)).Trim() }
         $pat = [string]$WhereMatch[$w]
         if ($pat -eq '') { continue }
-        if (-not [regex]::IsMatch($text, $pat, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) { return $false }
+        if (-not [regex]::IsMatch($text, $pat, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) { [void]$miss.Add(("{0}='{1}' does not match {2}" -f $letter, $text, $pat)) }
     }
-    return $true
+    return @($miss.ToArray())
+}
+
+function ExcelMarkRows-WhereOk {
+    # PURE. Does row i hold every where value (a list = any of) and match every whereMatch regex?
+    param($Grid, [int]$Index, $Where, $WhereMatch)
+    return (@(ExcelMarkRows-WhereMiss -Grid $Grid -Index $Index -Where $Where -WhereMatch $WhereMatch).Count -eq 0)
 }
 
 function ExcelMarkRows-Plan {
@@ -116,7 +127,9 @@ function ExcelMarkRows-Plan {
         Grid    letter -> object[] of cell values, index 0 = FirstRow
                 (the key column, every where column, every set column)
       Returns @{ writes (@{ row; letter; value; key }); written; kept;
-      notFound } -- written / kept are the report lines.
+      notFound; missed } -- written / kept are the report lines; missed
+      says, per key not found, why each row holding that key was passed
+      over (10/21: 8 jobs "not found", nothing said which column).
     #>
     param($Grid, [int]$FirstRow, [string]$KeyColumn, $Items, [string]$KeyField, $Where, $SetFields, $SetValues, $DateColumns = @(), [bool]$OnlyBlank = $true, $WhereMatch = @{}, $NumberColumns = @(), [datetime]$Today = (Get-Date), $Formulas = @{})
     $keyCol = $KeyColumn.ToUpperInvariant()
@@ -129,17 +142,20 @@ function ExcelMarkRows-Plan {
     $written = New-Object System.Collections.ArrayList
     $kept = New-Object System.Collections.ArrayList
     $notFound = New-Object System.Collections.ArrayList
+    $missed = New-Object System.Collections.ArrayList
     $setLetters = New-Object System.Collections.ArrayList
     foreach ($l in @($SetFields.Keys) + @($SetValues.Keys)) { $u = ([string]$l).ToUpperInvariant(); if (-not $setLetters.Contains($u)) { [void]$setLetters.Add($u) } }
     foreach ($it in @($Items)) {
         if (-not ($it -is [System.Collections.IDictionary])) { continue }
         $key = if ($it.Contains($KeyField) -and $null -ne $it[$KeyField]) { ([string]$it[$KeyField]).Trim() } else { '' }
-        if ($key -eq '') { continue }
+        if ($key -eq '') { [void]$missed.Add(('an item with a blank ' + $KeyField + ' was passed over')); continue }
         $nk = ExcelMarkRows-Norm $key
         $hit = $false
+        $why = New-Object System.Collections.ArrayList
         for ($i = 0; $i -lt $n; $i++) {
             if ((ExcelMarkRows-Norm $keys[$i]) -ne $nk) { continue }
-            if (-not (ExcelMarkRows-WhereOk -Grid $Grid -Index $i -Where $Where -WhereMatch $WhereMatch)) { continue }
+            $miss = @(ExcelMarkRows-WhereMiss -Grid $Grid -Index $i -Where $Where -WhereMatch $WhereMatch)
+            if ($miss.Count -gt 0) { [void]$why.Add(($key + ' row ' + ($FirstRow + $i) + ': ' + ($miss -join '; '))); continue }
             $hit = $true
             $row = $FirstRow + $i
             $did = New-Object System.Collections.ArrayList
@@ -163,9 +179,13 @@ function ExcelMarkRows-Plan {
             }
             if ($did.Count -gt 0) { [void]$written.Add(($key + ' row ' + $row + ': ' + ($did.ToArray() -join ' '))) }
         }
-        if (-not $hit) { [void]$notFound.Add($key) }
+        if (-not $hit) {
+            [void]$notFound.Add($key)
+            if ($why.Count -eq 0) { [void]$missed.Add(($key + ': no row with ' + $keyCol + ' = ' + $key)) }
+            else { foreach ($l in @($why.ToArray() | Select-Object -First 6)) { [void]$missed.Add($l) }; if ($why.Count -gt 6) { [void]$missed.Add(($key + ': ' + ($why.Count - 6) + ' more row(s) like these')) } }
+        }
     }
-    return @{ writes = $writes.ToArray(); written = $written.ToArray(); kept = $kept.ToArray(); notFound = $notFound.ToArray() }
+    return @{ writes = $writes.ToArray(); written = $written.ToArray(); kept = $kept.ToArray(); notFound = $notFound.ToArray(); missed = $missed.ToArray() }
 }
 
 function ExcelMarkRows-ColorOf {
@@ -211,7 +231,7 @@ function ExcelMarkRows-NoteHidden {
 
 function Invoke-Step {
     param($In, $Ctx)
-    $empty = @{ written = @(); writtenCount = 0; kept = @(); notFound = @(); cells = @(); highlight = '' }
+    $empty = @{ written = @(); writtenCount = 0; kept = @(); notFound = @(); missed = @(); cells = @(); highlight = '' }
     $letters = New-Object System.Collections.ArrayList
     $wm = if ($In['whereMatch'] -is [System.Collections.IDictionary]) { $In['whereMatch'] } else { @{} }
     foreach ($l in @([string]$In['keyColumn']) + @($In['where'].Keys) + @($wm.Keys) + @($In['setFields'].Keys) + @($In['setValues'].Keys)) {
@@ -234,7 +254,7 @@ function Invoke-Step {
         # End(xlUp) is Ctrl+Up: with a filter on it stops at the last VISIBLE
         # row, and the rows hidden under it would read as "no row" (10/21)
         try { $ur = $ws.UsedRange; $uLast = [int]$ur.Row + [int]$ur.Rows.Count - 1; if ($uLast -gt $last) { $last = $uLast } } catch { }
-        if ($last -lt $first) { $r = $empty.Clone(); $r['ok'] = $true; $r['notFound'] = @(foreach ($it in @($In['items'])) { [string]$it[[string]$In['keyField']] }); return $r }
+        if ($last -lt $first) { $r = $empty.Clone(); $r['ok'] = $true; $r['notFound'] = @(foreach ($it in @($In['items'])) { [string]$it[[string]$In['keyField']] }); $r['missed'] = @('the sheet has no rows from row ' + $first); return $r }
         $n = $last - $first + 1
         foreach ($l in $letters) {
             $v = $ws.Range(('{0}{1}:{0}{2}' -f $l, $first, $last)).Value2
@@ -312,7 +332,12 @@ function Invoke-Step {
     Invoke-EbiComRelease $ws
     foreach ($l in $written) { $Ctx.Log.Info(('wrote ' + $l)) }
     $warn = New-Object System.Collections.ArrayList
-    foreach ($k in @($plan['notFound'])) { [void]$warn.Add(@{ code = 'row_not_found'; message = ('no ' + $In['sheet'] + ' row for ' + $k + ' (type it by hand)') }) }
+    foreach ($k in @($plan['notFound'])) {
+        $nk = ExcelMarkRows-Norm $k
+        $why = @(@($plan['missed']) | Where-Object { (ExcelMarkRows-Norm ([string]$_)).StartsWith($nk + ' ') -or (ExcelMarkRows-Norm ([string]$_)).StartsWith($nk + ':') })
+        [void]$warn.Add(@{ code = 'row_not_found'; message = ('no ' + $In['sheet'] + ' row for ' + $k + ' (type it by hand)' + $(if ($why.Count -gt 0) { ': ' + ($why -join ' | ') } else { '' })) })
+    }
+    foreach ($l in @($plan['missed'])) { if (([string]$l).StartsWith('an item with a blank')) { [void]$warn.Add(@{ code = 'key_blank'; message = [string]$l }) } }
     if ($hidden.Count -gt 0) { [void]$warn.Add(@{ code = 'rows_hidden'; message = ('{0} row(s) written are hidden by a filter on {1} ({2}): the values are there, clear the filter to see them' -f $hidden.Count, $In['sheet'], (@($hidden.ToArray()) -join ', ')) }) }
-    return @{ ok = $true; written = $written; writtenCount = $written.Count; kept = $plan['kept']; notFound = $plan['notFound']; cells = $cells; highlight = $hl; warnings = $warn.ToArray() }
+    return @{ ok = $true; written = $written; writtenCount = $written.Count; kept = $plan['kept']; notFound = $plan['notFound']; missed = $plan['missed']; cells = $cells; highlight = $hl; warnings = $warn.ToArray() }
 }

@@ -1637,6 +1637,10 @@
           "desc": "\"KEY row 123: AJ already 2026-10-16\" for cells left as they were",
           "type": "list"
         },
+        "missed": {
+          "desc": "why each key in notFound was not written: \"KEY: no row with A = KEY\", or per row holding the key the where / whereMatch column it fails (\"KEY row 123: P='x' does not match ...\")",
+          "type": "list"
+        },
         "notFound": {
           "desc": "keys with no matching row",
           "type": "list"

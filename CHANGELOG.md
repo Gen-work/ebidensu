@@ -1,3 +1,32 @@
+## 2026-10-21 - WBS step: "nothing written" says why per job; no save attempted after a skipped open (v2.34.1)
+
+10/21 office deliver (resume of the 16:09 run): check sheet + 8 mails ok,
+then `wbsMark` wrote 0 cells (8 x `row_not_found`, shown only as "(8
+warnings)"), the check gate was skipped, and `wbsSave` still ran and failed
+`session_missing: ... "wbs2" ... not registered`. Nothing reached the WBS:
+no cell was written, no save ran, teardown closes it unsaved.
+
+### Fixed
+- **gfixRecv.deliver v0.4.1**: `wbsSave` ran because its `when` was
+  `steps.wbsWrite.out.writtenCount != 0` -- a skipped step's outputs are
+  null and `null != 0` is true (Test-EbiWhen, by design). Now
+  `steps.wbsWrite.out.writtenCount exists`.
+
+### Added
+- **gfixRecv.deliver**: gate `wbsNone` when `wbsMark` wrote nothing: red =
+  why each job's rows were passed over, below = cells kept (filled /
+  formula); any answer closes the WBS without saving. Type AJ / AK / AQ by
+  hand.
+- **excel.mark_rows**: output `missed` -- per key not found, "KEY: no row
+  with A = KEY" or, per row holding the key, the where / whereMatch column
+  it fails (`P='...' does not match ...`, `G='...' is not ...`); the
+  `row_not_found` warning carries it. A blank key is reported
+  (`key_blank`) instead of being passed over silently.
+
+### Docs / tests
+- KNOWLEDGE K-24 (10/21 evening). Test-PlanSets: missed lines. Catalog
+  regenerated.
+
 ## 2026-10-22 - WBS actuals: checked in light violet first, saved only after Enter and without the fill; formula cells never written (v2.34.0)
 
 10/22: the leader said the WBS lines owned by the operator looked broken.

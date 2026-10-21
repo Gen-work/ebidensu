@@ -1456,6 +1456,7 @@ Write per-key values (dates) into the matching rows of a sheet, blank cells only
 | `cells` | list | addresses written, e.g. AJ3854 |
 | `highlight` | string | the fill colour used ("" = none) |
 | `kept` | list | "KEY row 123: AJ already 2026-10-16" for cells left as they were |
+| `missed` | list | why each key in notFound was not written: "KEY: no row with A = KEY", or per row holding the key the where / whereMatch column it fails ("KEY row 123: P='x' does not match ...") |
 | `notFound` | list | keys with no matching row |
 | `written` | list | "KEY row 123: AJ=2026-10-16 AK=2026-10-20" per row written |
 | `writtenCount` | int |  |

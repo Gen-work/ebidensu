@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.deliver",
   "title": "GFIX受信: レビュー依頼(チェックシートに全部書く -> 確認 -> 下書きを全部 -> 全部送ったら ok -> WBS の実績 AJ/AK)",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "profile": "gfix-recv",
 
   "vars": {
@@ -121,6 +121,12 @@
                 "whereMatch": { "P": "{{steps.wbsOwner.out.pattern}}" },
                 "setValues": { "AJ": "{{steps.wbsDay.out.value}}", "AK": "{{steps.wbsDay.out.value}}", "AQ": "{{steps.wbsHours.out.value}}" },
                 "dateColumns": ["AJ", "AK"], "numberColumns": ["AQ"], "highlight": "{{vars.wbsHighlight}}" } },
+    { "id": "wbsNone", "use": "human.gate",
+      "label": "WBS に何も書けなかった(薄紫のセルなし): 赤 = ジョブごとに行を外した理由。AJ / AK / AQ は手で入力。Enter / s = 保存せずに閉じる",
+      "when": "steps.wbsMark.out.writtenCount == 0",
+      "with": { "code": "ng", "askWhen": ["ng"], "key": "WBS",
+                "reason": "nothing was written to the WBS: no row of these jobs passed every check -- type AJ / AK / AQ by hand. Red: why each job's rows were passed over (A = JOB, B = {{vars.side}}, G = one of the tasks, P = the owner pattern). Below: cells already filled or holding a formula. Any answer closes the WBS without saving",
+                "evidence": "{{steps.wbsMark.out.kept}}", "alert": "{{steps.wbsMark.out.missed}}", "front": ["EXCEL"] } },
     { "id": "wbsOk", "use": "human.gate",
       "label": "WBS に書いたセル(薄紫)を Excel で見る。Enter = 色なしで書き直して保存 / s・q = 何も変えずに閉じる",
       "when": "steps.wbsMark.out.writtenCount != 0",
@@ -150,7 +156,7 @@
                 "dateColumns": ["AJ", "AK"], "numberColumns": ["AQ"] } },
     { "id": "wbsSave", "use": "excel.close",
       "label": "WBS を保存して閉じる",
-      "when": "steps.wbsWrite.out.writtenCount != 0",
+      "when": "steps.wbsWrite.out.writtenCount exists",
       "with": { "workbook": "wbs2", "save": true, "dismissDialogs": "{{profile.layout.evidence.saveDialogs}}" } }
   ],
 

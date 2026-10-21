@@ -296,6 +296,17 @@ $plan = ExcelMarkRows-Plan -Grid $g2 -FirstRow 7 -KeyColumn 'A' -Items $it2 -Key
 $w = (@($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] }) | Sort-Object) -join ','
 Assert-Equal 'AJ9,AK8,AQ8,AQ9' $w 'mark_rows: AK9 holds a formula -> not written'
 Assert-True (@($plan['kept']) -match 'AK has a formula \(=AJ9\)').Count -eq 1 'mark_rows: the formula cell is reported in kept'
+# 10/21: 8 jobs "row_not_found", nothing said why -- missed names the column each row failed
+$it3 = @( @{ JOB = 'QJODJSPP' }, @{ JOB = 'NOROW' }, @{ JOB = '' } )
+$plan = ExcelMarkRows-Plan -Grid $g2 -FirstRow 7 -KeyColumn 'A' -Items $it3 -KeyField 'JOB' -Where @{ B = $recv; G = @('after', 'summary') } -WhereMatch @{ P = $ownPat } -SetFields @{} -SetValues @{ AQ = '0.1' } -NumberColumns @('AQ')
+$ms = @($plan['missed'])
+Assert-Equal 'QJODJSPP,NOROW' (@($plan['notFound']) -join ',') 'mark_rows: missed does not change notFound'
+Assert-True (@($ms -match ("^QJODJSPP row 10: P='" + $oth + "' does not match")).Count -eq 1) ('mark_rows: missed names the owner column of a row someone else holds: ' + ($ms -join ' | '))
+Assert-True (@($ms -match '^QJODJSPP row 11: P=').Count -eq 1) 'mark_rows: other<-own is not the owner either, said per row'
+Assert-True (@($ms -match '^NOROW: no row with A = NOROW$').Count -eq 1) 'mark_rows: a key with no row at all says so'
+Assert-True (@($ms -match '^an item with a blank JOB').Count -eq 1) 'mark_rows: a blank key is reported, not silently passed over'
+$plan = ExcelMarkRows-Plan -Grid $g2 -FirstRow 7 -KeyColumn 'A' -Items @(@{ JOB = 'LJODJSPQ' }) -KeyField 'JOB' -Where @{ B = $recv; G = @('after') } -SetFields @{} -SetValues @{ AQ = '0.1' }
+Assert-Equal 0 @($plan['missed']).Count 'mark_rows: a key that was written has no missed lines (its other rows were simply not targets)'
 # the check fill: light violet, never a colour the sheet already uses
 Assert-Equal (230 + 214 * 256 + 255 * 65536) (ExcelMarkRows-ColorOf '#E6D6FF') 'mark_rows: #RRGGBB -> Excel Color (R + G*256 + B*65536)'
 Assert-Equal -1 (ExcelMarkRows-ColorOf 'violet') 'mark_rows: not a colour -> -1'
