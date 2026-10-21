@@ -1,4 +1,4 @@
-## 2026-10-21 - DF pictures fitted to their line count (v2.30.3)
+## 2026-10-21 - DF pictures fitted to their line count; line counts no longer hold track (v2.30.3)
 
 10/21 SJODWSPN: after the 10/20 rerun 加瀬さん asked to put the FIRST
 DF picture back -- only the END picture was to change. The first height
@@ -19,11 +19,21 @@ plus 11..17 px of the 17th (inferred, not measured).
   says them (put the real heights into layout.json once seen).
 - gfixRecv.track `df` passes `fitStrip` = `layout.df.marks[0].lastInk`
   (the strip the red box already uses) and `linesEnd` 17.
+- **Line counts from the bytes** (`Get-EbiByteLineCount`, kernel/LogText.ps1):
+  10/21 QJODWDBC, track printed `downloaded ... (2243081 bytes)` and then
+  sat there until Ctrl+C. `file.download` / `file.list` `countLines`
+  decoded each file with ConvertFrom-EbiMixedBytes only to count it; a
+  Shift_JIS file fails strict UTF-8 on every line and is walked byte by
+  byte (200 KB took 6.8 s on pwsh 7 here; 2.2 MB on PS 5.1 is minutes).
+  Now LF bytes are counted (same count as before for every ending; 0x0A
+  is never inside a UTF-8 / CP932 character): 2 MB in 0.02 s.
 
 ### Docs / tests
-- KNOWLEDGE K-28; TODO HOST-range card updated. Test-GfixRecvSteps: fit
-  plan (17th line, a sliver, short, far short, cut first band) and the
-  lines wanted per view. Catalog regenerated.
+- KNOWLEDGE K-28, K-29; TODO HOST-range card updated. Test-GfixRecvSteps:
+  fit plan (17th line, a sliver, short, far short, cut first band) and the
+  lines wanted per view. Test-LogText: byte line count = text line count
+  for every ending, BOM, a 2 MB CP932 CSV under 10 s. Catalog regenerated.
+- pages.json `_refresh_doc`: why the GoAnywhere refresh is Tab x5.
 
 ## 2026-10-20 - a rerun after a review NG redoes the later phases; DF END view Down x2 (v2.30.2)
 

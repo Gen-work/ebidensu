@@ -20,6 +20,7 @@
         "ログイン"
       ]
     },
+    "_refresh_doc": "Why Tab x5 (from the Ctrl+A page text, not seen on screen -- operator 10/21 asked): Esc leaves the focus on the heading text フィルタリングする, which is not itself a control; the page text has a TAB right after it (the panel's collapse icon), so the Tabs are (1) that icon, (2) 日付範囲, (3) プロジェクト名, (4) 詳細, (5) 更新. By hand the icon is easy not to count. If the panel changes, change the count here or in ebi.local.json.",
     "refreshRecipe": [
       "find:フィルタリングする",
       "keys:{TAB}{TAB}{TAB}{TAB}{TAB}",

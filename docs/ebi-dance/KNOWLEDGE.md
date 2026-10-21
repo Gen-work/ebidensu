@@ -207,6 +207,13 @@
 - **写新 workflow 时**:截图尺寸不要靠推算;截完从图本身验证它显示了什么。重跑只想改一张图时,另一张也会被重截——要么让它和上次一样,要么能只换一张。
 - **来源**:10/21 加瀬さん邮件、操作员手改的证迹截图。
 
+### K-29 下载完就不动了:为了数行数把整个文件解码
+- **发生了什么**:10/21 QJODWDBC 的 track 印出 `downloaded ... F202610210002.csv (2243081 bytes)` 后一直不动,操作员只能 Ctrl+C(`Terminate batch job (Y/N)?`)。文件已经在 DATA\GFIX 里。
+- **原因**:`file.download` 的 `countLines` 为了数行数,用 ConvertFrom-EbiMixedBytes 把整个文件解码。那个函数是给「UTF-8 里夹几个 SJIS 字」的日志用的:Shift_JIS 的 CSV 每一行都过不了 UTF-8,于是整个文件在 PowerShell 循环里一个字节一个字节地走(这边 pwsh 7 上 200 KB 要 6.8 秒,2.2 MB 在 PS 5.1 上是几分钟)。GIFT 侧的 `file.list` 也一样。
+- **现在的对策**(v2.30.3):`Get-EbiByteLineCount` 直接数字节里的换行(LF),不解码;0x0A 不会出现在 UTF-8 / CP932 的多字节字符里,所以和原来数出的行数完全一样。2 MB 0.02 秒。
+- **写新 workflow 时**:只要数字(行数、大小)就不要解码文本;要解码的话,数据文件用 ConvertFrom-EbiTextBytes(整份一种编码,一次 .NET 调用),ConvertFrom-EbiMixedBytes 只给日志用。
+- **来源**:10/21 track 日志。
+
 ### K-24 deliver 写 WBS 实绩:日志说写了,WBS 里没有
 - **症状**:10/20 deliver 印出 `wrote MJODJSPQ row 3854: AK=2026-10-20`(三本都是),`excel.close saved=True`;之后打开 WBS,AK 是空的。只写了 修正後実施 一行,结果まとめ 行、工数 AQ 都没写。
 - **原因**:未确认。起初猜是保存时的「文書分類/機密区分の登録」对话框取消了保存;操作员说**不是**:WBS 早就登录过分类,不会再弹。操作员看到的是:关卡上按 Enter **之前** Excel 里就看不到写进去的值,怀疑当时 WBS 开着筛选(filter)。打开 WBS 时两次「只读」也说明当时有人(或别的 Excel 窗口)开着它。

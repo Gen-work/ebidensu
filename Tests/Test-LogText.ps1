@@ -43,6 +43,17 @@ Assert-Equal 932 $sj.CodePage 'codepage: 932 is available'
 Assert-Equal 3 @(Get-EbiTextLines -Text "a`r`nb`nc`n").Count 'lines: CRLF and LF split; the final newline is not a line'
 Assert-Equal 0 @(Get-EbiTextLines -Text '').Count 'lines: empty -> none'
 Assert-Equal 2 @(Get-EbiTextLines -Text "a`n`n").Count 'lines: an inner empty line is kept'
+# 10/21: the line count straight from the bytes agrees with decode + Get-EbiTextLines
+$u8 = New-Object System.Text.UTF8Encoding($false)
+foreach ($t in @('', 'a', "a`n", "a`r`nb`nc`n", "a`n`n", "`n", "a`r", "a`nb")) {
+    Assert-Equal @(Get-EbiTextLines -Text $t).Count (Get-EbiByteLineCount -Bytes $u8.GetBytes($t)) ('byte lines: same count as the text for "' + ($t -replace "`r", '\r' -replace "`n", '\n') + '"')
+}
+Assert-Equal 0 (Get-EbiByteLineCount -Bytes ([byte[]](0xEF, 0xBB, 0xBF))) 'byte lines: a BOM alone is no line'
+Assert-Equal 2 (Get-EbiByteLineCount -Bytes ([byte[]](0xEF, 0xBB, 0xBF, 0x61, 0x0A, 0x62))) 'byte lines: BOM + 2 lines'
+$sj = (Get-EbiCodePage -CodePage 932).GetBytes(("S,32200TZHJB0," + ([string][char]0x30C6 * 40) + "`r`n") * 20000)
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+Assert-Equal 20000 (Get-EbiByteLineCount -Bytes $sj) 'byte lines: a ~2 MB CP932 CSV (the 10/21 QJODWDBC file size)'
+Assert-True ($sw.Elapsed.TotalSeconds -lt 10) ('byte lines: counted in ' + [Math]::Round($sw.Elapsed.TotalSeconds, 2) + ' s, not minutes')
 
 # ---------------------------------------------------------------- blocks
 $lines = @(Get-EbiTextLines -Text $dec['text'])
