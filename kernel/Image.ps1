@@ -443,6 +443,21 @@ function Save-EbiGrayPng {
     } finally { $bmp.Dispose() }
 }
 
+function Get-EbiStripCandidates {
+    <#
+      PURE. The sizes B is tried at: @(@(scaleX, scaleY, kind)), first B
+      stretched to A's width and height (x +-2 %, y +-3 %), then A's height
+      in B's own proportions. Each element is parenthesised: in PowerShell
+      the comma binds tighter than *, and @($a * $b, ...) once multiplied
+      by an array (10/21 SJODWDBC: "op_Multiply" on Object[]).
+    #>
+    param([double]$ScaleW, [double]$ScaleH)
+    $out = New-Object System.Collections.ArrayList
+    foreach ($kx in @(1.0, 0.98, 1.02)) { foreach ($ky in @(1.0, 0.97, 1.03)) { [void]$out.Add(@(($ScaleW * $kx), ($ScaleH * $ky), 'fit')) } }
+    foreach ($k in @(1.0, 0.97, 1.03)) { [void]$out.Add(@(($ScaleH * $k), ($ScaleH * $k), 'height')) }
+    return $out.ToArray()
+}
+
 function Compare-EbiPngStripCore {
     # The GDI+ half of Compare-EbiPngStrip (see Get-EbiPngSizeCore).
     param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac, [double]$BodyFrom, [int]$RangeY, [string]$SaveBase = '')
@@ -463,9 +478,7 @@ function Compare-EbiPngStripCore {
         # MJODWWBV: the same job read 46 at A's height alone) -- then
         # (2) A's height, B's own proportions (another right edge)
         $sxW = [double]$imA.Width / $imB.Width; $syH = [double]$imA.Height / $imB.Height
-        $cands = New-Object System.Collections.ArrayList
-        foreach ($kx in @(1.0, 0.98, 1.02)) { foreach ($ky in @(1.0, 0.97, 1.03)) { [void]$cands.Add(@($sxW * $kx, $syH * $ky, 'fit')) } }
-        foreach ($k in @(1.0, 0.97, 1.03)) { [void]$cands.Add(@($syH * $k, $syH * $k, 'height')) }
+        $cands = @(Get-EbiStripCandidates -ScaleW $sxW -ScaleH $syH)
         $best = -1.0; $how = ''; $bestB = $null; $bx = 0; $by = 0
         foreach ($c in $cands) {
             $b = Get-EbiGrayHalf -Image $imB -ScaleX ([double]$c[0]) -ScaleY ([double]$c[1])

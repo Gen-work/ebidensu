@@ -662,6 +662,10 @@ try {
     Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 12 -and $pl['end'] -eq 0) 'df ranges: one HOST picture = the whole file -> one DF picture'
     $g = VerifyDfRanges-Sets -Ranges @((& $rg 1 17), (& $rg 46 62), (& $rg 1 19), (& $rg 100 118))
     Assert-Equal 2 @($g['sets']).Count 'df ranges: a picture from 000001 opens the next file pair'
+    $g = VerifyDfRanges-Sets -Ranges @((& $rg 2 19), (& $rg 32431 32449))
+    Assert-True (@($g['sets']).Count -eq 1 -and $null -ne $g['sets'][0]['finish']) 'df ranges: a START read from 000002 (top line missed) still opens the pair'
+    $g = VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 3 21))
+    Assert-True (@($g['sets']).Count -eq 1 -and [int]$g['sets'][0]['finish']['first'] -eq 3) 'df ranges: an END picture from 000003 of a short file stays the END picture'
     Assert-Equal 'default' (VerifyDfRanges-Plan -Lines 61 -Set $null)['mode'] 'df ranges: no HOST set -> default'
     $g = VerifyDfRanges-Sets -Ranges @(@{ ok = $false }, (& $rg 1 17))
     Assert-Equal 1 $g['bad'] 'df ranges: an unreadable picture is counted'
@@ -717,6 +721,20 @@ try {
     Assert-True ($tp['ok'] -and $tp['left'] -eq 24 -and $tp['right'] -eq 62 -and $tp['top'] -eq 0 -and $tp['bottom'] -eq 13) 'df status: the box is the cell around the LAST text (not 移動), border to border'
     $sg2 = New-Object byte[] ($sw * $sh); for ($i = 0; $i -lt $sg2.Length; $i++) { $sg2[$i] = 240 }
     Assert-True (-not (Find-EbiTextPanel -Gray $sg2 -W $sw -H $sh)['ok']) 'df status: no text -> not found (the fixed box is the fallback)'
+    # 10/21 SJODWDBC: the candidate list (the comma-before-* bug) and rows by position
+    $cd = @(Get-EbiStripCandidates -ScaleW 1.0 -ScaleH 1.05)
+    Assert-True ($cd.Count -eq 12 -and [double]$cd[0][0] -eq 1.0 -and [double]$cd[0][1] -eq 1.05 -and [string]$cd[0][2] -eq 'fit' -and [string]$cd[11][2] -eq 'height') 'pic1 strip: 12 sizes, each (x, y, kind) -- no array multiplied (op_Multiply)'
+    $bx = @(@{ text = 'Command ===>'; y = 10 }, @{ text = '=COLS> ----+'; y = 30 })
+    foreach ($n in 1..19) { if ($n -eq 1 -or $n -eq 9) { continue }; $tx = if ($n -eq 5) { '0O0O5 2026' } elseif ($n -eq 12) { '000072 2026' } else { ('{0:000000} 2026' -f $n) }; $bx += @{ text = $tx; y = 50 + 20 * ($n - 1) } }
+    $ln = @(ScreenReadLineNumbers-Parse -Lines $bx)
+    Assert-True ($ln.Count -eq 1 -and $ln[0]['ok'] -and $ln[0]['first'] -eq 2 -and $ln[0]['last'] -eq 19) 'host rows: misreads and a missed line are placed by position (2..19 read, 000001 itself not seen)'
+    $bx2 = @(); foreach ($n in 1..19) { $bx2 += @{ text = ('{0:000000} a' -f $n); y = 50 + 20 * ($n - 1) } }
+    foreach ($n in 32431..32448) { $bx2 += @{ text = ('{0:000000} a' -f $n); y = 700 + 20 * ($n - 32431) } }
+    $bx2 += @{ text = '****** Bottom of Data'; y = 700 + 20 * 18 }
+    $ln = @(ScreenReadLineNumbers-Parse -Lines $bx2)
+    Assert-True ($ln.Count -eq 2 -and $ln[0]['first'] -eq 1 -and $ln[0]['last'] -eq 19 -and $ln[1]['first'] -eq 32431 -and $ln[1]['last'] -eq 32448) 'host rows: two shots in one image, apart by more than 2.5 rows -> two runs'
+    $ln = @(ScreenReadLineNumbers-Parse -Lines @(@{ text = '000002 a'; y = 10 }, @{ text = '000099 b'; y = 30 }, @{ text = '000777 c'; y = 50 }))
+    Assert-True (-not $ln[0]['ok']) 'host rows: numbers that agree on nothing are not trusted'
     $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')
     $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 12 } -In $in -Plan $null
     Assert-True (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = ''; firstLines = 12 } -Plan $sp) 'df shots: an earlier picture with the lines wanted is kept'

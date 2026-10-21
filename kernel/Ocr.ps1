@@ -91,7 +91,15 @@ function Invoke-EbiOcrFileCore {
         try {
             $res = Wait-EbiOcrOperation ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
             $lines = New-Object System.Collections.ArrayList
-            foreach ($ln in $res.Lines) { [void]$lines.Add((Read-EbiOcrText $ln)) }
+            $boxes = New-Object System.Collections.ArrayList
+            foreach ($ln in $res.Lines) {
+                $t = Read-EbiOcrText $ln
+                [void]$lines.Add($t)
+                # where the line sits (top of its words), for callers that need rows
+                $y = -1.0; $hh = 0.0
+                try { foreach ($w in $ln.Words) { $r = $w.BoundingRect; if ($y -lt 0 -or [double]$r.Y -lt $y) { $y = [double]$r.Y }; if ([double]$r.Height -gt $hh) { $hh = [double]$r.Height } } } catch { }
+                [void]$boxes.Add(@{ text = $t; y = $y; h = $hh })
+            }
             $joined = (@($lines) -join "`n")
             if ($joined.Trim() -eq '') {
                 $raw = Read-EbiOcrText $res
@@ -99,14 +107,14 @@ function Invoke-EbiOcrFileCore {
                 foreach ($t in ($raw -split "`r?`n")) { [void]$lines.Add([string]$t) }
                 $joined = $raw
             }
-            return @{ ok = $true; text = $joined; lines = $lines.ToArray(); language = [string]$engine.RecognizerLanguage.LanguageTag; message = '' }
+            return @{ ok = $true; text = $joined; lines = $lines.ToArray(); boxes = $boxes.ToArray(); language = [string]$engine.RecognizerLanguage.LanguageTag; message = '' }
         } finally { try { $bitmap.Dispose() } catch { } }
     } finally { try { $stream.Dispose() } catch { } }
 }
 
 function Invoke-EbiOcrFile {
     <#
-      OCR one image file. Returns @{ ok; text; lines; language; message };
+      OCR one image file. Returns @{ ok; text; lines; boxes (@{ text; y; h } per line, y = -1 when unknown); language; message };
       never throws. -Language: a BCP-47 tag tried first (default en-US:
       job names and file names are ASCII, and the en recognizer reads
       O/0, I/1 better than ja); then en, then the user-profile languages.
