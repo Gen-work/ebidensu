@@ -67,9 +67,57 @@ function Set-EbiWindowFront {
     try {
         if ($FrontHWnd -ne [IntPtr]::Zero) { return [bool](Set-EbiForeground -HWnd $FrontHWnd -SettleMs 300)['ok'] }
         if ($NeedsForeground) { return $true }
-        if ($global:EbiWindowOut) { Restore-EbiConsoleWindow -Quiet; $global:EbiWindowOut = $false }
+        if ($global:EbiWindowOut) {
+            # silent mode: the front goes back to what the operator had, not the console
+            if (Test-EbiSilent) { Restore-EbiReturnWindow } else { Restore-EbiConsoleWindow -Quiet }
+            $global:EbiWindowOut = $false
+        }
     } catch { return ($FrontHWnd -eq [IntPtr]::Zero) }
     return $true
+}
+
+function Test-EbiSilent {
+    # PURE (reads the environment). Silent mode (10/21: "at least not pops
+    # up at front except need my input"): EBI_SILENT=1, set by ebi.ps1
+    # -Silent or operator.silent in the profile / ebi.local.json. Steps that
+    # must see or type into a window (browser, DF capture) still take the
+    # front for their moment; everything else stays behind, and a question
+    # still brings the console.
+    return ([string]$env:EBI_SILENT -eq '1')
+}
+
+function Test-EbiProfileSilent {
+    # PURE. operator.silent = true in the merged profile (ebi.local.json
+    # { "operator": { "silent": true } } per machine).
+    param($Profile)
+    if (-not ($Profile -is [System.Collections.IDictionary]) -or -not $Profile.Contains('operator')) { return $false }
+    $op = $Profile['operator']
+    if (-not ($op -is [System.Collections.IDictionary]) -or -not $op.Contains('silent')) { return $false }
+    return ($op['silent'] -eq $true -or [string]$op['silent'] -eq '1' -or [string]$op['silent'] -eq 'true')
+}
+
+function Restore-EbiReturnWindow {
+    # Silent mode: give the front back to the window that was there before
+    # a step took it ($global:EbiReturnHwnd, kept by Set-EbiForeground) --
+    # the operator's own work, or the console when that is where they were.
+    # Nothing remembered: the console, quietly. Never throws.
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    try {
+        $h = $global:EbiReturnHwnd
+        if ($null -eq $h -or $h -eq [IntPtr]::Zero -or -not [EbiNative]::IsWindow($h)) { Restore-EbiConsoleWindow -Quiet; return }
+        if ([EbiNative]::GetForegroundWindow() -ne $h) { [void](Set-EbiForeground -HWnd $h -SettleMs 100) }
+    } catch { }
+}
+
+function Send-EbiConsoleFlash {
+    # Silent mode, end of run: blink the console's taskbar button instead of
+    # raising it. Nothing when the console is already in front. Never throws.
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) { return }
+    try {
+        $h = $global:EbiConsoleHwnd
+        if ($null -eq $h -or $h -eq [IntPtr]::Zero) { return }
+        if ([EbiNative]::GetForegroundWindow() -ne $h) { [void][EbiNative]::FlashWindow($h, $true) }
+    } catch { }
 }
 
 function Get-EbiSessionHandle {

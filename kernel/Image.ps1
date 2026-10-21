@@ -378,6 +378,30 @@ public static class EbiImageMath {
         }
         return new double[] { best, bx, by };
     }
+    public static double[] BandStats(byte[] buf, int stride, int w, int h, int[] tops, int bandH) {
+        // ground = the commonest colour of the strip (16 levels a channel);
+        // ink = a pixel whose channel differs from the ground by more than 60.
+        // Per band: { ink pixels, mean R, mean G, mean B of the ink }.
+        int[] hist = new int[4096];
+        for (int y = 0; y < h; y++) { int row = y * stride; for (int x = 0; x < w; x++) { int o = row + x * 3; hist[((buf[o + 2] >> 4) << 8) | ((buf[o + 1] >> 4) << 4) | (buf[o] >> 4)]++; } }
+        int mode = 0; for (int i = 1; i < 4096; i++) if (hist[i] > hist[mode]) mode = i;
+        int gr = ((mode >> 8) & 15) * 16 + 8, gg = ((mode >> 4) & 15) * 16 + 8, gb = (mode & 15) * 16 + 8;
+        double[] o2 = new double[tops.Length * 4];
+        for (int k = 0; k < tops.Length; k++) {
+            long n = 0, sr = 0, sg = 0, sb = 0;
+            for (int y = tops[k]; y < tops[k] + bandH; y++) {
+                if (y < 0 || y >= h) continue;
+                int row = y * stride;
+                for (int x = 0; x < w; x++) {
+                    int o = row + x * 3; int b = buf[o], g = buf[o + 1], r = buf[o + 2];
+                    if (System.Math.Abs(r - gr) > 60 || System.Math.Abs(g - gg) > 60 || System.Math.Abs(b - gb) > 60) { n++; sr += r; sg += g; sb += b; }
+                }
+            }
+            o2[k * 4] = n;
+            if (n > 0) { o2[k * 4 + 1] = (double)sr / n; o2[k * 4 + 2] = (double)sg / n; o2[k * 4 + 3] = (double)sb / n; }
+        }
+        return o2;
+    }
 }
 "@
     }
@@ -503,6 +527,47 @@ function Compare-EbiPngStripCore {
         return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; score = -1; ink = 0; x0 = 0; x1 = 0; how = '' }
     } finally {
         for ($i = $objs.Count - 1; $i -ge 0; $i--) { try { $objs[$i].Dispose() } catch { } }
+    }
+}
+
+function Get-EbiBandColors {
+    <#
+      Per band of the vertical strip X..X+W of a PNG: how much ink and its
+      mean colour (EbiImageMath.BandStats; ground = the strip's commonest
+      colour). -Tops: each band's top row, -Height: band height.
+      -> @{ ok; failure; message; bands = @(@{ top; ink; r; g; b }) }
+    #>
+    param([string]$Path, [int]$X, [int]$W, [int[]]$Tops, [int]$Height)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('file not found: ' + $Path); bands = @() } }
+    return (Get-EbiBandColorsCore -Path $Path -X $X -W $W -Tops $Tops -Height $Height)
+}
+
+function Get-EbiBandColorsCore {
+    # The GDI+ half of Get-EbiBandColors (see Get-EbiPngSizeCore).
+    param([string]$Path, [int]$X, [int]$W, [int[]]$Tops, [int]$Height)
+    [void](Get-EbiDrawing); [void](Get-EbiImageMath)
+    $ms = $null; $img = $null; $bmp = $null
+    try {
+        $ms = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($Path))
+        $img = [System.Drawing.Image]::FromStream($ms)
+        $x0 = [Math]::Max(0, $X); $x1 = [Math]::Min([int]$img.Width, $X + $W); $ih = [int]$img.Height
+        if ($x1 -le $x0) { return @{ ok = $false; failure = 'geometry'; message = 'the strip is outside the picture'; bands = @() } }
+        $bmp = New-Object System.Drawing.Bitmap($img)
+        $data = $bmp.LockBits((New-Object System.Drawing.Rectangle($x0, 0, ($x1 - $x0), $ih)), [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $st = [int]$data.Stride
+        $buf = New-Object byte[] ($st * $ih)
+        [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $buf, 0, $buf.Length)
+        $bmp.UnlockBits($data)
+        $v = [EbiImageMath]::BandStats($buf, $st, ($x1 - $x0), $ih, [int[]]$Tops, $Height)
+        $bands = New-Object System.Collections.ArrayList
+        for ($k = 0; $k -lt @($Tops).Count; $k++) { [void]$bands.Add(@{ top = [int]$Tops[$k]; ink = [double]$v[$k * 4]; r = [double]$v[$k * 4 + 1]; g = [double]$v[$k * 4 + 2]; b = [double]$v[$k * 4 + 3] }) }
+        return @{ ok = $true; failure = ''; message = ''; bands = $bands.ToArray() }
+    } catch {
+        return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; bands = @() }
+    } finally {
+        if ($null -ne $bmp) { $bmp.Dispose() }
+        if ($null -ne $img) { $img.Dispose() }
+        if ($null -ne $ms) { $ms.Dispose() }
     }
 }
 

@@ -1,3 +1,37 @@
+## 2026-10-21 - silent mode; HOST line numbers OCR missed at either end read from the pixels (v2.33.0)
+
+Operator 10/21: "add a silent mode ... at least not pops up at front except
+need my input". And SJODWDBC on v2.32.5: the HOST shots showed
+000001-000019 / 032431-032449, OCR read 000002-000016 / 032432-032444, so
+the DF pair was judged "empty lines dropped" and left unaligned.
+
+### Added
+- Silent mode: `ebi.ps1 ... -Silent`, or `{ "operator": { "silent": true } }`
+  in `<WorkDir>/ebi.local.json` (a menu's child run reads it too; sets
+  `EBI_SILENT=1`). Between steps the front goes back to the window the
+  operator had before a step took it (`Set-EbiForeground` keeps it in
+  `$global:EbiReturnHwnd`; `Restore-EbiReturnWindow`) instead of the
+  console; Excel steps no longer raise Excel or hold the view
+  (`Show-EbiExcelAt` without -Front, `Get-EbiWatchDwellMs` = 0) and give the
+  front back like any other step; the end of the run blinks the console's
+  taskbar button (`Send-EbiConsoleFlash`) instead of raising it. Questions
+  (gates, prepare, share) still bring the console -- they need an answer.
+  Steps that must see or type into a window (Edge, DF capture) still take
+  the front for their moment: do not type while they run.
+- `Test-EbiSilent`, `Test-EbiProfileSilent` (kernel/Gate.ps1);
+  profiles/gfix-recv/operator.json documents `silent`.
+
+### Fixed
+- screen.read_line_numbers: the row pitch is a least-squares line through
+  the numbers that agree (OCR's whole-pixel tops read a 9.2 px pitch as 9
+  or 10, and twenty rows on that drifts a whole row); rows OCR did not read
+  at either end of a run are added when the number column's pixels show the
+  same ink amount and colour as the rows it did read, stopping at the red
+  `****** TOP/BOTTOM OF DATA` line, a blank row, an OCR-read marker line or
+  line 1 (`ScreenReadLineNumbers-Grid` / `-Stops` / `-Extend`,
+  `Get-EbiBandColors`, `EbiImageMath.BandStats`). SJODWDBC now reads
+  000001-000019 / 032431-032449 -> lined up with the 32449-line file.
+
 ## 2026-10-21 - read_line_numbers returns one record; a shot with skipped rows stays one run (v2.32.5)
 
 10/21 QJODWDBC on v2.32.4: hostLines failed `contract_violation: Invoke-Step

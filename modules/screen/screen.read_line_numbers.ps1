@@ -11,7 +11,9 @@
 # that breaks the run while its neighbours keep it is a misread and is
 # corrected; a real jump starts a new run (10/21 KJODWWBV: the two HOST
 # shots were one Ctrl+G group, one image). A run with more than one
-# misread in five lines is not trusted.
+# misread in five lines is not trusted. Rows OCR did not read at either
+# end of a run are added when the number column's pixels show the same
+# ink there (10/21 SJODWDBC: 032431-032449 shown, 032432-032444 read).
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')   # Resolve-EbiWorkPath
 . (Join-Path $PSScriptRoot '..\..\kernel\Image.ps1')    # Invoke-EbiInvertPng
@@ -167,7 +169,22 @@ function ScreenReadLineNumbers-ByRows {
             $k = [string]([int]$it['n'] - $row); if ($votes.Contains($k)) { $votes[$k]++ } else { $votes[$k] = 1 }
         }
         $best = ''; $bn = 0; foreach ($k in $votes.Keys) { if ([int]$votes[$k] -gt $bn) { $best = $k; $bn = [int]$votes[$k] } }
-        [void]$out.Add(@{ first = [int]$best; last = [int]$best + $rowMax; count = $rowMax + 1; votes = $bn; read = $r.Count })
+        # where the rows really sit, for the pixel check (Extend): a line
+        # through the numbers that agree (y = a + p * n) -- OCR's whole-
+        # pixel tops make neighbour steps 9 or 10 for a 9.2 px pitch, and
+        # twenty rows on that drifts a whole row (10/21 SJODWDBC)
+        $fy0 = $y0; $fp = $pitch
+        $in = @($r | Where-Object { [Math]::Abs([int]$_['n'] - [int][Math]::Round(([double]$_['y'] - $y0) / $pitch) - [int]$best) -le 1 })
+        for ($pass = 0; $pass -lt 2 -and $in.Count -ge 2; $pass++) {
+            $mn = 0.0; $my = 0.0; foreach ($it in $in) { $mn += [double]$it['n']; $my += [double]$it['y'] }; $mn /= $in.Count; $my /= $in.Count
+            $sxx = 0.0; $sxy = 0.0; foreach ($it in $in) { $dx = [double]$it['n'] - $mn; $sxx += $dx * $dx; $sxy += $dx * ([double]$it['y'] - $my) }
+            if ($sxx -le 0) { break }
+            $p2 = $sxy / $sxx; if ($p2 -le 0.8 * $pitch -or $p2 -ge 1.2 * $pitch) { break }
+            $fp = $p2; $fy0 = $my + $p2 * ([int]$best - $mn)
+            $in = @($r | Where-Object { [Math]::Abs([double]$_['y'] - ($fy0 + $fp * ([int]$_['n'] - [int]$best))) -le 0.4 * $fp })
+        }
+        if ($fp -ne $pitch) { $rowMax = 0; foreach ($it in $r) { $rw = [int][Math]::Round(([double]$it['y'] - $fy0) / $fp); if ($rw -gt $rowMax) { $rowMax = $rw } } }
+        [void]$out.Add(@{ first = [int]$best; last = [int]$best + $rowMax; count = $rowMax + 1; votes = $bn; read = $r.Count; y0 = $fy0; pitch = $fp })
     }
     return $out.ToArray()
 }
@@ -191,7 +208,7 @@ function ScreenReadLineNumbers-Parse {
             foreach ($r in @($rr)) {
                 $ok = ([int]$r['votes'] -ge $MinLines -and [int]$r['votes'] * 2 -ge [int]$r['read'])
                 $why = if ($ok) { $(if ([int]$r['votes'] -lt [int]$r['count']) { ('' + $r['votes'] + ' of ' + $r['count'] + ' rows read alike, the rest by position') } else { '' }) } else { ('{0} row(s) {1:000000}-{2:000000}, only {3} of {4} numbers agree: not trusted' -f $r['count'], $r['first'], $r['last'], $r['votes'], $r['read']) }
-                [void]$out.Add(@{ ok = $ok; first = [int]$r['first']; last = [int]$r['last']; count = [int]$r['count']; reason = $why })
+                [void]$out.Add(@{ ok = $ok; first = [int]$r['first']; last = [int]$r['last']; count = [int]$r['count']; reason = $why; y0 = [double]$r['y0']; pitch = [double]$r['pitch'] })
             }
             $good = @($out | Where-Object { $_['ok'] })
             if ($good.Count -gt 0) { return $good }
@@ -213,6 +230,71 @@ function ScreenReadLineNumbers-Parse {
     return $out.ToArray()
 }
 
+function ScreenReadLineNumbers-Grid {
+    # PURE. The rows of a run's grid that fit in a picture H px tall:
+    # @(@{ k; top }) with row k at y0 + k * pitch (k = 0: the run's first row).
+    param([double]$Y0, [double]$Pitch, [int]$Height)
+    $rows = New-Object System.Collections.ArrayList
+    if ($Pitch -le 0) { return @() }
+    $kLo = -[int][Math]::Floor($Y0 / $Pitch)
+    $kHi = [int][Math]::Floor(($Height - $Y0 - 0.8 * $Pitch) / $Pitch)
+    for ($k = $kLo; $k -le $kHi; $k++) { $top = [int][Math]::Round($Y0 + $k * $Pitch); if ($top -ge 0) { [void]$rows.Add(@{ k = $k; top = $top }) } }
+    return $rows.ToArray()
+}
+
+function ScreenReadLineNumbers-Stops {
+    # PURE. Grid rows OCR read as a marker line ("****** BOTTOM OF DATA",
+    # "TOP OF DATA"): a run never grows into them.
+    param($Boxes, [double]$Y0, [double]$Pitch)
+    $ks = New-Object System.Collections.ArrayList
+    if ($Pitch -le 0) { return @() }
+    foreach ($b in @($Boxes)) {
+        if (-not ($b -is [System.Collections.IDictionary]) -or [double]$b['y'] -lt 0) { continue }
+        $t = ([string]$b['text']).Trim()
+        if ($t -match '^\*' -or $t -match '(?i)BOTTOM|TOP OF') { [void]$ks.Add([int][Math]::Round(([double]$b['y'] - $Y0) / $Pitch)) }
+    }
+    return @($ks)
+}
+
+function ScreenReadLineNumbers-Extend {
+    <#
+      PURE. Grow a run over the rows OCR did not read (10/21 SJODWDBC: the
+      HOST end shot showed 032431-032449, OCR read 032432-032444, and the
+      DF pair was judged "empty lines dropped"). Bands = @(@{ k; ink; r;
+      g; b }) of the number column per grid row (Get-EbiBandColors): the
+      rows inside the run give the numbers' ink amount and colour; a row
+      just outside with the same amount (0.4..2.5x) and colour (each
+      channel within 40) is a numbered row too. Stops at a row without it
+      (the red "****** BOTTOM OF DATA", a blank row), at a Stops row, and at
+      line 1. -> @{ first; last; count; up; down }
+    #>
+    param([hashtable]$Range, $Bands, $Stops = @())
+    $first = [int]$Range['first']; $last = [int]$Range['last']; $rowMax = $last - $first
+    $byK = @{}; foreach ($b in @($Bands)) { $byK[[int]$b['k']] = $b }
+    $inks = New-Object System.Collections.ArrayList; $sr = 0.0; $sg = 0.0; $sb = 0.0; $n = 0
+    for ($k = 0; $k -le $rowMax; $k++) {
+        if (-not $byK.Contains($k)) { continue }
+        $b = $byK[$k]; if ([double]$b['ink'] -le 0) { continue }
+        [void]$inks.Add([double]$b['ink']); $sr += [double]$b['r']; $sg += [double]$b['g']; $sb += [double]$b['b']; $n++
+    }
+    $res = @{ first = $first; last = $last; count = $rowMax + 1; up = 0; down = 0 }
+    if ($n -lt 2) { return $res }
+    $sorted = @($inks | Sort-Object); $ref = [double]$sorted[[int][Math]::Floor($sorted.Count / 2)]
+    $cr = $sr / $n; $cg = $sg / $n; $cb = $sb / $n
+    $stopSet = @{}; foreach ($s in @($Stops)) { $stopSet[[int]$s] = $true }
+    $alike = {
+        param($k)
+        if ($stopSet.Contains([int]$k) -or -not $byK.Contains([int]$k)) { return $false }
+        $b = $byK[[int]$k]; $i = [double]$b['ink']
+        if ($i -lt 0.4 * $ref -or $i -gt 2.5 * $ref) { return $false }
+        return ([Math]::Abs([double]$b['r'] - $cr) -le 40 -and [Math]::Abs([double]$b['g'] - $cg) -le 40 -and [Math]::Abs([double]$b['b'] - $cb) -le 40)
+    }
+    $k = $rowMax + 1; while (& $alike $k) { $res['down']++; $k++ }
+    $k = -1; while ($first - $res['up'] -gt 1 -and (& $alike $k)) { $res['up']++; $k-- }
+    $res['first'] = $first - $res['up']; $res['last'] = $last + $res['down']; $res['count'] = $res['last'] - $res['first'] + 1
+    return $res
+}
+
 function Invoke-Step {
     param($In, $Ctx)
     $paths = @(@($In['paths']) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { Resolve-EbiWorkPath -PathValue ([string]$_) -WorkDir ([string]$Ctx['WorkDir']) })
@@ -225,7 +307,7 @@ function Invoke-Step {
         $base = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($p), [System.IO.Path]::GetFileNameWithoutExtension($p))
         $vv = New-EbiOcrVariants -Path $p -Base $base
         $tries = if ($vv['ok']) { @($vv['paths']) } else { @($p) }
-        $best = $null; $bestN = -1; $ran = $false; $why = ''
+        $best = $null; $bestN = -1; $ran = $false; $why = ''; $bestBoxes = @()
         foreach ($t in $tries) {
             $r = Invoke-EbiOcrFile -Path $t -Language ([string]$In['language'])
             if (-not $r['ok']) { $why = [string]$r['message']; continue }
@@ -235,7 +317,7 @@ function Invoke-Step {
             $src = if (@($r['boxes']).Count -gt 0) { @($r['boxes']) } else { @($r['lines']) }
             $xs = @(ScreenReadLineNumbers-Parse -Lines $src -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
             $n = [int](@($xs | Where-Object { $_['ok'] } | ForEach-Object { [int]$_['count'] } | Measure-Object -Sum).Sum)
-            if ($n -gt $bestN) { $best = $xs; $bestN = $n }
+            if ($n -gt $bestN) { $best = $xs; $bestN = $n; $bestBoxes = @($r['boxes']) }
         }
         if (-not $ran) {
             $available = $false
@@ -243,7 +325,29 @@ function Invoke-Step {
             $Ctx.Log.Info(('{0}: OCR did not run: {1}' -f (Split-Path -Leaf $p), $why))
             continue
         }
+        # rows OCR did not read at either end: the number column's pixels
+        # (all the variants share the frame's geometry; the first is in colour)
+        $frame = if ($vv['ok']) { [string]@($vv['paths'])[0] } else { $p }
         foreach ($x in $best) {
+            if (-not $x['ok'] -or -not $x.Contains('pitch') -or [double]$x['pitch'] -le 0) { continue }
+            try {
+                $sz = Get-EbiPngSize -Path $frame
+                if (-not $sz['ok']) { continue }
+                $grid = @(ScreenReadLineNumbers-Grid -Y0 ([double]$x['y0']) -Pitch ([double]$x['pitch']) -Height ([int]$sz['height']))
+                if ($grid.Count -eq 0) { continue }
+                $bc = Get-EbiBandColors -Path $frame -X 0 -W ([int][Math]::Round(5 * [double]$x['pitch'])) -Tops ([int[]]@($grid | ForEach-Object { [int]$_['top'] })) -Height ([int][Math]::Max(2, [Math]::Round(0.8 * [double]$x['pitch'])))
+                if (-not $bc['ok']) { continue }
+                $bands = @(for ($i = 0; $i -lt $grid.Count; $i++) { $b = $bc['bands'][$i]; @{ k = [int]$grid[$i]['k']; ink = $b['ink']; r = $b['r']; g = $b['g']; b = $b['b'] } })
+                $ext = ScreenReadLineNumbers-Extend -Range $x -Bands $bands -Stops (ScreenReadLineNumbers-Stops -Boxes $bestBoxes -Y0 ([double]$x['y0']) -Pitch ([double]$x['pitch']))
+                if ([int]$ext['up'] + [int]$ext['down'] -gt 0) {
+                    $x['first'] = [int]$ext['first']; $x['last'] = [int]$ext['last']; $x['count'] = [int]$ext['count']
+                    $add = ('+{0} row(s) above / +{1} below by the number column''s pixels' -f $ext['up'], $ext['down'])
+                    $x['reason'] = if ([string]$x['reason'] -ne '') { [string]$x['reason'] + '; ' + $add } else { $add }
+                }
+            } catch { }
+        }
+        foreach ($x in $best) {
+            [void]$x.Remove('y0'); [void]$x.Remove('pitch')
             $x['path'] = $p
             [void]$ranges.Add($x)
             $Ctx.Log.Info(('{0}: {1}' -f (Split-Path -Leaf $p), $(if ($x['ok']) { ('lines {0:000000}-{1:000000} ({2}){3}' -f $x['first'], $x['last'], $x['count'], $(if ($x['reason']) { ', ' + $x['reason'] } else { '' })) } else { ('no line numbers: ' + $x['reason']) })))

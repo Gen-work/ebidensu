@@ -407,6 +407,7 @@ evidence = ok 的行：
 | 文件行数比 Teams 件数少 | 正常，只在回复里标 `行数(件数)` | `-Var countsShortOk=false`（只这一次）或 `gfixRecv.track.json` 的 `vars` |
 | GATE 的 `check:` 行 | 5 条 | `profiles/gfix-recv/layout.json` 的 `evidence.checklist` |
 | 邮件 | 只做草稿，你来发送 | 不提供自动发送 |
+| 窗口跳到前面 | 每步把用到的窗口（Edge / DF / Excel）拉到前面，步与步之间回到控制台 | **静默模式**（v2.33.0）：`ebi.local.json` 写 `{ "operator": { "silent": true } }`，或命令行加 `-Silent`。Excel 在后面写、不再停顿给你看；Edge / DF 这类必须看见或打字的步骤仍会占前台一小会儿（这期间别打字），之后**还给你原来在用的窗口**；只有要你回答的面板才把控制台拉到前面；跑完只闪任务栏按钮 |
 
 觉得哪个不顺手就说一声；改动会记进 `docs/ebi-dance/KNOWLEDGE.md`。
 

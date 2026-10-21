@@ -102,6 +102,11 @@ function Set-EbiForeground {
     param([IntPtr]$HWnd, [int]$SettleMs = 300)
     [void](Get-EbiNative)
     if ($HWnd -eq [IntPtr]::Zero -or -not [EbiNative]::IsWindow($HWnd)) { return @{ ok = $false; message = 'the window handle is not a window (closed?)' } }
+    # nothing of the run's is out yet: whatever is in front is the
+    # operator's -- silent mode gives the front back to it (kernel/Gate.ps1)
+    if (-not $global:EbiWindowOut) {
+        try { $prev = [EbiNative]::GetForegroundWindow(); if ($prev -ne [IntPtr]::Zero -and $prev -ne $HWnd) { $global:EbiReturnHwnd = $prev } } catch { }
+    }
     for ($try = 1; $try -le 3; $try++) {
         # SW_RESTORE (9) only for a MINIMIZED window: on a maximized one it
         # would un-maximize it, and screen geometry measured on the maximized

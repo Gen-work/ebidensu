@@ -647,6 +647,9 @@ try {
     # KJODWWBV 10/21: HOST 007550-007568 (007568 under a red box, OCR read up to 007567), the file 7568 lines -> DF 07549-07568 either way
     $pl = VerifyDfRanges-Plan -Lines 7568 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 7550 7568)))['sets'][0]
     Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 18 -and $pl['end'] -eq 20) 'df ranges: the file runs 1 line past the HOST -> END picture 07549-07568 (20)'
+    # SJODWDBC 10/21: HOST 1-19 / 32431-32449 once the rows OCR missed are added, the file 32449 lines -> aligned, not "free"
+    $pl = VerifyDfRanges-Plan -Lines 32449 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 32431 32449)))['sets'][0]
+    Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 18) 'df ranges: SJODWDBC HOST 032431-032449 vs 32449 lines -> lined up'
     $pl = VerifyDfRanges-Plan -Lines 7568 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 7550 7567)))['sets'][0]
     Assert-True ($pl['mode'] -eq 'align' -and $pl['end'] -eq 20) 'df ranges: OCR missed the last HOST line under a red box -> the same 20 lines'
     Assert-Equal 'free' (VerifyDfRanges-Plan -Lines 7568 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 7550 7563)))['sets'][0])['mode'] 'df ranges: more than maxExtra lines past the HOST -> not lined up'
@@ -739,6 +742,29 @@ try {
     Assert-True ($ln.Count -eq 1 -and $ln[0]['first'] -eq 1 -and $ln[0]['last'] -eq 13) 'host rows: rows OCR skipped do not split a shot whose numbers still fit'
     $ln = @(ScreenReadLineNumbers-Parse -Lines @(@{ text = '000002 a'; y = 10 }, @{ text = '000099 b'; y = 30 }, @{ text = '000777 c'; y = 50 }))
     Assert-True (-not $ln[0]['ok']) 'host rows: numbers that agree on nothing are not trusted'
+    # 10/21 SJODWDBC: the real OCR tops of the HOST start shot (9.2 px rows read 9 or 10 apart)
+    $bx4 = @(@{ text = '000002'; y = 80 }, @{ text = '000003 to'; y = 89 }, @{ text = '00004'; y = 99 }, @{ text = '000012'; y = 172 }, @{ text = '000017'; y = 218 })
+    $ln = @(ScreenReadLineNumbers-Parse -Lines $bx4)
+    Assert-True ($ln[0]['ok'] -and $ln[0]['first'] -eq 2 -and $ln[0]['last'] -eq 17 -and [Math]::Abs([double]$ln[0]['pitch'] - 9.2) -lt 0.1) 'host rows: the row pitch is fitted through the numbers (9.2, not 10), 000017 is row 15'
+    $gr = @(ScreenReadLineNumbers-Grid -Y0 80 -Pitch 9.2 -Height 280)
+    Assert-True ($gr[0]['k'] -eq -8 -and $gr[8]['k'] -eq 0 -and $gr[8]['top'] -eq 80 -and $gr[$gr.Count - 1]['top'] -le 280 - 7) 'host rows: the grid covers the picture above and below the run'
+    Assert-Equal '17' ((@(ScreenReadLineNumbers-Stops -Boxes @(@{ text = '000001 a'; y = 10 }, @{ text = '****** BOTTOM OF DATA'; y = 166 }) -Y0 10 -Pitch 9.2)) -join ',') 'host rows: the BOTTOM OF DATA line is a stop'
+    # the number column per row: green numbers, the red marker lines, the grey header
+    $green = @{ ink = 120; r = 26; g = 112; b = 32 }; $red = @{ ink = 85; r = 121; g = 40; b = 52 }; $grey = @{ ink = 300; r = 230; g = 230; b = 230 }
+    $bands = @(); foreach ($k in -3..20) { $c = if ($k -eq -2 -or $k -eq 18) { $red } elseif ($k -lt -2 -or $k -gt 18) { $grey } else { $green }; $bands += @{ k = $k; ink = $c['ink']; r = $c['r']; g = $c['g']; b = $c['b'] } }
+    $ex = ScreenReadLineNumbers-Extend -Range @{ first = 32432; last = 32444 } -Bands $bands
+    Assert-True ($ex['first'] -eq 32431 -and $ex['last'] -eq 32449 -and $ex['up'] -eq 1 -and $ex['down'] -eq 5) 'host rows: rows OCR missed at both ends added by the number column''s ink, up to the red BOTTOM/TOP OF DATA lines (SJODWDBC 032431-032449)'
+    $ex = ScreenReadLineNumbers-Extend -Range @{ first = 2; last = 17 } -Bands $bands
+    Assert-True ($ex['first'] -eq 1 -and $ex['up'] -eq 1) 'host rows: never above line 1'
+    $ex = ScreenReadLineNumbers-Extend -Range @{ first = 32432; last = 32444 } -Bands $bands -Stops @(14)
+    Assert-True ($ex['last'] -eq 32445) 'host rows: an OCR-read marker line stops the growth'
+    $ex = ScreenReadLineNumbers-Extend -Range @{ first = 5; last = 5 } -Bands $bands
+    Assert-True ($ex['up'] + $ex['down'] -eq 0) 'host rows: one row is no reference -> unchanged'
+    # EbiImageMath.BandStats: ground = commonest colour, ink = the rest
+    $bw = 4; $bh = 4; $buf = New-Object byte[] ($bw * 3 * $bh)   # black ground
+    foreach ($x in 0..1) { $o = (1 * $bw + $x) * 3; $buf[$o] = 30; $buf[$o + 1] = 200; $buf[$o + 2] = 20 }   # 2 green pixels on row 1 (BGR)
+    $st = [EbiImageMath]::BandStats($buf, $bw * 3, $bw, $bh, [int[]](0, 2), 2)
+    Assert-True ($st[0] -eq 2 -and [Math]::Round($st[1]) -eq 20 -and [Math]::Round($st[2]) -eq 200 -and $st[4] -eq 0) 'band stats: ink counted against the ground, its mean colour as R, G, B'
     $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')
     $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 12 } -In $in -Plan $null
     Assert-True (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = ''; firstLines = 12 } -Plan $sp) 'df shots: an earlier picture with the lines wanted is kept'

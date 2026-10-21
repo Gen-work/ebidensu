@@ -634,7 +634,8 @@ function Invoke-EbiStepCall {
         # the operator watches the evidence book fill; the console used to come
         # back between every write, so only each step's first jump was seen)
         $ebiCall['needs'] = @($ebiCall['manifest']['needs'])
-        $ebiCall['frontOk'] = Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (($ebiCall['needs'] -contains 'foreground') -or ($ebiCall['needs'] -contains 'excel'))
+        # (silent mode: Excel works behind, so an Excel step gives the front back too)
+        $ebiCall['frontOk'] = Set-EbiWindowFront -FrontHWnd $ebiCall['frontH'] -NeedsForeground (($ebiCall['needs'] -contains 'foreground') -or (($ebiCall['needs'] -contains 'excel') -and -not (Test-EbiSilent)))
         if ($ebiCall['frontH'] -ne [IntPtr]::Zero -and -not $ebiCall['frontOk']) { $ebiCall['ctx'].Log.Warn(('front "{0}" did not come to the front: the console may cover the screen this step reads' -f $ebiCall['frontN'])) }
     }
 
@@ -1128,7 +1129,13 @@ function Invoke-EbiWorkflow {
             }
         }
 
-        if (-not $dryRunFlag) { Restore-EbiConsoleWindow -Quiet; $global:EbiWindowOut = $false }   # the run is over: the console in front
+        if (-not $dryRunFlag) {
+            # the run is over: the console in front -- in silent mode the
+            # operator's window back and only a blink on the console's button
+            if (Test-EbiSilent) { if ($global:EbiWindowOut) { Restore-EbiReturnWindow }; Send-EbiConsoleFlash }
+            else { Restore-EbiConsoleWindow -Quiet }
+            $global:EbiWindowOut = $false
+        }
 
         $result['steps'] = $records.ToArray()
         $result['items'] = $itemRecords.ToArray()

@@ -152,8 +152,11 @@ function Show-EbiExcelAt {
       -Dwell (10/19: "the camera does not follow the inserts"): called
       again AFTER a write, at what was written, and held there for
       Get-EbiWatchDwellMs so a person can see it before the next step.
+      Silent mode (EBI_SILENT=1, kernel/Gate.ps1): no -Front, no -Dwell --
+      the sheet still scrolls, behind whatever the operator is doing.
     #>
     param($Worksheet, [int]$Row = 0, [switch]$Front, [switch]$Dwell)
+    if ([string]$env:EBI_SILENT -eq '1') { $Front = $false }
     $app = $null
     try { $app = $Worksheet.Application; if (-not [bool]$app.Visible) { return } } catch { return }
     try { [void]$Worksheet.Activate() } catch { }
@@ -167,6 +170,8 @@ function Show-EbiExcelAt {
 function Get-EbiWatchDwellMs {
     # PURE (reads the environment). How long Show-EbiExcelAt -Dwell holds
     # the view on what was just written: EBI_WATCH_MS, default 700; 0 = off.
+    # Silent mode (EBI_SILENT=1): 0 -- nobody is watching.
+    if ([string]$env:EBI_SILENT -eq '1') { return 0 }
     $v = [string]$env:EBI_WATCH_MS
     $n = 0
     if ($v -ne '' -and [int]::TryParse($v, [ref]$n)) { return [Math]::Max(0, $n) }

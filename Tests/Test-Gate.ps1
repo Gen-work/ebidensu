@@ -110,5 +110,16 @@ Assert-Equal ([IntPtr]99) (Get-EbiSessionHandle -Entry 99) 'front: a bare value 
 Assert-Equal ([IntPtr]::Zero) (Get-EbiSessionHandle -Entry $null) 'front: an unregistered name is Zero'
 Assert-Equal ([IntPtr]::Zero) (Get-EbiSessionHandle -Entry @{ kind = 'window' }) 'front: an entry with no value is Zero'
 
+# silent mode (10/21): EBI_SILENT=1 or operator.silent in the profile
+$keepSilent = $env:EBI_SILENT
+$env:EBI_SILENT = ''; Assert-True (-not (Test-EbiSilent)) 'silent: off by default'
+$env:EBI_SILENT = '1'; Assert-True (Test-EbiSilent) 'silent: EBI_SILENT=1 turns it on'
+$env:EBI_SILENT = $keepSilent
+Assert-True (Test-EbiProfileSilent -Profile @{ operator = @{ silent = $true } }) 'silent: operator.silent = true'
+Assert-True (-not (Test-EbiProfileSilent -Profile @{ operator = @{ silent = $false } })) 'silent: operator.silent = false'
+Assert-True (-not (Test-EbiProfileSilent -Profile @{ operator = @{ owner = 'x' } })) 'silent: no key = off'
+Assert-True (-not (Test-EbiProfileSilent -Profile @{})) 'silent: no operator = off'
+Assert-True (-not (Test-EbiProfileSilent -Profile $null)) 'silent: no profile = off'
+
 $rc = Complete-Tests
 exit $rc
