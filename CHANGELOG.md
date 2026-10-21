@@ -1,3 +1,19 @@
+## 2026-10-21 - DF first picture height 432, measured (v2.30.5)
+
+### Fixed
+- **layout.df.height 458 -> 432.** The operator's height sweep (2 px steps
+  on the office PC): the first view shows 16 clean lines only at about
+  430-434; 458 showed 17 lines + 6 px of the 18th (the 10/20 upper picture
+  加瀬さん sent back). The END view always shows one line fewer than the
+  window holds (the row under the last line stays blank): 17 lines at
+  464-480, so heightEnd 476 stays. 476 - 18 was the wrong derivation.
+  `_fit_doc` holds the measured table; the fit (v2.30.3) still checks
+  every capture.
+
+### Docs / tests
+- KNOWLEDGE K-28: cause measured, not inferred. Test-GfixRecvSteps: the
+  heights sit in the measured ranges.
+
 ## 2026-10-21 - GoAnywhere refresh counted from 詳細, not 5 Tabs (v2.30.4)
 
 ### Fixed

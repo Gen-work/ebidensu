@@ -593,7 +593,9 @@ try {
     Assert-Equal 'mid' (& $sp 20)['view'] 'df rule: the PgDn page keeps the first height'
     # 10/19 measured: 18 px a line, 476 = 17 lines; the HOST shows 17 records, HOST n = DF n-1
     $lay = (Read-EbiJson -Path (Join-Path $repoRoot 'profiles/gfix-recv/layout.json'))['value']['df']
-    Assert-Equal 18 (([int]$lay['heightEnd'] - [int]$lay['height'])) 'df size: the END picture is one 18 px line taller than the first (17 vs 16 lines)'
+    # 10/21 measured sweep: first view shows 16 clean lines at ~430-434; the END view shows one line fewer than the window holds, 17 at 464-480
+    Assert-True ([int]$lay['height'] -ge 430 -and [int]$lay['height'] -le 434) 'df size: first height in the measured 16-clean-lines range 430..434 (458 showed 17 + part of the 18th)'
+    Assert-True ([int]$lay['heightEnd'] -ge 464 -and [int]$lay['heightEnd'] -le 480) 'df size: END height in the measured 17-lines range 464..480'
     # 10/21 fit (SJODWSPN: the 458 first picture showed the 17th line): bands of the line-number strip
     $bands = { param([int]$n, [int]$lastH) @(for ($i = 0; $i -lt $n; $i++) { @{ top = 18 * $i; bottom = 18 * $i + 11; height = $(if ($i -eq $n - 1 -and $lastH -gt 0) { $lastH } else { 12 }) } }) }
     $fp = ScreenLaunchCapture-FitPlan -Bands (& $bands 16 0) -Want 16
