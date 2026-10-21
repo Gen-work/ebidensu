@@ -3,9 +3,11 @@
 # (10/21, the operator: picture 1 of the GFIX receive-result sheet -- the
 # new snap of the overview list -- must show the same job as picture 1 of
 # the GIFT receive-result sheet; compare the job column's pixels, not OCR,
-# which kept misreading the job name.) The second picture is scaled to the
-# first one's height, the strip is taken at the same place in both, and
-# the mean grey difference decides:
+# which kept misreading the job name.) The second picture is scaled to
+# the first one's height (then +-6 %), the strip of the first is searched
+# for across the second (10/21 FJODWWBV: compared at a fixed place, the
+# same job read 52 -- the two pictures have other margins), and the least
+# mean grey difference decides:
 #   ok       score <= okMax: the same cells
 #   ng       score >= ngMin: different text there (another job, other rows)
 #   unknown  in between, a blank strip, a picture missing, sizes that
@@ -30,6 +32,7 @@ $Manifest = @{
     b        = @{ type='any';    default=''; desc='the picture compared with it (a path or a list)' }
     fromFrac = @{ type='any';    default=0;  desc='left edge of the strip, 0..1 of a''s width (excel.snap_list jobFrom)' }
     toFrac   = @{ type='any';    default=1;  desc='right edge, 0..1 (jobTo)' }
+    bodyFrom = @{ type='any';    default=0;  desc='top of the compared rows, 0..1 of a''s height (excel.snap_list bodyFrom: under the headers, which are the same on every job)' }
     okMax    = @{ type='int';    default=8;  desc='score at or below this = the same' }
     ngMin    = @{ type='int';    default=25; desc='score at or above this = different' }
     minInk   = @{ type='any';    default=0.005; desc='a strip with less dark ink than this share says nothing (unknown)' }
@@ -75,7 +78,7 @@ function Invoke-Step {
         return @{ ok = $true; code = 'unknown'; score = -1; reason = $why; alert = $why }
     }
     $pa = Resolve-EbiWorkPath -PathValue $a -WorkDir $work; $pb = Resolve-EbiWorkPath -PathValue $b -WorkDir $work
-    $r = Compare-EbiPngStrip -PathA $pa -PathB $pb -FromFrac ([double]$In['fromFrac']) -ToFrac ([double]$In['toFrac'])
+    $r = Compare-EbiPngStrip -PathA $pa -PathB $pb -FromFrac ([double]$In['fromFrac']) -ToFrac ([double]$In['toFrac']) -BodyFrom ([double]$In['bodyFrom'])
     if (-not $r['ok']) {
         $why = ('{0}: not compared -- {1}' -f $label, $r['message'])
         return @{ ok = $true; code = 'unknown'; score = -1; reason = $why; alert = $why }

@@ -2,8 +2,9 @@
 # Read the line numbers printed at the left of each picture (10/21: the
 # HOST screen shots on the send-data sheet show 000001 ... 000019 and
 # 005666 ... 005685; the DF pictures must show the same records). Windows
-# OCR (en-US), first on the picture as it is, then on a negative of it
-# (the HOST shots are light text on black). Only a number that STARTS an
+# OCR (en-US) on the LEFT part of the picture sized for the recognizer
+# (10/21 FJODWWBV: wide shots gave nothing), as it is, in black on white
+# and as a negative; the reading with the most trusted lines wins. Only a number that STARTS an
 # OCR line counts, so the header ("Columns 00001 00080") and the data
 # never do.
 # Inside one shot the numbers always run one after another, so a number
@@ -132,26 +133,26 @@ function Invoke-Step {
     $available = $true
     $warn = New-Object System.Collections.ArrayList
     foreach ($p in $paths) {
-        $r = Invoke-EbiOcrFile -Path $p -Language ([string]$In['language'])
-        if (-not $r['ok']) {
+        # the left part, sized for the recognizer, as it is / black on white / negative
+        $base = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($p), [System.IO.Path]::GetFileNameWithoutExtension($p))
+        $vv = New-EbiOcrVariants -Path $p -Base $base
+        $tries = if ($vv['ok']) { @($vv['paths']) } else { @($p) }
+        $best = $null; $bestN = -1; $ran = $false; $why = ''
+        foreach ($t in $tries) {
+            $r = Invoke-EbiOcrFile -Path $t -Language ([string]$In['language'])
+            if (-not $r['ok']) { $why = [string]$r['message']; continue }
+            $ran = $true
+            $xs = @(ScreenReadLineNumbers-Parse -Lines $r['lines'] -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
+            $n = [int](@($xs | Where-Object { $_['ok'] } | ForEach-Object { [int]$_['count'] } | Measure-Object -Sum).Sum)
+            if ($n -gt $bestN) { $best = $xs; $bestN = $n }
+        }
+        if (-not $ran) {
             $available = $false
-            [void]$ranges.Add(@{ path = $p; ok = $false; first = 0; last = 0; count = 0; reason = ('OCR did not run: ' + [string]$r['message']) })
+            [void]$ranges.Add(@{ path = $p; ok = $false; first = 0; last = 0; count = 0; reason = ('OCR did not run: ' + $why) })
+            $Ctx.Log.Info(('{0}: OCR did not run: {1}' -f (Split-Path -Leaf $p), $why))
             continue
         }
-        $xs = @(ScreenReadLineNumbers-Parse -Lines $r['lines'] -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
-        $goodN = @($xs | Where-Object { $_['ok'] } | ForEach-Object { [int]$_['count'] } | Measure-Object -Sum).Sum
-        $neg = [System.IO.Path]::ChangeExtension($p, '.neg.png')
-        $v = Invoke-EbiInvertPng -Path $p -Out $neg
-        if ($v['ok']) {
-            # the negative too, every time: on light-on-black shots it usually reads more
-            $r2 = Invoke-EbiOcrFile -Path $neg -Language ([string]$In['language'])
-            if ($r2['ok']) {
-                $xs2 = @(ScreenReadLineNumbers-Parse -Lines $r2['lines'] -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
-                $goodN2 = @($xs2 | Where-Object { $_['ok'] } | ForEach-Object { [int]$_['count'] } | Measure-Object -Sum).Sum
-                if ([int]$goodN2 -gt [int]$goodN) { $xs = $xs2 }
-            }
-        }
-        foreach ($x in $xs) {
+        foreach ($x in $best) {
             $x['path'] = $p
             [void]$ranges.Add($x)
             $Ctx.Log.Info(('{0}: {1}' -f (Split-Path -Leaf $p), $(if ($x['ok']) { ('lines {0:000000}-{1:000000} ({2}){3}' -f $x['first'], $x['last'], $x['count'], $(if ($x['reason']) { ', ' + $x['reason'] } else { '' })) } else { ('no line numbers: ' + $x['reason']) })))

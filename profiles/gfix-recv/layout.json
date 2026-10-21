@@ -103,9 +103,10 @@
         "padBottom": 3
       },
       {
-        "x": 117,
+        "_doc": "the 同一内容 cell of the status bar, from the bottom-right corner. 10/21 KJODWWBV: x 117 / w 112 also covered the right part of 移動 (the right edges met) -> x 94 / w 91, measured on the operator's screenshot (rough: set it in ebi.local.json layout.df.marks if it is still off)",
+        "x": 94,
         "y": 19,
-        "w": 112,
+        "w": 91,
         "h": 19,
         "anchor": "br"
       }

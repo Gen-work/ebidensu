@@ -437,6 +437,7 @@ Compare the same column strip of two pictures of the same rows (pixels); ok / ng
 |-------|------|----------|---------|------|------|
 | `a` | any |  | (empty) |  | the picture the strip is measured on (a path, or a list: its first path is taken) |
 | `b` | any |  | (empty) |  | the picture compared with it (a path or a list) |
+| `bodyFrom` | any |  | 0 |  | top of the compared rows, 0..1 of a's height (excel.snap_list bodyFrom: under the headers, which are the same on every job) |
 | `fromFrac` | any |  | 0 |  | left edge of the strip, 0..1 of a's width (excel.snap_list jobFrom) |
 | `label` | string |  | the pictures |  | for the reason / alert wording |
 | `minInk` | any |  | 0.005 |  | a strip with less dark ink than this share says nothing (unknown) |
@@ -1605,6 +1606,7 @@ Filter the overview list to one job and snap its rows to a PNG (on to SNDFILE wh
 
 | output | type | desc |
 |--------|------|------|
+| `bodyFrom` | any | top of the data rows (under the two header rows), 0..1 of the picture's height |
 | `extended` | bool | true when the snap ran on to extendTo (rows repeated from left to job) |
 | `jobFrom` | any | left edge of the job column across the picture, 0..1 of its width (screen.compare_strip) |
 | `jobTo` | any | right edge of the job column, 0..1 |
