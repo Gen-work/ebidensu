@@ -1560,6 +1560,11 @@
           "default": 2,
           "type": "int"
         },
+        "highlight": {
+          "default": "",
+          "desc": "\"#RRGGBB\" (or several, comma-separated, first one the sheet does not already use): fill every written cell with it so a person can check them before saving. The workflow then closes WITHOUT saving and writes again un-filled to save (10/22: the fill never reaches the shared file)",
+          "type": "string"
+        },
         "items": {
           "desc": "records, one per key (table.select rows)",
           "required": true,
@@ -1618,8 +1623,16 @@
       "needs": [
         "excel"
       ],
-      "notes": "A key with several matching rows (two files listed twice) gets every one written. A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.",
+      "notes": "A key with several matching rows (two files listed twice) gets every one written. A cell holding a formula is never written (its value may look blank), reported in kept. A date written into a General cell gets the yyyy/m/d format (what typing a date does). A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.",
       "outputs": {
+        "cells": {
+          "desc": "addresses written, e.g. AJ3854",
+          "type": "list"
+        },
+        "highlight": {
+          "desc": "the fill colour used (\"\" = none)",
+          "type": "string"
+        },
         "kept": {
           "desc": "\"KEY row 123: AJ already 2026-10-16\" for cells left as they were",
           "type": "list"

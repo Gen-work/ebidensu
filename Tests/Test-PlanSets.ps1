@@ -290,6 +290,19 @@ $plan = ExcelMarkRows-Plan -Grid $g2 -FirstRow 7 -KeyColumn 'A' -Items $it2 -Key
 $w = (@($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] + '=' + $_['value'] + $(if ($_['number']) { '#' } else { '' }) }) | Sort-Object) -join ','
 Assert-Equal 'AJ9=2026-10-21,AK8=2026-10-21,AK9=2026-10-21,AQ8=0.1#,AQ9=0.1#' $w ('mark_rows: a list where = both task rows; whereMatch keeps own / own<-other rows only; M/d is this year; AQ is a number; the hand-typed AJ stays: ' + $w)
 Assert-Equal 'QJODJSPP' (@($plan['notFound']) -join ',') 'mark_rows: a job whose rows are all someone else''s is not found (not written)'
+# 10/22: a formula cell that shows blank is never written over
+$fm = @{ AJ = @('', '', '', '', ''); AK = @('', '', '=AJ9', '', ''); AQ = @('', '', '', '', '') }
+$plan = ExcelMarkRows-Plan -Grid $g2 -FirstRow 7 -KeyColumn 'A' -Items $it2 -KeyField 'JOB' -Where @{ B = $recv; G = @('after', 'summary') } -WhereMatch @{ P = $ownPat } -SetFields @{} -SetValues @{ AJ = '10/21'; AK = '10/21'; AQ = '0.1' } -DateColumns @('AJ', 'AK') -NumberColumns @('AQ') -Today ([datetime]'2026-10-20') -Formulas $fm
+$w = (@($plan['writes'] | ForEach-Object { $_['letter'] + $_['row'] }) | Sort-Object) -join ','
+Assert-Equal 'AJ9,AK8,AQ8,AQ9' $w 'mark_rows: AK9 holds a formula -> not written'
+Assert-True (@($plan['kept']) -match 'AK has a formula \(=AJ9\)').Count -eq 1 'mark_rows: the formula cell is reported in kept'
+# the check fill: light violet, never a colour the sheet already uses
+Assert-Equal (230 + 214 * 256 + 255 * 65536) (ExcelMarkRows-ColorOf '#E6D6FF') 'mark_rows: #RRGGBB -> Excel Color (R + G*256 + B*65536)'
+Assert-Equal -1 (ExcelMarkRows-ColorOf 'violet') 'mark_rows: not a colour -> -1'
+$pk = ExcelMarkRows-PickColor -Candidates '#E6D6FF,#D2B9F5' -Used @(16777215, (ExcelMarkRows-ColorOf '#E8D8FC'))
+Assert-Equal '#D2B9F5' $pk['hex'] 'mark_rows: the first violet is too close to one on the sheet -> the next one'
+$pk = ExcelMarkRows-PickColor -Candidates '#E6D6FF' -Used @(16777215, 65535)
+Assert-Equal '#E6D6FF' $pk['hex'] 'mark_rows: white and yellow on the sheet -> the light violet'
 Assert-Equal '2026-10-21' (ExcelMarkRows-Day -Text '10/21' -Today ([datetime]'2026-10-20')) 'mark_rows: 10/21 -> this year'
 Assert-Equal 'X' (@(Get-EbiSaveDialogs -Given @() -Profile @{ layout = @{ evidence = @{ saveDialogs = @('X') } } }) -join ',') 'save dialogs: a save step with no list takes the profile''s (no save may forget the Esc)'
 Assert-Equal 'Y' (@(Get-EbiSaveDialogs -Given @('Y') -Profile @{ layout = @{ saveDialogs = @('X') } }) -join ',') 'save dialogs: the step''s own list wins'
