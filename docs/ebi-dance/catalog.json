@@ -1227,6 +1227,11 @@
           "desc": "in a group, hide the shapes that are not pictures (red boxes) while it is exported, then show them again",
           "type": "bool"
         },
+        "only": {
+          "default": 0,
+          "desc": "export only the n-th picture (1 = the first, top-left); 0 = all",
+          "type": "int"
+        },
         "saveDir": {
           "desc": "pic1.png, pic2.png, ... in sheet order; relative paths resolve under the work dir",
           "required": true,
@@ -2063,6 +2068,14 @@
         "extended": {
           "desc": "true when the snap ran on to extendTo (rows repeated from left to job)",
           "type": "bool"
+        },
+        "jobFrom": {
+          "desc": "left edge of the job column across the picture, 0..1 of its width (screen.compare_strip)",
+          "type": "any"
+        },
+        "jobTo": {
+          "desc": "right edge of the job column, 0..1",
+          "type": "any"
         },
         "lines": {
           "desc": "each row's cells from left to the right edge, tab-joined (for the gate)",
@@ -4555,6 +4568,95 @@
       "provides": [],
       "releases": [],
       "summary": "Save a PNG screenshot of the window held in a session resource",
+      "tier": "core"
+    },
+    "screen.compare_strip": {
+      "effects": "read",
+      "example": {
+        "use": "screen.compare_strip",
+        "with": {
+          "a": "capture/{{item.keySafe}}/pic1gfix/pic1.png",
+          "b": "capture/{{item.keySafe}}/pic1gift/pic1.png",
+          "fromFrac": 0.8,
+          "label": "picture 1 job column",
+          "toFrac": 1
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/screen/screen.compare_strip.ps1",
+      "group": "screen",
+      "id": "screen.compare_strip",
+      "idempotent": true,
+      "inputs": {
+        "a": {
+          "default": "",
+          "desc": "the picture the strip is measured on (a path, or a list: its first path is taken)",
+          "type": "any"
+        },
+        "b": {
+          "default": "",
+          "desc": "the picture compared with it (a path or a list)",
+          "type": "any"
+        },
+        "fromFrac": {
+          "default": 0,
+          "desc": "left edge of the strip, 0..1 of a's width (excel.snap_list jobFrom)",
+          "type": "any"
+        },
+        "label": {
+          "default": "the pictures",
+          "desc": "for the reason / alert wording",
+          "type": "string"
+        },
+        "minInk": {
+          "default": 0.005,
+          "desc": "a strip with less dark ink than this share says nothing (unknown)",
+          "type": "any"
+        },
+        "ngMin": {
+          "default": 25,
+          "desc": "score at or above this = different",
+          "type": "int"
+        },
+        "okMax": {
+          "default": 8,
+          "desc": "score at or below this = the same",
+          "type": "int"
+        },
+        "toFrac": {
+          "default": 1,
+          "desc": "right edge, 0..1 (jobTo)",
+          "type": "any"
+        }
+      },
+      "needs": [],
+      "notes": "okMax / ngMin are first guesses (10/21); the gate and gate.json show the score so they can be set from real runs.",
+      "outputs": {
+        "alert": {
+          "desc": "the reason when code is not ok, else empty",
+          "type": "string"
+        },
+        "code": {
+          "desc": "ok | ng | unknown",
+          "type": "string"
+        },
+        "reason": {
+          "desc": "one line for the gate",
+          "type": "string"
+        },
+        "score": {
+          "desc": "mean grey difference 0..255; -1 when not measured",
+          "type": "any"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Compare the same column strip of two pictures of the same rows (pixels); ok / ng / unknown + alert",
       "tier": "core"
     },
     "screen.crop": {

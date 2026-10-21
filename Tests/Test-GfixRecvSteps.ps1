@@ -49,7 +49,7 @@ foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'ver
                  'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy',
                  'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open', 'verify.assert_each', 'flow.require',
                  'verify.find_token', 'screen.ocr', 'human.gate', 'excel.append_row', 'human.draft_mail', 'human.share',
-                 'screen.read_line_numbers', 'verify.df_ranges', 'excel.export_pictures')) {
+                 'screen.read_line_numbers', 'verify.df_ranges', 'excel.export_pictures', 'screen.compare_strip')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -675,6 +675,18 @@ try {
     Assert-True ($dr['ok'] -and $dr['aligned'] -eq 1 -and $dr['plans'][1]['mode'] -eq 'free' -and $dr['alert'] -eq '') 'df ranges step: pair 1 lined up, pair 2 free (empty lines) with no alert'
     $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = @(@{ lines = 61; rightName = 'F1.csv' }); ranges = @(@{ ok = $false; reason = 'x' }) }
     Assert-True ($dr['plans'][0]['mode'] -eq 'default' -and $dr['alert'] -match 'NOT lined up') 'df ranges step: HOST pictures there but unreadable -> default pictures + a red line on the gate'
+    # ---------------------------------------------------------------- picture 1: job column by pixels (10/21)
+    $gg = Get-EbiStripGeometry -WidthA 1200 -HeightA 300 -WidthB 600 -HeightB 150 -FromFrac 0.8 -ToFrac 1.0
+    Assert-True ($gg['ok'] -and $gg['x0'] -eq 960 -and $gg['x1'] -eq 1200 -and $gg['scaledWidthB'] -eq 1200) 'pic1 strip: B shown at half size is scaled to A''s height, the job strip at 960..1200'
+    $gg = Get-EbiStripGeometry -WidthA 1200 -HeightA 300 -WidthB 500 -HeightB 150 -FromFrac 0.8 -ToFrac 1.0
+    Assert-True (-not $gg['ok']) 'pic1 strip: the other picture narrower than the strip -> not compared'
+    Assert-True (-not (Get-EbiStripGeometry -WidthA 100 -HeightA 50 -WidthB 100 -HeightB 50 -FromFrac 0 -ToFrac 0)['ok']) 'pic1 strip: no job column found (0..0) -> not compared'
+    Assert-Equal 'ok' (ScreenCompareStrip-Verdict -Score 3 -Ink 0.05 -OkMax 8 -NgMin 25 -MinInk 0.005) 'pic1 cmp: small difference -> ok'
+    Assert-Equal 'ng' (ScreenCompareStrip-Verdict -Score 40 -Ink 0.05 -OkMax 8 -NgMin 25 -MinInk 0.005) 'pic1 cmp: big difference -> ng'
+    Assert-Equal 'unknown' (ScreenCompareStrip-Verdict -Score 15 -Ink 0.05 -OkMax 8 -NgMin 25 -MinInk 0.005) 'pic1 cmp: in between -> unknown'
+    Assert-Equal 'unknown' (ScreenCompareStrip-Verdict -Score 0 -Ink 0 -OkMax 8 -NgMin 25 -MinInk 0.005) 'pic1 cmp: a blank strip says nothing'
+    $cs = Invoke-TestStep 'screen.compare_strip' @{ a = @(); b = 'x.png' }
+    Assert-True ($cs['ok'] -and $cs['code'] -eq 'unknown' -and $cs['alert'] -ne '') 'pic1 cmp step: the new picture missing -> unknown + alert, never a stop'
     $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')
     $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 12 } -In $in -Plan $null
     Assert-True (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = ''; firstLines = 12 } -Plan $sp) 'df shots: an earlier picture with the lines wanted is kept'

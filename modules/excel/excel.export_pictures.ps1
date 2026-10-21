@@ -23,6 +23,7 @@ $Manifest = @{
     sheet    = @{ type='string';  required=$true }
     saveDir  = @{ type='path';    required=$true; desc='pic1.png, pic2.png, ... in sheet order; relative paths resolve under the work dir' }
     hideMarks = @{ type='bool';   default=$true; desc='in a group, hide the shapes that are not pictures (red boxes) while it is exported, then show them again' }
+    only     = @{ type='int';     default=0; desc='export only the n-th picture (1 = the first, top-left); 0 = all' }
     scale    = @{ type='int';     default=3; desc='export size against the size on the sheet (bigger reads better for OCR)' }
   }
   outputs    = @{
@@ -84,6 +85,7 @@ function Invoke-Step {
     $n = 0
     foreach ($p in $pics) {
         $n++
+        if ([int]$In['only'] -gt 0 -and $n -ne [int]$In['only']) { continue }
         $dest = Join-Path $dir ('pic' + $n + '.png')
         # a group: hide its marks (red boxes, arrows -- not pictures) for the
         # export, so a box drawn over a line number does not hide it from OCR
