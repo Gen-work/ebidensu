@@ -186,6 +186,54 @@ function Invoke-EbiCropPngCore {
     return @{ ok = $true; failure = ''; message = ''; width = $geo['width']; height = $geo['height']; path = $dest }
 }
 
+function Invoke-EbiInvertPng {
+    <#
+      A negative, grey copy of a PNG at Out (10/21: the HOST emulator shots
+      are light text on black; Windows OCR reads dark text on a light
+      ground far better). -> @{ ok; failure; message; path }
+         failures: file_not_found | image_read_error
+    #>
+    param([string]$Path, [string]$Out)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('file not found: ' + $Path); path = $Out } }
+    return (Invoke-EbiInvertPngCore -Path $Path -Out $Out)
+}
+
+function Invoke-EbiInvertPngCore {
+    # The GDI+ half of Invoke-EbiInvertPng (see Get-EbiPngSizeCore).
+    param([string]$Path, [string]$Out)
+    [void](Get-EbiDrawing)
+    $ms = $null; $img = $null; $bmp = $null; $gfx = $null; $ia = $null
+    try {
+        $ms = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($Path))
+        $img = [System.Drawing.Image]::FromStream($ms)
+        $bmp = New-Object System.Drawing.Bitmap([int]$img.Width, [int]$img.Height)
+        $gfx = [System.Drawing.Graphics]::FromImage($bmp)
+        # grey = luminance, then 1 - grey
+        $g = -0.333
+        $cm = New-Object System.Drawing.Imaging.ColorMatrix(, [single[][]]@(
+            [single[]]@($g, $g, $g, 0, 0),
+            [single[]]@($g, $g, $g, 0, 0),
+            [single[]]@($g, $g, $g, 0, 0),
+            [single[]]@(0, 0, 0, 1, 0),
+            [single[]]@(1, 1, 1, 0, 1)))
+        $ia = New-Object System.Drawing.Imaging.ImageAttributes
+        $ia.SetColorMatrix($cm)
+        $r = New-Object System.Drawing.Rectangle(0, 0, [int]$img.Width, [int]$img.Height)
+        $gfx.DrawImage($img, $r, 0, 0, [int]$img.Width, [int]$img.Height, [System.Drawing.GraphicsUnit]::Pixel, $ia)
+        New-EbiParentDirectory -Path $Out
+        $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
+        return @{ ok = $true; failure = ''; message = ''; path = $Out }
+    } catch {
+        return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; path = $Out }
+    } finally {
+        if ($null -ne $ia) { $ia.Dispose() }
+        if ($null -ne $gfx) { $gfx.Dispose() }
+        if ($null -ne $bmp) { $bmp.Dispose() }
+        if ($null -ne $img) { $img.Dispose() }
+        if ($null -ne $ms) { $ms.Dispose() }
+    }
+}
+
 function Get-EbiInkCounts {
     <#
       Per pixel row, how many pixels of a vertical strip are "ink":

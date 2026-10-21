@@ -48,7 +48,8 @@ foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'ver
                  'file.compare', 'file.read_text', 'file.convert_encoding', 'file.extract_blocks', 'excel.stack_plan', 'screen.list_rects',
                  'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy',
                  'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open', 'verify.assert_each', 'flow.require',
-                 'verify.find_token', 'screen.ocr', 'human.gate', 'excel.append_row', 'human.draft_mail', 'human.share')) {
+                 'verify.find_token', 'screen.ocr', 'human.gate', 'excel.append_row', 'human.draft_mail', 'human.share',
+                 'screen.read_line_numbers', 'verify.df_ranges', 'excel.export_pictures')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -617,6 +618,53 @@ try {
     Assert-Equal 17 (ScreenLaunchCapture-Want -Set @{ lines = 61 } -In $lc -View 'end') 'df fit: the END picture = linesEnd (the HOST last 17)'
     Assert-Equal 0 (ScreenLaunchCapture-Want -Set @{ lines = 61 } -In @{ screenLines = 0; linesField = 'lines'; linesEnd = 0 } -View 'first') 'df fit: no line rule -> no fit'
     Assert-Equal 17 ([int]$lay['linesEnd']) 'df size: linesEnd 17 (HOST n = DF n-1, the HOST last picture shows 17)'
+
+    # ---------------------------------------------------------------- HOST ranges -> DF pictures (10/21)
+    $ocr = @('VIEW LJOD.S.VE  Columns 00001 00080', 'Command ===>   Scroll ===> CSR', '****** ***** Top of Data *****', '000001 20260518,D,1,ATH2520', '000002 20260518,D,1,ATH2521', '0OO003 20260518,D,1,ATH2522', '000004 20260518,D,1,ATH2523', '000005')
+    $ln = ScreenReadLineNumbers-Parse -Lines $ocr
+    Assert-True ($ln['ok'] -and $ln['first'] -eq 1 -and $ln['last'] -eq 5) 'host lines: numbers at the start of a line only (header Columns 00001 ignored), O/0 folded'
+    $ln = ScreenReadLineNumbers-Parse -Lines @('005666 a', '005667 b', '005688 c', '005669 d', '005670 e', '005671 f')
+    Assert-True ($ln['ok'] -and $ln['first'] -eq 5666 -and $ln['last'] -eq 5671) 'host lines: one misread number is outvoted'
+    $ln = ScreenReadLineNumbers-Parse -Lines @('005666 a', '005667 b', '005668 c', '005669 d', '005679 e')
+    Assert-True (-not $ln['ok']) 'host lines: a misread LAST number is not trusted'
+    Assert-True (-not (ScreenReadLineNumbers-Parse -Lines @('SOLID data', 'x'))['ok']) 'host lines: no numbers -> not ok'
+    $rg = { param($a, $b) @{ ok = $true; first = $a; last = $b; count = ($b - $a + 1) } }
+    # MJODWDBC 10/21: HOST 1-19 and 5666-5685, the file 5684 lines -> DF 1-18 / 5665-5684 (20)
+    $g = VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 5666 5685))
+    $pl = VerifyDfRanges-Plan -Lines 5684 -Set $g['sets'][0]
+    Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 18 -and $pl['end'] -eq 20) 'df ranges: 19-line HOST shots -> 18 / 20 DF lines'
+    # the usual shape: HOST 1-17 / 46-62, 61 lines -> 16 / 17
+    $pl = VerifyDfRanges-Plan -Lines 61 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 17), (& $rg 46 62)))['sets'][0]
+    Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 16 -and $pl['end'] -eq 17) 'df ranges: the usual 17-line HOST shots -> 16 / 17 (SJODWSPN)'
+    # empty lines dropped on the receive side: HOST ends far beyond the file -> not lined up
+    $pl = VerifyDfRanges-Plan -Lines 900 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 17), (& $rg 1180 1196)))['sets'][0]
+    Assert-Equal 'free' $pl['mode'] 'df ranges: HOST last - 1 <> file lines (empty lines lost) -> free, the default pictures'
+    $pl = VerifyDfRanges-Plan -Lines 12 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 13)))['sets'][0]
+    Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 12 -and $pl['end'] -eq 0) 'df ranges: one HOST picture = the whole file -> one DF picture'
+    $g = VerifyDfRanges-Sets -Ranges @((& $rg 1 17), (& $rg 46 62), (& $rg 1 19), (& $rg 100 118))
+    Assert-Equal 2 @($g['sets']).Count 'df ranges: a picture from 000001 opens the next file pair'
+    Assert-Equal 'default' (VerifyDfRanges-Plan -Lines 61 -Set $null)['mode'] 'df ranges: no HOST set -> default'
+    $g = VerifyDfRanges-Sets -Ranges @(@{ ok = $false }, (& $rg 1 17))
+    Assert-Equal 1 $g['bad'] 'df ranges: an unreadable picture is counted'
+    # launch_capture follows an align plan: start heights moved by 18 px a line
+    $in = @{ screenLines = 16; linesEnd = 17; height = 432; heightEnd = 476; fitPitchPx = 18; linesField = 'lines'; secondField = 'long'; keysMid = 'MID'; keysSecond = 'END' }
+    $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 5684 } -In $in -Plan @{ mode = 'align'; first = 18; end = 20 }
+    Assert-True ($sp['aligned'] -and $sp['wantFirst'] -eq 18 -and $sp['wantLast'] -eq 20 -and $sp['firstHeight'] -eq 468 -and $sp['lastHeight'] -eq 530 -and $sp['view'] -eq 'end') 'df shots: align 18 / 20 -> 468 / 530, END view'
+    $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 61 } -In $in -Plan @{ mode = 'free' }
+    Assert-True ((-not $sp['aligned']) -and $sp['wantFirst'] -eq 16 -and $sp['wantLast'] -eq 17 -and $sp['lastHeight'] -eq 476) 'df shots: free -> the line rule (16 / 17)'
+    $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 20 } -In $in -Plan $null
+    Assert-True ($sp['view'] -eq 'mid' -and $sp['wantLast'] -eq 0) 'df shots: no plan, 20 lines -> the PgDn page, not fitted'
+    $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 12 } -In $in -Plan @{ mode = 'align'; first = 12; end = 0 }
+    Assert-True ((-not $sp['two']) -and $sp['wantFirst'] -eq 12) 'df shots: align with end 0 -> one picture'
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = @(@{ lines = 5684; rightName = 'F1.csv' }, @{ lines = 900; rightName = 'F2.csv' }); ranges = @((& $rg 1 19), (& $rg 5666 5685), (& $rg 1 17), (& $rg 1180 1196)) }
+    Assert-True ($dr['ok'] -and $dr['aligned'] -eq 1 -and $dr['plans'][1]['mode'] -eq 'free' -and $dr['alert'] -eq '') 'df ranges step: pair 1 lined up, pair 2 free (empty lines) with no alert'
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = @(@{ lines = 61; rightName = 'F1.csv' }); ranges = @(@{ ok = $false; reason = 'x' }) }
+    Assert-True ($dr['plans'][0]['mode'] -eq 'default' -and $dr['alert'] -match 'NOT lined up') 'df ranges step: HOST pictures there but unreadable -> default pictures + a red line on the gate'
+    $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')
+    $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 12 } -In $in -Plan $null
+    Assert-True (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = ''; firstLines = 12 } -Plan $sp) 'df shots: an earlier picture with the lines wanted is kept'
+    Assert-True (-not (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = ''; firstLines = 11 } -Plan $sp)) 'df shots: other line count -> captured again'
+    Assert-True (-not (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = '' } -Plan $sp)) 'df shots: a picture from before the fit (no firstLines) -> captured again'
 
     # ---------------------------------------------------------------- home cell (10-12)
     $send = [string][char]0x9001 + [char]0x4FE1 + [char]0x21D2   # send-arrow sheet

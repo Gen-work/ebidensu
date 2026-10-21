@@ -1,3 +1,43 @@
+## 2026-10-21 - DF pictures lined up with the HOST pictures on 送信データ (v2.31.0)
+
+10/21 MJODWDBC: the HOST shots are 19 lines (000001-000019, 005666-...),
+the DF pictures were the usual 16 / 17 lines (00001-00016, 05668-...).
+Operator: a file pair has only a START and an END HOST picture, and the
+END one always runs to the last line.
+
+### Added
+- **excel.export_pictures**: every picture of a sheet -> pic<n>.png,
+  top-to-bottom (Export-EbiShapePng, 3x; read only).
+- **screen.read_line_numbers**: Windows OCR (en-US) of each picture, the
+  numbers that START a line (look-alikes folded); a negative copy is read
+  when the picture as it is gives none (`Invoke-EbiInvertPng`, the HOST
+  shots are light on black). Trusted only when the numbers run one after
+  another (one misread outvoted; first and last must agree).
+- **verify.df_ranges** (pure): per DF pair, from its HOST pictures (a
+  picture from 000001 opens the next pair): DF line = HOST line - 1, the
+  first picture shows `start.last - 1` lines, the END picture
+  `finish.last - finish.first + 1`. When the HOST's last line - 1 is not
+  the file's line count (the send data had empty lines the receive side
+  dropped -- the operator's third pattern) nothing is lined up: `free`,
+  the usual pictures. Unreadable / missing HOST pictures: `default` + a
+  red line on the evidence gate.
+- **screen.launch_capture `plans` / `reuse`**: an align plan starts the
+  window at height / heightEnd moved 18 px a line and the fit makes it
+  exact; an earlier shot that exists and showed the lines wanted
+  (firstLines / lastLines) is kept instead of running DF again.
+
+### Changed
+- **gfixRecv.evidence** (0.6.0): hostPics -> hostLines -> dfRanges ->
+  dfShots (DF again with the track pairs, track's pictures reused when
+  they already match) -> dfPlan. gate.json keeps the ranges and shots.
+
+### Docs / tests
+- KNOWLEDGE K-30; TODO HOST-range card closed (office check open).
+  Test-GfixRecvSteps: line-number parse (header ignored, O/0, outvoted
+  misread, bad last), df ranges (19-line, 17-line, empty lines dropped,
+  one picture, two pairs, unreadable), shot plan heights 468 / 530,
+  reuse. Catalog regenerated.
+
 ## 2026-10-21 - DF first picture height 432, measured (v2.30.5)
 
 ### Fixed

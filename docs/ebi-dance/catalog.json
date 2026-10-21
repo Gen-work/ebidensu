@@ -1201,6 +1201,70 @@
       "summary": "Start a dedicated Excel instance and register it",
       "tier": "core"
     },
+    "excel.export_pictures": {
+      "effects": "read",
+      "example": {
+        "use": "excel.export_pictures",
+        "with": {
+          "saveDir": "capture/{{item.keySafe}}/host",
+          "sheet": "sendData",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        }
+      ],
+      "file": "modules/excel/excel.export_pictures.ps1",
+      "group": "excel",
+      "id": "excel.export_pictures",
+      "idempotent": true,
+      "inputs": {
+        "saveDir": {
+          "desc": "pic1.png, pic2.png, ... in sheet order; relative paths resolve under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "scale": {
+          "default": 3,
+          "desc": "export size against the size on the sheet (bigger reads better for OCR)",
+          "type": "int"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "Old PNGs in saveDir named pic<n>.png are removed first, so a sheet with fewer pictures than last time leaves none behind.",
+      "outputs": {
+        "groups": {
+          "desc": "names of grouped shapes (Ctrl+G) on the sheet: their pictures are not exported",
+          "type": "list"
+        },
+        "paths": {
+          "desc": "the exported PNGs, top-to-bottom (a picture that would not export is left out, with a warning)",
+          "type": "list"
+        },
+        "pictures": {
+          "desc": "pictures on the sheet",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Export every picture of a sheet to PNG, top-to-bottom",
+      "tier": "core"
+    },
     "excel.highlight": {
       "effects": "write",
       "example": {
@@ -4945,6 +5009,16 @@
           "desc": "field naming the capture files (its file stem is used); blank = run number",
           "type": "string"
         },
+        "plans": {
+          "default": [],
+          "desc": "one per argument set, in order (verify.df_ranges plans): mode align = the first picture shows first lines from the top, the second (end > 0) the END view of end lines -- the window starts at height / heightEnd moved by the difference in lines x fitPitchPx and the fit makes it exact; any other mode, or none, = the line rule",
+          "type": "list"
+        },
+        "reuse": {
+          "default": [],
+          "desc": "shots of an earlier call for the same argument sets (track.json dfShots): a set whose earlier pictures exist and show the lines wanted now (firstLines / lastLines) is not run again",
+          "type": "list"
+        },
         "saveDir": {
           "required": true,
           "type": "path"
@@ -4998,7 +5072,7 @@
           "type": "int"
         },
         "shots": {
-          "desc": "@{ first; last; name; firstLines; lastLines; firstHeight; lastHeight } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted)",
+          "desc": "@{ first; last; name; firstLines; lastLines; firstHeight; lastHeight; reused; aligned } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted; reused = the earlier shot was kept; aligned = a plan of mode align was followed)",
           "type": "list"
         }
       },
@@ -5144,6 +5218,62 @@
       "provides": [],
       "releases": [],
       "summary": "OCR a PNG (Windows OCR); no OCR on this PC = ok with available=false",
+      "tier": "core"
+    },
+    "screen.read_line_numbers": {
+      "effects": "read",
+      "example": {
+        "use": "screen.read_line_numbers",
+        "with": {
+          "paths": "{{steps.hostPics.out.paths}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/screen/screen.read_line_numbers.ps1",
+      "group": "screen",
+      "id": "screen.read_line_numbers",
+      "idempotent": true,
+      "inputs": {
+        "digits": {
+          "default": 6,
+          "desc": "digits of a line number (HOST: 6); 5..digits are accepted, OCR drops a leading 0 at times",
+          "type": "int"
+        },
+        "language": {
+          "default": "en-US",
+          "type": "string"
+        },
+        "minLines": {
+          "default": 3,
+          "desc": "fewer numbered lines than this = not a numbered listing (ok false)",
+          "type": "int"
+        },
+        "paths": {
+          "desc": "PNGs (excel.export_pictures paths)",
+          "required": true,
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "notes": "OCR look-alikes inside a number (O/o/D -> 0, I/l/| -> 1, S -> 5, B -> 8) are folded before parsing.",
+      "outputs": {
+        "available": {
+          "desc": "false: OCR could not run on this PC (every range ok false)",
+          "type": "bool"
+        },
+        "ranges": {
+          "desc": "@{ path; ok; first; last; count; reason } per picture, in input order",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "OCR the line numbers at the left of each picture -> first / last / count per picture",
       "tier": "core"
     },
     "screen.row_region": {
@@ -6243,6 +6373,72 @@
       "provides": [],
       "releases": [],
       "summary": "Add fields to records: a constant, a copy, or a regex rewrite of another field",
+      "tier": "core"
+    },
+    "verify.df_ranges": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.df_ranges",
+        "with": {
+          "pairs": "{{steps.track.out.data.pairs}}",
+          "ranges": "{{steps.hostLines.out.ranges}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.df_ranges.ps1",
+      "group": "verify",
+      "id": "verify.df_ranges",
+      "idempotent": true,
+      "inputs": {
+        "maxLines": {
+          "default": 40,
+          "desc": "a picture asked for more lines than this is not trusted (default kept)",
+          "type": "int"
+        },
+        "offset": {
+          "default": 1,
+          "desc": "HOST line n = DF line n - offset",
+          "type": "int"
+        },
+        "pairs": {
+          "desc": "the DF file pairs in capture order (track.json pairs: lines = the file's line count)",
+          "required": true,
+          "type": "list"
+        },
+        "ranges": {
+          "default": [],
+          "desc": "screen.read_line_numbers ranges of the HOST pictures, sheet order",
+          "type": "list"
+        }
+      },
+      "needs": [],
+      "notes": "Pure. A pair with no START picture, an unreadable picture or more than two pictures keeps the default pictures, with an alert.",
+      "outputs": {
+        "alert": {
+          "desc": "one line for the gate when a pair could not be lined up for a reason a person should check, else empty",
+          "type": "string"
+        },
+        "aligned": {
+          "desc": "pairs whose pictures follow the HOST ranges",
+          "type": "int"
+        },
+        "plans": {
+          "desc": "@{ mode; first; end; reason } per pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) | free (no alignment: empty lines dropped) | default (nothing to align to)",
+          "type": "list"
+        },
+        "reason": {
+          "desc": "one line per pair, for the run log / gate",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Per DF pair: the lines its first / END picture must show to match the HOST pictures",
       "tier": "core"
     },
     "verify.filter_records": {
