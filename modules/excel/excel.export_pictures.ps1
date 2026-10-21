@@ -11,7 +11,7 @@
 $Manifest = @{
   id         = 'excel.export_pictures'
   group      = 'excel'
-  summary    = 'Export every picture of a sheet to PNG, top-to-bottom'
+  summary    = 'Export every picture (and picture group / embedded object) of a sheet to PNG, top-to-bottom'
   tier       = 'core'
   effects    = 'read'
   needs      = @('excel')
@@ -27,13 +27,39 @@ $Manifest = @{
   outputs    = @{
     paths  = @{ type='list'; desc='the exported PNGs, top-to-bottom (a picture that would not export is left out, with a warning)' }
     pictures = @{ type='int';  desc='pictures on the sheet' }
-    groups = @{ type='list'; desc='names of grouped shapes (Ctrl+G) on the sheet: their pictures are not exported' }
+    groups = @{ type='list'; desc='names of grouped shapes (Ctrl+G) exported as one image each' }
   }
   failures   = @(
     @{ id = 'sheet_not_found'; transient = $false }
   )
   example    = @{ use = 'excel.export_pictures'; with = @{ workbook = 'wb'; sheet = 'sendData'; saveDir = 'capture/{{item.keySafe}}/host' } }
   notes      = 'Old PNGs in saveDir named pic<n>.png are removed first, so a sheet with fewer pictures than last time leaves none behind.'
+}
+
+function ExcelExportPictures-Shapes {
+    <#
+      The shapes to export, sorted top, then left: pictures (13), linked
+      pictures (11), embedded / linked OLE objects (7 / 10), canvases (20)
+      and GROUPS (6) as one image each -- 10/21 KJODWWBV: the HOST shots on
+      the send-data sheet were not plain pictures, and the first cut found
+      none. Also @{ type; name } of everything else, for the warning.
+    #>
+    param($Worksheet)
+    $take = New-Object System.Collections.ArrayList
+    $other = New-Object System.Collections.ArrayList
+    try {
+        foreach ($sh in $Worksheet.Shapes) {
+            $t = -1
+            try { $t = [int]$sh.Type } catch { }
+            $nm = ''
+            try { $nm = [string]$sh.Name } catch { }
+            if (@(6, 7, 10, 11, 13, 20) -contains $t) {
+                [void]$take.Add(@{ shape = $sh; name = $nm; type = $t; top = [double]$sh.Top; left = [double]$sh.Left })
+            } else { [void]$other.Add(('{0} (type {1})' -f $nm, $t)) }
+        }
+    } catch { }
+    $sorted = @($take | Sort-Object -Property @{ Expression = { $_['top'] } }, @{ Expression = { $_['left'] } })
+    return @{ shapes = $sorted; other = $other.ToArray() }
 }
 
 function Invoke-Step {
@@ -44,10 +70,15 @@ function Invoke-Step {
     if ($null -eq $ws) { return @{ ok = $false; failure = 'sheet_not_found'; message = ('sheet "' + $In['sheet'] + '" not found'); paths = @(); pictures = 0; groups = @() } }
     if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
     foreach ($old in @(Get-ChildItem -LiteralPath $dir -Filter 'pic*.png' -File -ErrorAction SilentlyContinue)) { Remove-Item -LiteralPath $old.FullName -Force -ErrorAction SilentlyContinue }
-    $pics = @(Get-EbiPictureShapes -Worksheet $ws)
-    $groups = @(Get-EbiGroupShapesAbove -Worksheet $ws -Top 1.0e9)
+    $found = ExcelExportPictures-Shapes -Worksheet $ws
+    $pics = @($found['shapes'])
+    $groups = @($pics | Where-Object { [int]$_['type'] -eq 6 } | ForEach-Object { [string]$_['name'] })
     $warn = New-Object System.Collections.ArrayList
-    if ($groups.Count -gt 0) { [void]$warn.Add(@{ code = 'group_shape'; message = ('{0} has grouped shape(s) (Ctrl+G: {1}): pictures inside a group are not exported' -f $In['sheet'], ($groups -join ', ')) }) }
+    if ($pics.Count -eq 0) {
+        $msg = ('{0}: no picture to export; its shapes: {1}' -f $In['sheet'], $(if (@($found['other']).Count) { (@($found['other']) | Select-Object -First 12) -join ', ' } else { 'none' }))
+        [void]$warn.Add(@{ code = 'no_picture'; message = $msg })
+        $Ctx.Log.Warn($msg)
+    }
     $paths = New-Object System.Collections.ArrayList
     $n = 0
     foreach ($p in $pics) {

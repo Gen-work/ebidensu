@@ -1248,7 +1248,7 @@
       "notes": "Old PNGs in saveDir named pic<n>.png are removed first, so a sheet with fewer pictures than last time leaves none behind.",
       "outputs": {
         "groups": {
-          "desc": "names of grouped shapes (Ctrl+G) on the sheet: their pictures are not exported",
+          "desc": "names of grouped shapes (Ctrl+G) exported as one image each",
           "type": "list"
         },
         "paths": {
@@ -1262,7 +1262,7 @@
       },
       "provides": [],
       "releases": [],
-      "summary": "Export every picture of a sheet to PNG, top-to-bottom",
+      "summary": "Export every picture (and picture group / embedded object) of a sheet to PNG, top-to-bottom",
       "tier": "core"
     },
     "excel.highlight": {
@@ -5267,7 +5267,7 @@
           "type": "bool"
         },
         "ranges": {
-          "desc": "@{ path; ok; first; last; count; reason } per picture, in input order",
+          "desc": "@{ path; ok; first; last; count; reason } per run of consecutive numbers (one per picture, two when one image holds two shots), in input order",
           "type": "list"
         }
       },
