@@ -1,3 +1,13 @@
+## 2026-10-21 - GoAnywhere refresh counted from 詳細, not 5 Tabs (v2.30.4)
+
+### Fixed
+- **pages.goAnywhere.refreshRecipe**: find 詳細, Esc, one Tab, Enter. The
+  old recipe (find フィルタリングする, Tab x5) only reached the refresh
+  button while プロジェクト名 held a value: the 3rd Tab is the x that clears
+  that chip (operator 10/21 screenshot), so with the filter empty the 5th
+  Tab is the menu button. v2.30.3's `_refresh_doc` ("a collapse icon")
+  was wrong and is replaced.
+
 ## 2026-10-21 - DF pictures fitted to their line count; line counts no longer hold track (v2.30.3)
 
 10/21 SJODWSPN: after the 10/20 rerun 加瀬さん asked to put the FIRST

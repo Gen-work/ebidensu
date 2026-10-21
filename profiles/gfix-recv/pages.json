@@ -20,10 +20,10 @@
         "ログイン"
       ]
     },
-    "_refresh_doc": "Why Tab x5 (from the Ctrl+A page text, not seen on screen -- operator 10/21 asked): Esc leaves the focus on the heading text フィルタリングする, which is not itself a control; the page text has a TAB right after it (the panel's collapse icon), so the Tabs are (1) that icon, (2) 日付範囲, (3) プロジェクト名, (4) 詳細, (5) 更新. By hand the icon is easy not to count. If the panel changes, change the count here or in ebi.local.json.",
+    "_refresh_doc": "Find 詳細 (the filter row's dropdown), Esc, ONE Tab = the refresh button (the round arrow), Enter. Until 10/21 the recipe found フィルタリングする and counted 5 Tabs (日付範囲 / プロジェクト名 / the x that clears it / 詳細 / refresh -- operator 10/21 screenshot): the x is there only while プロジェクト名 holds a value, so with that filter empty the 5th Tab is the ☰ menu and nothing refreshes. Counting from 詳細 skips every filter chip.",
     "refreshRecipe": [
-      "find:フィルタリングする",
-      "keys:{TAB}{TAB}{TAB}{TAB}{TAB}",
+      "find:詳細",
+      "keys:{TAB}",
       "keys:{ENTER}",
       "wait:2500"
     ],
