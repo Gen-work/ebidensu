@@ -644,6 +644,13 @@ try {
     # the usual shape: HOST 1-17 / 46-62, 61 lines -> 16 / 17
     $pl = VerifyDfRanges-Plan -Lines 61 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 17), (& $rg 46 62)))['sets'][0]
     Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 16 -and $pl['end'] -eq 17) 'df ranges: the usual 17-line HOST shots -> 16 / 17 (SJODWSPN)'
+    # KJODWWBV 10/21: HOST 007550-007568 (007568 under a red box, OCR read up to 007567), the file 7568 lines -> DF 07549-07568 either way
+    $pl = VerifyDfRanges-Plan -Lines 7568 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 7550 7568)))['sets'][0]
+    Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 18 -and $pl['end'] -eq 20) 'df ranges: the file runs 1 line past the HOST -> END picture 07549-07568 (20)'
+    $pl = VerifyDfRanges-Plan -Lines 7568 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 7550 7567)))['sets'][0]
+    Assert-True ($pl['mode'] -eq 'align' -and $pl['end'] -eq 20) 'df ranges: OCR missed the last HOST line under a red box -> the same 20 lines'
+    Assert-Equal 'free' (VerifyDfRanges-Plan -Lines 7568 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 7550 7563)))['sets'][0])['mode'] 'df ranges: more than maxExtra lines past the HOST -> not lined up'
+    Assert-Equal 'free' (VerifyDfRanges-Plan -Lines 7560 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 7550 7568)))['sets'][0])['mode'] 'df ranges: the HOST longer than the file -> not lined up'
     # empty lines dropped on the receive side: HOST ends far beyond the file -> not lined up
     $pl = VerifyDfRanges-Plan -Lines 900 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 17), (& $rg 1180 1196)))['sets'][0]
     Assert-Equal 'free' $pl['mode'] 'df ranges: HOST last - 1 <> file lines (empty lines lost) -> free, the default pictures'

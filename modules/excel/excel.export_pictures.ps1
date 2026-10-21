@@ -22,6 +22,7 @@ $Manifest = @{
     workbook = @{ type='session'; sessionKind='workbook'; required=$true }
     sheet    = @{ type='string';  required=$true }
     saveDir  = @{ type='path';    required=$true; desc='pic1.png, pic2.png, ... in sheet order; relative paths resolve under the work dir' }
+    hideMarks = @{ type='bool';   default=$true; desc='in a group, hide the shapes that are not pictures (red boxes) while it is exported, then show them again' }
     scale    = @{ type='int';     default=3; desc='export size against the size on the sheet (bigger reads better for OCR)' }
   }
   outputs    = @{
@@ -84,7 +85,20 @@ function Invoke-Step {
     foreach ($p in $pics) {
         $n++
         $dest = Join-Path $dir ('pic' + $n + '.png')
-        $x = Export-EbiShapePng -Worksheet $ws -Shape $p['shape'] -OutPath $dest -Scale ([double]$In['scale'])
+        # a group: hide its marks (red boxes, arrows -- not pictures) for the
+        # export, so a box drawn over a line number does not hide it from OCR
+        # (10/21 KJODWWBV: 007568 under a red box); shown again right after
+        $hidden = New-Object System.Collections.ArrayList
+        if ([int]$p['type'] -eq 6 -and [bool]$In['hideMarks']) {
+            try {
+                foreach ($gi in $p['shape'].GroupItems) {
+                    $gt = -1; try { $gt = [int]$gi.Type } catch { }
+                    if (@(11, 13) -notcontains $gt) { try { if ([int]$gi.Visible -ne 0) { $gi.Visible = 0; [void]$hidden.Add($gi) } } catch { } }
+                }
+            } catch { }
+        }
+        try { $x = Export-EbiShapePng -Worksheet $ws -Shape $p['shape'] -OutPath $dest -Scale ([double]$In['scale']) }
+        finally { foreach ($gi in $hidden) { try { $gi.Visible = -1 } catch { } } }
         if ($x['ok']) { [void]$paths.Add($dest) } else { [void]$warn.Add(@{ code = 'png_not_saved'; message = ('picture #' + $n + ' (' + $p['name'] + ') not exported: ' + $x['message']) }) }
     }
     try { $In['workbook'].Application.CutCopyMode = $false } catch { }
