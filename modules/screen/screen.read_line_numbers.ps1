@@ -6,9 +6,11 @@
 # (the HOST shots are light text on black). Only a number that STARTS an
 # OCR line counts, so the header ("Columns 00001 00080") and the data
 # never do.
-# A picture is trusted (ok) only when its numbers run one after another:
-# a misread number is outvoted (the offset n - row shared by most lines),
-# but the first and the last line must agree with that run.
+# Inside one shot the numbers always run one after another, so a number
+# that breaks the run while its neighbours keep it is a misread and is
+# corrected; a real jump starts a new run (10/21 KJODWWBV: the two HOST
+# shots were one Ctrl+G group, one image). A run with more than one
+# misread in five lines is not trusted.
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')   # Resolve-EbiWorkPath
 . (Join-Path $PSScriptRoot '..\..\kernel\Image.ps1')    # Invoke-EbiInvertPng
@@ -31,7 +33,7 @@ $Manifest = @{
     language = @{ type='string'; default='en-US' }
   }
   outputs    = @{
-    ranges    = @{ type='list'; desc='@{ path; ok; first; last; count; reason } per picture, in input order' }
+    ranges    = @{ type='list'; desc='@{ path; ok; first; last; count; reason } per run of consecutive numbers (one per picture, two when one image holds two shots), in input order' }
     available = @{ type='bool'; desc='false: OCR could not run on this PC (every range ok false)' }
   }
   failures   = @(
@@ -41,13 +43,9 @@ $Manifest = @{
   notes      = 'OCR look-alikes inside a number (O/o/D -> 0, I/l/| -> 1, S -> 5, B -> 8) are folded before parsing.'
 }
 
-function ScreenReadLineNumbers-Parse {
-    <#
-      PURE. OCR lines -> @{ ok; first; last; count; reason }. A line counts
-      when it starts with a run of MinDigits..Digits characters that fold
-      to digits (look-alikes folded) followed by a space or the end.
-    #>
-    param($Lines, [int]$Digits = 6, [int]$MinLines = 3)
+function ScreenReadLineNumbers-Numbers {
+    # PURE. OCR lines -> the leading line numbers, top to bottom.
+    param($Lines, [int]$Digits = 6)
     $nums = New-Object System.Collections.ArrayList
     $min = [Math]::Max(3, $Digits - 1)
     foreach ($l in @($Lines)) {
@@ -59,20 +57,71 @@ function ScreenReadLineNumbers-Parse {
         $f = $tok -replace '[OoD]', '0' -replace '[Il|]', '1' -replace 'S', '5' -replace 'B', '8'
         [void]$nums.Add([int]$f)
     }
-    $n = $nums.Count
-    if ($n -lt $MinLines) { return @{ ok = $false; first = 0; last = 0; count = $n; reason = ('{0} numbered line(s) read, {1} needed' -f $n, $MinLines) } }
-    # the offset number - row shared by most lines
-    $votes = @{}
-    for ($i = 0; $i -lt $n; $i++) { $k = [string]([int]$nums[$i] - $i); if ($votes.Contains($k)) { $votes[$k]++ } else { $votes[$k] = 1 } }
-    $best = ''; $bestN = 0
-    foreach ($k in $votes.Keys) { if ([int]$votes[$k] -gt $bestN) { $best = $k; $bestN = [int]$votes[$k] } }
-    $off = [int]$best
-    $firstOk = ([int]$nums[0] -eq $off)
-    $lastOk = ([int]$nums[$n - 1] -eq ($off + $n - 1))
-    if ($bestN * 10 -lt $n * 8 -or -not $firstOk -or -not $lastOk) {
-        return @{ ok = $false; first = [int]$nums[0]; last = [int]$nums[$n - 1]; count = $n; reason = ('the numbers do not run one after another: ' + ((@($nums) | Select-Object -First 8) -join ' ') + $(if ($n -gt 8) { ' ...' } else { '' })) }
+    return @($nums)
+}
+
+function ScreenReadLineNumbers-Runs {
+    <#
+      PURE. Leading numbers -> runs @(@{ first; last; count; fixed }) of
+      consecutive lines. Inside one HOST shot the numbers ALWAYS run one
+      after another, so a number that breaks the run while its neighbours
+      keep it is a misread (fixed++); a run's first number that does not
+      fit the run under it is too. Runs one to three apart are one listing
+      with a line OCR did not see. A real jump (another shot in the same
+      image, 10/21: a Ctrl+G group of two shots) starts a new run.
+    #>
+    param([int[]]$Nums)
+    $n = @($Nums).Count
+    $runs = New-Object System.Collections.ArrayList
+    $i = 0
+    while ($i -lt $n) {
+        $start = [int]$Nums[$i]; $fixed = 0
+        # a misread first line: the next two agree with each other, not with it
+        if ($i + 2 -lt $n -and [int]$Nums[$i + 1] -ne $start + 1 -and [int]$Nums[$i + 2] -eq [int]$Nums[$i + 1] + 1) { $start = [int]$Nums[$i + 1] - 1; $fixed++ }
+        $last = $start; $cnt = 1; $i++
+        while ($i -lt $n) {
+            $v = [int]$Nums[$i]
+            if ($v -eq $last + 1) { $last = $v; $cnt++; $i++; continue }
+            $nextKeeps = ($i + 1 -lt $n -and [int]$Nums[$i + 1] -eq $last + 2)
+            $isEnd = ($i + 1 -ge $n)
+            if ($nextKeeps -or ($isEnd -and [Math]::Abs($v - ($last + 1)) -lt 100)) { $last = $last + 1; $cnt++; $fixed++; $i++; continue }
+            break
+        }
+        [void]$runs.Add(@{ first = $start; last = $last; count = $cnt; fixed = $fixed })
     }
-    return @{ ok = $true; first = $off; last = ($off + $n - 1); count = $n; reason = $(if ($bestN -lt $n) { ('' + ($n - $bestN) + ' misread number(s) outvoted') } else { '' }) }
+    # one listing with a line OCR missed: merge runs 1..3 apart
+    $merged = New-Object System.Collections.ArrayList
+    foreach ($r in $runs) {
+        if ($merged.Count -gt 0) {
+            $p = $merged[$merged.Count - 1]
+            $gap = [int]$r['first'] - [int]$p['last']
+            if ($gap -ge 1 -and $gap -le 3) { $p['last'] = $r['last']; $p['count'] = [int]$p['count'] + [int]$r['count']; $p['fixed'] = [int]$p['fixed'] + [int]$r['fixed']; continue }
+        }
+        [void]$merged.Add($r)
+    }
+    return $merged.ToArray()
+}
+
+function ScreenReadLineNumbers-Parse {
+    <#
+      PURE. OCR lines -> @(@{ ok; first; last; count; reason }), one per run
+      of consecutive line numbers (usually one per picture; two when one
+      image holds two shots). A run shorter than MinLines is not trusted;
+      no number at all gives one entry with ok false.
+    #>
+    param($Lines, [int]$Digits = 6, [int]$MinLines = 3)
+    $nums = @(ScreenReadLineNumbers-Numbers -Lines $Lines -Digits $Digits)
+    if ($nums.Count -eq 0) { return @(@{ ok = $false; first = 0; last = 0; count = 0; reason = 'no line numbers read' }) }
+    $out = New-Object System.Collections.ArrayList
+    foreach ($r in @(ScreenReadLineNumbers-Runs -Nums ([int[]]$nums))) {
+        $ok = ([int]$r['count'] -ge $MinLines -and [int]$r['fixed'] * 5 -le [int]$r['count'])
+        $why = if (-not $ok) { ('{0} line(s) {1:000000}-{2:000000}, {3} misread: not trusted' -f $r['count'], $r['first'], $r['last'], $r['fixed']) } elseif ([int]$r['fixed'] -gt 0) { ('' + $r['fixed'] + ' misread number(s) corrected') } else { '' }
+        [void]$out.Add(@{ ok = $ok; first = [int]$r['first']; last = [int]$r['last']; count = [int]$r['count']; reason = $why })
+    }
+    # a stray short run (a number in the page header) must not hide the real ones
+    $good = @($out | Where-Object { $_['ok'] })
+    if ($good.Count -gt 0) { return $good }
+    return $out.ToArray()
 }
 
 function Invoke-Step {
@@ -89,21 +138,24 @@ function Invoke-Step {
             [void]$ranges.Add(@{ path = $p; ok = $false; first = 0; last = 0; count = 0; reason = ('OCR did not run: ' + [string]$r['message']) })
             continue
         }
-        $x = ScreenReadLineNumbers-Parse -Lines $r['lines'] -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines'])
-        if (-not $x['ok']) {
-            $neg = [System.IO.Path]::ChangeExtension($p, '.neg.png')
-            $v = Invoke-EbiInvertPng -Path $p -Out $neg
-            if ($v['ok']) {
-                $r2 = Invoke-EbiOcrFile -Path $neg -Language ([string]$In['language'])
-                if ($r2['ok']) {
-                    $x2 = ScreenReadLineNumbers-Parse -Lines $r2['lines'] -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines'])
-                    if ($x2['ok'] -or [int]$x2['count'] -gt [int]$x['count']) { $x = $x2 }
-                }
+        $xs = @(ScreenReadLineNumbers-Parse -Lines $r['lines'] -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
+        $goodN = @($xs | Where-Object { $_['ok'] } | ForEach-Object { [int]$_['count'] } | Measure-Object -Sum).Sum
+        $neg = [System.IO.Path]::ChangeExtension($p, '.neg.png')
+        $v = Invoke-EbiInvertPng -Path $p -Out $neg
+        if ($v['ok']) {
+            # the negative too, every time: on light-on-black shots it usually reads more
+            $r2 = Invoke-EbiOcrFile -Path $neg -Language ([string]$In['language'])
+            if ($r2['ok']) {
+                $xs2 = @(ScreenReadLineNumbers-Parse -Lines $r2['lines'] -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
+                $goodN2 = @($xs2 | Where-Object { $_['ok'] } | ForEach-Object { [int]$_['count'] } | Measure-Object -Sum).Sum
+                if ([int]$goodN2 -gt [int]$goodN) { $xs = $xs2 }
             }
         }
-        $x['path'] = $p
-        [void]$ranges.Add($x)
-        $Ctx.Log.Info(('{0}: {1}' -f (Split-Path -Leaf $p), $(if ($x['ok']) { ('lines {0:000000}-{1:000000} ({2})' -f $x['first'], $x['last'], $x['count']) } else { ('no line numbers: ' + $x['reason']) })))
+        foreach ($x in $xs) {
+            $x['path'] = $p
+            [void]$ranges.Add($x)
+            $Ctx.Log.Info(('{0}: {1}' -f (Split-Path -Leaf $p), $(if ($x['ok']) { ('lines {0:000000}-{1:000000} ({2}){3}' -f $x['first'], $x['last'], $x['count'], $(if ($x['reason']) { ', ' + $x['reason'] } else { '' })) } else { ('no line numbers: ' + $x['reason']) })))
+        }
     }
     if (-not $available) { [void]$warn.Add(@{ code = 'ocr_unavailable'; message = 'OCR did not run on this PC: no line numbers read' }) }
     return @{ ok = $true; ranges = $ranges.ToArray(); available = $available; warnings = $warn.ToArray() }

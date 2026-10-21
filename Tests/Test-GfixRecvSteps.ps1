@@ -621,13 +621,21 @@ try {
 
     # ---------------------------------------------------------------- HOST ranges -> DF pictures (10/21)
     $ocr = @('VIEW LJOD.S.VE  Columns 00001 00080', 'Command ===>   Scroll ===> CSR', '****** ***** Top of Data *****', '000001 20260518,D,1,ATH2520', '000002 20260518,D,1,ATH2521', '0OO003 20260518,D,1,ATH2522', '000004 20260518,D,1,ATH2523', '000005')
-    $ln = ScreenReadLineNumbers-Parse -Lines $ocr
-    Assert-True ($ln['ok'] -and $ln['first'] -eq 1 -and $ln['last'] -eq 5) 'host lines: numbers at the start of a line only (header Columns 00001 ignored), O/0 folded'
-    $ln = ScreenReadLineNumbers-Parse -Lines @('005666 a', '005667 b', '005688 c', '005669 d', '005670 e', '005671 f')
-    Assert-True ($ln['ok'] -and $ln['first'] -eq 5666 -and $ln['last'] -eq 5671) 'host lines: one misread number is outvoted'
-    $ln = ScreenReadLineNumbers-Parse -Lines @('005666 a', '005667 b', '005668 c', '005669 d', '005679 e')
-    Assert-True (-not $ln['ok']) 'host lines: a misread LAST number is not trusted'
-    Assert-True (-not (ScreenReadLineNumbers-Parse -Lines @('SOLID data', 'x'))['ok']) 'host lines: no numbers -> not ok'
+    $ln = @(ScreenReadLineNumbers-Parse -Lines $ocr)
+    Assert-True ($ln.Count -eq 1 -and $ln[0]['ok'] -and $ln[0]['first'] -eq 1 -and $ln[0]['last'] -eq 5) 'host lines: numbers at the start of a line only (header Columns 00001 ignored), O/0 folded'
+    $ln = @(ScreenReadLineNumbers-Parse -Lines @('005666 a', '005667 b', '005688 c', '005669 d', '005670 e', '005671 f'))
+    Assert-True ($ln.Count -eq 1 -and $ln[0]['ok'] -and $ln[0]['first'] -eq 5666 -and $ln[0]['last'] -eq 5671) 'host lines: a misread number inside the run is corrected'
+    $ln = @(ScreenReadLineNumbers-Parse -Lines @('005666 a', '005667 b', '005668 c', '005669 d', '005679 e'))
+    Assert-True ($ln[0]['ok'] -and $ln[0]['last'] -eq 5670) 'host lines: a misread LAST number is the next line (a shot lists lines one after another)'
+    $ln = @(ScreenReadLineNumbers-Parse -Lines @('007559 a', '007551 b', '007552 c', '007553 d', '007554 e'))
+    Assert-True ($ln[0]['ok'] -and $ln[0]['first'] -eq 7550) 'host lines: a misread FIRST number is the line before the run under it'
+    Assert-True (-not @(ScreenReadLineNumbers-Parse -Lines @('SOLID data', 'x'))[0]['ok']) 'host lines: no numbers -> not ok'
+    # KJODWWBV 10/21: both HOST shots in ONE grouped image -> two runs
+    $two = @(1..19 | ForEach-Object { '{0:000000} 0090,K*SP**' -f $_ }) + @('Command ===>') + @(7550..7570 | ForEach-Object { '{0:000000} 0090,K3KD42' -f $_ })
+    $ln = @(ScreenReadLineNumbers-Parse -Lines $two)
+    Assert-True ($ln.Count -eq 2 -and $ln[0]['first'] -eq 1 -and $ln[0]['last'] -eq 19 -and $ln[1]['first'] -eq 7550 -and $ln[1]['last'] -eq 7570) 'host lines: two shots in one image -> two runs (1-19, 7550-7570)'
+    $ln = @(ScreenReadLineNumbers-Parse -Lines @('000001 a', '000002 b', '000004 d', '000005 e', '000006 f'))
+    Assert-True ($ln.Count -eq 1 -and $ln[0]['first'] -eq 1 -and $ln[0]['last'] -eq 6) 'host lines: a line OCR did not see does not split the listing'
     $rg = { param($a, $b) @{ ok = $true; first = $a; last = $b; count = ($b - $a + 1) } }
     # MJODWDBC 10/21: HOST 1-19 and 5666-5685, the file 5684 lines -> DF 1-18 / 5665-5684 (20)
     $g = VerifyDfRanges-Sets -Ranges @((& $rg 1 19), (& $rg 5666 5685))

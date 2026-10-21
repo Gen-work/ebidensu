@@ -1,3 +1,20 @@
+## 2026-10-21 - HOST shots in a Ctrl+G group are read too (v2.31.1)
+
+10/21 KJODWWBV: `exported 0 of 0 picture(s) of 送信データ` -- the HOST shots
+were one grouped shape, which v2.31.0 skipped, so the DF pictures stayed
+16 / 17 (HOST 1-19 / 7550-... wanted 18 / 21-ish).
+
+### Fixed
+- **excel.export_pictures**: groups (Ctrl+G), embedded / linked OLE objects
+  and canvases are exported too, one image each; no picture at all is
+  warning `no_picture` naming the sheet's shapes and their types.
+- **screen.read_line_numbers**: one image may hold several shots -- the
+  numbers are split into runs of consecutive lines (a real jump starts a
+  new run), each a range of its own. Inside a run a misread number is
+  corrected (the first and the last too: a shot always lists lines one
+  after another); runs 1-3 apart are one listing with a line OCR missed.
+  The negative copy is now read every time and the better result kept.
+
 ## 2026-10-21 - DF pictures lined up with the HOST pictures on 送信データ (v2.31.0)
 
 10/21 MJODWDBC: the HOST shots are 19 lines (000001-000019, 005666-...),

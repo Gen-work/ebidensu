@@ -685,7 +685,7 @@ OCR the line numbers at the left of each picture -> first / last / count per pic
 | output | type | desc |
 |--------|------|------|
 | `available` | bool | false: OCR could not run on this PC (every range ok false) |
-| `ranges` | list | @{ path; ok; first; last; count; reason } per picture, in input order |
+| `ranges` | list | @{ path; ok; first; last; count; reason } per run of consecutive numbers (one per picture, two when one image holds two shots), in input order |
 
 failures: `input_invalid` (not transient)
 
@@ -1286,7 +1286,7 @@ Notes: Always a NEW instance: workbooks the operator has open in their own Excel
 
 ### `excel.export_pictures`
 
-Export every picture of a sheet to PNG, top-to-bottom
+Export every picture (and picture group / embedded object) of a sheet to PNG, top-to-bottom
 
 - file: `modules/excel/excel.export_pictures.ps1`
 - effects: `read` / tier: `core` / idempotent: `true`
@@ -1301,7 +1301,7 @@ Export every picture of a sheet to PNG, top-to-bottom
 
 | output | type | desc |
 |--------|------|------|
-| `groups` | list | names of grouped shapes (Ctrl+G) on the sheet: their pictures are not exported |
+| `groups` | list | names of grouped shapes (Ctrl+G) exported as one image each |
 | `paths` | list | the exported PNGs, top-to-bottom (a picture that would not export is left out, with a warning) |
 | `pictures` | int | pictures on the sheet |
 
