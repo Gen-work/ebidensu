@@ -1438,6 +1438,7 @@ Write per-key values (dates) into the matching rows of a sheet, blank cells only
 |-------|------|----------|---------|------|------|
 | `dateColumns` | list |  | [] |  | letters written as real dates (yyyy-MM-dd / yyyy/M/d / M/d (this year) in, an Excel date out; the cell's format is kept) |
 | `firstRow` | int |  | 2 |  |  |
+| `highlight` | string |  | (empty) |  | "#RRGGBB" (or several, comma-separated, first one the sheet does not already use): fill every written cell with it so a person can check them before saving. The workflow then closes WITHOUT saving and writes again un-filled to save (10/22: the fill never reaches the shared file) |
 | `items` | list | yes |  |  | records, one per key (table.select rows) |
 | `keyColumn` | string | yes |  |  | column letter holding the key (the job name) |
 | `keyField` | string | yes |  |  | item field matched against keyColumn |
@@ -1452,6 +1453,8 @@ Write per-key values (dates) into the matching rows of a sheet, blank cells only
 
 | output | type | desc |
 |--------|------|------|
+| `cells` | list | addresses written, e.g. AJ3854 |
+| `highlight` | string | the fill colour used ("" = none) |
 | `kept` | list | "KEY row 123: AJ already 2026-10-16" for cells left as they were |
 | `notFound` | list | keys with no matching row |
 | `written` | list | "KEY row 123: AJ=2026-10-16 AK=2026-10-20" per row written |
@@ -1463,7 +1466,7 @@ failures: `sheet_not_found` (not transient), `input_invalid` (not transient), `r
 {"id":"mark_rows","use":"excel.mark_rows","with":{"dateColumns":["AJ","AK"],"firstRow":7,"items":"{{steps.pick.out.rows}}","keyColumn":"A","keyField":"JOB","numberColumns":["AQ"],"setValues":{"AJ":"{{run.date}}","AK":"{{run.date}}","AQ":"0.1"},"sheet":"WBS","where":{"B":"recv","G":["after","summary"]},"whereMatch":{"P":"^owner"},"workbook":"wbs"}}
 ```
 
-Notes: A key with several matching rows (two files listed twice) gets every one written. A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.
+Notes: A key with several matching rows (two files listed twice) gets every one written. A cell holding a formula is never written (its value may look blank), reported in kept. A date written into a General cell gets the yyyy/m/d format (what typing a date does). A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.
 
 ### `excel.open`
 
@@ -1707,6 +1710,7 @@ Write a value (or another cell's value) into one cell as text
 | `sheet` | string | yes |  |  |  |
 | `trim` | bool |  | false |  | drop the spaces around the value (10/16: the send-data sheet's STEP cell sometimes ends in one) |
 | `value` | string |  | (empty) |  | the text to write |
+| `warnIfEmpty` | bool |  | true |  | with keepIfEmpty: false = an empty fromCell is normal here (a one-file job has no STEP name, 10/21), logged, no warning |
 | `workbook` | session:workbook | yes |  |  |  |
 
 | output | type | desc |

@@ -26,6 +26,7 @@ $Manifest = @{
     fontSize  = @{ type='int';    default=0 }
     trim      = @{ type='bool';   default=$false; desc='drop the spaces around the value (10/16: the send-data sheet''s STEP cell sometimes ends in one)' }
     keepIfEmpty = @{ type='bool'; default=$false; desc='fromCell is empty -> leave the target cell as it is and warn source_empty (10/20: a JOD book''s send-data B3 was blank and the run blanked G3)' }
+    warnIfEmpty = @{ type='bool'; default=$true; desc='with keepIfEmpty: false = an empty fromCell is normal here (a one-file job has no STEP name, 10/21), logged, no warning' }
   }
   outputs    = @{
     value = @{ type='string'; desc='what the cell holds now' }
@@ -55,7 +56,9 @@ function Invoke-Step {
         $c0 = $null; try { $c0 = $ws.Range([string]$In['cell']) } catch { }
         $kept = ''; $row0 = 0
         if ($null -ne $c0) { try { $kept = [string]$c0.Text; $row0 = [int]$c0.Row } catch { } }
-        return @{ ok = $true; value = $kept; row = $row0; warnings = @(@{ code = 'source_empty'; message = ($In['fromSheet'] + '!' + $In['fromCell'] + ' is empty: ' + $In['sheet'] + '!' + $In['cell'] + ' left as it was ("' + $kept + '") -- fill it by hand') }) }
+        $what = ($In['fromSheet'] + '!' + $In['fromCell'] + ' is empty: ' + $In['sheet'] + '!' + $In['cell'] + ' left as it was ("' + $kept + '")')
+        if (-not [bool]$In['warnIfEmpty']) { $Ctx.Log.Info($what); return @{ ok = $true; value = $kept; row = $row0 } }
+        return @{ ok = $true; value = $kept; row = $row0; warnings = @(@{ code = 'source_empty'; message = ($what + ' -- fill it by hand') }) }
     }
     try {
         $c = $ws.Range([string]$In['cell'])

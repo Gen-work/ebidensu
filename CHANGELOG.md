@@ -1,3 +1,52 @@
+## 2026-10-22 - WBS actuals: checked in light violet first, saved only after Enter and without the fill; formula cells never written (v2.34.0)
+
+10/22: the leader said the WBS lines owned by the operator looked broken.
+Whether this tool did it is not confirmed (what "broken" looked like is not
+known yet), but two ways it could have are closed, and nothing reaches the
+shared file before the operator has looked at it.
+
+### Changed
+- **gfixRecv.deliver v0.4.0**: `wbsMark` fills every cell it writes light
+  violet (`vars.wbsHighlight` = `#E6D6FF,#D2B9F5,#F3EBFF`, the first one
+  not within 24 per channel of a colour on the header rows or the rows
+  written, conditional formats included). At the gate `Enter` closes that
+  copy WITHOUT saving (`wbsDiscard`), waits for the file again, opens it as
+  `wbs2`, writes the same values with no fill (`wbsWrite`) and saves;
+  `s` / `q` / anything else closes without saving -- the WBS stays as it
+  was. The fill never reaches the shared file.
+- **excel.mark_rows**: `highlight` input; outputs `cells` / `highlight`;
+  a cell holding a formula is never written (it may show blank), reported
+  in `kept`; a date written into a General cell gets `yyyy/m/d` (a serial
+  would show as 46316).
+
+### Docs / tests
+- RUNBOOK 4b step 5 rewritten; KNOWLEDGE K-24 (10/22). Test-PlanSets:
+  formula cells, the colour pick. Catalog regenerated.
+
+## 2026-10-21 - STEP name only warned for multi-file jobs; WBS rows hidden by a filter named (v2.33.1, not released alone: in v2.34.0)
+
+10/21 re-run on v2.33.0: Q/RJODWDBC warned `source_empty` for the STEP
+name, but a one-file job has none ("they aren't multi so why step?").
+
+### Changed
+- **gfixRecv.evidence v0.7.1**: `stepName` runs for jobs with two or more
+  file pairs (warns when 送信データ B3 is empty, as before); `stepNameOne`
+  for one-pair jobs copies B3 when it is there and only logs when it is
+  not.
+- **excel.write_cell**: `warnIfEmpty` (default true) -- false turns the
+  keepIfEmpty warning into a log line.
+- **excel.mark_rows**: a written row hidden by a filter is marked
+  `(hidden by a filter)` in `written` (the WBS gate shows it) and warned
+  `rows_hidden` -- the values are there, the filter hides them (10/20: "not
+  visible before Enter"); the last row is the larger of Ctrl+Up and the
+  used range, so rows under a filter are not "no row".
+
+### Docs / tests
+- KNOWLEDGE K-24: the 10/21 review of the 10/20 loss (a second, read-only
+  copy in the tool's own Excel while the operator's Excel held the WBS;
+  closed by v2.30.0's wait_unlocked / read_only / save check) and what the
+  operator can do. Test-PlanSets: hidden-row marking. Catalog regenerated.
+
 ## 2026-10-21 - silent mode; HOST line numbers OCR missed at either end read from the pixels (v2.33.0)
 
 Operator 10/21: "add a silent mode ... at least not pops up at front except

@@ -2,13 +2,15 @@
   "schema": 1,
   "id": "gfixRecv.deliver",
   "title": "GFIX受信: レビュー依頼(チェックシートに全部書く -> 確認 -> 下書きを全部 -> 全部送ったら ok -> WBS の実績 AJ/AK)",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "profile": "gfix-recv",
 
   "vars": {
     "_wbs_doc": "10/20: after every draft is sent, the WBS row of each job (A = JOB, B = side, G = task) gets AJ (実績 開始) = the day its GFIX job ran (GFIX_DATE) and AK (実績 終了) = today -- blank cells only, shown before saving. s at the open / the panel leaves the WBS as it was (type it by hand)",
     "_wbs_doc2": "10/20 second day: both task rows (修正後実施 and 結果まとめ) of the operator's own WBS rows (P = owner / owner<-other, the plan's owner rule) get AJ = AK = the day asked (Enter = today; 10/21 works) and AQ (実績工数) = the hours asked (Enter = 0.1). Blank cells only.",
-    "wbsSheet": "WBS", "wbsFirstRow": 7, "side": "受信", "tasks": ["修正後実施", "結果まとめ"], "wbsHours": "0.1"
+    "wbsSheet": "WBS", "wbsFirstRow": 7, "side": "受信", "tasks": ["修正後実施", "結果まとめ"], "wbsHours": "0.1",
+    "_wbs_doc3": "10/22 (the leader: the WBS lines owned by the operator looked broken): the cells written are filled light violet for the check; Enter = close WITHOUT saving, open again, write the same values with no fill, save -- the fill never reaches the shared file; s / q / anything else = close without saving, the WBS stays as it was. Formula cells are never written.",
+    "wbsHighlight": "#E6D6FF,#D2B9F5,#F3EBFF"
   },
 
   "source": {
@@ -118,22 +120,44 @@
                 "where": { "B": "{{vars.side}}", "G": "{{vars.tasks}}" },
                 "whereMatch": { "P": "{{steps.wbsOwner.out.pattern}}" },
                 "setValues": { "AJ": "{{steps.wbsDay.out.value}}", "AK": "{{steps.wbsDay.out.value}}", "AQ": "{{steps.wbsHours.out.value}}" },
-                "dateColumns": ["AJ", "AK"], "numberColumns": ["AQ"] } },
+                "dateColumns": ["AJ", "AK"], "numberColumns": ["AQ"], "highlight": "{{vars.wbsHighlight}}" } },
     { "id": "wbsOk", "use": "human.gate",
-      "label": "WBS に書いた実績を Excel で見る。Enter = 保存 / s = 保存しない(手で直す)",
+      "label": "WBS に書いたセル(薄紫)を Excel で見る。Enter = 色なしで書き直して保存 / s・q = 何も変えずに閉じる",
       "when": "steps.wbsMark.out.writtenCount != 0",
       "with": { "code": "unknown", "askWhen": ["unknown"], "key": "WBS",
-                "reason": "{{steps.wbsMark.out.writtenCount}} WBS row(s) got 実績 dates, not saved yet",
+                "reason": "{{steps.wbsMark.out.writtenCount}} WBS row(s) written, the cells filled light violet ({{steps.wbsMark.out.highlight}}) for this check only. Enter: close WITHOUT saving, open again, write the same values with no fill, save. s / q: close without saving -- the WBS stays as it was",
                 "evidence": "{{steps.wbsMark.out.written}}", "alert": "{{steps.wbsMark.out.notFound}}", "front": ["EXCEL"] } },
+    { "id": "wbsDiscard", "use": "excel.close",
+      "label": "確認用(薄紫)の WBS は保存せずに閉じる",
+      "when": "steps.wbsOk.out.action == ok",
+      "with": { "workbook": "wbs", "save": false } },
+    { "id": "wbsFree2", "use": "file.wait_unlocked",
+      "label": "WBS がまた空くまで待つ",
+      "when": "steps.wbsOk.out.action == ok",
+      "with": { "path": "{{profile.paths.wbs}}", "everySec": 30, "timeoutMin": 30 } },
+    { "id": "wbsOpen2", "use": "excel.open",
+      "label": "WBS をもう一度開く",
+      "when": "steps.wbsOk.out.action == ok",
+      "with": { "app": "xl", "path": "{{profile.paths.wbs}}", "as": "wbs2" } },
+    { "id": "wbsWrite", "use": "excel.mark_rows",
+      "label": "確認した同じ値を色なしで書く(空のセルだけ、式のセルは書かない)",
+      "when": "steps.wbsOpen2.out.path exists",
+      "with": { "workbook": "wbs2", "sheet": "{{vars.wbsSheet}}", "firstRow": "{{vars.wbsFirstRow}}",
+                "keyColumn": "A", "items": "{{steps.pick.out.rows}}", "keyField": "JOB",
+                "where": { "B": "{{vars.side}}", "G": "{{vars.tasks}}" },
+                "whereMatch": { "P": "{{steps.wbsOwner.out.pattern}}" },
+                "setValues": { "AJ": "{{steps.wbsDay.out.value}}", "AK": "{{steps.wbsDay.out.value}}", "AQ": "{{steps.wbsHours.out.value}}" },
+                "dateColumns": ["AJ", "AK"], "numberColumns": ["AQ"] } },
     { "id": "wbsSave", "use": "excel.close",
       "label": "WBS を保存して閉じる",
-      "when": "steps.wbsOk.out.action == ok",
-      "with": { "workbook": "wbs", "save": true, "dismissDialogs": "{{profile.layout.evidence.saveDialogs}}" } }
+      "when": "steps.wbsWrite.out.writtenCount != 0",
+      "with": { "workbook": "wbs2", "save": true, "dismissDialogs": "{{profile.layout.evidence.saveDialogs}}" } }
   ],
 
   "teardown": [
     { "id": "close", "use": "excel.close", "with": { "workbook": "cs", "save": false } },
     { "id": "wbsClose", "use": "excel.close", "with": { "workbook": "wbs", "save": false } },
+    { "id": "wbs2Close", "use": "excel.close", "with": { "workbook": "wbs2", "save": false } },
     { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
     { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "deliver", "next": ["今日の分は以上。Outlook の送信済みと gfixrecv.csv の deliver 列を確認"] } }
   ]

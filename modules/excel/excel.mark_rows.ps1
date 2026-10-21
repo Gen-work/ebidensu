@@ -42,12 +42,15 @@ $Manifest = @{
     dateColumns = @{ type='list';   default=@(); desc='letters written as real dates (yyyy-MM-dd / yyyy/M/d / M/d (this year) in, an Excel date out; the cell''s format is kept)' }
     numberColumns = @{ type='list'; default=@(); desc='letters written as numbers (0.1 in, a number out, not the text "0.1")' }
     onlyBlank   = @{ type='bool';   default=$true; desc='false: overwrite cells that already hold a value' }
+    highlight   = @{ type='string'; default=''; desc='"#RRGGBB" (or several, comma-separated, first one the sheet does not already use): fill every written cell with it so a person can check them before saving. The workflow then closes WITHOUT saving and writes again un-filled to save (10/22: the fill never reaches the shared file)' }
   }
   outputs    = @{
     written      = @{ type='list'; desc='"KEY row 123: AJ=2026-10-16 AK=2026-10-20" per row written' }
     writtenCount = @{ type='int' }
     kept         = @{ type='list'; desc='"KEY row 123: AJ already 2026-10-16" for cells left as they were' }
     notFound     = @{ type='list'; desc='keys with no matching row' }
+    cells        = @{ type='list'; desc='addresses written, e.g. AJ3854' }
+    highlight    = @{ type='string'; desc='the fill colour used ("" = none)' }
   }
   failures   = @(
     @{ id = 'sheet_not_found'; transient = $false }
@@ -56,7 +59,7 @@ $Manifest = @{
     @{ id = 'write_failed';    transient = $true  }
   )
   example    = @{ use = 'excel.mark_rows'; with = @{ workbook = 'wbs'; sheet = 'WBS'; firstRow = 7; keyColumn = 'A'; items = '{{steps.pick.out.rows}}'; keyField = 'JOB'; where = @{ B = 'recv'; G = @('after', 'summary') }; whereMatch = @{ P = '^owner' }; setValues = @{ AJ = '{{run.date}}'; AK = '{{run.date}}'; AQ = '0.1' }; dateColumns = @('AJ', 'AK'); numberColumns = @('AQ') } }
-  notes      = 'A key with several matching rows (two files listed twice) gets every one written. A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.'
+  notes      = 'A key with several matching rows (two files listed twice) gets every one written. A cell holding a formula is never written (its value may look blank), reported in kept. A date written into a General cell gets the yyyy/m/d format (what typing a date does). A value that should be a date but does not read as one is written as text and reported in kept. Under DryRun nothing is read or written; the plan is logged.'
 }
 
 function ExcelMarkRows-Norm {
@@ -115,7 +118,7 @@ function ExcelMarkRows-Plan {
       Returns @{ writes (@{ row; letter; value; key }); written; kept;
       notFound } -- written / kept are the report lines.
     #>
-    param($Grid, [int]$FirstRow, [string]$KeyColumn, $Items, [string]$KeyField, $Where, $SetFields, $SetValues, $DateColumns = @(), [bool]$OnlyBlank = $true, $WhereMatch = @{}, $NumberColumns = @(), [datetime]$Today = (Get-Date))
+    param($Grid, [int]$FirstRow, [string]$KeyColumn, $Items, [string]$KeyField, $Where, $SetFields, $SetValues, $DateColumns = @(), [bool]$OnlyBlank = $true, $WhereMatch = @{}, $NumberColumns = @(), [datetime]$Today = (Get-Date), $Formulas = @{})
     $keyCol = $KeyColumn.ToUpperInvariant()
     $dates = @(@($DateColumns) | ForEach-Object { ([string]$_).ToUpperInvariant() })
     $numbers = @(@($NumberColumns) | ForEach-Object { ([string]$_).ToUpperInvariant() })
@@ -149,6 +152,10 @@ function ExcelMarkRows-Plan {
                 if ($want -eq '') { continue }
                 if ($isDate) { $d = ExcelMarkRows-Day -Text $want -Today $Today; if ($d -ne '') { $want = $d } }
                 $isNum = ($numbers -contains $l)
+                # a formula cell (10/22: the WBS lines "broken") is never written,
+                # even when it shows blank -- the value would replace the formula
+                $fm = if ($null -ne $Formulas -and $Formulas.Contains($l)) { [string]$Formulas[$l][$i] } else { '' }
+                if ($fm.StartsWith('=')) { [void]$kept.Add(($key + ' row ' + $row + ': ' + $l + ' has a formula (' + $fm + '), not written')); continue }
                 $cur = ExcelMarkRows-CellText -Value $Grid[$l][$i] -IsDate $isDate
                 if ($cur -ne '' -and $OnlyBlank) { [void]$kept.Add(($key + ' row ' + $row + ': ' + $l + ' already ' + $cur)); continue }
                 [void]$writes.Add(@{ row = $row; letter = $l; value = $want; key = $key; date = $isDate; number = $isNum })
@@ -161,9 +168,50 @@ function ExcelMarkRows-Plan {
     return @{ writes = $writes.ToArray(); written = $written.ToArray(); kept = $kept.ToArray(); notFound = $notFound.ToArray() }
 }
 
+function ExcelMarkRows-ColorOf {
+    # PURE. "#RRGGBB" -> Excel's Color (R + G*256 + B*65536), or -1.
+    param([string]$Hex)
+    $t = ([string]$Hex).Trim().TrimStart('#')
+    if ($t -notmatch '^[0-9A-Fa-f]{6}$') { return -1 }
+    $r = [Convert]::ToInt32($t.Substring(0, 2), 16); $g = [Convert]::ToInt32($t.Substring(2, 2), 16); $b = [Convert]::ToInt32($t.Substring(4, 2), 16)
+    return ($r + $g * 256 + $b * 65536)
+}
+
+function ExcelMarkRows-PickColor {
+    <#
+      PURE. The first candidate ("#RRGGBB", comma-separated) whose colour
+      differs from every colour in Used (Excel Color longs) by more than 24
+      on some channel -- so the check fill never looks like the sheet's own
+      colours (10/22: "different from any color on the sheet"). None fits:
+      the first one. -> @{ hex; color }
+    #>
+    param([string]$Candidates, $Used = @())
+    $list = @(([string]$Candidates -split ',') | ForEach-Object { $_.Trim() } | Where-Object { (ExcelMarkRows-ColorOf $_) -ge 0 })
+    if ($list.Count -eq 0) { return @{ hex = ''; color = -1 } }
+    foreach ($h in $list) {
+        $c = ExcelMarkRows-ColorOf $h
+        $clash = $false
+        foreach ($u in @($Used)) {
+            $u = [int64]$u; if ($u -lt 0) { continue }
+            $dr = [Math]::Abs(($c -band 255) - ($u -band 255)); $dg = [Math]::Abs((($c -shr 8) -band 255) - (($u -shr 8) -band 255)); $db = [Math]::Abs((($c -shr 16) -band 255) - (($u -shr 16) -band 255))
+            if ([Math]::Max($dr, [Math]::Max($dg, $db)) -le 24) { $clash = $true; break }
+        }
+        if (-not $clash) { return @{ hex = $h; color = $c } }
+    }
+    return @{ hex = $list[0]; color = (ExcelMarkRows-ColorOf $list[0]) }
+}
+
+function ExcelMarkRows-NoteHidden {
+    # PURE. Report lines ("KEY row 123: ...") -> the same, with
+    # " (hidden by a filter)" on the rows in HiddenRows.
+    param($Lines, $HiddenRows = @())
+    $set = @{}; foreach ($r in @($HiddenRows)) { $set[[int]$r] = $true }
+    return @(foreach ($l in @($Lines)) { $m = [regex]::Match([string]$l, ' row (\d+):'); if ($m.Success -and $set.Contains([int]$m.Groups[1].Value)) { [string]$l + ' (hidden by a filter)' } else { [string]$l } })
+}
+
 function Invoke-Step {
     param($In, $Ctx)
-    $empty = @{ written = @(); writtenCount = 0; kept = @(); notFound = @() }
+    $empty = @{ written = @(); writtenCount = 0; kept = @(); notFound = @(); cells = @(); highlight = '' }
     $letters = New-Object System.Collections.ArrayList
     $wm = if ($In['whereMatch'] -is [System.Collections.IDictionary]) { $In['whereMatch'] } else { @{} }
     foreach ($l in @([string]$In['keyColumn']) + @($In['where'].Keys) + @($wm.Keys) + @($In['setFields'].Keys) + @($In['setValues'].Keys)) {
@@ -179,10 +227,13 @@ function Invoke-Step {
     $ws = Get-EbiSheet -Workbook $In['workbook'] -Sheet $In['sheet']
     if ($null -eq $ws) { $r = $empty.Clone(); $r['ok'] = $false; $r['failure'] = 'sheet_not_found'; $r['message'] = ('no sheet "' + $In['sheet'] + '"'); return $r }
     $first = [Math]::Max(1, [int]$In['firstRow'])
-    $grid = @{}
+    $grid = @{}; $formulas = @{}
     try {
         $kc = ConvertTo-EbiColumnNumber ([string]$In['keyColumn'])
         $last = [int]$ws.Cells.Item([int]$ws.Rows.Count, $kc).End(-4162).Row   # xlUp
+        # End(xlUp) is Ctrl+Up: with a filter on it stops at the last VISIBLE
+        # row, and the rows hidden under it would read as "no row" (10/21)
+        try { $ur = $ws.UsedRange; $uLast = [int]$ur.Row + [int]$ur.Rows.Count - 1; if ($uLast -gt $last) { $last = $uLast } } catch { }
         if ($last -lt $first) { $r = $empty.Clone(); $r['ok'] = $true; $r['notFound'] = @(foreach ($it in @($In['items'])) { [string]$it[[string]$In['keyField']] }); return $r }
         $n = $last - $first + 1
         foreach ($l in $letters) {
@@ -191,12 +242,22 @@ function Invoke-Step {
             for ($i = 1; $i -le $n; $i++) { $arr[$i - 1] = if ($n -eq 1) { $v } else { $v[$i, 1] } }
             $grid[$l] = $arr
         }
+        $setL = New-Object System.Collections.ArrayList
+        foreach ($l in @($In['setFields'].Keys) + @($In['setValues'].Keys)) { $u = ([string]$l).ToUpperInvariant(); if (-not $setL.Contains($u)) { [void]$setL.Add($u) } }
+        foreach ($l in $setL) {
+            $f = $ws.Range(('{0}{1}:{0}{2}' -f $l, $first, $last)).Formula
+            $arr = New-Object object[] $n
+            for ($i = 1; $i -le $n; $i++) { $arr[$i - 1] = if ($n -eq 1) { $f } else { $f[$i, 1] } }
+            $formulas[$l] = $arr
+        }
     } catch { $r = $empty.Clone(); $r['ok'] = $false; $r['failure'] = 'read_failed'; $r['message'] = $_.Exception.Message; return $r }
-    $plan = ExcelMarkRows-Plan -Grid $grid -FirstRow $first -KeyColumn ([string]$In['keyColumn']) -Items $In['items'] -KeyField ([string]$In['keyField']) -Where $In['where'] -SetFields $In['setFields'] -SetValues $In['setValues'] -DateColumns $In['dateColumns'] -OnlyBlank ([bool]$In['onlyBlank']) -WhereMatch $wm -NumberColumns $In['numberColumns']
+    $plan = ExcelMarkRows-Plan -Grid $grid -FirstRow $first -KeyColumn ([string]$In['keyColumn']) -Items $In['items'] -KeyField ([string]$In['keyField']) -Where $In['where'] -SetFields $In['setFields'] -SetValues $In['setValues'] -DateColumns $In['dateColumns'] -OnlyBlank ([bool]$In['onlyBlank']) -WhereMatch $wm -NumberColumns $In['numberColumns'] -Formulas $formulas
     try {
         foreach ($w in @($plan['writes'])) {
             $cell = $ws.Range(('{0}{1}' -f $w['letter'], $w['row']))
             if ([bool]$w['date'] -and [string]$w['value'] -match '^\d{4}-\d{2}-\d{2}$') {
+                # a General cell would show the serial (46316); typing a date sets yyyy/m/d
+                try { if ([string]$cell.NumberFormat -eq 'General') { $cell.NumberFormat = 'yyyy/m/d' } } catch { }
                 $cell.Value2 = ([datetime]::ParseExact([string]$w['value'], 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)).ToOADate()
             } elseif ([bool]$w['number'] -and [string]$w['value'] -match '^-?\d+(\.\d+)?$') {
                 $cell.Value2 = [double]::Parse([string]$w['value'], [System.Globalization.CultureInfo]::InvariantCulture)
@@ -218,8 +279,40 @@ function Invoke-Step {
         $r['message'] = ('written but still empty when read back: ' + ($lost.ToArray() -join ', ') + ' (a filter, a protected sheet, or the wrong workbook?) -- nothing saved yet; look at the sheet, then r')
         return $r
     }
+    # 10/20: the values were "not there" at the gate -- a filter on the WBS
+    # hides the rows written (the write itself is fine). Say which rows.
+    $hidden = New-Object System.Collections.ArrayList
+    foreach ($w in @($plan['writes'])) {
+        if ($hidden.Contains([int]$w['row'])) { continue }
+        try { if ([bool]$ws.Rows.Item([int]$w['row']).Hidden) { [void]$hidden.Add([int]$w['row']) } } catch { }
+    }
+    $written = @(ExcelMarkRows-NoteHidden -Lines $plan['written'] -HiddenRows $hidden.ToArray())
+    $cells = @(foreach ($w in @($plan['writes'])) { ('{0}{1}' -f $w['letter'], $w['row']) })
+    $hl = ''
+    if ([string]$In['highlight'] -ne '' -and $cells.Count -gt 0) {
+        # the colours already on the header rows and the rows written (whole
+        # sheet would be too many COM calls), conditional formats included
+        $used = New-Object System.Collections.ArrayList
+        try {
+            $ur = $ws.UsedRange; $lastCol = [Math]::Min(150, [int]$ur.Column + [int]$ur.Columns.Count - 1)
+            $rows = @(1..([Math]::Max(1, $first - 1))) + @(@($plan['writes']) | ForEach-Object { [int]$_['row'] } | Select-Object -Unique)
+            foreach ($r in $rows) { for ($c = 1; $c -le $lastCol; $c++) {
+                $col = -1
+                try { $col = [int64]$ws.Cells.Item($r, $c).DisplayFormat.Interior.Color } catch { try { $col = [int64]$ws.Cells.Item($r, $c).Interior.Color } catch { } }
+                if ($col -ge 0 -and -not $used.Contains($col)) { [void]$used.Add($col) }
+            } }
+        } catch { }
+        $pick = ExcelMarkRows-PickColor -Candidates ([string]$In['highlight']) -Used $used.ToArray()
+        if ([int64]$pick['color'] -ge 0) {
+            foreach ($a in $cells) { try { $ws.Range($a).Interior.Color = [int64]$pick['color'] } catch { } }
+            $hl = [string]$pick['hex']
+            $Ctx.Log.Info(('{0} cell(s) filled {1} for checking (the fill is never saved)' -f $cells.Count, $hl))
+        }
+    }
     Invoke-EbiComRelease $ws
-    foreach ($l in @($plan['written'])) { $Ctx.Log.Info(('wrote ' + $l)) }
-    $warn = @(foreach ($k in @($plan['notFound'])) { @{ code = 'row_not_found'; message = ('no ' + $In['sheet'] + ' row for ' + $k + ' (type it by hand)') } })
-    return @{ ok = $true; written = $plan['written']; writtenCount = @($plan['written']).Count; kept = $plan['kept']; notFound = $plan['notFound']; warnings = $warn }
+    foreach ($l in $written) { $Ctx.Log.Info(('wrote ' + $l)) }
+    $warn = New-Object System.Collections.ArrayList
+    foreach ($k in @($plan['notFound'])) { [void]$warn.Add(@{ code = 'row_not_found'; message = ('no ' + $In['sheet'] + ' row for ' + $k + ' (type it by hand)') }) }
+    if ($hidden.Count -gt 0) { [void]$warn.Add(@{ code = 'rows_hidden'; message = ('{0} row(s) written are hidden by a filter on {1} ({2}): the values are there, clear the filter to see them' -f $hidden.Count, $In['sheet'], (@($hidden.ToArray()) -join ', ')) }) }
+    return @{ ok = $true; written = $written; writtenCount = $written.Count; kept = $plan['kept']; notFound = $plan['notFound']; cells = $cells; highlight = $hl; warnings = $warn.ToArray() }
 }
