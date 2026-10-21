@@ -103,14 +103,87 @@ function ScreenReadLineNumbers-Runs {
     return $merged.ToArray()
 }
 
+function ScreenReadLineNumbers-Token {
+    # PURE. An OCR line -> its leading line number, or -1.
+    param([string]$Text, [int]$Digits = 6)
+    $min = [Math]::Max(3, $Digits - 1)
+    $m = [regex]::Match(([string]$Text).Trim(), ('^([0-9OoDIl|SB]{' + $min + ',' + $Digits + '})(\s|$)'))
+    if (-not $m.Success) { return -1 }
+    $tok = $m.Groups[1].Value
+    if ($tok -notmatch '[0-9]') { return -1 }
+    return [int]($tok -replace '[OoD]', '0' -replace '[Il|]', '1' -replace 'S', '5' -replace 'B', '8')
+}
+
+function ScreenReadLineNumbers-ByRows {
+    <#
+      PURE. OCR line boxes @(@{ text; y }) -> runs @(@{ first; last; count;
+      votes; read }) or $null when the boxes carry no positions. Inside one
+      shot the lines sit one pitch apart and their numbers run one after
+      another, so each number read says "the top row is n - row"; the value
+      most numbers agree on wins, and a misread or a line OCR missed (a red
+      box over it) no longer breaks the run (10/21 SJODWDBC: read as 2-4,
+      then four pieces). Rows more than 2.5 pitches apart start a new run
+      (two shots in one grouped image).
+    #>
+    param($Boxes, [int]$Digits = 6)
+    $items = @(@($Boxes) | Where-Object { $_ -is [System.Collections.IDictionary] -and [double]$_['y'] -ge 0 } | ForEach-Object { @{ n = (ScreenReadLineNumbers-Token -Text ([string]$_['text']) -Digits $Digits); y = [double]$_['y'] } } | Where-Object { [int]$_['n'] -ge 0 } | Sort-Object { [double]$_['y'] })
+    if ($items.Count -lt 2) { return $null }
+    # pitch: neighbours whose numbers differ by 1..3
+    $ps = New-Object System.Collections.ArrayList
+    for ($i = 1; $i -lt $items.Count; $i++) {
+        $dn = [int]$items[$i]['n'] - [int]$items[$i - 1]['n']; $dy = [double]$items[$i]['y'] - [double]$items[$i - 1]['y']
+        if ($dn -ge 1 -and $dn -le 3 -and $dy -gt 0) { [void]$ps.Add($dy / $dn) }
+    }
+    if ($ps.Count -eq 0) { return $null }
+    $sorted = @($ps | Sort-Object); $pitch = [double]$sorted[[int][Math]::Floor($sorted.Count / 2)]
+    if ($pitch -le 0) { return $null }
+    $runs = New-Object System.Collections.ArrayList
+    $cur = New-Object System.Collections.ArrayList; [void]$cur.Add($items[0])
+    for ($i = 1; $i -lt $items.Count; $i++) {
+        if (([double]$items[$i]['y'] - [double]$items[$i - 1]['y']) -gt 2.5 * $pitch) { [void]$runs.Add($cur.ToArray()); $cur = New-Object System.Collections.ArrayList }
+        [void]$cur.Add($items[$i])
+    }
+    [void]$runs.Add($cur.ToArray())
+    $out = New-Object System.Collections.ArrayList
+    foreach ($r in $runs) {
+        $y0 = [double]$r[0]['y']; $votes = @{}; $rowMax = 0
+        foreach ($it in $r) {
+            $row = [int][Math]::Round(([double]$it['y'] - $y0) / $pitch); if ($row -gt $rowMax) { $rowMax = $row }
+            $k = [string]([int]$it['n'] - $row); if ($votes.Contains($k)) { $votes[$k]++ } else { $votes[$k] = 1 }
+        }
+        $best = ''; $bn = 0; foreach ($k in $votes.Keys) { if ([int]$votes[$k] -gt $bn) { $best = $k; $bn = [int]$votes[$k] } }
+        [void]$out.Add(@{ first = [int]$best; last = [int]$best + $rowMax; count = $rowMax + 1; votes = $bn; read = $r.Count })
+    }
+    return $out.ToArray()
+}
+
 function ScreenReadLineNumbers-Parse {
     <#
       PURE. OCR lines -> @(@{ ok; first; last; count; reason }), one per run
       of consecutive line numbers (usually one per picture; two when one
-      image holds two shots). A run shorter than MinLines is not trusted;
-      no number at all gives one entry with ok false.
+      image holds two shots). Lines may be strings, or boxes @{ text; y }
+      (kernel/Ocr.ps1): with positions the rows decide (ByRows: trusted
+      when at least half of the numbers read, and MinLines of them, agree);
+      without, the numbers alone (Runs). No number at all gives one entry
+      with ok false.
     #>
     param($Lines, [int]$Digits = 6, [int]$MinLines = 2)
+    $boxes = @(@($Lines) | Where-Object { $_ -is [System.Collections.IDictionary] })
+    if ($boxes.Count -gt 0) {
+        $rr = ScreenReadLineNumbers-ByRows -Boxes $boxes -Digits $Digits
+        if ($null -ne $rr) {
+            $out = New-Object System.Collections.ArrayList
+            foreach ($r in @($rr)) {
+                $ok = ([int]$r['votes'] -ge $MinLines -and [int]$r['votes'] * 2 -ge [int]$r['read'])
+                $why = if ($ok) { $(if ([int]$r['votes'] -lt [int]$r['count']) { ('' + $r['votes'] + ' of ' + $r['count'] + ' rows read alike, the rest by position') } else { '' }) } else { ('{0} row(s) {1:000000}-{2:000000}, only {3} of {4} numbers agree: not trusted' -f $r['count'], $r['first'], $r['last'], $r['votes'], $r['read']) }
+                [void]$out.Add(@{ ok = $ok; first = [int]$r['first']; last = [int]$r['last']; count = [int]$r['count']; reason = $why })
+            }
+            $good = @($out | Where-Object { $_['ok'] })
+            if ($good.Count -gt 0) { return $good }
+            return $out.ToArray()
+        }
+        $Lines = @($boxes | ForEach-Object { [string]$_['text'] })
+    }
     $nums = @(ScreenReadLineNumbers-Numbers -Lines $Lines -Digits $Digits)
     if ($nums.Count -eq 0) { return @(@{ ok = $false; first = 0; last = 0; count = 0; reason = 'no line numbers read' }) }
     $out = New-Object System.Collections.ArrayList
@@ -142,7 +215,10 @@ function Invoke-Step {
             $r = Invoke-EbiOcrFile -Path $t -Language ([string]$In['language'])
             if (-not $r['ok']) { $why = [string]$r['message']; continue }
             $ran = $true
-            $xs = @(ScreenReadLineNumbers-Parse -Lines $r['lines'] -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
+            # what OCR read, kept next to the picture (look at it when the numbers come out wrong)
+            try { Write-EbiTextFile -Path ([System.IO.Path]::ChangeExtension($t, '.txt')) -Text ((@($r['boxes']) | ForEach-Object { '{0,7:0.0}  {1}' -f [double]$_['y'], $_['text'] }) -join "`r`n") } catch { }
+            $src = if (@($r['boxes']).Count -gt 0) { @($r['boxes']) } else { @($r['lines']) }
+            $xs = @(ScreenReadLineNumbers-Parse -Lines $src -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
             $n = [int](@($xs | Where-Object { $_['ok'] } | ForEach-Object { [int]$_['count'] } | Measure-Object -Sum).Sum)
             if ($n -gt $bestN) { $best = $xs; $bestN = $n }
         }

@@ -1,3 +1,23 @@
+## 2026-10-21 - picture 1 compare runs; HOST line numbers placed by row position (v2.32.4)
+
+10/21 SJODWDBC on v2.32.2: the picture-1 compare died with "op_Multiply on
+Object[]" (in PowerShell the comma binds tighter than *), and the HOST
+numbers came out in pieces (000002-000004; 032431-032435, 032440, ...).
+The 同一内容 box now sits right (operator's screenshot).
+
+### Fixed
+- **Get-EbiStripCandidates** (pure, tested): the sizes B is tried at, each
+  element in parentheses.
+- **kernel/Ocr.ps1** returns `boxes` (@{ text; y; h } per line).
+  **screen.read_line_numbers** places numbers by ROW: the pitch from
+  neighbouring numbers, each number votes "top row = n - row", the value
+  most agree on wins (at least half, and minLines); misreads and lines
+  OCR missed no longer break a run; > 2.5 rows apart = another shot. What
+  OCR read is saved next to each variant (`host/picN.ocr.txt` / `.bin.txt`
+  / `.neg.txt`, y + text).
+- **verify.df_ranges**: a START picture read from 000002..000003 (top line
+  missed) still opens a pair when none is waiting for its END picture.
+
 ## 2026-10-21 - the 同一内容 box is found in the picture (v2.32.3)
 
 10/21: two hand-measured fixed boxes in a row missed the 同一内容 cell

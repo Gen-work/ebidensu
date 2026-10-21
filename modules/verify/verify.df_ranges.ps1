@@ -55,7 +55,11 @@ function VerifyDfRanges-Sets {
     foreach ($r in @($Ranges)) {
         if (-not ($r -is [System.Collections.IDictionary])) { continue }
         if (-not [bool]$r['ok']) { $bad++; continue }
-        if ([int]$r['first'] -eq 1) {
+        # a START picture runs from 000001; OCR may miss its top line or two
+        # (10/21 SJODWDBC read from 000002), so 2..3 opens a pair too when no
+        # pair is waiting for its END picture
+        $opens = ([int]$r['first'] -eq 1) -or ([int]$r['first'] -le 3 -and ($null -eq $cur -or $null -ne $cur['finish']))
+        if ($opens) {
             if ($null -ne $cur) { [void]$sets.Add($cur) }
             $cur = @{ start = $r; finish = $null; more = $false }
         } elseif ($null -ne $cur) {
