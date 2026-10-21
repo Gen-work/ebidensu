@@ -137,11 +137,26 @@ function ScreenReadLineNumbers-ByRows {
     if ($ps.Count -eq 0) { return $null }
     $sorted = @($ps | Sort-Object); $pitch = [double]$sorted[[int][Math]::Floor($sorted.Count / 2)]
     if ($pitch -le 0) { return $null }
+    # a new run only where the numbers say so: a far row whose number does
+    # not fit the run's own "top row = n - row" (10/21 QJODWDBC: OCR missed
+    # rows 5..11 of one shot, and the gap had split it in two)
     $runs = New-Object System.Collections.ArrayList
     $cur = New-Object System.Collections.ArrayList; [void]$cur.Add($items[0])
+    $cv = @{}; $cv[[string][int]$items[0]['n']] = 1
     for ($i = 1; $i -lt $items.Count; $i++) {
-        if (([double]$items[$i]['y'] - [double]$items[$i - 1]['y']) -gt 2.5 * $pitch) { [void]$runs.Add($cur.ToArray()); $cur = New-Object System.Collections.ArrayList }
+        $y0 = [double]$cur[0]['y']
+        $row = [int][Math]::Round(([double]$items[$i]['y'] - $y0) / $pitch)
+        $off = [int]$items[$i]['n'] - $row
+        $bestOff = 0; $bn = -1; foreach ($k in $cv.Keys) { if ([int]$cv[$k] -gt $bn) { $bestOff = [int]$k; $bn = [int]$cv[$k] } }
+        $fits = ([Math]::Abs($off - $bestOff) -le 2)
+        $far = (([double]$items[$i]['y'] - [double]$items[$i - 1]['y']) -gt 2.5 * $pitch)
+        if ($far -and -not $fits) {
+            [void]$runs.Add($cur.ToArray()); $cur = New-Object System.Collections.ArrayList; $cv = @{}
+            [void]$cur.Add($items[$i]); $cv[[string][int]$items[$i]['n']] = 1
+            continue
+        }
         [void]$cur.Add($items[$i])
+        $k2 = [string]$off; if ($cv.Contains($k2)) { $cv[$k2]++ } else { $cv[$k2] = 1 }
     }
     [void]$runs.Add($cur.ToArray())
     $out = New-Object System.Collections.ArrayList
@@ -216,7 +231,7 @@ function Invoke-Step {
             if (-not $r['ok']) { $why = [string]$r['message']; continue }
             $ran = $true
             # what OCR read, kept next to the picture (look at it when the numbers come out wrong)
-            try { Write-EbiTextFile -Path ([System.IO.Path]::ChangeExtension($t, '.txt')) -Text ((@($r['boxes']) | ForEach-Object { '{0,7:0.0}  {1}' -f [double]$_['y'], $_['text'] }) -join "`r`n") } catch { }
+            try { [void](Write-EbiTextFile -Path ([System.IO.Path]::ChangeExtension($t, '.txt')) -Text ((@($r['boxes']) | ForEach-Object { '{0,7:0.0}  {1}' -f [double]$_['y'], $_['text'] }) -join "`r`n")) } catch { }
             $src = if (@($r['boxes']).Count -gt 0) { @($r['boxes']) } else { @($r['lines']) }
             $xs = @(ScreenReadLineNumbers-Parse -Lines $src -Digits ([int]$In['digits']) -MinLines ([int]$In['minLines']))
             $n = [int](@($xs | Where-Object { $_['ok'] } | ForEach-Object { [int]$_['count'] } | Measure-Object -Sum).Sum)

@@ -1,3 +1,16 @@
+## 2026-10-21 - read_line_numbers returns one record; a shot with skipped rows stays one run (v2.32.5)
+
+10/21 QJODWDBC on v2.32.4: hostLines failed `contract_violation: Invoke-Step
+must return a [hashtable] (got Object[])` -- the new OCR-text save let
+Write-EbiTextFile's own result into the output; and pic1 came out as
+000001-000004 + 000012-000013 (OCR skipped rows 5..11, the gap split it).
+
+### Fixed
+- screen.read_line_numbers: the save is `[void]`.
+- ScreenReadLineNumbers-ByRows: a far row starts a new run only when its
+  number does not fit the run's "top row = n - row" (+-2); two shots in
+  one image (offsets thousands apart) still split.
+
 ## 2026-10-21 - picture 1 compare runs; HOST line numbers placed by row position (v2.32.4)
 
 10/21 SJODWDBC on v2.32.2: the picture-1 compare died with "op_Multiply on
