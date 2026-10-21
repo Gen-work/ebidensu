@@ -1,3 +1,30 @@
+## 2026-10-21 - DF pictures fitted to their line count (v2.30.3)
+
+10/21 SJODWSPN: after the 10/20 rerun 加瀬さん asked to put the FIRST
+DF picture back -- only the END picture was to change. The first height
+458 was derived (476 - 18), never seen; 429 = 15 lines and 476 = 17 lines
+put the window chrome at 153..159 px, so 458 most likely showed 16 lines
+plus 11..17 px of the 17th (inferred, not measured).
+
+### Fixed
+- **screen.launch_capture `fitStrip`**: each first / END capture counts
+  the text bands of the line-number strip and resizes the window until it
+  shows exactly the lines wanted -- the first picture min(16, lines), the
+  END picture `linesEnd` (17) -- and nothing of the next line (a shorter
+  last band = a cut line). Whole lines at a time when far off, then 6 px
+  steps; the keys of the view are sent again after each resize; a height
+  that had to change carries to the next pair. Not fitted after 8 tries:
+  the capture is kept with warning `fit_failed`. `shots` now carry
+  firstLines / lastLines / firstHeight / lastHeight, and the run log line
+  says them (put the real heights into layout.json once seen).
+- gfixRecv.track `df` passes `fitStrip` = `layout.df.marks[0].lastInk`
+  (the strip the red box already uses) and `linesEnd` 17.
+
+### Docs / tests
+- KNOWLEDGE K-28; TODO HOST-range card updated. Test-GfixRecvSteps: fit
+  plan (17th line, a sliver, short, far short, cut first band) and the
+  lines wanted per view. Catalog regenerated.
+
 ## 2026-10-20 - a rerun after a review NG redoes the later phases; DF END view Down x2 (v2.30.2)
 
 10/20 SJODWSPN: the DF pictures were NG again; the operator cleared the row,

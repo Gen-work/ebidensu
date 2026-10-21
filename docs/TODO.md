@@ -169,8 +169,15 @@ file stays small. Designed-then-shelved work lives in
   resizes before the END view (`heightEnd`). 10/20 office run (SJODWSPN,
   61 lines, review NG again): the END recipe is End, PgUp, Down, Down --
   ONE Down started the picture one line early; with two it shows 00045-00061
-  (the operator's screenshot), now in v2.30.2. Still open: 458 (derived,
-  not seen) and the OCR route above for HOST shots of other shapes.
+  (the operator's screenshot), now in v2.30.2. 10/21: the 10/20 rerun
+  changed the FIRST picture too (加瀬さん: put it back) -- 458 very likely
+  showed part of the 17th line; v2.30.3 fits each first / END capture to
+  its line count from the line-number strip (`fitStrip`), so the heights
+  are only starting guesses now (read the real ones off the run log).
+  Still open: the OCR route above for HOST shots of other shapes (NOT
+  built: nothing reads the 送信データ pictures' line numbers yet), and
+  checking the END picture's first NUMBER (the fit counts lines, it cannot
+  tell 00044-00060 from 00045-00061).
   加瀬さん has not re-checked the hand-fixed SJODWDB6 yet.
 - **gfix-recv: a progress view the operator can see while the browser is
   full screen** (office run feedback, 2026-10-09). During browser / DF

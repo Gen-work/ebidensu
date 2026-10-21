@@ -568,11 +568,16 @@ Run a program per argument set, capture its window (and again after keys), close
 | `argSets` | list | yes |  |  | one map per run (e.g. verify.pair_files pairs) |
 | `closeOthers` | bool |  | false |  | close every window whose title contains windowTitle before each start, so the only such window is the new one |
 | `exe` | path | yes |  |  | the program |
+| `fitPitchPx` | int |  | 18 |  | px a line (DF: 18, measured 10/19) |
+| `fitStepPx` | int |  | 6 |  | fine resize step near the target |
+| `fitStrip` | map |  | {} |  | the line-number strip of a capture, @{ x; width; yFrom; yTo; ink; maxLuma } (screen.find_ink_rows): each first / END capture is resized until it shows exactly the lines wanted (first: min(screenLines, lines); END: linesEnd), no part of the next; empty = no fit |
+| `fitTries` | int |  | 8 |  | resizes per capture before giving up (warning fit_failed, the capture kept) |
 | `height` | int |  | 0 |  |  |
 | `heightEnd` | int |  | 0 |  | line rule: the visible window height for the END-view capture (a file of more than 2 x screenLines lines); 0 = height. 10/19: the HOST screen shows 17 records, so the END picture shows 17 DF lines while the first shows 16 |
 | `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (SendKeys syntax) |
 | `keysMid` | string |  | ^{HOME}{PGDN} |  | keys before the second capture of a file of screenLines+1 .. 2 x screenLines lines: the next page, so it starts at line screenLines+1 |
 | `keysSecond` | string |  | ^{END} |  | keys before the second capture (the END view) |
+| `linesEnd` | int |  | 0 |  | line rule: the lines the END-view capture must show (fitStrip); 0 = screenLines |
 | `linesField` | string |  | lines |  | field of each map holding its line count (the line rule) |
 | `nameField` | string |  | rightName |  | field naming the capture files (its file stem is used); blank = run number |
 | `saveDir` | path | yes |  |  |  |
@@ -589,7 +594,7 @@ Run a program per argument set, capture its window (and again after keys), close
 |--------|------|------|
 | `paths` | list | every capture, in order |
 | `runs` | int |  |
-| `shots` | list | @{ first; last; name } per run (last empty when no second capture) |
+| `shots` | list | @{ first; last; name; firstLines; lastLines; firstHeight; lastHeight } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted) |
 
 failures: `file_not_found` (not transient), `no_window` (transient), `foreground_lost` (transient), `save_failed` (transient)
 
@@ -597,7 +602,7 @@ failures: `file_not_found` (not transient), `no_window` (transient), `foreground
 {"id":"launch_capture","use":"screen.launch_capture","with":{"argSets":"{{steps.pair.out.pairs}}","exe":"{{profile.df.exe}}","height":429,"saveDir":"capture/df/{{item.keySafe}}","width":1133}}
 ```
 
-Notes: An empty argSets is a successful no-op (runs = 0). The program is closed with WM_CLOSE and killed if it is still there 3 s later; a capture already saved is kept either way.
+Notes: An empty argSets is a successful no-op (runs = 0). The program is closed with WM_CLOSE and killed if it is still there 3 s later; a capture already saved is kept either way. With fitStrip, a height that had to change is carried to the next captures of the same call, and a capture that could not be fitted is kept with warning fit_failed (look at it before review).
 
 ### `screen.list_rects`
 

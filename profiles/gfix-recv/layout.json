@@ -85,6 +85,8 @@
     "screenLines": 16,
     "keysMid": "^{HOME}{PGDN}",
     "keysEnd": "{END}{PGUP}{DOWN}{DOWN}",
+    "linesEnd": 17,
+    "_fit_doc": "10/21 (SJODWSPN review: 加瀬さん asked to put the FIRST picture back after the 10/20 rerun): the 458 first height was derived, never seen, and very likely let the 17th line show (429 = 15 lines and 476 = 17 put the window chrome at 153..159 px, so 458 = 16 lines + 11..17 px of the 17th). The track step now fits every first / END capture: it counts the text bands in the line-number strip (marks[0].lastInk) and resizes until the picture shows exactly 16 / linesEnd lines, nothing of the next (screen.launch_capture fitStrip). height / heightEnd stay as the starting guesses; the run log line 'captured ... (lines 16/17, height h1/h2)' tells the real heights to put here.",
     "marks": [
       {
         "lastInk": {

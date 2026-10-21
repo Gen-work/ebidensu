@@ -431,6 +431,8 @@
         "width": "{{profile.layout.df.width}}",
         "height": "{{profile.layout.df.height}}",
         "heightEnd": "{{profile.layout.df.heightEnd}}",
+        "linesEnd": "{{profile.layout.df.linesEnd}}",
+        "fitStrip": "{{profile.layout.df.marks.0.lastInk}}",
         "settleMs": "{{profile.layout.df.settleMs}}",
         "screenLines": "{{profile.layout.df.screenLines}}",
         "keysMid": "{{profile.layout.df.keysMid}}",
