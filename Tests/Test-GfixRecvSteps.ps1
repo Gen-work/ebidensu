@@ -654,6 +654,10 @@ try {
     # empty lines dropped on the receive side: HOST ends far beyond the file -> not lined up
     $pl = VerifyDfRanges-Plan -Lines 900 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 17), (& $rg 1180 1196)))['sets'][0]
     Assert-Equal 'free' $pl['mode'] 'df ranges: HOST last - 1 <> file lines (empty lines lost) -> free, the default pictures'
+    $pl = VerifyDfRanges-Plan -Lines 2 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 2)))['sets'][0]
+    Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 2 -and $pl['end'] -eq 0) 'df ranges: RJODWDBC -- one HOST shot 000001-000002, a 2-line file -> one DF picture of 2 lines'
+    $ln = @(ScreenReadLineNumbers-Parse -Lines @('000001', '000002 a'))
+    Assert-True ($ln[0]['ok'] -and $ln[0]['last'] -eq 2) 'host lines: a 2-line shot is trusted (minLines 2)'
     $pl = VerifyDfRanges-Plan -Lines 12 -Set (VerifyDfRanges-Sets -Ranges @((& $rg 1 13)))['sets'][0]
     Assert-True ($pl['mode'] -eq 'align' -and $pl['first'] -eq 12 -and $pl['end'] -eq 0) 'df ranges: one HOST picture = the whole file -> one DF picture'
     $g = VerifyDfRanges-Sets -Ranges @((& $rg 1 17), (& $rg 46 62), (& $rg 1 19), (& $rg 100 118))
@@ -697,8 +701,14 @@ try {
     $hay = New-Object byte[] 60; for ($i = 0; $i -lt 60; $i++) { $hay[$i] = 255 }; $hay[33] = 0; $hay[54] = 0   # pattern at x=13, y=1 in 20x3
     $bd = [EbiImageMath]::BestDiff($pat, 2, 2, $hay, 20, 3, 9, 1, 10, 1)
     Assert-True ([double]$bd[0] -eq 0 -and [int]$bd[1] -eq 13 -and [int]$bd[2] -eq 1) 'pixel search: the same cells found wherever they sit across the other picture'
+    $cr = [EbiImageMath]::Crop([byte[]](1, 2, 3, 4, 5, 6), 3, 1, 1, 2, 1)
+    Assert-True ($cr.Length -eq 2 -and $cr[0] -eq 5 -and $cr[1] -eq 6) 'pixel search: the best place cut out of the other picture (saved for a person)'
     $bin = [EbiImageMath]::Threshold([byte[]](10, 10, 10, 200, 200, 200), 6, 2, 1, [byte[]](10, 200))
     Assert-True ($bin[0] -eq 255 -and $bin[3] -eq 0) 'ocr bin: a dark ground -> the bright text turns black on white'
+    $sls = @(@{ match = '-unzip'; label = 'GFIXReceiveUnzip.log' }, @{ match = '.'; label = 'GFIXReceive.log' })
+    Assert-Equal 'GFIXReceiveUnzip.log' (FileExtractBlocks-Label -Sources @('log/GFIXReceive/1021-unzip.log') -SourceLabels $sls -Default 'X') 'recv label: a block from the unzip log is GFIXReceiveUnzip.log (10/21)'
+    Assert-Equal 'GFIXReceive.log / GFIXReceiveUnzip.log' (FileExtractBlocks-Label -Sources @('a/1021.log', 'a/1021-unzip.log', 'a/1021.log') -SourceLabels $sls -Default 'X') 'recv label: blocks from both logs name both, in order'
+    Assert-Equal 'X' (FileExtractBlocks-Label -Sources @() -SourceLabels $sls -Default 'X') 'recv label: no block -> the default'
     $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')
     $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 12 } -In $in -Plan $null
     Assert-True (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = ''; firstLines = 12 } -Plan $sp) 'df shots: an earlier picture with the lines wanted is kept'

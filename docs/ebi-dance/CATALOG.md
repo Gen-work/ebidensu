@@ -442,7 +442,8 @@ Compare the same column strip of two pictures of the same rows (pixels); ok / ng
 | `label` | string |  | the pictures |  | for the reason / alert wording |
 | `minInk` | any |  | 0.005 |  | a strip with less dark ink than this share says nothing (unknown) |
 | `ngMin` | int |  | 25 |  | score at or above this = different |
-| `okMax` | int |  | 8 |  | score at or below this = the same |
+| `okMax` | int |  | 12 |  | score at or below this = the same (10/21: the same job read 9.25 on RJODWDBC) |
+| `saveBase` | path |  | (empty) |  | also save what was compared: <saveBase>.a.png (a's strip) and .b.png (the best place in b); empty = none |
 | `toFrac` | any |  | 1 |  | right edge, 0..1 (jobTo) |
 
 | output | type | desc |
@@ -714,7 +715,7 @@ OCR the line numbers at the left of each picture -> first / last / count per pic
 |-------|------|----------|---------|------|------|
 | `digits` | int |  | 6 |  | digits of a line number (HOST: 6); 5..digits are accepted, OCR drops a leading 0 at times |
 | `language` | string |  | en-US |  |  |
-| `minLines` | int |  | 3 |  | fewer numbered lines than this = not a numbered listing (ok false) |
+| `minLines` | int |  | 2 |  | fewer numbered lines than this = not a numbered listing (ok false). 2: a 1-line file's HOST shot shows only 000001-000002 (10/21 RJODWDBC) |
 | `paths` | list | yes |  |  | PNGs (excel.export_pictures paths) |
 
 | output | type | desc |
@@ -936,16 +937,19 @@ Cut keyed START..END blocks out of a log into a file; find marker lines
 |-------|------|----------|---------|------|------|
 | `afterEnd` | int |  | 1 |  | lines after END that belong to the block (the date stamp) |
 | `blockKeys` | list | yes |  |  | block keys to keep |
+| `defaultLabel` | string |  | (empty) |  | the label when no source matched |
 | `encoding` | string |  | mixed | mixed, utf8, cp932 |  |
 | `endPattern` | string |  | ^(?<tag>\S+) END (?<key>\S+)\s*$ |  |  |
 | `markers` | list |  | [] |  | regexes; matching lines of the result are reported |
 | `paths` | list | yes |  |  | log files to search, in order (e.g. the plain and the unzip log); missing ones are skipped |
 | `saveTo` | path | yes |  |  | where the extracted lines go (UTF-8, no BOM) |
+| `sourceLabels` | list |  | [] |  | @{ match; label }: the label of a block whose source file name matches the regex (first match wins) -- for the label above the lines (10/21: a block cut from the unzip log is GFIXReceiveUnzip.log, not GFIXReceive.log) |
 | `startPattern` | string |  | ^(?<tag>\S+) START (?<key>\S+)\s*$ |  | regex with a named group key |
 
 | output | type | desc |
 |--------|------|------|
 | `blocks` | list | @{ key; source; complete; lines } per block, in output order |
+| `label` | string | the labels of the blocks' sources (sourceLabels), in order, joined with " / "; defaultLabel when none matched |
 | `lineCount` | int |  |
 | `markers` | list | @{ line (1-based in the output); pattern (0-based); text } |
 | `missing` | list | keys with no block in any log |

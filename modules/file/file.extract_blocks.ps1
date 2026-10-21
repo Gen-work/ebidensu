@@ -27,6 +27,8 @@ $Manifest = @{
     markers      = @{ type='list';   default=@(); desc='regexes; matching lines of the result are reported' }
     encoding     = @{ type='string'; default='mixed'; enum=@('mixed', 'utf8', 'cp932') }
     saveTo       = @{ type='path';   required=$true; desc='where the extracted lines go (UTF-8, no BOM)' }
+    sourceLabels = @{ type='list';   default=@(); desc='@{ match; label }: the label of a block whose source file name matches the regex (first match wins) -- for the label above the lines (10/21: a block cut from the unzip log is GFIXReceiveUnzip.log, not GFIXReceive.log)' }
+    defaultLabel = @{ type='string'; default=''; desc='the label when no source matched' }
   }
   outputs    = @{
     path      = @{ type='path' }
@@ -34,6 +36,7 @@ $Manifest = @{
     blocks    = @{ type='list'; desc='@{ key; source; complete; lines } per block, in output order' }
     markers   = @{ type='list'; desc='@{ line (1-based in the output); pattern (0-based); text }' }
     missing   = @{ type='list'; desc='keys with no block in any log' }
+    label     = @{ type='string'; desc='the labels of the blocks'' sources (sourceLabels), in order, joined with " / "; defaultLabel when none matched' }
   }
   failures   = @(
     @{ id = 'file_not_found'; transient = $true  }
@@ -75,13 +78,30 @@ function FileExtractBlocks-Decode {
     }
 }
 
+function FileExtractBlocks-Label {
+    # PURE. Block source paths -> their labels (first sourceLabels regex
+    # matching the file NAME), distinct, in order, " / "-joined; Default
+    # when none matched.
+    param($Sources, $SourceLabels, [string]$Default = '')
+    $out = New-Object System.Collections.ArrayList
+    foreach ($src in @($Sources)) {
+        $name = [System.IO.Path]::GetFileName([string]$src)
+        foreach ($sl in @($SourceLabels)) {
+            if (-not ($sl -is [System.Collections.IDictionary])) { continue }
+            if ($name -match [string]$sl['match']) { if (-not $out.Contains([string]$sl['label'])) { [void]$out.Add([string]$sl['label']) }; break }
+        }
+    }
+    if ($out.Count -eq 0) { return $Default }
+    return ($out -join ' / ')
+}
+
 function Invoke-Step {
     param($In, $Ctx)
     $work = [string]$Ctx['WorkDir']
     $dest = Resolve-EbiWorkPath -PathValue ([string]$In['saveTo']) -WorkDir $work
     $keys = @(@($In['blockKeys']) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
     $srcs = @(@($In['paths']) | ForEach-Object { Resolve-EbiWorkPath -PathValue ([string]$_) -WorkDir $work })
-    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would cut {0} block(s) from {1} -> {2}' -f $keys.Count, ($srcs -join ', '), $dest)); return @{ ok = $true; path = $dest; lineCount = 0; blocks = @(); markers = @(); missing = @() } }
+    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would cut {0} block(s) from {1} -> {2}' -f $keys.Count, ($srcs -join ', '), $dest)); return @{ ok = $true; path = $dest; lineCount = 0; blocks = @(); markers = @(); missing = @(); label = [string]$In['defaultLabel'] } }
     $present = @($srcs | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
     if ($present.Count -eq 0) { return @{ ok = $false; failure = 'file_not_found'; message = ('none of the logs exists: ' + ($srcs -join ', ')); path = $dest; lineCount = 0; blocks = @(); markers = @(); missing = $keys } }
     $found = New-Object System.Collections.ArrayList
@@ -125,5 +145,6 @@ function Invoke-Step {
     $w = Write-EbiTextFile -Path $dest -Text (($lines -join "`r`n") + "`r`n")
     if (-not $w['ok']) { return @{ ok = $false; failure = 'write_failed'; message = $w['message']; path = $dest; lineCount = 0; blocks = @(); markers = @(); missing = $missing } }
     $Ctx.Log.Info(('{0} block(s), {1} line(s), {2} marker line(s) -> {3}' -f $found.Count, $lines.Count, $marks.Count, $dest))
-    return @{ ok = $true; path = $dest; lineCount = $lines.Count; blocks = $info.ToArray(); markers = $marks; missing = $missing; warnings = $warn.ToArray() }
+    $label = FileExtractBlocks-Label -Sources @($info | ForEach-Object { $_['source'] }) -SourceLabels $In['sourceLabels'] -Default ([string]$In['defaultLabel'])
+    return @{ ok = $true; path = $dest; lineCount = $lines.Count; blocks = $info.ToArray(); markers = $marks; missing = $missing; label = $label; warnings = $warn.ToArray() }
 }
