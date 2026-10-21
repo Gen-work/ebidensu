@@ -697,6 +697,8 @@ try {
     $hay = New-Object byte[] 60; for ($i = 0; $i -lt 60; $i++) { $hay[$i] = 255 }; $hay[33] = 0; $hay[54] = 0   # pattern at x=13, y=1 in 20x3
     $bd = [EbiImageMath]::BestDiff($pat, 2, 2, $hay, 20, 3, 9, 1, 10, 1)
     Assert-True ([double]$bd[0] -eq 0 -and [int]$bd[1] -eq 13 -and [int]$bd[2] -eq 1) 'pixel search: the same cells found wherever they sit across the other picture'
+    $cr = [EbiImageMath]::Crop([byte[]](1, 2, 3, 4, 5, 6), 3, 1, 1, 2, 1)
+    Assert-True ($cr.Length -eq 2 -and $cr[0] -eq 5 -and $cr[1] -eq 6) 'pixel search: the best place cut out of the other picture (saved for a person)'
     $bin = [EbiImageMath]::Threshold([byte[]](10, 10, 10, 200, 200, 200), 6, 2, 1, [byte[]](10, 200))
     Assert-True ($bin[0] -eq 255 -and $bin[3] -eq 0) 'ocr bin: a dark ground -> the bright text turns black on white'
     $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')

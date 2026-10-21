@@ -349,6 +349,16 @@ public static class EbiImageMath {
             byte v = text ? (byte)0 : (byte)255; int k = row + x * 3; o[k] = v; o[k + 1] = v; o[k + 2] = v; } }
         return o;
     }
+    public static byte[] GrayToRgb(byte[] g, int w, int h, int stride) {
+        byte[] o = new byte[stride * h];
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) { byte v = g[y * w + x]; int k = y * stride + x * 3; o[k] = v; o[k + 1] = v; o[k + 2] = v; }
+        return o;
+    }
+    public static byte[] Crop(byte[] g, int w, int x0, int y0, int cw, int ch) {
+        byte[] o = new byte[cw * ch];
+        for (int y = 0; y < ch; y++) System.Array.Copy(g, (y0 + y) * w + x0, o, y * cw, cw);
+        return o;
+    }
     public static double DarkShare(byte[] g) {
         if (g.Length == 0) return 0; int n = 0;
         for (int i = 0; i < g.Length; i++) if (g[i] < 128) n++;
@@ -378,26 +388,29 @@ function Compare-EbiPngStrip {
     <#
       How different is the same cell strip of two pictures of the same
       rows? The strip FromFrac..ToFrac of A's width, rows BodyFrom..1 of
-      its height (the data under the headers), is SEARCHED for in B: B is
-      scaled to A's height and then by 0.94..1.06, and the strip slid over
-      every column and +-RangeY rows -- the two pictures may be shown at
-      other sizes with other margins (10/21 FJODWWBV: the same job read
-      52 when compared at a fixed place). Both at half size. Score = the
+      its height (the data under the headers), is SEARCHED for in B: B
+      stretched to A's exact width and height (+-2 / 3 %), the strip slid
+      +-12 px and +-RangeY rows; then B at A's height in its own
+      proportions, the strip slid across every column (10/21: the same job
+      read 52 at a fixed place, 46 at A's height alone -- one picture was
+      drawn 5 % taller). SaveBase: <SaveBase>.a.png / .b.png = A's strip and
+      the best place in B, for a person. Both at half size. Score = the
       least mean grey difference found (0 = the same, 255 = black vs
       white); ink = the share of dark pixels in A's strip.
       -> @{ ok; failure; message; score; ink; x0; x1 }
          failures: file_not_found | image_read_error | geometry
     #>
-    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac, [double]$BodyFrom = 0, [int]$RangeY = 8)
+    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac, [double]$BodyFrom = 0, [int]$RangeY = 8, [string]$SaveBase = '')
     foreach ($p in @($PathA, $PathB)) { if ([string]::IsNullOrWhiteSpace($p) -or -not (Test-Path -LiteralPath $p -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('no picture at ' + $p); score = -1; ink = 0; x0 = 0; x1 = 0 } } }
-    return (Compare-EbiPngStripCore -PathA $PathA -PathB $PathB -FromFrac $FromFrac -ToFrac $ToFrac -BodyFrom $BodyFrom -RangeY $RangeY)
+    return (Compare-EbiPngStripCore -PathA $PathA -PathB $PathB -FromFrac $FromFrac -ToFrac $ToFrac -BodyFrom $BodyFrom -RangeY $RangeY -SaveBase $SaveBase)
 }
 
 function Get-EbiGrayHalf {
-    # GDI+: an image drawn at (scale x its size) / 2, cropped to (sx, sy, w, h)
-    # of that, as grey bytes. -> @{ g; w; h }
-    param($Image, [double]$Scale, [int]$SX = 0, [int]$SY = 0, [int]$W = 0, [int]$H = 0)
-    $fw = [int][Math]::Max(1, [Math]::Round($Image.Width * $Scale / 2.0)); $fh = [int][Math]::Max(1, [Math]::Round($Image.Height * $Scale / 2.0))
+    # GDI+: an image drawn at (ScaleX, ScaleY) x its size, halved, cropped to
+    # (sx, sy, w, h) of that, as grey bytes. -> @{ g; w; h }
+    param($Image, [double]$ScaleX, [double]$ScaleY = 0, [int]$SX = 0, [int]$SY = 0, [int]$W = 0, [int]$H = 0)
+    if ($ScaleY -le 0) { $ScaleY = $ScaleX }
+    $fw = [int][Math]::Max(1, [Math]::Round($Image.Width * $ScaleX / 2.0)); $fh = [int][Math]::Max(1, [Math]::Round($Image.Height * $ScaleY / 2.0))
     if ($W -le 0) { $W = $fw - $SX }; if ($H -le 0) { $H = $fh - $SY }
     $W = [Math]::Max(1, $W); $H = [Math]::Max(1, $H)
     $bmp = New-Object System.Drawing.Bitmap($W, $H, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
@@ -415,9 +428,24 @@ function Get-EbiGrayHalf {
     } finally { $gfx.Dispose(); $bmp.Dispose() }
 }
 
+function Save-EbiGrayPng {
+    # GDI+: grey bytes (w x h) -> a PNG, for a person to see what was compared.
+    param([byte[]]$G, [int]$W, [int]$H, [string]$Path)
+    $bmp = New-Object System.Drawing.Bitmap($W, $H, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    try {
+        $data = $bmp.LockBits((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $st = [int]$data.Stride
+        $buf = [EbiImageMath]::GrayToRgb($G, $W, $H, $st)
+        [System.Runtime.InteropServices.Marshal]::Copy($buf, 0, $data.Scan0, $buf.Length)
+        $bmp.UnlockBits($data)
+        New-EbiParentDirectory -Path $Path
+        $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally { $bmp.Dispose() }
+}
+
 function Compare-EbiPngStripCore {
     # The GDI+ half of Compare-EbiPngStrip (see Get-EbiPngSizeCore).
-    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac, [double]$BodyFrom, [int]$RangeY)
+    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac, [double]$BodyFrom, [int]$RangeY, [string]$SaveBase = '')
     [void](Get-EbiDrawing); [void](Get-EbiImageMath)
     $objs = New-Object System.Collections.ArrayList
     try {
@@ -426,26 +454,40 @@ function Compare-EbiPngStripCore {
         $msB = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($PathB)); [void]$objs.Add($msB)
         $imB = [System.Drawing.Image]::FromStream($msB); [void]$objs.Add($imB)
         $g = Get-EbiStripGeometry -WidthA $imA.Width -HeightA $imA.Height -WidthB $imB.Width -HeightB $imB.Height -FromFrac $FromFrac -ToFrac $ToFrac
-        if (-not $g['ok'] -and $g['message'] -notmatch 'too narrow') { return @{ ok = $false; failure = 'geometry'; message = $g['message']; score = -1; ink = 0; x0 = $g['x0']; x1 = $g['x1'] } }
+        if (-not $g['ok'] -and $g['message'] -notmatch 'too narrow') { return @{ ok = $false; failure = 'geometry'; message = $g['message']; score = -1; ink = 0; x0 = $g['x0']; x1 = $g['x1']; how = '' } }
         $y0 = [int][Math]::Floor([Math]::Max(0.0, [Math]::Min(0.9, $BodyFrom)) * $imA.Height)
-        $a = Get-EbiGrayHalf -Image $imA -Scale 1.0 -SX ([int]($g['x0'] / 2)) -SY ([int]($y0 / 2)) -W ([int](($g['x1'] - $g['x0']) / 2)) -H ([int](($imA.Height - $y0) / 2))
+        $a = Get-EbiGrayHalf -Image $imA -ScaleX 1.0 -SX ([int]($g['x0'] / 2)) -SY ([int]($y0 / 2)) -W ([int](($g['x1'] - $g['x0']) / 2)) -H ([int](($imA.Height - $y0) / 2))
         $ink = [EbiImageMath]::DarkShare($a['g'])
-        $best = -1.0
-        $norm = [double]$imA.Height / $imB.Height
-        foreach ($k in @(1.0, 0.98, 1.02, 0.96, 1.04, 0.94, 1.06)) {
-            $b = Get-EbiGrayHalf -Image $imB -Scale ($norm * $k)
+        # candidate sizes for B: (1) stretched to A's exact width and height --
+        # the same range snapped twice, one picture drawn taller (10/21
+        # MJODWWBV: the same job read 46 at A's height alone) -- then
+        # (2) A's height, B's own proportions (another right edge)
+        $sxW = [double]$imA.Width / $imB.Width; $syH = [double]$imA.Height / $imB.Height
+        $cands = New-Object System.Collections.ArrayList
+        foreach ($kx in @(1.0, 0.98, 1.02)) { foreach ($ky in @(1.0, 0.97, 1.03)) { [void]$cands.Add(@($sxW * $kx, $syH * $ky, 'fit')) } }
+        foreach ($k in @(1.0, 0.97, 1.03)) { [void]$cands.Add(@($syH * $k, $syH * $k, 'height')) }
+        $best = -1.0; $how = ''; $bestB = $null; $bx = 0; $by = 0
+        foreach ($c in $cands) {
+            $b = Get-EbiGrayHalf -Image $imB -ScaleX ([double]$c[0]) -ScaleY ([double]$c[1])
             if ($b['w'] -lt $a['w'] -or $b['h'] -lt $a['h']) { continue }
-            $cy = [int]($y0 / 2 * $k)
-            # every column (the cells may sit elsewhere across B), a few rows up and down
-            $cx = [int](($b['w'] - $a['w']) / 2); $rx = $cx + 1
+            $cy = [int]($y0 / 2 * ([double]$c[1] / $syH))
+            if ([string]$c[2] -eq 'fit') { $cx = [int]($g['x0'] / 2 * ([double]$c[0] / $sxW)); $rx = 12 }
+            else { $cx = [int](($b['w'] - $a['w']) / 2); $rx = $cx + 1 }
             $r = [EbiImageMath]::BestDiff($a['g'], $a['w'], $a['h'], $b['g'], $b['w'], $b['h'], $cx, $cy, $rx, $RangeY)
-            if ([double]$r[0] -ge 0 -and ($best -lt 0 -or [double]$r[0] -lt $best)) { $best = [double]$r[0] }
+            if ([double]$r[0] -ge 0 -and ($best -lt 0 -or [double]$r[0] -lt $best)) { $best = [double]$r[0]; $how = ('{0} x{1:0.00}/y{2:0.00}' -f $c[2], $c[0], $c[1]); $bestB = $b; $bx = [int]$r[1]; $by = [int]$r[2] }
             if ($best -ge 0 -and $best -le 2) { break }
         }
-        if ($best -lt 0) { return @{ ok = $false; failure = 'geometry'; message = 'the strip never fits inside the other picture'; score = -1; ink = $ink; x0 = $g['x0']; x1 = $g['x1'] } }
-        return @{ ok = $true; failure = ''; message = ''; score = [Math]::Round($best, 2); ink = [Math]::Round($ink, 4); x0 = $g['x0']; x1 = $g['x1'] }
+        if ($best -lt 0) { return @{ ok = $false; failure = 'geometry'; message = 'the strip never fits inside the other picture'; score = -1; ink = $ink; x0 = $g['x0']; x1 = $g['x1']; how = '' } }
+        if ($SaveBase -ne '') {
+            # what was compared, for a person: A's strip and the best place in B
+            try {
+                Save-EbiGrayPng -G $a['g'] -W $a['w'] -H $a['h'] -Path ($SaveBase + '.a.png')
+                Save-EbiGrayPng -G ([EbiImageMath]::Crop($bestB['g'], $bestB['w'], $bx, $by, $a['w'], $a['h'])) -W $a['w'] -H $a['h'] -Path ($SaveBase + '.b.png')
+            } catch { }
+        }
+        return @{ ok = $true; failure = ''; message = ''; score = [Math]::Round($best, 2); ink = [Math]::Round($ink, 4); x0 = $g['x0']; x1 = $g['x1']; how = $how }
     } catch {
-        return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; score = -1; ink = 0; x0 = 0; x1 = 0 }
+        return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; score = -1; ink = 0; x0 = 0; x1 = 0; how = '' }
     } finally {
         for ($i = $objs.Count - 1; $i -ge 0; $i--) { try { $objs[$i].Dispose() } catch { } }
     }

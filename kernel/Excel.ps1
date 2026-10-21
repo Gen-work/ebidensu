@@ -57,7 +57,15 @@ function Get-EbiSheet {
     if ($s -match '^\d+$') {
         try { return $Workbook.Worksheets.Item([int]$s) } catch { return $null }
     }
-    foreach ($ws in $Workbook.Worksheets) { if ([string]$ws.Name -eq $s) { return $ws } }
+    # by name straight away, then a walk of the sheets; a few tries apart:
+    # 10/21 QJODWDBC, right after 154 lines were written to a sheet the next
+    # step was told "no sheet" -- Excel was still busy (inferred), and a
+    # busy Excel can hand back an empty answer instead of an error
+    for ($try = 0; $try -lt 4; $try++) {
+        try { $ws = $Workbook.Worksheets.Item($s); if ($null -ne $ws -and [string]$ws.Name -eq $s) { return $ws } } catch { }
+        try { foreach ($ws in $Workbook.Worksheets) { if ([string]$ws.Name -eq $s) { return $ws } } } catch { }
+        if ($try -lt 3) { Start-Sleep -Milliseconds 500 }
+    }
     return $null
 }
 

@@ -37,6 +37,7 @@ $Manifest = @{
     ngMin    = @{ type='int';    default=25; desc='score at or above this = different' }
     minInk   = @{ type='any';    default=0.005; desc='a strip with less dark ink than this share says nothing (unknown)' }
     label    = @{ type='string'; default='the pictures'; desc='for the reason / alert wording' }
+    saveBase = @{ type='path';   default=''; desc='also save what was compared: <saveBase>.a.png (a''s strip) and .b.png (the best place in b); empty = none' }
   }
   outputs    = @{
     code   = @{ type='string'; desc='ok | ng | unknown' }
@@ -78,15 +79,15 @@ function Invoke-Step {
         return @{ ok = $true; code = 'unknown'; score = -1; reason = $why; alert = $why }
     }
     $pa = Resolve-EbiWorkPath -PathValue $a -WorkDir $work; $pb = Resolve-EbiWorkPath -PathValue $b -WorkDir $work
-    $r = Compare-EbiPngStrip -PathA $pa -PathB $pb -FromFrac ([double]$In['fromFrac']) -ToFrac ([double]$In['toFrac']) -BodyFrom ([double]$In['bodyFrom'])
+    $r = Compare-EbiPngStrip -PathA $pa -PathB $pb -FromFrac ([double]$In['fromFrac']) -ToFrac ([double]$In['toFrac']) -BodyFrom ([double]$In['bodyFrom']) -SaveBase $(if ([string]$In['saveBase'] -ne '') { Resolve-EbiWorkPath -PathValue ([string]$In['saveBase']) -WorkDir $work } else { '' })
     if (-not $r['ok']) {
         $why = ('{0}: not compared -- {1}' -f $label, $r['message'])
         return @{ ok = $true; code = 'unknown'; score = -1; reason = $why; alert = $why }
     }
     $code = ScreenCompareStrip-Verdict -Score ([double]$r['score']) -Ink ([double]$r['ink']) -OkMax ([double]$In['okMax']) -NgMin ([double]$In['ngMin']) -MinInk ([double]$In['minInk'])
     $why = switch ($code) {
-        'ok'    { '{0}: the same (difference {1})' -f $label, $r['score'] }
-        'ng'    { '{0}: DIFFERENT (difference {1}, the same would be <= {2}): another job''s picture?' -f $label, $r['score'], $In['okMax'] }
+        'ok'    { '{0}: the same (difference {1}, {2})' -f $label, $r['score'], $r['how'] }
+        'ng'    { '{0}: DIFFERENT (difference {1} at {2}, the same would be <= {3}): another job''s picture?' -f $label, $r['score'], $r['how'], $In['okMax'] }
         default { if ([double]$r['ink'] -lt [double]$In['minInk']) { '{0}: the strip is blank -- look by eye' -f $label } else { '{0}: not sure (difference {1}, between {2} and {3}) -- look by eye' -f $label, $r['score'], $In['okMax'], $In['ngMin'] } }
     }
     $Ctx.Log.Info($why)

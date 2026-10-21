@@ -95,7 +95,7 @@
       "label": "1 枚目のジョブ列を GIFT 側の 1 枚目と画素で比べる(違えば GATE で赤字。止まらない。OCR はやめた: 10/21)",
       "with": { "a": "{{steps.gfixPic1.out.paths}}", "b": "{{steps.giftPic1.out.paths}}",
                 "fromFrac": "{{steps.listSnap.out.jobFrom}}", "toFrac": "{{steps.listSnap.out.jobTo}}", "bodyFrom": "{{steps.listSnap.out.bodyFrom}}",
-                "label": "picture 1 job column (GFIX vs GIFT)" } },
+                "label": "picture 1 job column (GFIX vs GIFT)", "saveBase": "{{vars.capture}}/{{item.keySafe}}/pic1cmp" } },
 
     { "id": "jobLog", "use": "excel.write_lines",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.gfixResult}}",

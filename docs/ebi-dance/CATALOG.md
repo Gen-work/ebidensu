@@ -443,6 +443,7 @@ Compare the same column strip of two pictures of the same rows (pixels); ok / ng
 | `minInk` | any |  | 0.005 |  | a strip with less dark ink than this share says nothing (unknown) |
 | `ngMin` | int |  | 25 |  | score at or above this = different |
 | `okMax` | int |  | 8 |  | score at or below this = the same |
+| `saveBase` | path |  | (empty) |  | also save what was compared: <saveBase>.a.png (a's strip) and .b.png (the best place in b); empty = none |
 | `toFrac` | any |  | 1 |  | right edge, 0..1 (jobTo) |
 
 | output | type | desc |

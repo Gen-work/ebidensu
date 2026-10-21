@@ -4637,6 +4637,11 @@
           "desc": "score at or below this = the same",
           "type": "int"
         },
+        "saveBase": {
+          "default": "",
+          "desc": "also save what was compared: <saveBase>.a.png (a's strip) and .b.png (the best place in b); empty = none",
+          "type": "path"
+        },
         "toFrac": {
           "default": 1,
           "desc": "right edge, 0..1 (jobTo)",
