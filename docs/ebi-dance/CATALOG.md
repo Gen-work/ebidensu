@@ -1294,6 +1294,7 @@ Export every picture (and picture group / embedded object) of a sheet to PNG, to
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `hideMarks` | bool |  | true |  | in a group, hide the shapes that are not pictures (red boxes) while it is exported, then show them again |
 | `saveDir` | path | yes |  |  | pic1.png, pic2.png, ... in sheet order; relative paths resolve under the work dir |
 | `scale` | int |  | 3 |  | export size against the size on the sheet (bigger reads better for OCR) |
 | `sheet` | string | yes |  |  |  |
@@ -2111,6 +2112,7 @@ Per DF pair: the lines its first / END picture must show to match the HOST pictu
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `maxExtra` | int |  | 2 |  | DF lines past the HOST's last line still lined up (a trailing line the HOST does not show, or a last line OCR missed under a red box); more = not lined up |
 | `maxLines` | int |  | 40 |  | a picture asked for more lines than this is not trusted (default kept) |
 | `offset` | int |  | 1 |  | HOST line n = DF line n - offset |
 | `pairs` | list | yes |  |  | the DF file pairs in capture order (track.json pairs: lines = the file's line count) |

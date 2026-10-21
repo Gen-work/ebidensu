@@ -1,3 +1,19 @@
+## 2026-10-21 - DF END picture runs to the file's end; red boxes hidden for OCR (v2.31.2)
+
+10/21 KJODWWBV again: HOST 007550-007568, but 007568 sits under a red box
+in the group, OCR read up to 007567, and the file has 7568 lines -- v2.31.1
+called that "empty lines dropped" and lined nothing up.
+
+### Fixed
+- **verify.df_ranges `maxExtra`** (2): the DF file may run up to 2 lines
+  past the HOST's last line - 1 (a trailing line the HOST does not show,
+  or a last line OCR missed); the END picture then runs on to the file's
+  last line (KJODWWBV: DF 07549-07568, 20 lines). Further off -- or the
+  HOST longer than the file -- is still not lined up.
+- **excel.export_pictures `hideMarks`**: in a group, the shapes that are
+  not pictures (red boxes) are hidden while it is exported and shown again
+  right after, so a box over a line number no longer hides it from OCR.
+
 ## 2026-10-21 - HOST shots in a Ctrl+G group are read too (v2.31.1)
 
 10/21 KJODWWBV: `exported 0 of 0 picture(s) of 送信データ` -- the HOST shots

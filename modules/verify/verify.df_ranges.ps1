@@ -5,9 +5,11 @@
 #     does not have), on both pictures;
 #   - a file pair has a START picture (from 000001) and, when long, an END
 #     picture that always runs to the HOST's last line;
-#   - when the HOST's last line - offset is NOT the DF file's line count
-#     (the send data had empty lines the receive side dropped), the
-#     numbers cannot be lined up: the default pictures are kept (16 lines
+#   - the DF file may run up to maxExtra lines past the HOST's last line
+#     - offset (a trailing line, or a last line OCR missed under a red
+#     box): the END picture runs on to the file's end;
+#   - further off (the send data had empty lines the receive side
+#     dropped), the numbers cannot be lined up: the default pictures are kept (16 lines
 #     from the top, the END view's 17), no alignment.
 # HOST pictures are taken in sheet order; a picture whose numbers start at
 # 000001 opens the next file pair. Pure.
@@ -27,6 +29,7 @@ $Manifest = @{
     ranges   = @{ type='list'; default=@(); desc='screen.read_line_numbers ranges of the HOST pictures, sheet order' }
     offset   = @{ type='int';  default=1; desc='HOST line n = DF line n - offset' }
     maxLines = @{ type='int';  default=40; desc='a picture asked for more lines than this is not trusted (default kept)' }
+    maxExtra = @{ type='int';  default=2; desc='DF lines past the HOST''s last line still lined up (a trailing line the HOST does not show, or a last line OCR missed under a red box); more = not lined up' }
   }
   outputs    = @{
     plans   = @{ type='list';   desc='@{ mode; first; end; reason } per pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) | free (no alignment: empty lines dropped) | default (nothing to align to)' }
@@ -65,7 +68,7 @@ function VerifyDfRanges-Sets {
 
 function VerifyDfRanges-Plan {
     # PURE. One pair (line count N) + its HOST set -> @{ mode; first; end; reason }.
-    param([int]$Lines, $Set, [int]$Offset = 1, [int]$MaxLines = 40)
+    param([int]$Lines, $Set, [int]$Offset = 1, [int]$MaxLines = 40, [int]$MaxExtra = 2)
     if ($null -eq $Set) { return @{ mode = 'default'; first = 0; end = 0; reason = 'no HOST picture from 000001 for this pair' } }
     if ([bool]$Set['more']) { return @{ mode = 'default'; first = 0; end = 0; reason = 'more than two HOST pictures for this pair (only a START and an END picture are lined up)' } }
     $s = $Set['start']; $f = $Set['finish']
@@ -76,14 +79,20 @@ function VerifyDfRanges-Plan {
         return @{ mode = 'default'; first = 0; end = 0; reason = ('only a START picture (to {0:000000}) for a {1}-line file: no END picture to line up' -f $s['last'], $Lines) }
     }
     $hostLast = [int]$f['last']
-    if (($hostLast - $Offset) -ne $Lines) {
+    # extra: DF lines after the HOST's last line. 0 = the usual. 1..MaxExtra
+    # (10/21 KJODWWBV: HOST 007550-007568, the file 7568 lines): the file
+    # carries a line the HOST does not show, or OCR missed the last line(s)
+    # under a red box -- either way the END picture runs on to the file's
+    # last line. Anything else: empty lines dropped, not lined up.
+    $extra = $Lines - ($hostLast - $Offset)
+    if ($extra -lt 0 -or $extra -gt $MaxExtra) {
         return @{ mode = 'free'; first = 0; end = 0; reason = ('HOST ends at {0:000000} but the file has {1} lines (not {2}): empty lines dropped on the receive side, not lined up' -f $hostLast, $Lines, ($hostLast - $Offset)) }
     }
-    $end = [int]$f['last'] - [int]$f['first'] + 1
+    $end = [int]$f['last'] - [int]$f['first'] + 1 + $extra
     if ($first -lt 1 -or $end -lt 1 -or $first -gt $MaxLines -or $end -gt $MaxLines) {
         return @{ mode = 'default'; first = 0; end = 0; reason = ('HOST pictures 000001-{0:000000} / {1:000000}-{2:000000} would need {3} / {4} DF lines (limit {5})' -f $s['last'], $f['first'], $f['last'], $first, $end, $MaxLines) }
     }
-    return @{ mode = 'align'; first = $first; end = $end; reason = ('HOST 000001-{0:000000} / {1:000000}-{2:000000} -> DF 00001-{3:00000} / {4:00000}-{5:00000}' -f $s['last'], $f['first'], $f['last'], $first, ([int]$f['first'] - $Offset), $Lines) }
+    return @{ mode = 'align'; first = $first; end = $end; reason = ('HOST 000001-{0:000000} / {1:000000}-{2:000000} -> DF 00001-{3:00000} / {4:00000}-{5:00000}{6}' -f $s['last'], $f['first'], $f['last'], $first, ([int]$f['first'] - $Offset), $Lines, $(if ($extra -gt 0) { (' (the file runs ' + $extra + ' line(s) past the HOST''s last: the END picture shows them too)') } else { '' })) }
 }
 
 function Invoke-Step {
@@ -98,7 +107,7 @@ function Invoke-Step {
     $any = (@(@($In['ranges']) | Where-Object { $_ -is [System.Collections.IDictionary] }).Count -gt 0)
     for ($i = 0; $i -lt $pairs.Count; $i++) {
         $set = if ($i -lt $sets.Count) { $sets[$i] } else { $null }
-        $p = VerifyDfRanges-Plan -Lines ([int]$pairs[$i]['lines']) -Set $set -Offset ([int]$In['offset']) -MaxLines ([int]$In['maxLines'])
+        $p = VerifyDfRanges-Plan -Lines ([int]$pairs[$i]['lines']) -Set $set -Offset ([int]$In['offset']) -MaxLines ([int]$In['maxLines']) -MaxExtra ([int]$In['maxExtra'])
         [void]$plans.Add($p)
         if ($p['mode'] -eq 'align') { $aligned++ }
         $name = [string]$pairs[$i]['rightName']
