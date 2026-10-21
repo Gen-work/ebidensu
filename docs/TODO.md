@@ -173,7 +173,10 @@ file stays small. Designed-then-shelved work lives in
   changed the FIRST picture too (加瀬さん: put it back) -- 458 very likely
   showed part of the 17th line; v2.30.3 fits each first / END capture to
   its line count from the line-number strip (`fitStrip`), so the heights
-  are only starting guesses now (read the real ones off the run log).
+  are only starting guesses now. Measured the same day (operator's
+  sweep): first 16 clean lines at ~430-434 -> 432 (v2.30.5); 458 had
+  shown 17 + part of the 18th. END view shows one line fewer than the
+  window: 17 at 464-480, 476 stays.
   Still open: the OCR route above for HOST shots of other shapes (NOT
   built: nothing reads the 送信データ pictures' line numbers yet), and
   checking the END picture's first NUMBER (the fit counts lines, it cannot
