@@ -108,7 +108,9 @@
         "padBottom": 3
       },
       {
-        "_doc": "the 同一内容 cell of the status bar, from the bottom-right corner. 10/21 KJODWWBV: x 117 / w 112 also covered the right part of 移動 (the right edges met) -> x 94 / w 91; then (RJODWDBC) its right side ran past the cell into the size grip -> w 64. Measured on the operator's screenshots (rough: set it in ebi.local.json layout.df.marks if it is still off)",
+        "_doc": "the 同一内容 cell of the status bar, from the bottom-right corner. 10/21 KJODWWBV: x 117 / w 112 also covered the right part of 移動 (the right edges met) -> x 94 / w 91; then (RJODWDBC) its right side ran past the cell into the size grip -> w 64. Since v2.32.3 the box is FOUND in the picture (textPanel: the cell around the last text of the bottom-right strip, operator 10/21: use the pixels); first the operator's own crop of the cell (template, assets/df-same.png) is searched for there; x/y/w/h are only the fallback when nothing is found",
+        "template": "profiles/gfix-recv/assets/df-same.png",
+        "textPanel": { "fromRight": 260, "toRight": 16, "fromBottom": 22, "toBottom": 0 },
         "x": 94,
         "y": 19,
         "w": 64,

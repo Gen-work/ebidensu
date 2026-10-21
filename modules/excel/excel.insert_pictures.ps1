@@ -10,6 +10,13 @@
 #      padBottom }            on the LAST band of ink in that strip of the
 #                             picture (the last line of a listing): found
 #                             in the picture itself, kernel/Image.ps1
+#   @{ textPanel = @{ fromRight; toRight; fromBottom; toBottom }; x; y;
+#      w; h; anchor }         the cell around the LAST text in that
+#                             bottom-right strip (DF's "same content" cell, 10/21),
+#                             kernel/Layout.ps1 Find-EbiTextPanel; the
+#                             fixed x/y/w/h/anchor box when none is found
+#   + template = 'profiles/<p>/assets/x.png' (optional): that crop searched
+#     for in the same strip first (the operator's own picture of the cell)
 # Ported from ExcelHelpers.ps1 Insert-PictureSendToBack + Add-RedRectangle.
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')    # Resolve-EbiWorkPath
@@ -76,6 +83,28 @@ function ExcelInsertPictures-IsOwnShape {
     return ($Name -match ('^verifyPic_' + $t + '_\d+$') -or $Name -match ('^verifyMark_' + $t + '_\d+_\d+$'))
 }
 
+function ExcelInsertPictures-FindTemplate {
+    # A template PNG (relative = under the tool folder) searched for inside
+    # the strip the spec's textPanel names (default: 260 px from the right,
+    # 22 from the bottom) -> image px rect of the best place, or $null when
+    # it is not there (mean grey difference above templateMaxDiff, 40).
+    param($Spec, [string]$Path, [int]$W, [int]$H)
+    $tp = [string]$Spec['template']
+    if (-not [System.IO.Path]::IsPathRooted($tp)) { $tp = Join-Path (Join-Path $PSScriptRoot '..\..') $tp }
+    if (-not (Test-Path -LiteralPath $tp -PathType Leaf)) { return $null }
+    $t = if ($Spec.Contains('textPanel') -and ($Spec['textPanel'] -is [System.Collections.IDictionary])) { $Spec['textPanel'] } else { @{} }
+    $fr = if ($t.Contains('fromRight')) { [int]$t['fromRight'] } else { 260 }
+    $fb = if ($t.Contains('fromBottom')) { [int]$t['fromBottom'] } else { 22 }
+    $tg = Get-EbiGrayRegion -Path $tp -X 0 -Y 0 -W 100000 -H 100000
+    $rg = Get-EbiGrayRegion -Path $Path -X ($W - $fr) -Y ($H - $fb) -W $fr -H $fb
+    if (-not $tg['ok'] -or -not $rg['ok'] -or $tg['w'] -gt $rg['w'] -or $tg['h'] -gt $rg['h']) { return $null }
+    $cx = [int](($rg['w'] - $tg['w']) / 2); $cy = [int](($rg['h'] - $tg['h']) / 2)
+    $m = [EbiImageMath]::BestDiff($tg['g'], $tg['w'], $tg['h'], $rg['g'], $rg['w'], $rg['h'], $cx, $cy, $cx + 1, $cy + 1)
+    $max = if ($Spec.Contains('templateMaxDiff')) { [double]$Spec['templateMaxDiff'] } else { 40.0 }
+    if ([double]$m[0] -lt 0 -or [double]$m[0] -gt $max) { return $null }
+    return @{ x = [double]([int]$rg['x0'] + [int]$m[1]); y = [double]([int]$rg['y0'] + [int]$m[2]); w = [double]$tg['w']; h = [double]$tg['h'] }
+}
+
 function ExcelInsertPictures-ImageRect {
     # One rect spec -> image px @{ x; y; w; h } or $null (ink not found).
     param($Spec, [string]$Path, [int]$W, [int]$H)
@@ -93,6 +122,27 @@ function ExcelInsertPictures-ImageRect {
         $pb = if ($Spec.Contains('padBottom')) { [int]$Spec['padBottom'] } else { 3 }
         $top = [int]$c['yFrom'] + [int]$b['top'] - $pt
         return @{ x = [double]$Spec['x']; y = [double]$top; w = [double]$Spec['w']; h = [double]([int]$b['height'] + $pt + $pb) }
+    }
+    if ($Spec.Contains('template') -and -not [string]::IsNullOrWhiteSpace([string]$Spec['template'])) {
+        # the operator's own crop of the cell (10/21: "use the pic I provide"),
+        # searched for in the bottom-right strip; textPanel / the fixed box after it
+        $r = ExcelInsertPictures-FindTemplate -Spec $Spec -Path $Path -W $W -H $H
+        if ($null -ne $r) { return $r }
+    }
+    if ($Spec.Contains('textPanel') -and ($Spec['textPanel'] -is [System.Collections.IDictionary])) {
+        # the cell around the last text in a strip near the bottom-right (DF's
+        # "same content" cell), found in the picture; the fixed box below it is the fallback
+        $t = $Spec['textPanel']
+        $fr = if ($t.Contains('fromRight')) { [int]$t['fromRight'] } else { 260 }
+        $tr = if ($t.Contains('toRight')) { [int]$t['toRight'] } else { 16 }
+        $fb = if ($t.Contains('fromBottom')) { [int]$t['fromBottom'] } else { 22 }
+        $tb = if ($t.Contains('toBottom')) { [int]$t['toBottom'] } else { 0 }
+        $g = Get-EbiGrayRegion -Path $Path -X ($W - $fr) -Y ($H - $fb) -W ($fr - $tr) -H ($fb - $tb)
+        if ($g['ok']) {
+            $p = Find-EbiTextPanel -Gray $g['g'] -W $g['w'] -H $g['h'] -TextMaxLuma $(if ($t.Contains('textMaxLuma')) { [int]$t['textMaxLuma'] } else { 100 }) -Gap $(if ($t.Contains('gap')) { [int]$t['gap'] } else { 10 })
+            if ($p['ok']) { return @{ x = [double]([int]$g['x0'] + [int]$p['left']); y = [double]([int]$g['y0'] + [int]$p['top']); w = [double]([int]$p['right'] - [int]$p['left'] + 1); h = [double]([int]$p['bottom'] - [int]$p['top'] + 1) } }
+        }
+        if (-not $Spec.Contains('anchor') -and -not $Spec.Contains('x')) { return $null }
     }
     return (Resolve-EbiAnchoredRect -Rect $Spec -ImageWidth $W -ImageHeight $H)
 }

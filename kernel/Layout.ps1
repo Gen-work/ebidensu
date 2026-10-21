@@ -80,6 +80,47 @@ function Get-EbiListEntryRects {
     return @{ rects = $rects.ToArray(); missing = $missing.ToArray() }
 }
 
+function Find-EbiTextPanel {
+    <#
+      PURE. Grey bytes of a strip (w x h, row-major) -> the panel around the
+      LAST run of text in it (10/21: the "same content" cell of DF's status bar; a
+      fixed box missed it when the window changed, the operator: "use the
+      pixels"). Text = pixels darker than TextMaxLuma; columns with text, a
+      gap of up to Gap px inside one run, the right-most run wins. The panel
+      edge on each side is the nearest column (within Reach px) whose pixels
+      are mostly darker than BorderMaxLuma -- the cell's sunken border --
+      else the text +- Pad. Rows: the text's, +- PadY.
+      -> @{ ok; left; right; top; bottom } (strip px, inclusive)
+    #>
+    param([byte[]]$Gray, [int]$W, [int]$H, [int]$TextMaxLuma = 100, [int]$BorderMaxLuma = 200, [int]$Gap = 10, [int]$Reach = 40, [int]$Pad = 4, [int]$PadY = 3)
+    if ($null -eq $Gray -or $W -le 0 -or $H -le 0 -or $Gray.Length -lt ($W * $H)) { return @{ ok = $false; left = 0; right = 0; top = 0; bottom = 0 } }
+    $text = New-Object int[] $W; $edge = New-Object int[] $W
+    for ($x = 0; $x -lt $W; $x++) {
+        $t = 0; $e = 0
+        for ($y = 0; $y -lt $H; $y++) { $v = [int]$Gray[$y * $W + $x]; if ($v -lt $TextMaxLuma) { $t++ }; if ($v -lt $BorderMaxLuma) { $e++ } }
+        $text[$x] = $t; $edge[$x] = $e
+    }
+    # the right-most run of text columns
+    $r = -1
+    for ($x = $W - 1; $x -ge 0; $x--) { if ($text[$x] -gt 0) { $r = $x; break } }
+    if ($r -lt 0) { return @{ ok = $false; left = 0; right = 0; top = 0; bottom = 0 } }
+    $l = $r; $gapRun = 0
+    for ($x = $r - 1; $x -ge 0; $x--) {
+        if ($text[$x] -gt 0) { $l = $x; $gapRun = 0 } else { $gapRun++; if ($gapRun -gt $Gap) { break } }
+    }
+    $isEdge = { param($c) ([int]$edge[$c] * 10 -ge $H * 7) -and ([int]$text[$c] * 2 -lt $H) }
+    $left = [Math]::Max(0, $l - $Pad)
+    # start 3 px off the text: a glyph's own grey anti-aliased edge is no border
+    for ($x = $l - 3; $x -ge [Math]::Max(0, $l - $Reach); $x--) { if (& $isEdge $x) { $left = $x; break } }
+    $right = [Math]::Min($W - 1, $r + $Pad)
+    for ($x = $r + 3; $x -le [Math]::Min($W - 1, $r + $Reach); $x++) { if (& $isEdge $x) { $right = $x; break } }
+    $top = -1; $bottom = -1
+    for ($y = 0; $y -lt $H; $y++) {
+        for ($x = $l; $x -le $r; $x++) { if ([int]$Gray[$y * $W + $x] -lt $TextMaxLuma) { if ($top -lt 0) { $top = $y }; $bottom = $y; break } }
+    }
+    return @{ ok = $true; left = $left; right = $right; top = [Math]::Max(0, $top - $PadY); bottom = [Math]::Min($H - 1, $bottom + $PadY) }
+}
+
 function Get-EbiInkBands {
     <#
       PURE. Counts[i] = how many ink pixels pixel row i of a strip holds.

@@ -493,6 +493,44 @@ function Compare-EbiPngStripCore {
     }
 }
 
+function Get-EbiGrayRegion {
+    <#
+      Grey bytes of a rectangle of a PNG (clipped to the picture).
+      -> @{ ok; failure; message; g; w; h; x0; y0 }
+    #>
+    param([string]$Path, [int]$X, [int]$Y, [int]$W, [int]$H)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('file not found: ' + $Path); g = $null; w = 0; h = 0; x0 = 0; y0 = 0 } }
+    return (Get-EbiGrayRegionCore -Path $Path -X $X -Y $Y -W $W -H $H)
+}
+
+function Get-EbiGrayRegionCore {
+    # The GDI+ half of Get-EbiGrayRegion (see Get-EbiPngSizeCore).
+    param([string]$Path, [int]$X, [int]$Y, [int]$W, [int]$H)
+    [void](Get-EbiDrawing); [void](Get-EbiImageMath)
+    $ms = $null; $img = $null; $bmp = $null
+    try {
+        $ms = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($Path))
+        $img = [System.Drawing.Image]::FromStream($ms)
+        $x0 = [Math]::Max(0, $X); $y0 = [Math]::Max(0, $Y)
+        $x1 = [Math]::Min([int]$img.Width, $X + $W); $y1 = [Math]::Min([int]$img.Height, $Y + $H)
+        if ($x1 -le $x0 -or $y1 -le $y0) { return @{ ok = $false; failure = 'geometry'; message = 'the region is outside the picture'; g = $null; w = 0; h = 0; x0 = $x0; y0 = $y0 } }
+        $bmp = New-Object System.Drawing.Bitmap($img)
+        $rw = $x1 - $x0; $rh = $y1 - $y0
+        $data = $bmp.LockBits((New-Object System.Drawing.Rectangle($x0, $y0, $rw, $rh)), [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $st = [int]$data.Stride
+        $buf = New-Object byte[] ($st * $rh)
+        [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $buf, 0, $buf.Length)
+        $bmp.UnlockBits($data)
+        return @{ ok = $true; failure = ''; message = ''; g = [EbiImageMath]::Gray($buf, $st, $rw, $rh); w = $rw; h = $rh; x0 = $x0; y0 = $y0 }
+    } catch {
+        return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; g = $null; w = 0; h = 0; x0 = 0; y0 = 0 }
+    } finally {
+        if ($null -ne $bmp) { $bmp.Dispose() }
+        if ($null -ne $img) { $img.Dispose() }
+        if ($null -ne $ms) { $ms.Dispose() }
+    }
+}
+
 function Get-EbiInkCounts {
     <#
       Per pixel row, how many pixels of a vertical strip are "ink":

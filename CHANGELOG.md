@@ -1,3 +1,22 @@
+## 2026-10-21 - the 同一内容 box is found in the picture (v2.32.3)
+
+10/21: two hand-measured fixed boxes in a row missed the 同一内容 cell
+(first too far left, then into the size grip). Operator: use the pixels.
+
+### Changed
+- **excel.insert_pictures** mark `textPanel` + pure `Find-EbiTextPanel`
+  (kernel/Layout.ps1) + `Get-EbiGrayRegion` (kernel/Image.ps1): in the
+  bottom-right strip of the DF picture (260 px from the right, 22 from the
+  bottom, the size grip's 16 px left out) the LAST run of dark text is
+  found, and the box goes border to border of the cell around it (the
+  nearest mostly-dark column within 40 px each side, else the text +- 4
+  px). The fixed x/y/w/h box stays as the fallback when no text is found.
+  Checked on the operator's 同一内容 crop: the cell's left border is found.
+- Mark `template` (first): the operator's own crop of the cell
+  (profiles/gfix-recv/assets/df-same.png, 93 x 14) is searched for in the
+  same strip (the C# BestDiff, mean grey difference <= 40) and the box is
+  where it sits; then textPanel, then the fixed box.
+
 ## 2026-10-21 - picture 1 compare: the GIFT picture stretched to the new one's size (v2.32.2)
 
 RJODWDBC (2-line file): HOST shot 000001-000002 "could not be read" (fewer
