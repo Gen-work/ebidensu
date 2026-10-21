@@ -1,3 +1,25 @@
+## 2026-10-21 - picture 1 compare searches for the cells; HOST OCR sized for the recognizer (v2.32.1)
+
+10/21 FJODWWBV: the same job read "DIFFERENT (difference 52.21)" -- the two
+pictures have other margins and sizes, so a fixed place compared text one
+or two pixels apart; and none of the 3 HOST shots gave a line number.
+
+### Fixed
+- **Compare-EbiPngStrip**: the job cells of the data rows (excel.snap_list
+  `bodyFrom`: under the two header rows) are SEARCHED for across the other
+  picture -- every column, +-8 rows, at 0.94..1.06 of the height-matched
+  size -- and the least mean grey difference is the score. The search runs
+  in a small C# helper (`Get-EbiImageMath`: Gray / DarkShare / BestDiff /
+  Threshold, plain C#, unit-tested on Linux too).
+- **screen.read_line_numbers**: each picture is cut to its left 1400 px and
+  scaled to fit 2500 px before OCR (`Get-EbiOcrFrame`,
+  `New-EbiOcrVariants`; a wide shot is beyond what the Windows recognizer
+  takes -- inferred), then read as it is, thresholded black on white, and
+  as a negative; the reading with the most trusted lines wins. A picture
+  OCR could not run on now says why in the run log.
+- **The 同一内容 red box** (layout.df.marks[1]): x 117 / w 112 -> 94 / 91
+  -- it also covered the right part of 移動 (KJODWWBV screenshot; rough).
+
 ## 2026-10-21 - picture 1 checked by the job column's pixels, not OCR (v2.32.0)
 
 10/21: the picture-1 OCR check read the job name wrong every time

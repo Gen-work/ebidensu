@@ -2065,6 +2065,10 @@
       ],
       "notes": "Changes only the AutoFilter of the overview sheet and clears it again; open the overview read-only (excel.open readOnly) so nothing is ever saved. Clobbers the clipboard. A header label matches when the cell, spaces and line breaks removed, STARTS with it (a cell \"<label>(SNDFILE)\" matches \"<label>\").",
       "outputs": {
+        "bodyFrom": {
+          "desc": "top of the data rows (under the two header rows), 0..1 of the picture's height",
+          "type": "any"
+        },
         "extended": {
           "desc": "true when the snap ran on to extendTo (rows repeated from left to job)",
           "type": "bool"
@@ -4601,6 +4605,11 @@
         "b": {
           "default": "",
           "desc": "the picture compared with it (a path or a list)",
+          "type": "any"
+        },
+        "bodyFrom": {
+          "default": 0,
+          "desc": "top of the compared rows, 0..1 of a's height (excel.snap_list bodyFrom: under the headers, which are the same on every job)",
           "type": "any"
         },
         "fromFrac": {

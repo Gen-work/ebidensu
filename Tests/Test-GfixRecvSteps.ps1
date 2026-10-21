@@ -687,6 +687,18 @@ try {
     Assert-Equal 'unknown' (ScreenCompareStrip-Verdict -Score 0 -Ink 0 -OkMax 8 -NgMin 25 -MinInk 0.005) 'pic1 cmp: a blank strip says nothing'
     $cs = Invoke-TestStep 'screen.compare_strip' @{ a = @(); b = 'x.png' }
     Assert-True ($cs['ok'] -and $cs['code'] -eq 'unknown' -and $cs['alert'] -ne '') 'pic1 cmp step: the new picture missing -> unknown + alert, never a stop'
+    # 10/21 FJODWWBV: OCR frame and the pixel search
+    $fr = Get-EbiOcrFrame -Width 6000 -Height 1300
+    Assert-True ($fr['cropW'] -eq 1400 -and $fr['outW'] -le 2500 -and $fr['outH'] -le 2500) 'ocr frame: a wide shot -> its left 1400 px, within the recognizer size'
+    $fr = Get-EbiOcrFrame -Width 1200 -Height 4000
+    Assert-True ($fr['outH'] -eq 2500 -and $fr['outW'] -eq 750) 'ocr frame: a tall picture is scaled down to fit'
+    [void](Get-EbiImageMath)
+    $pat = [byte[]](0, 255, 255, 0)
+    $hay = New-Object byte[] 60; for ($i = 0; $i -lt 60; $i++) { $hay[$i] = 255 }; $hay[33] = 0; $hay[54] = 0   # pattern at x=13, y=1 in 20x3
+    $bd = [EbiImageMath]::BestDiff($pat, 2, 2, $hay, 20, 3, 9, 1, 10, 1)
+    Assert-True ([double]$bd[0] -eq 0 -and [int]$bd[1] -eq 13 -and [int]$bd[2] -eq 1) 'pixel search: the same cells found wherever they sit across the other picture'
+    $bin = [EbiImageMath]::Threshold([byte[]](10, 10, 10, 200, 200, 200), 6, 2, 1, [byte[]](10, 200))
+    Assert-True ($bin[0] -eq 255 -and $bin[3] -eq 0) 'ocr bin: a dark ground -> the bright text turns black on white'
     $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')
     $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 12 } -In $in -Plan $null
     Assert-True (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = ''; firstLines = 12 } -Plan $sp) 'df shots: an earlier picture with the lines wanted is kept'

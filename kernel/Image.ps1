@@ -250,26 +250,175 @@ function Get-EbiStripGeometry {
     return @{ ok = $true; x0 = $x0; x1 = $x1; scaledWidthB = $sw; message = '' }
 }
 
+function Get-EbiOcrFrame {
+    <#
+      PURE. The part of a W x H picture handed to OCR: the LEFT MaxWidth px
+      (the line numbers sit at the left; a shot of four emulator windows is
+      far wider than OCR takes) scaled so neither side passes MaxDim (the
+      Windows recognizer refuses bigger images). -> @{ cropW; scale; outW; outH }
+    #>
+    param([int]$Width, [int]$Height, [int]$MaxWidth = 1400, [int]$MaxDim = 2500)
+    $cw = [Math]::Min($Width, $MaxWidth)
+    $sc = [Math]::Min(1.0, [Math]::Min([double]$MaxDim / [Math]::Max(1, $cw), [double]$MaxDim / [Math]::Max(1, $Height)))
+    return @{ cropW = $cw; scale = $sc; outW = [int][Math]::Max(1, [Math]::Round($cw * $sc)); outH = [int][Math]::Max(1, [Math]::Round($Height * $sc)) }
+}
+
+function New-EbiOcrVariants {
+    <#
+      Three pictures for OCR to try (10/21 FJODWWBV: none of the HOST shots
+      gave a line number): <Base>.ocr.png (the left part, sized for the
+      recognizer), <Base>.bin.png (the same in black text on white: dark-
+      ground shots are thresholded on brightness) and <Base>.neg.png (the
+      negative). -> @{ ok; failure; message; paths }
+    #>
+    param([string]$Path, [string]$Base, [int]$MaxWidth = 1400, [int]$MaxDim = 2500)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('file not found: ' + $Path); paths = @() } }
+    return (New-EbiOcrVariantsCore -Path $Path -Base $Base -MaxWidth $MaxWidth -MaxDim $MaxDim)
+}
+
+function New-EbiOcrVariantsCore {
+    # The GDI+ half of New-EbiOcrVariants (see Get-EbiPngSizeCore).
+    param([string]$Path, [string]$Base, [int]$MaxWidth, [int]$MaxDim)
+    [void](Get-EbiDrawing)
+    $ms = $null; $img = $null; $bmp = $null; $gfx = $null
+    try {
+        $ms = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($Path))
+        $img = [System.Drawing.Image]::FromStream($ms)
+        $f = Get-EbiOcrFrame -Width $img.Width -Height $img.Height -MaxWidth $MaxWidth -MaxDim $MaxDim
+        $bmp = New-Object System.Drawing.Bitmap([int]$f['outW'], [int]$f['outH'], [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $gfx = [System.Drawing.Graphics]::FromImage($bmp)
+        $gfx.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $gfx.DrawImage($img, (New-Object System.Drawing.Rectangle(0, 0, [int]$f['outW'], [int]$f['outH'])), 0, 0, [int]$f['cropW'], [int]$img.Height, [System.Drawing.GraphicsUnit]::Pixel)
+        $p1 = $Base + '.ocr.png'; New-EbiParentDirectory -Path $p1
+        $bmp.Save($p1, [System.Drawing.Imaging.ImageFormat]::Png)
+        # threshold: dark ground (mean < 110) -> bright pixels are text
+        $w = [int]$f['outW']; $h = [int]$f['outH']
+        $data = $bmp.LockBits((New-Object System.Drawing.Rectangle(0, 0, $w, $h)), [System.Drawing.Imaging.ImageLockMode]::ReadWrite, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $st = [int]$data.Stride
+        $buf = New-Object byte[] ($st * $h)
+        [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $buf, 0, $buf.Length)
+        [void](Get-EbiImageMath)
+        $gy = [EbiImageMath]::Gray($buf, $st, $w, $h)
+        $out = [EbiImageMath]::Threshold($buf, $st, $w, $h, $gy)
+        [System.Runtime.InteropServices.Marshal]::Copy($out, 0, $data.Scan0, $out.Length)
+        $bmp.UnlockBits($data)
+        $p2 = $Base + '.bin.png'
+        $bmp.Save($p2, [System.Drawing.Imaging.ImageFormat]::Png)
+        $p3 = $Base + '.neg.png'
+        $v = Invoke-EbiInvertPng -Path $p1 -Out $p3
+        $paths = @($p1, $p2); if ($v['ok']) { $paths += $p3 }
+        return @{ ok = $true; failure = ''; message = ''; paths = $paths }
+    } catch {
+        return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; paths = @() }
+    } finally {
+        if ($null -ne $gfx) { $gfx.Dispose() }
+        if ($null -ne $bmp) { $bmp.Dispose() }
+        if ($null -ne $img) { $img.Dispose() }
+        if ($null -ne $ms) { $ms.Dispose() }
+    }
+}
+
+function Get-EbiImageMath {
+    <#
+      Compile the grey-image helpers once per process (plain C#, no
+      System.Drawing: unit-tested on Linux too). PowerShell loops are far
+      too slow for a sliding-window search.
+        Gray(buf, stride, w, h)                 24bpp rows -> grey bytes
+        DarkShare(g)                            share of pixels < 128
+        BestDiff(a, aw, ah, b, bw, bh, cx, cy, rx, ry)
+          a placed at every (cx+ox, cy+oy), |ox| <= rx, |oy| <= ry, inside
+          b -> double[] { least mean |a - b|, x, y }; { -1, 0, 0 } when it
+          never fits.
+    #>
+    if (-not ('EbiImageMath' -as [type])) {
+        Add-Type -TypeDefinition @"
+public static class EbiImageMath {
+    public static byte[] Gray(byte[] buf, int stride, int w, int h) {
+        byte[] g = new byte[w * h];
+        for (int y = 0; y < h; y++) { int row = y * stride; for (int x = 0; x < w; x++) { int o = row + x * 3; g[y * w + x] = (byte)((buf[o] + buf[o + 1] + buf[o + 2]) / 3); } }
+        return g;
+    }
+    public static byte[] Threshold(byte[] buf, int stride, int w, int h, byte[] g) {
+        long sum = 0; for (int i = 0; i < g.Length; i++) sum += g[i];
+        bool darkGround = g.Length > 0 && (sum / g.Length) < 110;
+        int cut = 0;
+        if (darkGround) { cut = 80; } else { cut = 140; }
+        byte[] o = new byte[buf.Length];
+        for (int y = 0; y < h; y++) { int row = y * stride; for (int x = 0; x < w; x++) {
+            bool text = darkGround ? g[y * w + x] > cut : g[y * w + x] < cut;
+            byte v = text ? (byte)0 : (byte)255; int k = row + x * 3; o[k] = v; o[k + 1] = v; o[k + 2] = v; } }
+        return o;
+    }
+    public static double DarkShare(byte[] g) {
+        if (g.Length == 0) return 0; int n = 0;
+        for (int i = 0; i < g.Length; i++) if (g[i] < 128) n++;
+        return (double)n / g.Length;
+    }
+    public static double[] BestDiff(byte[] a, int aw, int ah, byte[] b, int bw, int bh, int cx, int cy, int rx, int ry) {
+        double best = -1; int bx = 0, by = 0;
+        for (int oy = -ry; oy <= ry; oy++) {
+            int py = cy + oy; if (py < 0 || py + ah > bh) continue;
+            for (int ox = -rx; ox <= rx; ox++) {
+                int px = cx + ox; if (px < 0 || px + aw > bw) continue;
+                long sum = 0;
+                for (int y = 0; y < ah; y++) { int ai = y * aw; int bi = (py + y) * bw + px; for (int x = 0; x < aw; x++) { int d = a[ai + x] - b[bi + x]; sum += d < 0 ? -d : d; } }
+                double m = (double)sum / (aw * ah);
+                if (best < 0 || m < best) { best = m; bx = px; by = py; }
+            }
+        }
+        return new double[] { best, bx, by };
+    }
+}
+"@
+    }
+    return [type]'EbiImageMath'
+}
+
 function Compare-EbiPngStrip {
     <#
-      How different is the same vertical strip of two pictures of the same
-      rows? B is scaled to A's height first (the two may be shown at other
-      sizes), the strip FromFrac..ToFrac of A's width is taken from both at
-      the same px, each softened to half size, and the mean absolute grey
-      difference (0 = the same, 255 = black vs white) is the score; ink =
-      the share of dark pixels in A's strip (a blank strip says nothing).
+      How different is the same cell strip of two pictures of the same
+      rows? The strip FromFrac..ToFrac of A's width, rows BodyFrom..1 of
+      its height (the data under the headers), is SEARCHED for in B: B is
+      scaled to A's height and then by 0.94..1.06, and the strip slid over
+      every column and +-RangeY rows -- the two pictures may be shown at
+      other sizes with other margins (10/21 FJODWWBV: the same job read
+      52 when compared at a fixed place). Both at half size. Score = the
+      least mean grey difference found (0 = the same, 255 = black vs
+      white); ink = the share of dark pixels in A's strip.
       -> @{ ok; failure; message; score; ink; x0; x1 }
          failures: file_not_found | image_read_error | geometry
     #>
-    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac)
+    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac, [double]$BodyFrom = 0, [int]$RangeY = 8)
     foreach ($p in @($PathA, $PathB)) { if ([string]::IsNullOrWhiteSpace($p) -or -not (Test-Path -LiteralPath $p -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('no picture at ' + $p); score = -1; ink = 0; x0 = 0; x1 = 0 } } }
-    return (Compare-EbiPngStripCore -PathA $PathA -PathB $PathB -FromFrac $FromFrac -ToFrac $ToFrac)
+    return (Compare-EbiPngStripCore -PathA $PathA -PathB $PathB -FromFrac $FromFrac -ToFrac $ToFrac -BodyFrom $BodyFrom -RangeY $RangeY)
+}
+
+function Get-EbiGrayHalf {
+    # GDI+: an image drawn at (scale x its size) / 2, cropped to (sx, sy, w, h)
+    # of that, as grey bytes. -> @{ g; w; h }
+    param($Image, [double]$Scale, [int]$SX = 0, [int]$SY = 0, [int]$W = 0, [int]$H = 0)
+    $fw = [int][Math]::Max(1, [Math]::Round($Image.Width * $Scale / 2.0)); $fh = [int][Math]::Max(1, [Math]::Round($Image.Height * $Scale / 2.0))
+    if ($W -le 0) { $W = $fw - $SX }; if ($H -le 0) { $H = $fh - $SY }
+    $W = [Math]::Max(1, $W); $H = [Math]::Max(1, $H)
+    $bmp = New-Object System.Drawing.Bitmap($W, $H, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $gfx = [System.Drawing.Graphics]::FromImage($bmp)
+    try {
+        $gfx.Clear([System.Drawing.Color]::White)
+        $gfx.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $gfx.DrawImage($Image, (New-Object System.Drawing.RectangleF([single](-$SX), [single](-$SY), [single]$fw, [single]$fh)))
+        $data = $bmp.LockBits((New-Object System.Drawing.Rectangle(0, 0, $W, $H)), [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $buf = New-Object byte[] ([int]$data.Stride * $H)
+        [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $buf, 0, $buf.Length)
+        $st = [int]$data.Stride
+        $bmp.UnlockBits($data)
+        return @{ g = [EbiImageMath]::Gray($buf, $st, $W, $H); w = $W; h = $H }
+    } finally { $gfx.Dispose(); $bmp.Dispose() }
 }
 
 function Compare-EbiPngStripCore {
     # The GDI+ half of Compare-EbiPngStrip (see Get-EbiPngSizeCore).
-    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac)
-    [void](Get-EbiDrawing)
+    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac, [double]$BodyFrom, [int]$RangeY)
+    [void](Get-EbiDrawing); [void](Get-EbiImageMath)
     $objs = New-Object System.Collections.ArrayList
     try {
         $msA = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($PathA)); [void]$objs.Add($msA)
@@ -277,32 +426,24 @@ function Compare-EbiPngStripCore {
         $msB = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($PathB)); [void]$objs.Add($msB)
         $imB = [System.Drawing.Image]::FromStream($msB); [void]$objs.Add($imB)
         $g = Get-EbiStripGeometry -WidthA $imA.Width -HeightA $imA.Height -WidthB $imB.Width -HeightB $imB.Height -FromFrac $FromFrac -ToFrac $ToFrac
-        if (-not $g['ok']) { return @{ ok = $false; failure = 'geometry'; message = $g['message']; score = -1; ink = 0; x0 = $g['x0']; x1 = $g['x1'] } }
-        $sw = [int](($g['x1'] - $g['x0'] + 1) / 2); $sh = [int](($imA.Height + 1) / 2)
-        $grey = New-Object 'System.Collections.Generic.List[byte[]]'
-        foreach ($pair in @(@($imA, $imA.Width), @($imB, [int]$g['scaledWidthB']))) {
-            $im = $pair[0]; $fullW = [int]$pair[1]
-            $bmp = New-Object System.Drawing.Bitmap($sw, $sh, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb); [void]$objs.Add($bmp)
-            $gfx = [System.Drawing.Graphics]::FromImage($bmp); [void]$objs.Add($gfx)
-            $gfx.Clear([System.Drawing.Color]::White)
-            $gfx.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            # the whole picture scaled to (fullW x A height), then halved, drawn so the strip lands at 0
-            $scale = 0.5 * ([double]$imA.Height / $im.Height)
-            $dst = New-Object System.Drawing.RectangleF((-0.5 * $g['x0']), 0, [single]($im.Width * $scale), [single]($im.Height * $scale))
-            $gfx.DrawImage($im, $dst)
-            $rect = New-Object System.Drawing.Rectangle(0, 0, $sw, $sh)
-            $data = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
-            $stride = [int]$data.Stride
-            $buf = New-Object byte[] ($stride * $sh)
-            [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $buf, 0, $buf.Length)
-            $bmp.UnlockBits($data)
-            $gy = New-Object byte[] ($sw * $sh)
-            for ($y = 0; $y -lt $sh; $y++) { $row = $y * $stride; for ($x = 0; $x -lt $sw; $x++) { $o = $row + $x * 3; $gy[$y * $sw + $x] = [byte](([int]$buf[$o] + [int]$buf[$o + 1] + [int]$buf[$o + 2]) / 3) } }
-            $grey.Add($gy)
+        if (-not $g['ok'] -and $g['message'] -notmatch 'too narrow') { return @{ ok = $false; failure = 'geometry'; message = $g['message']; score = -1; ink = 0; x0 = $g['x0']; x1 = $g['x1'] } }
+        $y0 = [int][Math]::Floor([Math]::Max(0.0, [Math]::Min(0.9, $BodyFrom)) * $imA.Height)
+        $a = Get-EbiGrayHalf -Image $imA -Scale 1.0 -SX ([int]($g['x0'] / 2)) -SY ([int]($y0 / 2)) -W ([int](($g['x1'] - $g['x0']) / 2)) -H ([int](($imA.Height - $y0) / 2))
+        $ink = [EbiImageMath]::DarkShare($a['g'])
+        $best = -1.0
+        $norm = [double]$imA.Height / $imB.Height
+        foreach ($k in @(1.0, 0.98, 1.02, 0.96, 1.04, 0.94, 1.06)) {
+            $b = Get-EbiGrayHalf -Image $imB -Scale ($norm * $k)
+            if ($b['w'] -lt $a['w'] -or $b['h'] -lt $a['h']) { continue }
+            $cy = [int]($y0 / 2 * $k)
+            # every column (the cells may sit elsewhere across B), a few rows up and down
+            $cx = [int](($b['w'] - $a['w']) / 2); $rx = $cx + 1
+            $r = [EbiImageMath]::BestDiff($a['g'], $a['w'], $a['h'], $b['g'], $b['w'], $b['h'], $cx, $cy, $rx, $RangeY)
+            if ([double]$r[0] -ge 0 -and ($best -lt 0 -or [double]$r[0] -lt $best)) { $best = [double]$r[0] }
+            if ($best -ge 0 -and $best -le 2) { break }
         }
-        $a = $grey[0]; $b = $grey[1]; $sum = 0; $dark = 0
-        for ($i = 0; $i -lt $a.Length; $i++) { $sum += [Math]::Abs([int]$a[$i] - [int]$b[$i]); if ([int]$a[$i] -lt 128) { $dark++ } }
-        return @{ ok = $true; failure = ''; message = ''; score = [Math]::Round($sum / [double]$a.Length, 2); ink = [Math]::Round($dark / [double]$a.Length, 4); x0 = $g['x0']; x1 = $g['x1'] }
+        if ($best -lt 0) { return @{ ok = $false; failure = 'geometry'; message = 'the strip never fits inside the other picture'; score = -1; ink = $ink; x0 = $g['x0']; x1 = $g['x1'] } }
+        return @{ ok = $true; failure = ''; message = ''; score = [Math]::Round($best, 2); ink = [Math]::Round($ink, 4); x0 = $g['x0']; x1 = $g['x1'] }
     } catch {
         return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; score = -1; ink = 0; x0 = 0; x1 = 0 }
     } finally {
