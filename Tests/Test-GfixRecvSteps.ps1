@@ -709,6 +709,14 @@ try {
     Assert-Equal 'GFIXReceiveUnzip.log' (FileExtractBlocks-Label -Sources @('log/GFIXReceive/1021-unzip.log') -SourceLabels $sls -Default 'X') 'recv label: a block from the unzip log is GFIXReceiveUnzip.log (10/21)'
     Assert-Equal 'GFIXReceive.log / GFIXReceiveUnzip.log' (FileExtractBlocks-Label -Sources @('a/1021.log', 'a/1021-unzip.log', 'a/1021.log') -SourceLabels $sls -Default 'X') 'recv label: blocks from both logs name both, in order'
     Assert-Equal 'X' (FileExtractBlocks-Label -Sources @() -SourceLabels $sls -Default 'X') 'recv label: no block -> the default'
+    # 10/21: the 同一内容 cell found in the picture (Find-EbiTextPanel)
+    $sw = 70; $sh = 14; $sg = New-Object byte[] ($sw * $sh); for ($i = 0; $i -lt $sg.Length; $i++) { $sg[$i] = 240 }
+    foreach ($y in 0..13) { $sg[$y * $sw + 24] = 150; $sg[$y * $sw + 62] = 150 }                      # the cell's borders
+    foreach ($y in 3..10) { foreach ($x in 5..14) { $sg[$y * $sw + $x] = 20 }; foreach ($x in 30..50) { if ($x % 3 -ne 0) { $sg[$y * $sw + $x] = 20 } } }   # 移動 | 同一内容
+    $tp = Find-EbiTextPanel -Gray $sg -W $sw -H $sh
+    Assert-True ($tp['ok'] -and $tp['left'] -eq 24 -and $tp['right'] -eq 62 -and $tp['top'] -eq 0 -and $tp['bottom'] -eq 13) 'df status: the box is the cell around the LAST text (not 移動), border to border'
+    $sg2 = New-Object byte[] ($sw * $sh); for ($i = 0; $i -lt $sg2.Length; $i++) { $sg2[$i] = 240 }
+    Assert-True (-not (Find-EbiTextPanel -Gray $sg2 -W $sw -H $sh)['ok']) 'df status: no text -> not found (the fixed box is the fallback)'
     $old = Join-Path $tmp 'old__first.png'; [System.IO.File]::WriteAllText($old, 'x')
     $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 12 } -In $in -Plan $null
     Assert-True (ScreenLaunchCapture-CanReuse -Old @{ first = $old; last = ''; firstLines = 12 } -Plan $sp) 'df shots: an earlier picture with the lines wanted is kept'
