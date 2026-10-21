@@ -161,6 +161,14 @@ function ExcelMarkRows-Plan {
     return @{ writes = $writes.ToArray(); written = $written.ToArray(); kept = $kept.ToArray(); notFound = $notFound.ToArray() }
 }
 
+function ExcelMarkRows-NoteHidden {
+    # PURE. Report lines ("KEY row 123: ...") -> the same, with
+    # " (hidden by a filter)" on the rows in HiddenRows.
+    param($Lines, $HiddenRows = @())
+    $set = @{}; foreach ($r in @($HiddenRows)) { $set[[int]$r] = $true }
+    return @(foreach ($l in @($Lines)) { $m = [regex]::Match([string]$l, ' row (\d+):'); if ($m.Success -and $set.Contains([int]$m.Groups[1].Value)) { [string]$l + ' (hidden by a filter)' } else { [string]$l } })
+}
+
 function Invoke-Step {
     param($In, $Ctx)
     $empty = @{ written = @(); writtenCount = 0; kept = @(); notFound = @() }
@@ -183,6 +191,9 @@ function Invoke-Step {
     try {
         $kc = ConvertTo-EbiColumnNumber ([string]$In['keyColumn'])
         $last = [int]$ws.Cells.Item([int]$ws.Rows.Count, $kc).End(-4162).Row   # xlUp
+        # End(xlUp) is Ctrl+Up: with a filter on it stops at the last VISIBLE
+        # row, and the rows hidden under it would read as "no row" (10/21)
+        try { $ur = $ws.UsedRange; $uLast = [int]$ur.Row + [int]$ur.Rows.Count - 1; if ($uLast -gt $last) { $last = $uLast } } catch { }
         if ($last -lt $first) { $r = $empty.Clone(); $r['ok'] = $true; $r['notFound'] = @(foreach ($it in @($In['items'])) { [string]$it[[string]$In['keyField']] }); return $r }
         $n = $last - $first + 1
         foreach ($l in $letters) {
@@ -218,8 +229,18 @@ function Invoke-Step {
         $r['message'] = ('written but still empty when read back: ' + ($lost.ToArray() -join ', ') + ' (a filter, a protected sheet, or the wrong workbook?) -- nothing saved yet; look at the sheet, then r')
         return $r
     }
+    # 10/20: the values were "not there" at the gate -- a filter on the WBS
+    # hides the rows written (the write itself is fine). Say which rows.
+    $hidden = New-Object System.Collections.ArrayList
+    foreach ($w in @($plan['writes'])) {
+        if ($hidden.Contains([int]$w['row'])) { continue }
+        try { if ([bool]$ws.Rows.Item([int]$w['row']).Hidden) { [void]$hidden.Add([int]$w['row']) } } catch { }
+    }
+    $written = @(ExcelMarkRows-NoteHidden -Lines $plan['written'] -HiddenRows $hidden.ToArray())
     Invoke-EbiComRelease $ws
-    foreach ($l in @($plan['written'])) { $Ctx.Log.Info(('wrote ' + $l)) }
-    $warn = @(foreach ($k in @($plan['notFound'])) { @{ code = 'row_not_found'; message = ('no ' + $In['sheet'] + ' row for ' + $k + ' (type it by hand)') } })
-    return @{ ok = $true; written = $plan['written']; writtenCount = @($plan['written']).Count; kept = $plan['kept']; notFound = $plan['notFound']; warnings = $warn }
+    foreach ($l in $written) { $Ctx.Log.Info(('wrote ' + $l)) }
+    $warn = New-Object System.Collections.ArrayList
+    foreach ($k in @($plan['notFound'])) { [void]$warn.Add(@{ code = 'row_not_found'; message = ('no ' + $In['sheet'] + ' row for ' + $k + ' (type it by hand)') }) }
+    if ($hidden.Count -gt 0) { [void]$warn.Add(@{ code = 'rows_hidden'; message = ('{0} row(s) written are hidden by a filter on {1} ({2}): the values are there, clear the filter to see them' -f $hidden.Count, $In['sheet'], (@($hidden.ToArray()) -join ', ')) }) }
+    return @{ ok = $true; written = $written; writtenCount = $written.Count; kept = $plan['kept']; notFound = $plan['notFound']; warnings = $warn.ToArray() }
 }

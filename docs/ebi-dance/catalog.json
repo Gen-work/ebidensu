@@ -2329,6 +2329,11 @@
           "desc": "the text to write",
           "type": "string"
         },
+        "warnIfEmpty": {
+          "default": true,
+          "desc": "with keepIfEmpty: false = an empty fromCell is normal here (a one-file job has no STEP name, 10/21), logged, no warning",
+          "type": "bool"
+        },
         "workbook": {
           "required": true,
           "sessionKind": "workbook",

@@ -1707,6 +1707,7 @@ Write a value (or another cell's value) into one cell as text
 | `sheet` | string | yes |  |  |  |
 | `trim` | bool |  | false |  | drop the spaces around the value (10/16: the send-data sheet's STEP cell sometimes ends in one) |
 | `value` | string |  | (empty) |  | the text to write |
+| `warnIfEmpty` | bool |  | true |  | with keepIfEmpty: false = an empty fromCell is normal here (a one-file job has no STEP name, 10/21), logged, no warning |
 | `workbook` | session:workbook | yes |  |  |  |
 
 | output | type | desc |

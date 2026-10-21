@@ -295,6 +295,10 @@ Assert-Equal 'X' (@(Get-EbiSaveDialogs -Given @() -Profile @{ layout = @{ eviden
 Assert-Equal 'Y' (@(Get-EbiSaveDialogs -Given @('Y') -Profile @{ layout = @{ saveDialogs = @('X') } }) -join ',') 'save dialogs: the step''s own list wins'
 Assert-Equal 0 @(Get-EbiSaveDialogs -Given $null -Profile $null).Count 'save dialogs: none anywhere -> none'
 Assert-Equal '' (ExcelMarkRows-Day -Text 'tomorrow') 'mark_rows: not a date -> empty'
+# 10/21: rows a filter hides are named in the report (the values are there)
+$nh = @(ExcelMarkRows-NoteHidden -Lines @('MJODJSPQ row 3854: AK=2026-10-20', 'MJODJSPQ row 3855: AK=2026-10-20') -HiddenRows @(3855))
+Assert-True ($nh[0] -eq 'MJODJSPQ row 3854: AK=2026-10-20' -and $nh[1] -eq 'MJODJSPQ row 3855: AK=2026-10-20 (hidden by a filter)') 'mark_rows: a row hidden by a filter is marked in the report'
+Assert-Equal 0 (@(ExcelMarkRows-NoteHidden -Lines @() -HiddenRows @(1))).Count 'mark_rows: nothing written, nothing to mark'
 
 $ctx['DryRun'] = $true
 $ctx['Session']['x'] = @{ kind = 'workbook'; value = $null }

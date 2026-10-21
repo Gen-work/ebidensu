@@ -237,6 +237,9 @@
   - 保存时的 Esc:WBS 保存加上 `dismissDialogs`;另外 `excel.close` / `excel.tidy` / `excel.append_row` 没给 `dismissDialogs` 时用 profile 的 `layout.saveDialogs`(没有就用 `layout.evidence.saveDialogs`),以后哪个 workflow 忘写也不会漏(操作员 10/20:「加个 Esc 不会坏」)。旧的 VerifyTool 相位脚本(Mark / ReplaceEvidence / FillCheckSheet 等)的 `Save()` 不在这条线上,弹了对话框会停下等人,不会悄悄丢。
   - 写哪些行:B = 受信,G = **修正後実施 和 結果まとめ** 两行,P = 自己(`owner` / `owner←○○` / `○○→owner`,和 plan 同一条规则),别人的行不写。
   - 写什么:AJ = AK = 实绩日(问一次,Enter = 今天,也可以打 `10/21`),AQ = 实绩工数(Enter = 0.1,写成数字)。只写空格子,手填过的不动。
+- **10/21 复盘(最可能的原因)**:当时打开 WBS 两次都是「只读」,而操作员自己的 Excel 里也开着 WBS。工具用**自己的 Excel 进程**又开了一份 → 只读副本:写进了那份副本(日志说 wrote),保存失败但旧版 `excel.close` 照样说 saved;操作员看的是自己窗口里的那份,所以按 Enter 前就看不到。v2.30.0 起这条路被堵住:`file.wait_unlocked` 先等文件没人开(显示 ~$ 里的名字,可能就是你自己),`excel.open` 打开成只读就判 `read_only` 不写;保存后核对文件时间。
+- **v2.33.1 补**:WBS 开着筛选时,写进的行可能被藏起来——值在,只是看不到。`excel.mark_rows` 现在在 gate 的行后面标 `(hidden by a filter)` 并给 warning `rows_hidden`;找最后一行改用 UsedRange 兜底(Ctrl+↑ 在筛选状态下只停在最后一个**看得见**的行,下面被藏的 job 会变成「没有这一行」)。
+- **操作员这边能做的**:deliver 前**关掉自己 Excel 里的 WBS**(要保存的先保存);deliver 跑完按菜单 `w`(gfixRecv.wbscheck,只读)核对一遍 AK。
 - **写新 workflow 时**:写共享表之后,要证明**文件**变了,不要只信 API 的返回值;写之前先说清楚写哪几行、哪几列(操作员 10/20:G、P、AJ、AK、AQ)。
 - **来源**:10/20 deliver + 操作员贴的 WBS 行。
 

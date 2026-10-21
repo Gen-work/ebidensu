@@ -1,3 +1,27 @@
+## 2026-10-21 - STEP name only warned for multi-file jobs; WBS rows hidden by a filter named (v2.33.1)
+
+10/21 re-run on v2.33.0: Q/RJODWDBC warned `source_empty` for the STEP
+name, but a one-file job has none ("they aren't multi so why step?").
+
+### Changed
+- **gfixRecv.evidence v0.7.1**: `stepName` runs for jobs with two or more
+  file pairs (warns when 送信データ B3 is empty, as before); `stepNameOne`
+  for one-pair jobs copies B3 when it is there and only logs when it is
+  not.
+- **excel.write_cell**: `warnIfEmpty` (default true) -- false turns the
+  keepIfEmpty warning into a log line.
+- **excel.mark_rows**: a written row hidden by a filter is marked
+  `(hidden by a filter)` in `written` (the WBS gate shows it) and warned
+  `rows_hidden` -- the values are there, the filter hides them (10/20: "not
+  visible before Enter"); the last row is the larger of Ctrl+Up and the
+  used range, so rows under a filter are not "no row".
+
+### Docs / tests
+- KNOWLEDGE K-24: the 10/21 review of the 10/20 loss (a second, read-only
+  copy in the tool's own Excel while the operator's Excel held the WBS;
+  closed by v2.30.0's wait_unlocked / read_only / save check) and what the
+  operator can do. Test-PlanSets: hidden-row marking. Catalog regenerated.
+
 ## 2026-10-21 - silent mode; HOST line numbers OCR missed at either end read from the pixels (v2.33.0)
 
 Operator 10/21: "add a silent mode ... at least not pops up at front except
