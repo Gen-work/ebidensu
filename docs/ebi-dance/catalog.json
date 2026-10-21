@@ -4886,6 +4886,26 @@
           "required": true,
           "type": "path"
         },
+        "fitPitchPx": {
+          "default": 18,
+          "desc": "px a line (DF: 18, measured 10/19)",
+          "type": "int"
+        },
+        "fitStepPx": {
+          "default": 6,
+          "desc": "fine resize step near the target",
+          "type": "int"
+        },
+        "fitStrip": {
+          "default": {},
+          "desc": "the line-number strip of a capture, @{ x; width; yFrom; yTo; ink; maxLuma } (screen.find_ink_rows): each first / END capture is resized until it shows exactly the lines wanted (first: min(screenLines, lines); END: linesEnd), no part of the next; empty = no fit",
+          "type": "map"
+        },
+        "fitTries": {
+          "default": 8,
+          "desc": "resizes per capture before giving up (warning fit_failed, the capture kept)",
+          "type": "int"
+        },
         "height": {
           "default": 0,
           "type": "int"
@@ -4909,6 +4929,11 @@
           "default": "^{END}",
           "desc": "keys before the second capture (the END view)",
           "type": "string"
+        },
+        "linesEnd": {
+          "default": 0,
+          "desc": "line rule: the lines the END-view capture must show (fitStrip); 0 = screenLines",
+          "type": "int"
         },
         "linesField": {
           "default": "lines",
@@ -4963,7 +4988,7 @@
         }
       },
       "needs": [],
-      "notes": "An empty argSets is a successful no-op (runs = 0). The program is closed with WM_CLOSE and killed if it is still there 3 s later; a capture already saved is kept either way.",
+      "notes": "An empty argSets is a successful no-op (runs = 0). The program is closed with WM_CLOSE and killed if it is still there 3 s later; a capture already saved is kept either way. With fitStrip, a height that had to change is carried to the next captures of the same call, and a capture that could not be fitted is kept with warning fit_failed (look at it before review).",
       "outputs": {
         "paths": {
           "desc": "every capture, in order",
@@ -4973,7 +4998,7 @@
           "type": "int"
         },
         "shots": {
-          "desc": "@{ first; last; name } per run (last empty when no second capture)",
+          "desc": "@{ first; last; name; firstLines; lastLines; firstHeight; lastHeight } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted)",
           "type": "list"
         }
       },

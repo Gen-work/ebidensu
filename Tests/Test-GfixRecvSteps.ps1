@@ -594,6 +594,27 @@ try {
     # 10/19 measured: 18 px a line, 476 = 17 lines; the HOST shows 17 records, HOST n = DF n-1
     $lay = (Read-EbiJson -Path (Join-Path $repoRoot 'profiles/gfix-recv/layout.json'))['value']['df']
     Assert-Equal 18 (([int]$lay['heightEnd'] - [int]$lay['height'])) 'df size: the END picture is one 18 px line taller than the first (17 vs 16 lines)'
+    # 10/21 fit (SJODWSPN: the 458 first picture showed the 17th line): bands of the line-number strip
+    $bands = { param([int]$n, [int]$lastH) @(for ($i = 0; $i -lt $n; $i++) { @{ top = 18 * $i; bottom = 18 * $i + 11; height = $(if ($i -eq $n - 1 -and $lastH -gt 0) { $lastH } else { 12 }) } }) }
+    $fp = ScreenLaunchCapture-FitPlan -Bands (& $bands 16 0) -Want 16
+    Assert-True ($fp['done'] -and $fp['full'] -eq 16) 'df fit: 16 whole lines, wanted 16 -> done'
+    $fp = ScreenLaunchCapture-FitPlan -Bands (& $bands 17 0) -Want 16
+    Assert-True ((-not $fp['done']) -and $fp['delta'] -eq -6) 'df fit: a 17th whole line (the 10/20 upper picture) -> shrink by a step, not a whole line (the 17th may be only partly in the window)'
+    $fp = ScreenLaunchCapture-FitPlan -Bands (& $bands 17 5) -Want 16
+    Assert-True ((-not $fp['done']) -and $fp['partial'] -and $fp['full'] -eq 16 -and $fp['delta'] -eq -6) 'df fit: 16 lines + a sliver of the 17th -> shrink until it is gone'
+    $fp = ScreenLaunchCapture-FitPlan -Bands (& $bands 15 0) -Want 16
+    Assert-True ((-not $fp['done']) -and $fp['delta'] -eq 6) 'df fit: 15 lines, wanted 16 -> grow by a step'
+    $fp = ScreenLaunchCapture-FitPlan -Bands (& $bands 13 0) -Want 17
+    Assert-Equal 60 $fp['delta'] 'df fit: 4 short -> 3 whole lines and a step (18*3+6)'
+    $fp = ScreenLaunchCapture-FitPlan -Bands (@(@{ top = 0; bottom = 4; height = 5 }) + (& $bands 16 0)) -Want 17
+    Assert-True $fp['done'] 'df fit: a short FIRST band is the strip edge, still a line'
+    Assert-True (-not (ScreenLaunchCapture-FitPlan -Bands @() -Want 16)['done']) 'df fit: no band read -> not done, no resize (delta 0)'
+    $lc = @{ screenLines = 16; linesField = 'lines'; linesEnd = 17 }
+    Assert-Equal 16 (ScreenLaunchCapture-Want -Set @{ lines = 61 } -In $lc -View 'first') 'df fit: the first picture of a long file = 16 lines'
+    Assert-Equal 9 (ScreenLaunchCapture-Want -Set @{ lines = 9 } -In $lc -View 'first') 'df fit: a 9-line file shows its 9 lines, blank below'
+    Assert-Equal 17 (ScreenLaunchCapture-Want -Set @{ lines = 61 } -In $lc -View 'end') 'df fit: the END picture = linesEnd (the HOST last 17)'
+    Assert-Equal 0 (ScreenLaunchCapture-Want -Set @{ lines = 61 } -In @{ screenLines = 0; linesField = 'lines'; linesEnd = 0 } -View 'first') 'df fit: no line rule -> no fit'
+    Assert-Equal 17 ([int]$lay['linesEnd']) 'df size: linesEnd 17 (HOST n = DF n-1, the HOST last picture shows 17)'
 
     # ---------------------------------------------------------------- home cell (10-12)
     $send = [string][char]0x9001 + [char]0x4FE1 + [char]0x21D2   # send-arrow sheet

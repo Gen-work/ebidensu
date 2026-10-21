@@ -79,7 +79,7 @@ function Invoke-Step {
     $files = New-Object System.Collections.ArrayList
     foreach ($f in $items) {
         $lines = -1
-        if ([bool]$In['countLines']) { $lines = @(Get-EbiTextLines -Text ((ConvertFrom-EbiMixedBytes -Bytes ([System.IO.File]::ReadAllBytes($f.FullName)))['text'])).Count }
+        if ([bool]$In['countLines']) { $lines = Get-EbiByteLineCount -Bytes ([System.IO.File]::ReadAllBytes($f.FullName)) }
         $order = if ([string]$In['orderBy'] -eq 'time') { $f.LastWriteTime.ToString('yyyyMMddHHmmss') } else { $f.Name }
         [void]$files.Add(@{ name = $f.Name; path = $f.FullName; size = [int64]$f.Length; modified = $f.LastWriteTime.ToString('s'); lines = $lines; order = $order })
     }

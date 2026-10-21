@@ -110,7 +110,7 @@ function FileDownload-Get {
 function FileDownload-Lines {
     param([string]$Path, [bool]$Count)
     if (-not $Count) { return -1 }
-    return @(Get-EbiTextLines -Text ((ConvertFrom-EbiMixedBytes -Bytes ([System.IO.File]::ReadAllBytes($Path)))['text'])).Count
+    return (Get-EbiByteLineCount -Bytes ([System.IO.File]::ReadAllBytes($Path)))
 }
 
 function Invoke-Step {

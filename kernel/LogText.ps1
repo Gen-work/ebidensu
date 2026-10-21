@@ -14,6 +14,8 @@
 #                               in SJIS) -> string, nothing dropped
 #    Get-EbiTextLines           text -> lines (CRLF / LF), trailing empty
 #                               line removed
+#    Get-EbiByteLineCount       the same count straight from the bytes
+#                               (no decoding: a 2 MB SJIS CSV in seconds)
 #    Get-EbiLogBlocks           START <key> ... END <key> blocks, keyed
 #    Find-EbiLineHits           which lines (0-based) match which patterns
 #    Get-EbiTextCellUnits       display width: half-width 1, full-width 2
@@ -157,6 +159,31 @@ function Get-EbiTextLines {
         $lines = $lines[0..($lines.Count - 2)]
     }
     return @($lines)
+}
+
+function Get-EbiByteLineCount {
+    <#
+      PURE. How many lines Get-EbiTextLines would return for these bytes,
+      without decoding them: LF bytes, plus a last line without one. 0x0A
+      is never part of a multi-byte character in UTF-8 or CP932, so the
+      encoding does not matter. 10/21 office run: decoding a 2.2 MB SJIS
+      CSV with ConvertFrom-EbiMixedBytes (every line walked byte by byte)
+      only to count its lines held track for minutes after the download.
+    #>
+    param([byte[]]$Bytes)
+    if ($null -eq $Bytes -or $Bytes.Length -eq 0) { return 0 }
+    $start = 0
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { $start = 3 }
+    if ($start -ge $Bytes.Length) { return 0 }
+    $n = 0
+    $pos = [Array]::IndexOf($Bytes, [byte]10, $start)
+    while ($pos -ge 0) {
+        $n++
+        if ($pos + 1 -ge $Bytes.Length) { break }
+        $pos = [Array]::IndexOf($Bytes, [byte]10, $pos + 1)
+    }
+    if ($Bytes[$Bytes.Length - 1] -ne 10) { $n++ }
+    return $n
 }
 
 function Get-EbiLogBlocks {

@@ -8,9 +8,16 @@
 # Captures use the window's VISIBLE bounds (kernel/Native.ps1
 # Get-EbiWindowVisibleRect), so no strip of the desktop shows at the
 # edges; the size asked for is the visible size too.
+#
+# fitStrip (10/21, SJODWSPN review: the first picture showed one line too
+# many): a fixed window height is a guess -- 458 was derived, never seen,
+# and the 17th line showed. With fitStrip set, each first / END capture
+# counts the text bands in the line-number strip and resizes the window
+# until it shows exactly the lines wanted, no part of the next one.
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')
-. (Join-Path $PSScriptRoot '..\..\kernel\Image.ps1')    # Save-EbiScreenRegionPng
+. (Join-Path $PSScriptRoot '..\..\kernel\Image.ps1')    # Save-EbiScreenRegionPng, Get-EbiInkCounts
+. (Join-Path $PSScriptRoot '..\..\kernel\Layout.ps1')   # Get-EbiInkBands
 
 $Manifest = @{
   id         = 'screen.launch_capture'
@@ -39,13 +46,18 @@ $Manifest = @{
     width        = @{ type='int';    default=0; desc='visible window width; 0 = leave as the program opens it' }
     height       = @{ type='int';    default=0 }
     heightEnd    = @{ type='int';    default=0; desc='line rule: the visible window height for the END-view capture (a file of more than 2 x screenLines lines); 0 = height. 10/19: the HOST screen shows 17 records, so the END picture shows 17 DF lines while the first shows 16' }
+    linesEnd     = @{ type='int';    default=0; desc='line rule: the lines the END-view capture must show (fitStrip); 0 = screenLines' }
+    fitStrip     = @{ type='map';    default=@{}; desc='the line-number strip of a capture, @{ x; width; yFrom; yTo; ink; maxLuma } (screen.find_ink_rows): each first / END capture is resized until it shows exactly the lines wanted (first: min(screenLines, lines); END: linesEnd), no part of the next; empty = no fit' }
+    fitPitchPx   = @{ type='int';    default=18; desc='px a line (DF: 18, measured 10/19)' }
+    fitStepPx    = @{ type='int';    default=6; desc='fine resize step near the target' }
+    fitTries     = @{ type='int';    default=8; desc='resizes per capture before giving up (warning fit_failed, the capture kept)' }
     windowWaitSec = @{ type='int';   default=15 }
     windowTitle  = @{ type='string'; default=''; desc='fallback when the started process shows no window of its own (a launcher / single-instance program): the top-level window whose title contains this' }
     closeOthers  = @{ type='bool';   default=$false; desc='close every window whose title contains windowTitle before each start, so the only such window is the new one' }
     settleMs     = @{ type='int';    default=1200; desc='wait after the window appears / after keys' }
   }
   outputs    = @{
-    shots = @{ type='list'; desc='@{ first; last; name } per run (last empty when no second capture)' }
+    shots = @{ type='list'; desc='@{ first; last; name; firstLines; lastLines; firstHeight; lastHeight } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted)' }
     paths = @{ type='list'; desc='every capture, in order' }
     runs  = @{ type='int' }
   }
@@ -56,7 +68,77 @@ $Manifest = @{
     @{ id = 'save_failed';     transient = $true  }
   )
   example    = @{ use = 'screen.launch_capture'; with = @{ exe = '{{profile.df.exe}}'; argSets = '{{steps.pair.out.pairs}}'; saveDir = 'capture/df/{{item.keySafe}}'; width = 1133; height = 429 } }
-  notes      = 'An empty argSets is a successful no-op (runs = 0). The program is closed with WM_CLOSE and killed if it is still there 3 s later; a capture already saved is kept either way.'
+  notes      = 'An empty argSets is a successful no-op (runs = 0). The program is closed with WM_CLOSE and killed if it is still there 3 s later; a capture already saved is kept either way. With fitStrip, a height that had to change is carried to the next captures of the same call, and a capture that could not be fitted is kept with warning fit_failed (look at it before review).'
+}
+
+function ScreenLaunchCapture-FitPlan {
+    <#
+      PURE. Does this capture show exactly Want lines? Bands are the text
+      bands of its line-number strip (top to bottom). A line is whole when
+      its band is about as tall as the median band; a shorter LAST band is
+      the next line cut by the window's bottom (a shorter first band is
+      only the strip's own top edge). -> @{ done; delta; full; partial }
+        delta  px to add to the window height before the next try
+      Far off: whole lines at a time (Pitch), the last one in Step px, so
+      the window grows / shrinks to the first height that shows Want whole
+      lines and nothing of the next.
+    #>
+    param($Bands, [int]$Want, [int]$Pitch = 18, [int]$Step = 6)
+    $b = @(@($Bands) | Where-Object { $null -ne $_ })
+    if ($Want -le 0) { return @{ done = $true; delta = 0; full = $b.Count; partial = $false } }
+    if ($b.Count -eq 0) { return @{ done = $false; delta = 0; full = 0; partial = $false } }
+    $hs = @($b | ForEach-Object { [int]$_['height'] } | Sort-Object)
+    $med = [int]$hs[[int][Math]::Floor($hs.Count / 2)]
+    $partial = ($b.Count -ge 2 -and [int]$b[$b.Count - 1]['height'] -lt ($med - 2))
+    $full = $b.Count - $(if ($partial) { 1 } else { 0 })
+    if ($full -eq $Want -and -not $partial) { return @{ done = $true; delta = 0; full = $full; partial = $false } }
+    if ($full -gt $Want) { $d = -((($full - $Want - 1) * $Pitch) + $Step) }
+    elseif ($full -eq $Want) { $d = -$Step }
+    else { $d = (($Want - $full - 1) * $Pitch) + $Step }
+    return @{ done = $false; delta = $d; full = $full; partial = $partial }
+}
+
+function ScreenLaunchCapture-CountBands {
+    # Text bands of the fit strip of a saved capture, or $null when unread.
+    param([string]$Path, $Strip)
+    $c = Get-EbiInkCounts -Path $Path -X ([int]$Strip['x']) -Width ([int]$Strip['width']) -YFrom ([int]$Strip['yFrom']) -YTo ([int]$Strip['yTo']) -Ink $(if ($Strip['ink']) { [string]$Strip['ink'] } else { 'dark' }) -MaxLuma $(if ($Strip['maxLuma']) { [int]$Strip['maxLuma'] } else { 160 })
+    if (-not $c['ok']) { return $null }
+    # minHeight 2, not find_ink_rows' 4: a sliver of the next line is what
+    # the fit is there to remove
+    return @(Get-EbiInkBands -Counts ([int[]]$c['counts']) -MinInk 2 -MergeGap 1 | Where-Object { [int]$_['height'] -ge 2 })
+}
+
+function ScreenLaunchCapture-FitShot {
+    <#
+      Capture to Dest; with a fit strip, resize and capture again until the
+      picture shows exactly Want lines (Keys re-sent after each resize: the
+      view has to be rebuilt for the new page size). -> @{ ok; failure;
+      message; lines; height; fitted }
+    #>
+    param([IntPtr]$HWnd, [string]$Dest, $In, [int]$Height, [int]$Want, [string]$Keys)
+    $r = ScreenLaunchCapture-Shot -HWnd $HWnd -Dest $Dest
+    if (-not $r['ok']) { return @{ ok = $false; failure = $r['failure']; message = $r['message']; lines = -1; height = $Height; fitted = $false } }
+    $strip = $In['fitStrip']
+    if (-not ($strip -is [System.Collections.IDictionary]) -or $strip.Count -eq 0 -or $Want -le 0 -or [int]$In['width'] -le 0 -or $Height -le 0) {
+        return @{ ok = $true; lines = -1; height = $Height; fitted = $true }
+    }
+    $h = $Height
+    $plan = $null
+    for ($try = 0; $try -le [int]$In['fitTries']; $try++) {
+        $bands = ScreenLaunchCapture-CountBands -Path $Dest -Strip $strip
+        if ($null -eq $bands) { return @{ ok = $true; lines = -1; height = $h; fitted = $false } }
+        $plan = ScreenLaunchCapture-FitPlan -Bands $bands -Want $Want -Pitch ([int]$In['fitPitchPx']) -Step ([int]$In['fitStepPx'])
+        if ([bool]$plan['done']) { return @{ ok = $true; lines = [int]$plan['full']; height = $h; fitted = $true } }
+        if ([int]$plan['delta'] -eq 0 -or $try -eq [int]$In['fitTries']) { break }
+        $h = $h + [int]$plan['delta']
+        [void](Set-EbiWindowVisibleSize -HWnd $HWnd -X ([int]$In['x']) -Y ([int]$In['y']) -W ([int]$In['width']) -H $h)
+        $fg = Set-EbiForeground -HWnd $HWnd
+        if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; lines = -1; height = $h; fitted = $false } }
+        if (-not [string]::IsNullOrEmpty($Keys)) { Send-EbiKeys -Keys $Keys -WaitMs ([int]$In['settleMs']) } else { Start-Sleep -Milliseconds ([int]$In['settleMs']) }
+        $r = ScreenLaunchCapture-Shot -HWnd $HWnd -Dest $Dest
+        if (-not $r['ok']) { return @{ ok = $false; failure = $r['failure']; message = $r['message']; lines = -1; height = $h; fitted = $false } }
+    }
+    return @{ ok = $true; lines = $(if ($plan) { [int]$plan['full'] } else { -1 }); height = $h; fitted = $false }
 }
 
 function ScreenLaunchCapture-Shot {
@@ -86,6 +168,21 @@ function ScreenLaunchCapture-SecondPlan {
     }
     $two = ($SecondField -ne '' -and $Set.Contains($SecondField) -and [bool]$Set[$SecondField])
     return @{ two = $two; keys = $(if ($two) { $KeysSecond } else { '' }); view = $(if ($two) { 'second' } else { '' }) }
+}
+
+function ScreenLaunchCapture-Want {
+    <#
+      PURE. Lines a fitted capture must show: the first view min(screenLines,
+      lines) (a short file shows all it has, blank below); the END view
+      linesEnd (else screenLines). 0 = no fit (no line rule / line count).
+    #>
+    param($Set, $In, [string]$View)
+    $sl = [int]$In['screenLines']
+    if ($sl -le 0) { return 0 }
+    if ($View -eq 'end') { if ([int]$In['linesEnd'] -gt 0) { return [int]$In['linesEnd'] } else { return $sl } }
+    $lf = [string]$In['linesField']
+    if ($lf -eq '' -or -not $Set.Contains($lf) -or $null -eq $Set[$lf]) { return 0 }
+    return [Math]::Min($sl, [int]$Set[$lf])
 }
 
 function ScreenLaunchCapture-Stem {
@@ -144,6 +241,8 @@ function Invoke-Step {
         return @{ ok = $true; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $sets.Count }
     }
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('program not found: ' + $exe); shots = @(); paths = @(); runs = 0 } }
+    $warnings = New-Object System.Collections.ArrayList
+    $fitDelta = 0   # px the fit had to add to height / heightEnd; carried to the next pair
     $n = 0
     foreach ($s in $sets) {
         $n++
@@ -202,35 +301,50 @@ function Invoke-Step {
         }
         try {
             Start-Sleep -Milliseconds ([int]$In['settleMs'])
-            if ([int]$In['width'] -gt 0 -and [int]$In['height'] -gt 0) { [void](Set-EbiWindowVisibleSize -HWnd $h -X ([int]$In['x']) -Y ([int]$In['y']) -W ([int]$In['width']) -H ([int]$In['height'])) }
+            $hFirst = [int]$In['height']
+            if ($hFirst -gt 0) { $hFirst += $fitDelta }
+            if ([int]$In['width'] -gt 0 -and $hFirst -gt 0) { [void](Set-EbiWindowVisibleSize -HWnd $h -X ([int]$In['x']) -Y ([int]$In['y']) -W ([int]$In['width']) -H $hFirst) }
             $fg = Set-EbiForeground -HWnd $h
-            if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
+            if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1; warnings = $warnings.ToArray() } }
             if (-not [string]::IsNullOrEmpty([string]$In['keysFirst'])) { Send-EbiKeys -Keys ([string]$In['keysFirst']) -WaitMs ([int]$In['settleMs']) }
             $first = Join-Path $dir ($stem + '__first.png')
-            $r = ScreenLaunchCapture-Shot -HWnd $h -Dest $first
-            if (-not $r['ok']) { return @{ ok = $false; failure = $(if ($r['failure'] -eq 'no_window') { 'no_window' } else { 'save_failed' }); message = $r['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
+            $wantFirst = ScreenLaunchCapture-Want -Set $s -In $In -View 'first'
+            $r = ScreenLaunchCapture-FitShot -HWnd $h -Dest $first -In $In -Height $hFirst -Want $wantFirst -Keys ([string]$In['keysFirst'])
+            if (-not $r['ok']) { return @{ ok = $false; failure = $(if ($r['failure'] -in @('no_window', 'foreground_lost')) { $r['failure'] } else { 'save_failed' }); message = $r['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1; warnings = $warnings.ToArray() } }
             [void]$paths.Add($first)
-            $last = ''
+            $firstLines = [int]$r['lines']; $firstHeight = [int]$r['height']
+            if ([bool]$r['fitted']) { if ($hFirst -gt 0) { $fitDelta += ($firstHeight - $hFirst) } }
+            else { [void]$warnings.Add(@{ code = 'fit_failed'; message = ('{0}: the first picture shows {1} lines, wanted {2} -- look at it before review' -f $stem, $firstLines, $wantFirst); data = @{ path = $first; lines = $firstLines; want = $wantFirst; height = $firstHeight } }) }
+            $last = ''; $lastLines = -1; $lastHeight = 0
             $plan2 = ScreenLaunchCapture-SecondPlan -Set $s -ScreenLines ([int]$In['screenLines']) -LinesField ([string]$In['linesField']) -SecondField ([string]$In['secondField']) -KeysMid ([string]$In['keysMid']) -KeysSecond ([string]$In['keysSecond'])
             if ([bool]$plan2['two']) {
-                if ([string]$plan2['view'] -eq 'end' -and [int]$In['heightEnd'] -gt 0 -and [int]$In['heightEnd'] -ne [int]$In['height'] -and [int]$In['width'] -gt 0) {
-                    [void](Set-EbiWindowVisibleSize -HWnd $h -X ([int]$In['x']) -Y ([int]$In['y']) -W ([int]$In['width']) -H ([int]$In['heightEnd']))
-                    Start-Sleep -Milliseconds 300
+                $hLast = $firstHeight
+                if ([string]$plan2['view'] -eq 'end' -and [int]$In['heightEnd'] -gt 0 -and [int]$In['width'] -gt 0) {
+                    $hLast = [int]$In['heightEnd'] + $fitDelta
+                    if ($hLast -ne $firstHeight) {
+                        [void](Set-EbiWindowVisibleSize -HWnd $h -X ([int]$In['x']) -Y ([int]$In['y']) -W ([int]$In['width']) -H $hLast)
+                        Start-Sleep -Milliseconds 300
+                    }
                 }
                 $fg = Set-EbiForeground -HWnd $h
-                if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
+                if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1; warnings = $warnings.ToArray() } }
                 Send-EbiKeys -Keys ([string]$plan2['keys']) -WaitMs ([int]$In['settleMs'])
                 $last = Join-Path $dir ($stem + '__last.png')
-                $r = ScreenLaunchCapture-Shot -HWnd $h -Dest $last
-                if (-not $r['ok']) { return @{ ok = $false; failure = 'save_failed'; message = $r['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1 } }
+                # the PgDn page shows what is left of the file under a window
+                # already fitted: nothing to fit; the END view is fitted
+                $wantLast = if ([string]$plan2['view'] -eq 'end') { ScreenLaunchCapture-Want -Set $s -In $In -View 'end' } else { 0 }
+                $r = ScreenLaunchCapture-FitShot -HWnd $h -Dest $last -In $In -Height $hLast -Want $wantLast -Keys ([string]$plan2['keys'])
+                if (-not $r['ok']) { return @{ ok = $false; failure = $(if ($r['failure'] -in @('no_window', 'foreground_lost')) { $r['failure'] } else { 'save_failed' }); message = $r['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1; warnings = $warnings.ToArray() } }
                 [void]$paths.Add($last)
+                $lastLines = [int]$r['lines']; $lastHeight = [int]$r['height']
+                if (-not [bool]$r['fitted']) { [void]$warnings.Add(@{ code = 'fit_failed'; message = ('{0}: the END picture shows {1} lines, wanted {2} -- look at it before review' -f $stem, $lastLines, $wantLast); data = @{ path = $last; lines = $lastLines; want = $wantLast; height = $lastHeight } }) }
             }
-            [void]$shots.Add(@{ first = $first; last = $last; name = $stem })
-            $Ctx.Log.Info(('captured {0}{1}' -f $first, $(if ($last) { ' + ' + $last } else { '' })))
+            [void]$shots.Add(@{ first = $first; last = $last; name = $stem; firstLines = $firstLines; lastLines = $lastLines; firstHeight = $firstHeight; lastHeight = $lastHeight })
+            $Ctx.Log.Info(('captured {0}{1}{2}' -f $first, $(if ($last) { ' + ' + $last } else { '' }), $(if ($firstLines -ge 0) { (' (lines {0}{1}, height {2}{3})' -f $firstLines, $(if ($last) { '/' + $lastLines } else { '' }), $firstHeight, $(if ($last) { '/' + $lastHeight } else { '' })) } else { '' })))
         } finally {
             $c = Close-EbiWindow -HWnd $h -WaitMs 3000
             if (-not $c['ok']) { try { if (-not $proc.HasExited) { $proc.Kill() } } catch { } }
         }
     }
-    return @{ ok = $true; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $sets.Count }
+    return @{ ok = $true; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $sets.Count; warnings = $warnings.ToArray() }
 }
