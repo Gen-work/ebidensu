@@ -234,6 +234,82 @@ function Invoke-EbiInvertPngCore {
     }
 }
 
+function Get-EbiStripGeometry {
+    <#
+      PURE. Two pictures of the same rows, B scaled to A's height: the strip
+      FromFrac..ToFrac of A's width, in px, and whether B (scaled) is wide
+      enough to hold it. -> @{ ok; x0; x1; scaledWidthB; message }
+    #>
+    param([int]$WidthA, [int]$HeightA, [int]$WidthB, [int]$HeightB, [double]$FromFrac, [double]$ToFrac)
+    if ($WidthA -le 0 -or $HeightA -le 0 -or $WidthB -le 0 -or $HeightB -le 0) { return @{ ok = $false; x0 = 0; x1 = 0; scaledWidthB = 0; message = 'an empty picture' } }
+    if ($FromFrac -lt 0 -or $ToFrac -gt 1.0001 -or $ToFrac -le $FromFrac) { return @{ ok = $false; x0 = 0; x1 = 0; scaledWidthB = 0; message = ('no strip {0:0.000}..{1:0.000}' -f $FromFrac, $ToFrac) } }
+    $sw = [int][Math]::Round($WidthB * ([double]$HeightA / $HeightB))
+    $x0 = [int][Math]::Floor($FromFrac * $WidthA); $x1 = [int][Math]::Ceiling([Math]::Min(1.0, $ToFrac) * $WidthA)
+    if ($x1 - $x0 -lt 4) { return @{ ok = $false; x0 = $x0; x1 = $x1; scaledWidthB = $sw; message = 'the strip is narrower than 4 px' } }
+    if ($x1 -gt $sw) { return @{ ok = $false; x0 = $x0; x1 = $x1; scaledWidthB = $sw; message = ('the other picture is too narrow for the strip ({0} px, the strip ends at {1})' -f $sw, $x1) } }
+    return @{ ok = $true; x0 = $x0; x1 = $x1; scaledWidthB = $sw; message = '' }
+}
+
+function Compare-EbiPngStrip {
+    <#
+      How different is the same vertical strip of two pictures of the same
+      rows? B is scaled to A's height first (the two may be shown at other
+      sizes), the strip FromFrac..ToFrac of A's width is taken from both at
+      the same px, each softened to half size, and the mean absolute grey
+      difference (0 = the same, 255 = black vs white) is the score; ink =
+      the share of dark pixels in A's strip (a blank strip says nothing).
+      -> @{ ok; failure; message; score; ink; x0; x1 }
+         failures: file_not_found | image_read_error | geometry
+    #>
+    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac)
+    foreach ($p in @($PathA, $PathB)) { if ([string]::IsNullOrWhiteSpace($p) -or -not (Test-Path -LiteralPath $p -PathType Leaf)) { return @{ ok = $false; failure = 'file_not_found'; message = ('no picture at ' + $p); score = -1; ink = 0; x0 = 0; x1 = 0 } } }
+    return (Compare-EbiPngStripCore -PathA $PathA -PathB $PathB -FromFrac $FromFrac -ToFrac $ToFrac)
+}
+
+function Compare-EbiPngStripCore {
+    # The GDI+ half of Compare-EbiPngStrip (see Get-EbiPngSizeCore).
+    param([string]$PathA, [string]$PathB, [double]$FromFrac, [double]$ToFrac)
+    [void](Get-EbiDrawing)
+    $objs = New-Object System.Collections.ArrayList
+    try {
+        $msA = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($PathA)); [void]$objs.Add($msA)
+        $imA = [System.Drawing.Image]::FromStream($msA); [void]$objs.Add($imA)
+        $msB = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($PathB)); [void]$objs.Add($msB)
+        $imB = [System.Drawing.Image]::FromStream($msB); [void]$objs.Add($imB)
+        $g = Get-EbiStripGeometry -WidthA $imA.Width -HeightA $imA.Height -WidthB $imB.Width -HeightB $imB.Height -FromFrac $FromFrac -ToFrac $ToFrac
+        if (-not $g['ok']) { return @{ ok = $false; failure = 'geometry'; message = $g['message']; score = -1; ink = 0; x0 = $g['x0']; x1 = $g['x1'] } }
+        $sw = [int](($g['x1'] - $g['x0'] + 1) / 2); $sh = [int](($imA.Height + 1) / 2)
+        $grey = New-Object 'System.Collections.Generic.List[byte[]]'
+        foreach ($pair in @(@($imA, $imA.Width), @($imB, [int]$g['scaledWidthB']))) {
+            $im = $pair[0]; $fullW = [int]$pair[1]
+            $bmp = New-Object System.Drawing.Bitmap($sw, $sh, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb); [void]$objs.Add($bmp)
+            $gfx = [System.Drawing.Graphics]::FromImage($bmp); [void]$objs.Add($gfx)
+            $gfx.Clear([System.Drawing.Color]::White)
+            $gfx.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            # the whole picture scaled to (fullW x A height), then halved, drawn so the strip lands at 0
+            $scale = 0.5 * ([double]$imA.Height / $im.Height)
+            $dst = New-Object System.Drawing.RectangleF((-0.5 * $g['x0']), 0, [single]($im.Width * $scale), [single]($im.Height * $scale))
+            $gfx.DrawImage($im, $dst)
+            $rect = New-Object System.Drawing.Rectangle(0, 0, $sw, $sh)
+            $data = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+            $stride = [int]$data.Stride
+            $buf = New-Object byte[] ($stride * $sh)
+            [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $buf, 0, $buf.Length)
+            $bmp.UnlockBits($data)
+            $gy = New-Object byte[] ($sw * $sh)
+            for ($y = 0; $y -lt $sh; $y++) { $row = $y * $stride; for ($x = 0; $x -lt $sw; $x++) { $o = $row + $x * 3; $gy[$y * $sw + $x] = [byte](([int]$buf[$o] + [int]$buf[$o + 1] + [int]$buf[$o + 2]) / 3) } }
+            $grey.Add($gy)
+        }
+        $a = $grey[0]; $b = $grey[1]; $sum = 0; $dark = 0
+        for ($i = 0; $i -lt $a.Length; $i++) { $sum += [Math]::Abs([int]$a[$i] - [int]$b[$i]); if ([int]$a[$i] -lt 128) { $dark++ } }
+        return @{ ok = $true; failure = ''; message = ''; score = [Math]::Round($sum / [double]$a.Length, 2); ink = [Math]::Round($dark / [double]$a.Length, 4); x0 = $g['x0']; x1 = $g['x1'] }
+    } catch {
+        return @{ ok = $false; failure = 'image_read_error'; message = $_.Exception.Message; score = -1; ink = 0; x0 = 0; x1 = 0 }
+    } finally {
+        for ($i = $objs.Count - 1; $i -ge 0; $i--) { try { $objs[$i].Dispose() } catch { } }
+    }
+}
+
 function Get-EbiInkCounts {
     <#
       Per pixel row, how many pixels of a vertical strip are "ink":

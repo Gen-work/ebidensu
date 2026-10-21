@@ -4,12 +4,12 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-90 step(s) in 9 group(s).
+91 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
-| screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.read_line_numbers`, `screen.row_region`, `screen.save` |
+| screen | `screen.capture_region`, `screen.capture_window`, `screen.compare_strip`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.read_line_numbers`, `screen.row_region`, `screen.save` |
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
@@ -424,6 +424,40 @@ failures: `window_gone` (transient), `save_failed` (transient)
 ```
 
 Notes: Captures the window rectangle from the screen (CopyFromScreen), so the window must be in front and unobscured -- run browser.ensure first.
+
+### `screen.compare_strip`
+
+Compare the same column strip of two pictures of the same rows (pixels); ok / ng / unknown + alert
+
+- file: `modules/screen/screen.compare_strip.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `a` | any |  | (empty) |  | the picture the strip is measured on (a path, or a list: its first path is taken) |
+| `b` | any |  | (empty) |  | the picture compared with it (a path or a list) |
+| `fromFrac` | any |  | 0 |  | left edge of the strip, 0..1 of a's width (excel.snap_list jobFrom) |
+| `label` | string |  | the pictures |  | for the reason / alert wording |
+| `minInk` | any |  | 0.005 |  | a strip with less dark ink than this share says nothing (unknown) |
+| `ngMin` | int |  | 25 |  | score at or above this = different |
+| `okMax` | int |  | 8 |  | score at or below this = the same |
+| `toFrac` | any |  | 1 |  | right edge, 0..1 (jobTo) |
+
+| output | type | desc |
+|--------|------|------|
+| `alert` | string | the reason when code is not ok, else empty |
+| `code` | string | ok \| ng \| unknown |
+| `reason` | string | one line for the gate |
+| `score` | any | mean grey difference 0..255; -1 when not measured |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"compare_strip","use":"screen.compare_strip","with":{"a":"capture/{{item.keySafe}}/pic1gfix/pic1.png","b":"capture/{{item.keySafe}}/pic1gift/pic1.png","fromFrac":0.8,"label":"picture 1 job column","toFrac":1}}
+```
+
+Notes: okMax / ngMin are first guesses (10/21); the gate and gate.json show the score so they can be set from real runs.
 
 ### `screen.crop`
 
@@ -1295,6 +1329,7 @@ Export every picture (and picture group / embedded object) of a sheet to PNG, to
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
 | `hideMarks` | bool |  | true |  | in a group, hide the shapes that are not pictures (red boxes) while it is exported, then show them again |
+| `only` | int |  | 0 |  | export only the n-th picture (1 = the first, top-left); 0 = all |
 | `saveDir` | path | yes |  |  | pic1.png, pic2.png, ... in sheet order; relative paths resolve under the work dir |
 | `scale` | int |  | 3 |  | export size against the size on the sheet (bigger reads better for OCR) |
 | `sheet` | string | yes |  |  |  |
@@ -1571,6 +1606,8 @@ Filter the overview list to one job and snap its rows to a PNG (on to SNDFILE wh
 | output | type | desc |
 |--------|------|------|
 | `extended` | bool | true when the snap ran on to extendTo (rows repeated from left to job) |
+| `jobFrom` | any | left edge of the job column across the picture, 0..1 of its width (screen.compare_strip) |
+| `jobTo` | any | right edge of the job column, 0..1 |
 | `lines` | list | each row's cells from left to the right edge, tab-joined (for the gate) |
 | `png` | path |  |
 | `range` | string | the snapped address, e.g. B4:O7 |

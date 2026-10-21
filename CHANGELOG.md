@@ -1,3 +1,28 @@
+## 2026-10-21 - picture 1 checked by the job column's pixels, not OCR (v2.32.0)
+
+10/21: the picture-1 OCR check read the job name wrong every time
+(MJ00JOAC for MJODJDBC, GAOMWAV for KJODJWBV) and drew a false red line.
+Operator: compare the pixels of the same part -- the ジョブ column -- of the
+new GFIX snap with the GIFT side's picture 1.
+
+### Added
+- **screen.compare_strip** + `Compare-EbiPngStrip` / pure
+  `Get-EbiStripGeometry` (kernel/Image.ps1): the second picture scaled to
+  the first one's height, the same strip of both, softened to half size,
+  the mean grey difference -> ok (<= okMax 8) / ng (>= ngMin 25) /
+  unknown; a blank strip or a picture that does not fit is unknown. The
+  thresholds are first guesses: the gate line and gate.json carry the
+  score.
+- **excel.snap_list `jobFrom` / `jobTo`**: where the job column sits
+  across the snap (0..1 of its width).
+- **excel.export_pictures `only`**: export just the n-th picture.
+
+### Changed
+- **gfixRecv.evidence** (0.7.0): pic1Ocr / pic1Job replaced by gfixPic1 +
+  giftPic1 (picture 1 of each receive-result sheet) -> pic1Cmp; the gate
+  reason / alert and gate.json use it. screen.ocr / verify.find_token stay
+  in the catalog.
+
 ## 2026-10-21 - DF END picture runs to the file's end; red boxes hidden for OCR (v2.31.2)
 
 10/21 KJODWWBV again: HOST 007550-007568, but 007568 sits under a red box

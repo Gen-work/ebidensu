@@ -51,7 +51,7 @@
       "fromCell": "B3"
     },
     "checklist": [
-      "GFIX受信結果 B3: the Excel snap is THIS job's row(s) (last column ジョブ = the J name); several rows that look the same -> the snap runs on to 元ファイル(SNDFILE), and GIFT受信結果's picture 1 is the same new snap",
+      "GFIX受信結果 B3: the Excel snap is THIS job's row(s) (its ジョブ column is compared with GIFT受信結果's picture 1 by pixels; red when they differ); several rows that look the same -> the snap runs on to 元ファイル(SNDFILE), and GIFT受信結果's picture 1 is the same new snap",
       "GFIX受信ログ from row 8, label bold; yellow rows on the Command / uploaded lines",
       "GFIXReceive.log block: yellow on fileName / file stored",
       "Jenkins picture: red box on this job's file",

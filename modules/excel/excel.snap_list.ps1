@@ -40,6 +40,8 @@ $Manifest = @{
     extended = @{ type='bool';   desc='true when the snap ran on to extendTo (rows repeated from left to job)' }
     range    = @{ type='string'; desc='the snapped address, e.g. B4:O7' }
     lines    = @{ type='list';   desc='each row''s cells from left to the right edge, tab-joined (for the gate)' }
+    jobFrom  = @{ type='any';    desc='left edge of the job column across the picture, 0..1 of its width (screen.compare_strip)' }
+    jobTo    = @{ type='any';    desc='right edge of the job column, 0..1' }
   }
   failures   = @(
     @{ id = 'sheet_not_found';  transient = $false }
@@ -144,7 +146,7 @@ function ExcelSnapList-CopyPicture {
 
 function Invoke-Step {
     param($In, $Ctx)
-    $none = @{ png = ''; rows = 0; extended = $false; range = ''; lines = @() }
+    $none = @{ png = ''; rows = 0; extended = $false; range = ''; lines = @(); jobFrom = 0.0; jobTo = 0.0 }
     if ($Ctx['DryRun']) { $Ctx.Log.Info(('would filter {0} to {1} and snap it' -f $In['sheet'], $In['value'])); $none['ok'] = $true; return $none }
     $ws = Get-EbiSheet -Workbook $In['workbook'] -Sheet $In['sheet']
     if ($null -eq $ws) { $r = $none.Clone(); $r['ok'] = $false; $r['failure'] = 'sheet_not_found'; $r['message'] = ('sheet "' + $In['sheet'] + '" not found'); return $r }
@@ -187,6 +189,11 @@ function Invoke-Step {
         $h = 0.0
         for ($rr = $gRow; $rr -le $lastVis; $rr++) { if (-not [bool]$ws.Rows.Item($rr).Hidden) { $h += [double]$ws.Rows.Item($rr).Height } }
         $w = [double]$snap.Width
+        # where the job column sits across the picture (0..1 of its width), for
+        # screen.compare_strip: the GIFT side's picture 1 must show the same
+        # job there (10/21, the operator: compare that part, not OCR)
+        $jobFrom = 0.0; $jobTo = 0.0
+        try { if ($w -gt 0) { $jl = [double]$ws.Cells.Item($gRow, $cJ).Left - [double]$snap.Left; $jobFrom = $jl / $w; $jobTo = ($jl + [double]$ws.Columns.Item($cJ).Width) / $w } } catch { }
         $cp = ExcelSnapList-CopyPicture -Worksheet $ws -Range $snap
         if (-not $cp['ok']) { $r = $none.Clone(); $r['ok'] = $false; $r['failure'] = 'copy_failed'; $r['message'] = $cp['message']; return $r }
         $dir = Split-Path -Parent $png
@@ -207,7 +214,7 @@ function Invoke-Step {
         $addr = (ExcelSnapList-ColumnLetter $cL) + $gRow + ':' + (ExcelSnapList-ColumnLetter $edge) + $lastVis
         if ($extended) { $Ctx.Log.Info(('{0}: {1} rows repeat from {2} to the job column -> snapped on to {3} ({4})' -f $In['value'], $vis.Count, (ExcelSnapList-ColumnLetter $cL), (ExcelSnapList-ColumnLetter $cX), $addr)) }
         else { $Ctx.Log.Info(('{0}: {1} row(s), snapped {2}' -f $In['value'], $vis.Count, $addr)) }
-        return @{ ok = $true; png = $png; rows = $vis.Count; extended = [bool]$extended; range = $addr; lines = $lines.ToArray() }
+        return @{ ok = $true; png = $png; rows = $vis.Count; extended = [bool]$extended; range = $addr; lines = $lines.ToArray(); jobFrom = [double]$jobFrom; jobTo = [double]$jobTo }
     } catch {
         $r = $none.Clone(); $r['ok'] = $false; $r['failure'] = 'copy_failed'; $r['message'] = (Format-EbiExcelError -Stage 'filter' -ErrorRecord $_); return $r
     } finally {
