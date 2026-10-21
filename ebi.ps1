@@ -26,6 +26,9 @@
 #                          asks first instead of silently starting anew (P0-R16)
 #    -Only <key,key>       only these rows (by key display), on top of pendingWhen
 #    -AllDays              also rows the plan did not give today (worklist "day" column)
+#    -Silent               keep windows behind: only a step that must see or type
+#                          into a page takes the front, a question brings the
+#                          console (also ebi.local.json { "operator": { "silent": true } })
 #    -Operator <name>      run.operator (default $env:USERNAME)
 #    -Limit <n>            row cap
 #    -Var k=v [-Var ...]   override workflow vars
@@ -49,12 +52,17 @@ param(
     [string]$TimeWindow = '',
     [switch]$Resume,
     [switch]$AllDays,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$Silent
 )
 
 $ErrorActionPreference = 'Stop'
 # Capture switches BEFORE dot-sourcing anything (CLAUDE.md switch pattern).
 $dryRunFlag = [bool]$DryRun.IsPresent
+$silentFlag = [bool]$Silent.IsPresent
+# silent mode (kernel/Gate.ps1 Test-EbiSilent): set before anything runs;
+# a menu's child run inherits it
+if ($silentFlag) { $env:EBI_SILENT = '1' }
 $resumeFlag = [bool]$Resume.IsPresent
 $allDaysFlag = [bool]$AllDays.IsPresent
 try {
@@ -359,6 +367,7 @@ $wd = (Resolve-Path -LiteralPath $wd).ProviderPath
 $prof = Read-EbiCliProfile -Workflow $wf['value'] -Option $Profile -WorkDirValue $wd
 if (-not $prof['ok']) { Write-Host ('[ERROR] profile: ' + $prof['message']) -ForegroundColor Red; exit 2 }
 $profileData = if ($null -ne $prof['value']) { $prof['value'] } else { @{} }
+if (Test-EbiProfileSilent -Profile $profileData) { $env:EBI_SILENT = '1' }   # operator.silent in ebi.local.json
 
 if ($cmd -eq 'lint') {
     $catalog = ConvertTo-EbiLintCatalog -Entries @(Get-EbiCatalogEntries)

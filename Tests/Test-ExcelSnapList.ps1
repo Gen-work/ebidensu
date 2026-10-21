@@ -33,6 +33,9 @@ $keep = $env:EBI_WATCH_MS
 $env:EBI_WATCH_MS = ''; Assert-Equal 700 (Get-EbiWatchDwellMs) 'watch: default 700 ms'
 $env:EBI_WATCH_MS = '0'; Assert-Equal 0 (Get-EbiWatchDwellMs) 'watch: 0 turns it off'
 $env:EBI_WATCH_MS = 'x'; Assert-Equal 700 (Get-EbiWatchDwellMs) 'watch: junk -> default'
+$keepSilent = $env:EBI_SILENT
+$env:EBI_WATCH_MS = '900'; $env:EBI_SILENT = '1'; Assert-Equal 0 (Get-EbiWatchDwellMs) 'watch: silent mode holds nothing'
+$env:EBI_SILENT = $keepSilent
 $env:EBI_WATCH_MS = $keep
 
 # the overview's two header rows as the 10/16 picture shows them (index 0 unused)
