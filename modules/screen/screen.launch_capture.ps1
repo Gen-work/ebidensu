@@ -51,13 +51,15 @@ $Manifest = @{
     fitPitchPx   = @{ type='int';    default=18; desc='px a line (DF: 18, measured 10/19)' }
     fitStepPx    = @{ type='int';    default=6; desc='fine resize step near the target' }
     fitTries     = @{ type='int';    default=8; desc='resizes per capture before giving up (warning fit_failed, the capture kept)' }
+    plans        = @{ type='list';   default=@(); desc='one per argument set, in order (verify.df_ranges plans): mode align = the first picture shows first lines from the top, the second (end > 0) the END view of end lines -- the window starts at height / heightEnd moved by the difference in lines x fitPitchPx and the fit makes it exact; any other mode, or none, = the line rule' }
+    reuse        = @{ type='list';   default=@(); desc='shots of an earlier call for the same argument sets (track.json dfShots): a set whose earlier pictures exist and show the lines wanted now (firstLines / lastLines) is not run again' }
     windowWaitSec = @{ type='int';   default=15 }
     windowTitle  = @{ type='string'; default=''; desc='fallback when the started process shows no window of its own (a launcher / single-instance program): the top-level window whose title contains this' }
     closeOthers  = @{ type='bool';   default=$false; desc='close every window whose title contains windowTitle before each start, so the only such window is the new one' }
     settleMs     = @{ type='int';    default=1200; desc='wait after the window appears / after keys' }
   }
   outputs    = @{
-    shots = @{ type='list'; desc='@{ first; last; name; firstLines; lastLines; firstHeight; lastHeight } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted)' }
+    shots = @{ type='list'; desc='@{ first; last; name; firstLines; lastLines; firstHeight; lastHeight; reused; aligned } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted; reused = the earlier shot was kept; aligned = a plan of mode align was followed)' }
     paths = @{ type='list'; desc='every capture, in order' }
     runs  = @{ type='int' }
   }
@@ -185,6 +187,51 @@ function ScreenLaunchCapture-Want {
     return [Math]::Min($sl, [int]$Set[$lf])
 }
 
+function ScreenLaunchCapture-ShotPlan {
+    <#
+      PURE. What to capture for one argument set: @{ wantFirst; two; keys;
+      view; wantLast; firstHeight; lastHeight; aligned } (heights before
+      any fit delta; lastHeight 0 = keep the first height). Plan: a
+      verify.df_ranges plan or $null.
+    #>
+    param($Set, $In, $Plan)
+    $pitch = [int]$In['fitPitchPx']
+    $sl = [int]$In['screenLines']
+    $le = if ([int]$In['linesEnd'] -gt 0) { [int]$In['linesEnd'] } else { $sl }
+    if ($Plan -is [System.Collections.IDictionary] -and [string]$Plan['mode'] -eq 'align' -and [int]$Plan['first'] -gt 0) {
+        $wf = [int]$Plan['first']; $we = [int]$Plan['end']
+        $hf = if ([int]$In['height'] -gt 0) { [int]$In['height'] + ($wf - $sl) * $pitch } else { 0 }
+        $he = 0
+        if ($we -gt 0) { $base = if ([int]$In['heightEnd'] -gt 0) { [int]$In['heightEnd'] } else { [int]$In['height'] }; if ($base -gt 0) { $he = $base + ($we - $le) * $pitch } }
+        return @{ wantFirst = $wf; two = ($we -gt 0); keys = $(if ($we -gt 0) { [string]$In['keysSecond'] } else { '' }); view = $(if ($we -gt 0) { 'end' } else { '' }); wantLast = $we; firstHeight = $hf; lastHeight = $he; aligned = $true }
+    }
+    $p2 = ScreenLaunchCapture-SecondPlan -Set $Set -ScreenLines $sl -LinesField ([string]$In['linesField']) -SecondField ([string]$In['secondField']) -KeysMid ([string]$In['keysMid']) -KeysSecond ([string]$In['keysSecond'])
+    $wl = if ([string]$p2['view'] -eq 'end') { ScreenLaunchCapture-Want -Set $Set -In $In -View 'end' } else { 0 }
+    $he = if ([string]$p2['view'] -eq 'end' -and [int]$In['heightEnd'] -gt 0) { [int]$In['heightEnd'] } else { 0 }
+    return @{ wantFirst = (ScreenLaunchCapture-Want -Set $Set -In $In -View 'first'); two = [bool]$p2['two']; keys = [string]$p2['keys']; view = [string]$p2['view']; wantLast = $wl; firstHeight = [int]$In['height']; lastHeight = $he; aligned = $false }
+}
+
+function ScreenLaunchCapture-CanReuse {
+    <#
+      PURE but for the file checks. An earlier shot @{ first; last;
+      firstLines; lastLines } serves the plan when its files exist and it
+      showed the lines wanted (a want of 0 = not checked: no fit, the
+      PgDn page). Shots from before the fit (no firstLines) never do.
+    #>
+    param($Old, $Plan)
+    if (-not ($Old -is [System.Collections.IDictionary])) { return $false }
+    $f = [string]$Old['first']
+    if ($f -eq '' -or -not (Test-Path -LiteralPath $f -PathType Leaf)) { return $false }
+    if (-not $Old.Contains('firstLines')) { return $false }
+    if ([int]$Plan['wantFirst'] -gt 0 -and [int]$Old['firstLines'] -ne [int]$Plan['wantFirst']) { return $false }
+    $l = [string]$Old['last']
+    if ([bool]$Plan['two']) {
+        if ($l -eq '' -or -not (Test-Path -LiteralPath $l -PathType Leaf)) { return $false }
+        if ([int]$Plan['wantLast'] -gt 0 -and [int]$Old['lastLines'] -ne [int]$Plan['wantLast']) { return $false }
+    } elseif ($l -ne '') { return $false }
+    return $true
+}
+
 function ScreenLaunchCapture-Stem {
     param($Set, [string]$Field, [int]$N)
     if (-not [string]::IsNullOrWhiteSpace($Field) -and $Set.Contains($Field) -and -not [string]::IsNullOrWhiteSpace([string]$Set[$Field])) {
@@ -232,9 +279,11 @@ function Invoke-Step {
         foreach ($s in $sets) {
             $n++
             $stem = ScreenLaunchCapture-Stem -Set $s -Field ([string]$In['nameField']) -N $n
-            $two = (ScreenLaunchCapture-SecondPlan -Set $s -ScreenLines ([int]$In['screenLines']) -LinesField ([string]$In['linesField']) -SecondField ([string]$In['secondField']) -KeysMid ([string]$In['keysMid']) -KeysSecond ([string]$In['keysSecond']))['two']
+            $plansD = @($In['plans'])
+            $spD = ScreenLaunchCapture-ShotPlan -Set $s -In $In -Plan $(if ($n - 1 -lt $plansD.Count) { $plansD[$n - 1] } else { $null })
+            $two = [bool]$spD['two']
             $f = Join-Path $dir ($stem + '__first.png'); $l = if ($two) { Join-Path $dir ($stem + '__last.png') } else { '' }
-            $Ctx.Log.Info(('would run {0} {1} and capture {2}{3}' -f $exe, (@($fields | ForEach-Object { '"' + [string]$s[$_] + '"' }) -join ' '), $f, $(if ($two) { ' + ' + $l } else { '' })))
+            $Ctx.Log.Info(('would run {0} {1} and capture {2}{3} ({4} lines{5}{6})' -f $exe, (@($fields | ForEach-Object { '"' + [string]$s[$_] + '"' }) -join ' '), $f, $(if ($two) { ' + ' + $l } else { '' }), $spD['wantFirst'], $(if ($two) { '/' + $spD['wantLast'] } else { '' }), $(if ($spD['aligned']) { ', lined up with the HOST pictures' } else { '' })))
             [void]$shots.Add(@{ first = $f; last = $l; name = $stem }); [void]$paths.Add($f); if ($two) { [void]$paths.Add($l) }
         }
         if ($sets.Count -eq 0) { $Ctx.Log.Info(('would run {0} for no argument set' -f $exe)) }
@@ -247,6 +296,15 @@ function Invoke-Step {
     foreach ($s in $sets) {
         $n++
         $stem = ScreenLaunchCapture-Stem -Set $s -Field ([string]$In['nameField']) -N $n
+        $plans = @($In['plans']); $olds = @($In['reuse'])
+        $sp = ScreenLaunchCapture-ShotPlan -Set $s -In $In -Plan $(if ($n - 1 -lt $plans.Count) { $plans[$n - 1] } else { $null })
+        $old = if ($n - 1 -lt $olds.Count) { $olds[$n - 1] } else { $null }
+        if (ScreenLaunchCapture-CanReuse -Old $old -Plan $sp) {
+            [void]$shots.Add(@{ first = [string]$old['first']; last = [string]$old['last']; name = $stem; firstLines = [int]$old['firstLines']; lastLines = $(if ($old.Contains('lastLines')) { [int]$old['lastLines'] } else { -1 }); firstHeight = $(if ($old.Contains('firstHeight')) { [int]$old['firstHeight'] } else { 0 }); lastHeight = $(if ($old.Contains('lastHeight')) { [int]$old['lastHeight'] } else { 0 }); reused = $true })
+            [void]$paths.Add([string]$old['first']); if ([string]$old['last'] -ne '') { [void]$paths.Add([string]$old['last']) }
+            $Ctx.Log.Info(('{0}: the earlier pictures already show {1}{2} lines, kept' -f $stem, $sp['wantFirst'], $(if ($sp['two']) { '/' + $sp['wantLast'] } else { '' })))
+            continue
+        }
         $argList = @($fields | ForEach-Object { '"' + ([string]$s[$_]).Replace('"', '') + '"' })
         $wt = [string]$In['windowTitle']
         # file STEMS: a long title is cut by the program (DF showed
@@ -301,14 +359,14 @@ function Invoke-Step {
         }
         try {
             Start-Sleep -Milliseconds ([int]$In['settleMs'])
-            $hFirst = [int]$In['height']
+            $hFirst = [int]$sp['firstHeight']
             if ($hFirst -gt 0) { $hFirst += $fitDelta }
             if ([int]$In['width'] -gt 0 -and $hFirst -gt 0) { [void](Set-EbiWindowVisibleSize -HWnd $h -X ([int]$In['x']) -Y ([int]$In['y']) -W ([int]$In['width']) -H $hFirst) }
             $fg = Set-EbiForeground -HWnd $h
             if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1; warnings = $warnings.ToArray() } }
             if (-not [string]::IsNullOrEmpty([string]$In['keysFirst'])) { Send-EbiKeys -Keys ([string]$In['keysFirst']) -WaitMs ([int]$In['settleMs']) }
             $first = Join-Path $dir ($stem + '__first.png')
-            $wantFirst = ScreenLaunchCapture-Want -Set $s -In $In -View 'first'
+            $wantFirst = [int]$sp['wantFirst']
             $r = ScreenLaunchCapture-FitShot -HWnd $h -Dest $first -In $In -Height $hFirst -Want $wantFirst -Keys ([string]$In['keysFirst'])
             if (-not $r['ok']) { return @{ ok = $false; failure = $(if ($r['failure'] -in @('no_window', 'foreground_lost')) { $r['failure'] } else { 'save_failed' }); message = $r['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1; warnings = $warnings.ToArray() } }
             [void]$paths.Add($first)
@@ -316,11 +374,11 @@ function Invoke-Step {
             if ([bool]$r['fitted']) { if ($hFirst -gt 0) { $fitDelta += ($firstHeight - $hFirst) } }
             else { [void]$warnings.Add(@{ code = 'fit_failed'; message = ('{0}: the first picture shows {1} lines, wanted {2} -- look at it before review' -f $stem, $firstLines, $wantFirst); data = @{ path = $first; lines = $firstLines; want = $wantFirst; height = $firstHeight } }) }
             $last = ''; $lastLines = -1; $lastHeight = 0
-            $plan2 = ScreenLaunchCapture-SecondPlan -Set $s -ScreenLines ([int]$In['screenLines']) -LinesField ([string]$In['linesField']) -SecondField ([string]$In['secondField']) -KeysMid ([string]$In['keysMid']) -KeysSecond ([string]$In['keysSecond'])
+            $plan2 = $sp
             if ([bool]$plan2['two']) {
                 $hLast = $firstHeight
-                if ([string]$plan2['view'] -eq 'end' -and [int]$In['heightEnd'] -gt 0 -and [int]$In['width'] -gt 0) {
-                    $hLast = [int]$In['heightEnd'] + $fitDelta
+                if ([string]$plan2['view'] -eq 'end' -and [int]$sp['lastHeight'] -gt 0 -and [int]$In['width'] -gt 0) {
+                    $hLast = [int]$sp['lastHeight'] + $fitDelta
                     if ($hLast -ne $firstHeight) {
                         [void](Set-EbiWindowVisibleSize -HWnd $h -X ([int]$In['x']) -Y ([int]$In['y']) -W ([int]$In['width']) -H $hLast)
                         Start-Sleep -Milliseconds 300
@@ -332,14 +390,14 @@ function Invoke-Step {
                 $last = Join-Path $dir ($stem + '__last.png')
                 # the PgDn page shows what is left of the file under a window
                 # already fitted: nothing to fit; the END view is fitted
-                $wantLast = if ([string]$plan2['view'] -eq 'end') { ScreenLaunchCapture-Want -Set $s -In $In -View 'end' } else { 0 }
+                $wantLast = [int]$sp['wantLast']
                 $r = ScreenLaunchCapture-FitShot -HWnd $h -Dest $last -In $In -Height $hLast -Want $wantLast -Keys ([string]$plan2['keys'])
                 if (-not $r['ok']) { return @{ ok = $false; failure = $(if ($r['failure'] -in @('no_window', 'foreground_lost')) { $r['failure'] } else { 'save_failed' }); message = $r['message']; shots = $shots.ToArray(); paths = $paths.ToArray(); runs = $n - 1; warnings = $warnings.ToArray() } }
                 [void]$paths.Add($last)
                 $lastLines = [int]$r['lines']; $lastHeight = [int]$r['height']
                 if (-not [bool]$r['fitted']) { [void]$warnings.Add(@{ code = 'fit_failed'; message = ('{0}: the END picture shows {1} lines, wanted {2} -- look at it before review' -f $stem, $lastLines, $wantLast); data = @{ path = $last; lines = $lastLines; want = $wantLast; height = $lastHeight } }) }
             }
-            [void]$shots.Add(@{ first = $first; last = $last; name = $stem; firstLines = $firstLines; lastLines = $lastLines; firstHeight = $firstHeight; lastHeight = $lastHeight })
+            [void]$shots.Add(@{ first = $first; last = $last; name = $stem; firstLines = $firstLines; lastLines = $lastLines; firstHeight = $firstHeight; lastHeight = $lastHeight; reused = $false; aligned = [bool]$sp['aligned'] })
             $Ctx.Log.Info(('captured {0}{1}{2}' -f $first, $(if ($last) { ' + ' + $last } else { '' }), $(if ($firstLines -ge 0) { (' (lines {0}{1}, height {2}{3})' -f $firstLines, $(if ($last) { '/' + $lastLines } else { '' }), $firstHeight, $(if ($last) { '/' + $lastHeight } else { '' })) } else { '' })))
         } finally {
             $c = Close-EbiWindow -HWnd $h -WaitMs 3000

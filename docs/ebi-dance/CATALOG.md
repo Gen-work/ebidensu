@@ -4,16 +4,16 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-87 step(s) in 9 group(s).
+90 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
-| screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.row_region`, `screen.save` |
+| screen | `screen.capture_region`, `screen.capture_window`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.read_line_numbers`, `screen.row_region`, `screen.save` |
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
-| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.highlight`, `excel.insert_pictures`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
+| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.require` |
@@ -580,6 +580,8 @@ Run a program per argument set, capture its window (and again after keys), close
 | `linesEnd` | int |  | 0 |  | line rule: the lines the END-view capture must show (fitStrip); 0 = screenLines |
 | `linesField` | string |  | lines |  | field of each map holding its line count (the line rule) |
 | `nameField` | string |  | rightName |  | field naming the capture files (its file stem is used); blank = run number |
+| `plans` | list |  | [] |  | one per argument set, in order (verify.df_ranges plans): mode align = the first picture shows first lines from the top, the second (end > 0) the END view of end lines -- the window starts at height / heightEnd moved by the difference in lines x fitPitchPx and the fit makes it exact; any other mode, or none, = the line rule |
+| `reuse` | list |  | [] |  | shots of an earlier call for the same argument sets (track.json dfShots): a set whose earlier pictures exist and show the lines wanted now (firstLines / lastLines) is not run again |
 | `saveDir` | path | yes |  |  |  |
 | `screenLines` | int |  | 0 |  | data lines one capture shows; > 0 switches to the line rule: lines <= screenLines one capture, <= 2 x screenLines the second capture after keysMid, more after keysSecond |
 | `secondField` | string |  | long |  | field that is true when a second capture is wanted |
@@ -594,7 +596,7 @@ Run a program per argument set, capture its window (and again after keys), close
 |--------|------|------|
 | `paths` | list | every capture, in order |
 | `runs` | int |  |
-| `shots` | list | @{ first; last; name; firstLines; lastLines; firstHeight; lastHeight } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted) |
+| `shots` | list | @{ first; last; name; firstLines; lastLines; firstHeight; lastHeight; reused; aligned } per run (last empty when no second capture; *Lines = text lines counted by the fit, -1 when not fitted; reused = the earlier shot was kept; aligned = a plan of mode align was followed) |
 
 failures: `file_not_found` (not transient), `no_window` (transient), `foreground_lost` (transient), `save_failed` (transient)
 
@@ -664,6 +666,34 @@ failures: `file_not_found` (not transient)
 ```
 
 Notes: OCR misreads look-alikes (O/0, I/1, S/5, B/8): compare with verify.find_token, which folds them. Windows only; on another host available=false.
+
+### `screen.read_line_numbers`
+
+OCR the line numbers at the left of each picture -> first / last / count per picture
+
+- file: `modules/screen/screen.read_line_numbers.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `digits` | int |  | 6 |  | digits of a line number (HOST: 6); 5..digits are accepted, OCR drops a leading 0 at times |
+| `language` | string |  | en-US |  |  |
+| `minLines` | int |  | 3 |  | fewer numbered lines than this = not a numbered listing (ok false) |
+| `paths` | list | yes |  |  | PNGs (excel.export_pictures paths) |
+
+| output | type | desc |
+|--------|------|------|
+| `available` | bool | false: OCR could not run on this PC (every range ok false) |
+| `ranges` | list | @{ path; ok; first; last; count; reason } per picture, in input order |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"read_line_numbers","use":"screen.read_line_numbers","with":{"paths":"{{steps.hostPics.out.paths}}"}}
+```
+
+Notes: OCR look-alikes inside a number (O/o/D -> 0, I/l/| -> 1, S -> 5, B -> 8) are folded before parsing.
 
 ### `screen.row_region`
 
@@ -1253,6 +1283,35 @@ failures: `excel_unavailable` (not transient)
 ```
 
 Notes: Always a NEW instance: workbooks the operator has open in their own Excel are not touched (excel.open reports read_only if one of them is the target). Release with excel.quit_app in teardown.
+
+### `excel.export_pictures`
+
+Export every picture of a sheet to PNG, top-to-bottom
+
+- file: `modules/excel/excel.export_pictures.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `saveDir` | path | yes |  |  | pic1.png, pic2.png, ... in sheet order; relative paths resolve under the work dir |
+| `scale` | int |  | 3 |  | export size against the size on the sheet (bigger reads better for OCR) |
+| `sheet` | string | yes |  |  |  |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `groups` | list | names of grouped shapes (Ctrl+G) on the sheet: their pictures are not exported |
+| `paths` | list | the exported PNGs, top-to-bottom (a picture that would not export is left out, with a warning) |
+| `pictures` | int | pictures on the sheet |
+
+failures: `sheet_not_found` (not transient)
+
+```json
+{"id":"export_pictures","use":"excel.export_pictures","with":{"saveDir":"capture/{{item.keySafe}}/host","sheet":"sendData","workbook":"wb"}}
+```
+
+Notes: Old PNGs in saveDir named pic<n>.png are removed first, so a sheet with fewer pictures than last time leaves none behind.
 
 ### `excel.highlight`
 
@@ -2041,6 +2100,36 @@ failures: `input_invalid` (not transient)
 ```
 
 Notes: A rule naming a field the record lacks reads it as empty. A pattern that does not match copies the value unchanged and lists it in unchanged (a warning), so a name that does not follow the rule is visible instead of silently wrong.
+
+### `verify.df_ranges`
+
+Per DF pair: the lines its first / END picture must show to match the HOST pictures
+
+- file: `modules/verify/verify.df_ranges.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `maxLines` | int |  | 40 |  | a picture asked for more lines than this is not trusted (default kept) |
+| `offset` | int |  | 1 |  | HOST line n = DF line n - offset |
+| `pairs` | list | yes |  |  | the DF file pairs in capture order (track.json pairs: lines = the file's line count) |
+| `ranges` | list |  | [] |  | screen.read_line_numbers ranges of the HOST pictures, sheet order |
+
+| output | type | desc |
+|--------|------|------|
+| `alert` | string | one line for the gate when a pair could not be lined up for a reason a person should check, else empty |
+| `aligned` | int | pairs whose pictures follow the HOST ranges |
+| `plans` | list | @{ mode; first; end; reason } per pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) \| free (no alignment: empty lines dropped) \| default (nothing to align to) |
+| `reason` | string | one line per pair, for the run log / gate |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"df_ranges","use":"verify.df_ranges","with":{"pairs":"{{steps.track.out.data.pairs}}","ranges":"{{steps.hostLines.out.ranges}}"}}
+```
+
+Notes: Pure. A pair with no START picture, an unreadable picture or more than two pictures keeps the default pictures, with an alert.
 
 ### `verify.filter_records`
 

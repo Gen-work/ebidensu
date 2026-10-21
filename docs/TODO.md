@@ -138,7 +138,11 @@ file stays small. Designed-then-shelved work lives in
     mapping.xlsx; next: track" / "track stopped at <step>: <reason>", the
     numbers the operator would otherwise dig out of the run log.
 - **gfix-recv: DF picture ranges copied from the HOST pictures on 送信データ**
-  (leader feedback, 2026-10-12). Today the DF rule is fixed (16 lines a
+  (leader feedback, 2026-10-12). BUILT in v2.31.0 (evidence: export ->
+  OCR line numbers -> verify.df_ranges -> DF again; KNOWLEDGE K-30). Open:
+  the first office run -- does en-US OCR read the HOST shots (as they are
+  or the negative), and does the END recipe show exactly the 20 lines
+  MJODWDBC needs. History below. Today the DF rule is fixed (16 lines a
   picture; 17..32 -> PgDn; more -> End, PgUp, Down x2) and the workbooks
   whose HOST pictures differ (e.g. 19 lines: FJODWCP2 shows 000001-000019
   and 000878-000896) are adjusted BY HAND. Wanted: read each 送信データ

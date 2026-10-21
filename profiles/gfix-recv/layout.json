@@ -55,7 +55,7 @@
       "GFIX受信ログ from row 8, label bold; yellow rows on the Command / uploaded lines",
       "GFIXReceive.log block: yellow on fileName / file stored",
       "Jenkins picture: red box on this job's file",
-      "GIFTデータvsGFIXデータ: B3 = the IF name, G3 = the STEP name (送信データ B3), DF pictures + red boxes; a second file pair: its correl id + STEP name above its DF pictures BY HAND"
+      "GIFTデータvsGFIXデータ: B3 = the IF name, G3 = the STEP name (送信データ B3), DF pictures + red boxes, the same records as the HOST pictures on 送信データ (DF line = HOST line - 1; a red line above says when they could not be lined up); a second file pair: its correl id + STEP name above its DF pictures BY HAND"
     ],
     "_checklist_doc": "the evidence GATE's 'check:' lines (10/15). Add a point when a review finds something the gate did not ask about; docs/ebi-dance/KNOWLEDGE.md says how a point grows into an automatic check.",
     "_glob_doc": "starts with J4 so the ~$ lock file Excel leaves next to an open workbook never matches"
