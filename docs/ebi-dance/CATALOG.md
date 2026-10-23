@@ -4,14 +4,14 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-91 step(s) in 9 group(s).
+92 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.compare_strip`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.read_line_numbers`, `screen.row_region`, `screen.save` |
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
-| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
+| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
 | verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
@@ -1402,7 +1402,7 @@ Stack pictures down a sheet at native size and draw red boxes on them
 | `column` | string |  | B |  | default column |
 | `gapRows` | int |  | 1 |  | blank rows between pictures when an entry does not say |
 | `lineWeight` | int |  | 0 |  | box line weight in points; 0 = 1.5 |
-| `pictures` | list | yes |  |  | paths, or @{ path; column; gapRows; rows; rects } (excel layout plan) |
+| `pictures` | list | yes |  |  | paths, or @{ path; column; gapRows; rows; rects; role } (excel layout plan) |
 | `rects` | list |  | [] |  | boxes for EVERY picture given as a plain path |
 | `replace` | bool |  | false |  | with tag: first delete the pictures and boxes an earlier run left on this sheet under the same tag (verifyPic_<tag>_* / verifyMark_<tag>_*), so a rerun replaces instead of stacking a second copy on top |
 | `row` | int | yes |  |  | row of the first picture |
@@ -1416,7 +1416,7 @@ Stack pictures down a sheet at native size and draw red boxes on them
 | `boxes` | int | rectangles drawn |
 | `nextRow` | int | first row below the last picture |
 | `removed` | int | shapes of an earlier run deleted first (replace) |
-| `shapes` | list | @{ name; path; row; top; left; width; height; boxes } |
+| `shapes` | list | @{ name; path; row; top; left; width; height; boxes; role } (role from an excel.stack_plan entry: first / separator / last / only; blank for a plain path) |
 
 failures: `sheet_not_found` (not transient), `file_not_found` (transient), `insert_failed` (transient)
 
@@ -1425,6 +1425,42 @@ failures: `sheet_not_found` (not transient), `file_not_found` (transient), `inse
 ```
 
 Notes: Not idempotent without replace: a second run adds the pictures again. With tag + replace = true a rerun deletes its own earlier pictures and boxes (by name) first -- pictures someone put there by hand are never touched. Excel is scrolled to each picture after it is drawn and held there a moment (EBI_WATCH_MS).
+
+### `excel.label_sections`
+
+Write the labels of each picture set (one row above it) from the matching set on another sheet
+
+- file: `modules/excel/excel.label_sections.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `cells` | map | yes |  |  | target column -> source column, e.g. B <- A, G <- B |
+| `fontName` | string |  | (empty) |  |  |
+| `fontSize` | int |  | 0 |  |  |
+| `fromFirstRow` | int |  | 3 |  | first row of fromSheet looked at |
+| `fromSheet` | string | yes |  |  | the sheet the labels come from |
+| `keyColumn` | string |  | A |  | a non-empty cell here starts a label row on fromSheet |
+| `shapes` | list | yes |  |  | excel.insert_pictures shapes (row, role) of those sets |
+| `sheet` | string | yes |  |  | the sheet whose picture sets get the labels |
+| `startAt` | int |  | 1 |  | first set labelled (1-based): 2 = leave set 1 to steps that already write it |
+| `trim` | bool |  | true |  |  |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `missing` | list | set numbers with no label row on fromSheet (label them by hand) |
+| `sets` | int | picture sets found in shapes |
+| `written` | list | "B66=JJPCRS12" per cell written |
+
+failures: `sheet_not_found` (not transient), `write_failed` (transient)
+
+```json
+{"id":"label_sections","use":"excel.label_sections","with":{"cells":{"B":"A","G":"B"},"fromSheet":"data","shapes":"{{steps.dfPics.out.shapes}}","sheet":"compare","startAt":2,"workbook":"wb"}}
+```
+
+Notes: A set with no label row on fromSheet is left as it is and named in missing (warning label_missing). Cells are written as plain text, like excel.write_cell.
 
 ### `excel.mark_rows`
 

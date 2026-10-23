@@ -320,6 +320,27 @@ $ret = & $wu['Invoke'] @{ path = (Join-Path $tmpRoot 'none.xlsx'); everySec = 1;
 Assert-Equal 'file_not_found' $ret['failure'] 'wait_unlocked: no file -> file_not_found'
 Remove-Item -LiteralPath $shared -Force -ErrorAction SilentlyContinue
 
+# --- 11. excel.label_sections (10/23 FJODWAF1: label every file pair's set) ---
+Write-Host '  -- excel.label_sections'
+[void](. Import-EbiStep -Registry $reg -Use 'excel.label_sections')
+$shapes = @(
+    @{ row = 4;  role = 'first' }, @{ row = 31; role = 'separator' }, @{ row = 35; role = 'last' },
+    @{ row = 67; role = 'first' }, @{ row = 94; role = 'separator' }, @{ row = 98; role = 'last' },
+    @{ row = 130; role = 'only' }
+)
+$st = @(ExcelLabelSections-Starts -Shapes $shapes)
+Assert-Equal '4,67,130' ($st -join ',') 'label_sections: a set starts at each first / only picture (separators and lasts skipped)'
+Assert-Equal '4,20' (@(ExcelLabelSections-Starts -Shapes @(@{ row = 4 }, @{ row = 20 })) -join ',') 'label_sections: plain pictures (no role) are one set each'
+$labels = @(@{ A = 'JJPCRS12'; B = 'STEP:MQFX0020' }, @{ A = 'JJPCRS12'; B = 'STEP:MQFX0030' })
+$pl = ExcelLabelSections-Plan -Starts $st -Labels $labels -Cells @{ B = 'A'; G = 'B' } -StartAt 2
+Assert-Equal 1 @($pl['writes']).Count 'label_sections: from set 2, the one set with a label row is written'
+Assert-Equal 66 ([int]$pl['writes'][0]['row']) 'label_sections: set 2 labelled one row above its first picture (66, like the operator''s FJODWAF1)'
+Assert-Equal 'JJPCRS12' ([string]$pl['writes'][0]['cells']['B']) 'label_sections: B <- the 2nd label row''s A'
+Assert-Equal 'STEP:MQFX0030' ([string]$pl['writes'][0]['cells']['G']) 'label_sections: G <- the 2nd label row''s B'
+Assert-Equal '3' (@($pl['missing']) -join ',') 'label_sections: set 3 has no 3rd label row -> missing (by hand)'
+$pl1 = ExcelLabelSections-Plan -Starts $st -Labels $labels -Cells @{ B = 'A' } -StartAt 1
+Assert-Equal 3 ([int]$pl1['writes'][0]['row']) 'label_sections: from set 1, set 1 goes to row 3 (compare sheet B3)'
+
 Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
 $failed = Complete-Tests
 exit $failed

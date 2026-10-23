@@ -1,3 +1,26 @@
+## 2026-10-23 - every file pair's section on the compare sheet gets its labels (excel.label_sections) (v2.36.0)
+
+10/23 FJODWAF1 sends two files (CSV1 / CSV2, STEP:MQFX0020 / MQFX0030).
+送信データ labels both of its sets (A3 / B3, A66 / B66), but
+GIFTデータvsGFIXデータ got only the first (B3 / G3); the second set's
+correl id and STEP name (row 66) were typed by hand. Same gap as JJDSWM51
+B26 / G26 (docs/TODO.md).
+
+- new step `excel.label_sections`: set k of a picture stack starts at the
+  k-th shape whose role is first / only; its labels go one row above it,
+  from the k-th row of the source sheet whose key column holds text
+  (`cells` = target column <- source column). A set with no label row on the
+  source is left alone and named (warning `label_missing`). Pure planning
+  (ExcelLabelSections-Starts / -Plan) is unit-tested.
+- `excel.insert_pictures`: the `shapes` output carries the plan entry's
+  `role` (first / separator / last / only; blank for a plain path).
+- `gfixRecv.evidence` 0.8.0: step `setLabels` after the DF pictures, for
+  jobs with two or more file pairs, sets 2..n (set 1 stays with ifName /
+  stepName). Profile `layout.evidence.stepName.sectionCells` = B <- A,
+  G <- B.
+- TODO item closed, RUNBOOK evidence notes, KNOWLEDGE K-32 note, catalog
+  regenerated.
+
 ## 2026-10-23 - GoAnywhere refresh: aim at the 更新 button itself (findenter:); key recipes gain findenter:<text> (v2.35.1)
 
 10/23 track on CJODWAF1 stopped with wrong_page: the refresh recipe found

@@ -41,7 +41,7 @@ $Manifest = @{
     row      = @{ type='int';    required=$true; desc='row of the first picture' }
     skipRows = @{ type='int';    default=0; desc='blank rows left before the first picture' }
     column   = @{ type='string'; default='B'; desc='default column' }
-    pictures = @{ type='list';   required=$true; desc='paths, or @{ path; column; gapRows; rows; rects } (excel layout plan)' }
+    pictures = @{ type='list';   required=$true; desc='paths, or @{ path; column; gapRows; rows; rects; role } (excel layout plan)' }
     gapRows  = @{ type='int';    default=1; desc='blank rows between pictures when an entry does not say' }
     rects    = @{ type='list';   default=@(); desc='boxes for EVERY picture given as a plain path' }
     lineWeight = @{ type='int';  default=0; desc='box line weight in points; 0 = 1.5' }
@@ -49,7 +49,7 @@ $Manifest = @{
     replace  = @{ type='bool';   default=$false; desc='with tag: first delete the pictures and boxes an earlier run left on this sheet under the same tag (verifyPic_<tag>_* / verifyMark_<tag>_*), so a rerun replaces instead of stacking a second copy on top' }
   }
   outputs    = @{
-    shapes  = @{ type='list'; desc='@{ name; path; row; top; left; width; height; boxes }' }
+    shapes  = @{ type='list'; desc='@{ name; path; row; top; left; width; height; boxes; role } (role from an excel.stack_plan entry: first / separator / last / only; blank for a plain path)' }
     nextRow = @{ type='int';  desc='first row below the last picture' }
     boxes   = @{ type='int';  desc='rectangles drawn' }
     removed = @{ type='int';  desc='shapes of an earlier run deleted first (replace)' }
@@ -69,9 +69,10 @@ function ExcelInsertPictures-Entry {
         return @{ path = [string]$P['path']; column = $(if ($P.Contains('column') -and [string]$P['column'] -ne '') { [string]$P['column'] } else { $DefaultColumn });
                   gapRows = $(if ($P.Contains('gapRows') -and $null -ne $P['gapRows']) { [int]$P['gapRows'] } else { $DefaultGap });
                   rows = $(if ($P.Contains('rows') -and $null -ne $P['rows']) { [int]$P['rows'] } else { 0 });
-                  rects = @(if ($P.Contains('rects') -and $null -ne $P['rects']) { $P['rects'] }) }
+                  rects = @(if ($P.Contains('rects') -and $null -ne $P['rects']) { $P['rects'] });
+                  role = $(if ($P.Contains('role') -and $null -ne $P['role']) { [string]$P['role'] } else { '' }) }
     }
-    return @{ path = [string]$P; column = $DefaultColumn; gapRows = $DefaultGap; rows = 0; rects = @($DefaultRects) }
+    return @{ path = [string]$P; column = $DefaultColumn; gapRows = $DefaultGap; rows = 0; rects = @($DefaultRects); role = '' }
 }
 
 function ExcelInsertPictures-IsOwnShape {
@@ -204,7 +205,7 @@ function Invoke-Step {
             $bottom = $ptop + $ph
             $next = Get-EbiRowAtOrBelow -Worksheet $ws -TopPoints $bottom -StartRow $row
             if ([int]$e['rows'] -gt 0) { $next = [Math]::Max($next, $row + [int]$e['rows']) }
-            [void]$shapes.Add(@{ name = [string]$pic.Name; path = $e['path']; row = $row; top = $ptop; left = $pl; width = $pw; height = $ph; boxes = $k })
+            [void]$shapes.Add(@{ name = [string]$pic.Name; path = $e['path']; row = $row; top = $ptop; left = $pl; width = $pw; height = $ph; boxes = $k; role = [string]$e['role'] })
             Show-EbiExcelAt -Worksheet $ws -Row $row -Front -Dwell
             $row = $next
         } catch { return @{ ok = $false; failure = 'insert_failed'; message = ($e['path'] + ': ' + $_.Exception.Message); shapes = $shapes.ToArray(); nextRow = $row; boxes = $boxes; removed = $removed } }

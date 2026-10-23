@@ -67,10 +67,11 @@ file stays small. Designed-then-shelved work lives in
   - *Kase's 10/13 review, the rest* (v2.27.0 built (a) picture 1 snapped
     from the GFIX一覧 -- on to 元ファイル(SNDFILE) when rows repeat, GIFT's
     picture 1 replaced then -- and (b) the STEP name in G3 of the FIRST
-    compare section; both still to be run on the office PC). Open: a
-    second file pair's section (JJDSWM51 B26 / G26: correl id + its own
-    STEP name above its DF pictures) -- needs excel.stack_plan to say
-    where each set starts and the n-th "STEP:" cell of 送信データ.
+    compare section; both still to be run on the office PC). The second
+    (and later) file pair's section -- DONE in v2.36.0: excel.label_sections
+    writes B / G one row above each DF set from the n-th label row of
+    送信データ (10/23 FJODWAF1 B66 / G66; JJDSWM51 B26 / G26). Office-PC run
+    still to confirm.
   - *Rows from other days are "pending"* -- DONE in v2.29.0: worklist
     column `WORKDAY` (role "day", fallback GFIX_DATE); the runner takes
     only today's rows unless -Only / -AllDays; plan picks the late / ahead
