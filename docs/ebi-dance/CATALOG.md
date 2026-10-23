@@ -1333,6 +1333,7 @@ Export every picture (and picture group / embedded object) of a sheet to PNG, to
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `firstPerRow` | bool |  | false |  | several pictures starting on the same sheet row -> only the leftmost (10/23 FJODWAF1: a wide record is shot several times scrolled right, side by side; every shot shows the same lines) |
 | `hideMarks` | bool |  | true |  | in a group, hide the shapes that are not pictures (red boxes) while it is exported, then show them again |
 | `only` | int |  | 0 |  | export only the n-th picture (1 = the first, top-left); 0 = all |
 | `saveDir` | path | yes |  |  | pic1.png, pic2.png, ... in sheet order; relative paths resolve under the work dir |

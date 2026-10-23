@@ -1222,6 +1222,11 @@
       "id": "excel.export_pictures",
       "idempotent": true,
       "inputs": {
+        "firstPerRow": {
+          "default": false,
+          "desc": "several pictures starting on the same sheet row -> only the leftmost (10/23 FJODWAF1: a wide record is shot several times scrolled right, side by side; every shot shows the same lines)",
+          "type": "bool"
+        },
         "hideMarks": {
           "default": true,
           "desc": "in a group, hide the shapes that are not pictures (red boxes) while it is exported, then show them again",
