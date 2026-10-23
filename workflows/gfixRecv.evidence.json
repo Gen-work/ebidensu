@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -198,6 +198,13 @@
     { "id": "dfPics", "use": "excel.insert_pictures",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.compare}}",
                 "row": "{{profile.layout.evidence.compareFirstRow}}", "pictures": "{{steps.dfPlan.out.pictures}}", "tag": "df", "replace": true } },
+    { "id": "setLabels", "use": "excel.label_sections",
+      "label": "ファイルが 2 組以上: 2 組目からの DF 図の上の行にも 送信データ の同じ組のラベル(B = 相関 ID、G = STEP 名)。10/23 FJODWAF1 B66 / G66",
+      "when": "steps.track.out.data.pairs.1 exists",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.compare}}", "shapes": "{{steps.dfPics.out.shapes}}",
+                "fromSheet": "{{profile.layout.evidence.sheets.sendData}}", "keyColumn": "{{profile.layout.evidence.stepName.sectionKeyColumn}}",
+                "fromFirstRow": "{{profile.layout.evidence.stepName.sectionFirstRow}}", "cells": "{{profile.layout.evidence.stepName.sectionCells}}", "startAt": 2,
+                "fontName": "{{profile.layout.evidence.font.name}}", "fontSize": "{{profile.layout.evidence.font.size}}" } },
 
     { "id": "tidy", "use": "excel.tidy",
       "with": { "workbook": "wb", "fontSheets": ["{{profile.layout.evidence.sheets.gfixResult}}"], "dismissDialogs": "{{profile.layout.evidence.saveDialogs}}", "cell": "{{profile.layout.evidence.homeCell}}", "cellFor": "{{profile.layout.evidence.homeCellFor}}",

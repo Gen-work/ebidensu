@@ -1427,7 +1427,7 @@
           "type": "int"
         },
         "pictures": {
-          "desc": "paths, or @{ path; column; gapRows; rows; rects } (excel layout plan)",
+          "desc": "paths, or @{ path; column; gapRows; rows; rects; role } (excel layout plan)",
           "required": true,
           "type": "list"
         },
@@ -1484,13 +1484,120 @@
           "type": "int"
         },
         "shapes": {
-          "desc": "@{ name; path; row; top; left; width; height; boxes }",
+          "desc": "@{ name; path; row; top; left; width; height; boxes; role } (role from an excel.stack_plan entry: first / separator / last / only; blank for a plain path)",
           "type": "list"
         }
       },
       "provides": [],
       "releases": [],
       "summary": "Stack pictures down a sheet at native size and draw red boxes on them",
+      "tier": "core"
+    },
+    "excel.label_sections": {
+      "effects": "write",
+      "example": {
+        "use": "excel.label_sections",
+        "with": {
+          "cells": {
+            "B": "A",
+            "G": "B"
+          },
+          "fromSheet": "data",
+          "shapes": "{{steps.dfPics.out.shapes}}",
+          "sheet": "compare",
+          "startAt": 2,
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.label_sections.ps1",
+      "group": "excel",
+      "id": "excel.label_sections",
+      "idempotent": true,
+      "inputs": {
+        "cells": {
+          "desc": "target column -> source column, e.g. B <- A, G <- B",
+          "required": true,
+          "type": "map"
+        },
+        "fontName": {
+          "default": "",
+          "type": "string"
+        },
+        "fontSize": {
+          "default": 0,
+          "type": "int"
+        },
+        "fromFirstRow": {
+          "default": 3,
+          "desc": "first row of fromSheet looked at",
+          "type": "int"
+        },
+        "fromSheet": {
+          "desc": "the sheet the labels come from",
+          "required": true,
+          "type": "string"
+        },
+        "keyColumn": {
+          "default": "A",
+          "desc": "a non-empty cell here starts a label row on fromSheet",
+          "type": "string"
+        },
+        "shapes": {
+          "desc": "excel.insert_pictures shapes (row, role) of those sets",
+          "required": true,
+          "type": "list"
+        },
+        "sheet": {
+          "desc": "the sheet whose picture sets get the labels",
+          "required": true,
+          "type": "string"
+        },
+        "startAt": {
+          "default": 1,
+          "desc": "first set labelled (1-based): 2 = leave set 1 to steps that already write it",
+          "type": "int"
+        },
+        "trim": {
+          "default": true,
+          "type": "bool"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "A set with no label row on fromSheet is left as it is and named in missing (warning label_missing). Cells are written as plain text, like excel.write_cell.",
+      "outputs": {
+        "missing": {
+          "desc": "set numbers with no label row on fromSheet (label them by hand)",
+          "type": "list"
+        },
+        "sets": {
+          "desc": "picture sets found in shapes",
+          "type": "int"
+        },
+        "written": {
+          "desc": "\"B66=JJPCRS12\" per cell written",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Write the labels of each picture set (one row above it) from the matching set on another sheet",
       "tier": "core"
     },
     "excel.mark_rows": {

@@ -51,9 +51,13 @@
       "extendTo": { "group": "送信", "sub": "元ファイル" }
     },
     "stepName": {
-      "_doc": "GIFTデータvsGFIXデータ: the STEP name of the send data next to the correl id (加瀬さん 10/13 review, row 328; JJDSWM51 G3 = 送信データ B3 'STEP:MQFXRSX1'). The FIRST section only: a second section (a second file pair, JJDSWM51 B26 / G26) is still labelled by hand -- docs/TODO.md.",
+      "_doc": "GIFTデータvsGFIXデータ: the STEP name of the send data next to the correl id (加瀬さん 10/13 review, row 328; JJDSWM51 G3 = 送信データ B3 'STEP:MQFXRSX1'). cell / fromCell = the FIRST section.",
       "cell": "G3",
-      "fromCell": "B3"
+      "fromCell": "B3",
+      "_sections_doc": "10/23 FJODWAF1 (two files, operator): EVERY file pair's section gets its labels, not only the first -- 送信データ A66 / B66 above the second set -> GIFTデータvsGFIXデータ B66 / G66 (one row above the second DF set). sectionCells = compare column <- send-data column; excel.label_sections writes sets 2..n (set 1 stays with ifName / stepName above).",
+      "sectionCells": { "B": "A", "G": "B" },
+      "sectionKeyColumn": "A",
+      "sectionFirstRow": 3
     },
     "checklist": [
       "GFIX受信結果 B3: the Excel snap is THIS job's row(s) (its ジョブ column is compared with GIFT受信結果's picture 1 by pixels; red when they differ); several rows that look the same -> the snap runs on to 元ファイル(SNDFILE), and GIFT受信結果's picture 1 is the same new snap",
