@@ -1,3 +1,30 @@
+## 2026-10-23 - track gates: Enter is no longer ok; t 10:15 = start again from that time, r = check the files again (flow.redo, file.set_aside) (v2.37.0)
+
+10/23 QJODWWBV / SJODWWBV: the start time written was when the Teams
+message was COPIED, not when the job ran. The GoAnywhere rows are found by
+time only, so RJODWCP2's file (and later RJODWWBV's) was downloaded into
+DATA\GFIX\QJODWWBV. The pairing gate said the line counts differ, but Enter
+meant ok there; the wrong files stayed in the delivery folder. The operator
+had no way to give another time from the gate (typed r: "not an option").
+
+- `human.gate`: `enterOk` (false: type o), `retime` (offers `t 10:15` ->
+  action retime + output `clock`), `recheck` (offers `r` -> action
+  recheck). `Read-EbiGateAnswer` lets an action declared `text = $true`
+  take text after its key (as m did).
+- new step `flow.redo` (pure): an answer found in `map` names an earlier
+  step; the runner jumps back there (only for this use, only backwards, at
+  most 5 times an item; warnings redo_refused / redo_limit) and hands
+  `answer` to the first step after the jump as typed (`$Ctx.RedoAnswer`).
+- new step `file.set_aside`: move files into a folder, never overwriting
+  (_2, _3 ...), missing files passed over.
+- `human.paste`: takes `$Ctx.RedoAnswer` as the start time, no panel.
+- `gfixRecv.track` 0.9.0: pairGate and gate get enterOk false, retime,
+  recheck; after each, `*Aside` (the files just downloaded -> capture\<W>\
+  set-aside, on t) and `*Redo` (retime -> start, recheck -> gift).
+- Tests: runner jumps (once with the answer, the 5-jump limit, never
+  forward), gate parsing, clock, flow.redo map, set_aside on real files.
+  WORKFLOW-SCHEMA 7.3a, RUNBOOK track step 8, KNOWLEDGE K-35, catalog.
+
 ## 2026-10-23 - HOST pictures side by side on one row are one shot (export_pictures firstPerRow) (v2.36.1)
 
 10/23 the three AF1 books: the DF pictures were not lined up with the HOST

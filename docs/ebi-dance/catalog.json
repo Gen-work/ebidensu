@@ -3437,6 +3437,54 @@
       "summary": "Read a text file (UTF-8, CP932 or mixed) and return its text",
       "tier": "core"
     },
+    "file.set_aside": {
+      "effects": "write",
+      "example": {
+        "use": "file.set_aside",
+        "with": {
+          "paths": "{{steps.dl.out.paths}}",
+          "toDir": "capture/{{item.keySafe}}/set-aside"
+        }
+      },
+      "failures": [
+        {
+          "id": "move_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.set_aside.ps1",
+      "group": "file",
+      "id": "file.set_aside",
+      "idempotent": true,
+      "inputs": {
+        "paths": {
+          "default": [],
+          "desc": "the files (relative: under the work dir)",
+          "type": "list"
+        },
+        "toDir": {
+          "desc": "the folder they go to (created)",
+          "required": true,
+          "type": "path"
+        }
+      },
+      "needs": [],
+      "notes": "Idempotent: a second run finds the files gone and moves nothing.",
+      "outputs": {
+        "moved": {
+          "desc": "where each moved file is now",
+          "type": "list"
+        },
+        "total": {
+          "desc": "files moved",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Move files into a folder out of the way (never overwrites; missing files passed over)",
+      "tier": "core"
+    },
     "file.wait_for_download": {
       "effects": "read",
       "example": {
@@ -3711,6 +3759,63 @@
       "provides": [],
       "releases": [],
       "summary": "Write the verdict (or a named bit) for the current item and flush",
+      "tier": "core"
+    },
+    "flow.redo": {
+      "effects": "pure",
+      "example": {
+        "use": "flow.redo",
+        "with": {
+          "action": "{{steps.gate.out.action}}",
+          "answer": "{{steps.gate.out.clock}}",
+          "map": {
+            "recheck": "gift",
+            "retime": "start"
+          }
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/flow/flow.redo.ps1",
+      "group": "flow",
+      "id": "flow.redo",
+      "idempotent": true,
+      "inputs": {
+        "action": {
+          "default": "",
+          "desc": "the answer that may ask for it (human.gate action)",
+          "type": "string"
+        },
+        "answer": {
+          "default": "",
+          "desc": "handed to the first step after the jump as its typed answer (a start time)",
+          "type": "string"
+        },
+        "map": {
+          "default": {},
+          "desc": "action -> id of the earlier step to go back to, e.g. retime -> start, recheck -> gift",
+          "type": "map"
+        }
+      },
+      "needs": [],
+      "notes": "The jump is the runner's (kernel/Runner.ps1): only to an EARLIER step of the same each list; the steps in between run again with fresh outputs. More than 5 jumps for one item are refused (warning redo_limit) so a loop cannot run forever.",
+      "outputs": {
+        "answer": {
+          "desc": "what the step after the jump gets as typed",
+          "type": "string"
+        },
+        "redo": {
+          "desc": "the step id the item goes back to; empty = go on",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Send the item back to an earlier step when an answer says so (the runner jumps)",
       "tier": "core"
     },
     "flow.require": {
@@ -3990,6 +4095,11 @@
           "required": true,
           "type": "string"
         },
+        "enterOk": {
+          "default": true,
+          "desc": "false: Enter alone is not \"ok\" -- type o (10/23: line counts differed, Enter took another job's file)",
+          "type": "bool"
+        },
         "evidence": {
           "default": "",
           "desc": "a path, or a list of paths / values, to look at",
@@ -4010,6 +4120,16 @@
           "desc": "why (verify.assert's reason), shown on the panel",
           "type": "string"
         },
+        "recheck": {
+          "default": false,
+          "desc": "offer r = a file was put right by hand: action recheck (a flow.redo after the gate goes back to the listing)",
+          "type": "bool"
+        },
+        "retime": {
+          "default": false,
+          "desc": "offer t 10:15 = the start time was wrong: action retime + clock (a flow.redo after the gate goes back to the start)",
+          "type": "bool"
+        },
         "skipFails": {
           "default": false,
           "desc": "true: the operator's s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose \"no\" makes the rest of the item pointless (a proposed start time)",
@@ -4020,7 +4140,11 @@
       "notes": "Under DryRun or without a console the panel is printed and the verdict is kept as is (action=keep). onError.policy=ask reuses this panel's rendering (kernel/Gate.ps1), so the two never drift.",
       "outputs": {
         "action": {
-          "desc": "pass | ok | ng | keep | skip",
+          "desc": "pass | ok | ng | keep | skip | retime | recheck",
+          "type": "string"
+        },
+        "clock": {
+          "desc": "retime: the start time typed after t (HH:mm:ss); else empty",
           "type": "string"
         },
         "code": {

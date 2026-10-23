@@ -351,6 +351,36 @@ $side = @(
 )
 Assert-Equal 'g25,g5,g47,g1,x' ((@(ExcelExportPictures-FirstPerRow -Shapes $side) | ForEach-Object { $_['name'] }) -join ',') 'export_pictures: firstPerRow keeps the leftmost picture of each row (a shape with no row is kept)'
 
+# --- 13. gate t <time> / r, flow.redo, file.set_aside (10/23 track) ------------
+Write-Host '  -- gate retime / recheck, flow.redo, file.set_aside'
+[void](. Import-EbiStep -Registry $reg -Use 'human.gate')
+[void](. Import-EbiStep -Registry $reg -Use 'flow.redo')
+[void](. Import-EbiStep -Registry $reg -Use 'file.set_aside')
+$ga = HumanGate-Actions -EnterOk $false -Retime $true -Recheck $true
+$a = Read-EbiGateAnswer -Text 't 10:15' -Actions $ga -Default ''
+Assert-True ($a['ok'] -and $a['action'] -eq 't' -and $a['note'] -eq '10:15') 'gate: "t 10:15" -> action t with the time as its text'
+Assert-True (Read-EbiGateAnswer -Text 'r' -Actions $ga -Default '')['ok'] 'gate: r is offered with recheck'
+Assert-True (-not (Read-EbiGateAnswer -Text '' -Actions $ga -Default '')['ok']) 'gate: with enterOk false, Enter alone is not an answer'
+Assert-True (-not (Read-EbiGateAnswer -Text 's x' -Actions $ga -Default '')['ok']) 'gate: text after a key that takes none is still a typo'
+Assert-True (-not (Read-EbiGateAnswer -Text 't 10:15' -Actions (HumanGate-Actions) -Default 'o')['ok']) 'gate: t is not offered unless retime is on'
+Assert-Equal '10:15:00' (HumanGate-Clock -Text '10:15') 'gate clock: 10:15 -> 10:15:00'
+Assert-Equal '09:05:45' (HumanGate-Clock -Text '9:05:45') 'gate clock: 9:05:45 -> 09:05:45'
+Assert-Equal '' (HumanGate-Clock -Text '25:00') 'gate clock: 25:00 is not a time'
+Assert-Equal '' (HumanGate-Clock -Text 'soon') 'gate clock: words are not a time'
+Assert-Equal 'start' (FlowRedo-Target -Action 'retime' -Map @{ retime = 'start'; recheck = 'gift' }) 'flow.redo: retime -> start'
+Assert-Equal 'gift' (FlowRedo-Target -Action 'recheck' -Map @{ retime = 'start'; recheck = 'gift' }) 'flow.redo: recheck -> gift'
+Assert-Equal '' (FlowRedo-Target -Action 'ok' -Map @{ retime = 'start' }) 'flow.redo: any other answer -> go on'
+$sa = Get-EbiStep -Registry $reg -Use 'file.set_aside'
+$gdir = Join-Path $tmpRoot 'gfix'; New-Item -ItemType Directory -Path $gdir -Force | Out-Null
+$w1 = Join-Path $gdir 'F202610230024.csv'; [System.IO.File]::WriteAllText($w1, 'wrong')
+$aside = Join-Path $tmpRoot 'set-aside'; New-Item -ItemType Directory -Path $aside -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $aside 'F202610230024.csv'), 'older')
+$ret = & $sa['Invoke'] @{ paths = @($w1, (Join-Path $gdir 'gone.csv')); toDir = $aside } (New-TestCtx)
+Assert-True ($ret['ok'] -and $ret['total'] -eq 1) 'set_aside: the file there is moved, the missing one passed over'
+Assert-True (-not (Test-Path -LiteralPath $w1)) 'set_aside: nothing left in the delivery folder'
+Assert-True (Test-Path -LiteralPath (Join-Path $aside 'F202610230024_2.csv')) 'set_aside: a name already there gets _2 (never overwrites)'
+Assert-Equal 'older' ([System.IO.File]::ReadAllText((Join-Path $aside 'F202610230024.csv'))) 'set_aside: the earlier file is untouched'
+
 Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
 $failed = Complete-Tests
 exit $failed

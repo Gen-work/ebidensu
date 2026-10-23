@@ -4,19 +4,19 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-92 step(s) in 9 group(s).
+94 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.compare_strip`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.read_line_numbers`, `screen.row_region`, `screen.save` |
-| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
+| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.set_aside`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
 | verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
-| flow | `flow.checkpoint`, `flow.require` |
+| flow | `flow.checkpoint`, `flow.redo`, `flow.require` |
 
 ## browser
 
@@ -1114,6 +1114,32 @@ failures: `file_not_found` (transient), `too_large` (not transient)
 ```json
 {"id":"read_text","use":"file.read_text","with":{"path":"log/GFIX/{{item.keySafe}}.log"}}
 ```
+
+### `file.set_aside`
+
+Move files into a folder out of the way (never overwrites; missing files passed over)
+
+- file: `modules/file/file.set_aside.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `paths` | list |  | [] |  | the files (relative: under the work dir) |
+| `toDir` | path | yes |  |  | the folder they go to (created) |
+
+| output | type | desc |
+|--------|------|------|
+| `moved` | list | where each moved file is now |
+| `total` | int | files moved |
+
+failures: `move_failed` (transient)
+
+```json
+{"id":"set_aside","use":"file.set_aside","with":{"paths":"{{steps.dl.out.paths}}","toDir":"capture/{{item.keySafe}}/set-aside"}}
+```
+
+Notes: Idempotent: a second run finds the files gone and moves nothing.
 
 ### `file.wait_for_download`
 
@@ -2632,15 +2658,19 @@ Ask the operator to confirm a verdict when it is in askWhen; pass otherwise
 | `askWhen` | list |  | ["unknown"] |  | codes that need a person |
 | `checklist` | list |  | [] |  | what to look at, one line each, shown as "check: ..." (10/15: the review points, kept in the profile so they can grow) |
 | `code` | string | yes |  |  | the verdict so far: ok \| ng \| unknown \| empty |
+| `enterOk` | bool |  | true |  | false: Enter alone is not "ok" -- type o (10/23: line counts differed, Enter took another job's file) |
 | `evidence` | any |  | (empty) |  | a path, or a list of paths / values, to look at |
 | `front` | list |  | [] |  | windows to bring to the front once the panel is drawn: each entry a piece of a window title, or a process name (EXCEL, OUTLOOK); every match comes forward (10/19: all the review-mail drafts). The answer is still typed in the console |
 | `key` | string |  | (empty) |  | which item; empty = the current item |
 | `reason` | string |  | (empty) |  | why (verify.assert's reason), shown on the panel |
+| `recheck` | bool |  | false |  | offer r = a file was put right by hand: action recheck (a flow.redo after the gate goes back to the listing) |
+| `retime` | bool |  | false |  | offer t 10:15 = the start time was wrong: action retime + clock (a flow.redo after the gate goes back to the start) |
 | `skipFails` | bool |  | false |  | true: the operator's s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time) |
 
 | output | type | desc |
 |--------|------|------|
-| `action` | string | pass \| ok \| ng \| keep \| skip |
+| `action` | string | pass \| ok \| ng \| keep \| skip \| retime \| recheck |
+| `clock` | string | retime: the start time typed after t (HH:mm:ss); else empty |
 | `code` | string | ok \| ng \| unknown \| empty -- what flow.checkpoint should write |
 | `note` | string | free text typed with m |
 
@@ -2899,6 +2929,33 @@ failures: `row_not_found` (not transient), `ambiguous` (not transient), `column_
 ```
 
 Notes: value must be a logical verdict (ok / ng / unknown / empty); a stored code is refused (value_invalid) so a workflow cannot hard-wire the profile's encoding.
+
+### `flow.redo`
+
+Send the item back to an earlier step when an answer says so (the runner jumps)
+
+- file: `modules/flow/flow.redo.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `action` | string |  | (empty) |  | the answer that may ask for it (human.gate action) |
+| `answer` | string |  | (empty) |  | handed to the first step after the jump as its typed answer (a start time) |
+| `map` | map |  | {} |  | action -> id of the earlier step to go back to, e.g. retime -> start, recheck -> gift |
+
+| output | type | desc |
+|--------|------|------|
+| `answer` | string | what the step after the jump gets as typed |
+| `redo` | string | the step id the item goes back to; empty = go on |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"redo","use":"flow.redo","with":{"action":"{{steps.gate.out.action}}","answer":"{{steps.gate.out.clock}}","map":{"recheck":"gift","retime":"start"}}}
+```
+
+Notes: The jump is the runner's (kernel/Runner.ps1): only to an EARLIER step of the same each list; the steps in between run again with fresh outputs. More than 5 jumps for one item are refused (warning redo_limit) so a loop cannot run forever.
 
 ### `flow.require`
 

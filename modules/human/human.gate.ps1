@@ -29,11 +29,15 @@ $Manifest = @{
     alert     = @{ type='any';   default=''; desc='a line, or a list of lines, drawn RED on the panel (an automatic check that disagrees, e.g. verify.find_token alert); empty lines are left out' }
     front     = @{ type='list';  default=@(); desc='windows to bring to the front once the panel is drawn: each entry a piece of a window title, or a process name (EXCEL, OUTLOOK); every match comes forward (10/19: all the review-mail drafts). The answer is still typed in the console' }
     skipFails = @{ type='bool';  default=$false; desc='true: the operator''s s answer is the failure operator_skip (onError.byFailure.operator_skip: skip -> the whole item is left pending), not just an empty verdict the next steps run past. For a gate whose "no" makes the rest of the item pointless (a proposed start time)' }
+    enterOk   = @{ type='bool';  default=$true; desc='false: Enter alone is not "ok" -- type o (10/23: line counts differed, Enter took another job''s file)' }
+    retime    = @{ type='bool';  default=$false; desc='offer t 10:15 = the start time was wrong: action retime + clock (a flow.redo after the gate goes back to the start)' }
+    recheck   = @{ type='bool';  default=$false; desc='offer r = a file was put right by hand: action recheck (a flow.redo after the gate goes back to the listing)' }
   }
   outputs    = @{
     code   = @{ type='string'; desc='ok | ng | unknown | empty -- what flow.checkpoint should write' }
-    action = @{ type='string'; desc='pass | ok | ng | keep | skip' }
+    action = @{ type='string'; desc='pass | ok | ng | keep | skip | retime | recheck' }
     note   = @{ type='string'; desc='free text typed with m' }
+    clock  = @{ type='string'; desc='retime: the start time typed after t (HH:mm:ss); else empty' }
   }
   failures   = @(
     @{ id = 'operator_quit'; transient = $false }
@@ -43,7 +47,30 @@ $Manifest = @{
   notes      = 'Under DryRun or without a console the panel is printed and the verdict is kept as is (action=keep). onError.policy=ask reuses this panel''s rendering (kernel/Gate.ps1), so the two never drift.'
 }
 
-function HumanGate-Actions { return @(@{ key = 'o'; label = 'ok (Enter)' }, @{ key = 'n'; label = 'ng' }, @{ key = 'k'; label = 'keep as is' }, @{ key = 's'; label = 'skip (leave pending)' }, @{ key = 'm'; label = 'm <note>' }, @{ key = 'q'; label = 'quit' }) }
+function HumanGate-Actions {
+    param([bool]$EnterOk = $true, [bool]$Retime = $false, [bool]$Recheck = $false)
+    $a = New-Object System.Collections.ArrayList
+    [void]$a.Add(@{ key = 'o'; label = $(if ($EnterOk) { 'ok (Enter)' } else { 'ok (type o)' }) })
+    [void]$a.Add(@{ key = 'n'; label = 'ng' })
+    if ($Retime) { [void]$a.Add(@{ key = 't'; label = 't 10:15 = other start time'; text = $true }) }
+    if ($Recheck) { [void]$a.Add(@{ key = 'r'; label = 'r = files fixed, check again' }) }
+    [void]$a.Add(@{ key = 'k'; label = 'keep as is' })
+    [void]$a.Add(@{ key = 's'; label = 'skip (leave pending)' })
+    [void]$a.Add(@{ key = 'm'; label = 'm <note>' })
+    [void]$a.Add(@{ key = 'q'; label = 'quit' })
+    return $a.ToArray()
+}
+
+function HumanGate-Clock {
+    # PURE. What was typed after t -> 'HH:mm:ss', or '' when it is not a
+    # time of day (10:15, 9:05, 10:15:45; 24h).
+    param([string]$Text)
+    $m = [regex]::Match(([string]$Text).Trim(), '^(\d{1,2}):(\d{2})(?::(\d{2}))?$')
+    if (-not $m.Success) { return '' }
+    $h = [int]$m.Groups[1].Value; $mi = [int]$m.Groups[2].Value; $se = if ($m.Groups[3].Success) { [int]$m.Groups[3].Value } else { 0 }
+    if ($h -gt 23 -or $mi -gt 59 -or $se -gt 59) { return '' }
+    return ('{0:00}:{1:00}:{2:00}' -f $h, $mi, $se)
+}
 
 function HumanGate-Decide {
     # PURE. An answer -> @{ code; action }. The gate's own condition and
@@ -86,7 +113,8 @@ function Invoke-Step {
     $code = [string]$In['code']
     $askWhen = @($In['askWhen'])
     $first = HumanGate-Decide -Code $code -AskWhen $askWhen -Answer ''
-    if ($first['action'] -eq 'pass') { return @{ ok = $true; code = $code; action = 'pass'; note = '' } }
+    if ($first['action'] -eq 'pass') { return @{ ok = $true; code = $code; action = 'pass'; note = ''; clock = '' } }
+    $enterOk = [bool]$In['enterOk']; $retime = [bool]$In['retime']; $recheck = [bool]$In['recheck']
     $key = [string]$In['key']
     if ($key -eq '' -and $null -ne $Ctx['Item']) { $key = Get-EbiKeyDisplay -Item $Ctx['Item'] -KeyColumns @($Ctx['KeyColumns']) }
     $ev = New-Object System.Collections.ArrayList
@@ -94,7 +122,13 @@ function Invoke-Step {
     $panel = HumanGate-WhatLines -Code $code -Reason ([string]$In['reason']) -Checklist $In['checklist'] -Alert $In['alert']
     $what = $panel['what']
     $front = @()
-    $next = @('Enter/o: it is ok', 'n: it is ng', 'k: keep the verdict as it is', 's: skip this item, leave it pending', 'm <text>: add a note, then answer again', 'q: cancel the whole run')
+    $nx = New-Object System.Collections.ArrayList
+    [void]$nx.Add($(if ($enterOk) { 'Enter/o: it is ok' } else { 'o: it is ok (Enter alone does nothing here: look first)' }))
+    [void]$nx.Add('n: it is ng')
+    if ($retime) { [void]$nx.Add('t 10:15: the start time was wrong -- this job again from that time (the files just downloaded are set aside)') }
+    if ($recheck) { [void]$nx.Add('r: you put the right file in the folder -- list the files and compare again') }
+    foreach ($l in @('k: keep the verdict as it is', 's: skip this item, leave it pending', 'm <text>: add a note, then answer again', 'q: cancel the whole run')) { [void]$nx.Add($l) }
+    $next = $nx.ToArray()
     if (@(@($In['front']) | Where-Object { [string]$_ -ne '' }).Count -gt 0 -and -not $Ctx['DryRun']) {
         $wins = @()
         try { $wins = @(Select-EbiWindowsByText -Windows (Get-EbiTopWindows) -Texts $In['front']) } catch { $wins = @() }
@@ -103,14 +137,22 @@ function Invoke-Step {
         else { $Ctx.Log.Warn(('no window matches front: {0}' -f (@($In['front']) -join ', '))) }
     }
     $note = ''
+    $actions = HumanGate-Actions -EnterOk $enterOk -Retime $retime -Recheck $recheck
+    $clock = ''
     while ($true) {
-        $r = Show-EbiGate -Title ('GATE ' + $key) -What $what -Next $next -Evidence $ev.ToArray() -Actions (HumanGate-Actions) -Default 'o' -Auto 'k' -DryRun ([bool]$Ctx['DryRun']) -Alert $panel['alert'] -FrontAfter $front
+        $r = Show-EbiGate -Title ('GATE ' + $key) -What $what -Next $next -Evidence $ev.ToArray() -Actions $actions -Default $(if ($enterOk) { 'o' } else { '' }) -Auto 'k' -DryRun ([bool]$Ctx['DryRun']) -Alert $panel['alert'] -FrontAfter $front
         if ([string]$r['action'] -eq 'm') { $note = [string]$r['note']; continue }
+        if ([string]$r['action'] -eq 't') {
+            $clock = HumanGate-Clock -Text ([string]$r['note'])
+            if ($clock -eq '') { $what = @($panel['what']) + @(('t needs a time of day, like t 10:15 or t 10:15:45 (typed: "' + [string]$r['note'] + '")')); continue }
+        }
         break
     }
     if ($r['auto']) { $Ctx.Log.Info('nobody to ask (dry run or no console): verdict kept as is') }
-    if ([string]$r['action'] -eq 'q') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q at the gate'; code = $code; action = 'quit'; note = $note } }
+    if ([string]$r['action'] -eq 'q') { return @{ ok = $false; failure = 'operator_quit'; message = 'operator answered q at the gate'; code = $code; action = 'quit'; note = $note; clock = '' } }
+    if ([string]$r['action'] -eq 't') { $Ctx.Log.Info(('{0}: start time {1} typed at the gate -- this job again from there' -f $key, $clock)); return @{ ok = $true; code = $code; action = 'retime'; note = $note; clock = $clock } }
+    if ([string]$r['action'] -eq 'r') { $Ctx.Log.Info(('{0}: files put right by hand -- listing and comparing again' -f $key)); return @{ ok = $true; code = $code; action = 'recheck'; note = $note; clock = '' } }
     $d = HumanGate-Decide -Code $code -AskWhen $askWhen -Answer ([string]$r['action'])
-    if ($d['action'] -eq 'skip' -and [bool]$In['skipFails']) { return @{ ok = $false; failure = 'operator_skip'; message = 'operator skipped this item at the gate'; code = ''; action = 'skip'; note = $note } }
-    return @{ ok = $true; code = $d['code']; action = $d['action']; note = $note }
+    if ($d['action'] -eq 'skip' -and [bool]$In['skipFails']) { return @{ ok = $false; failure = 'operator_skip'; message = 'operator skipped this item at the gate'; code = ''; action = 'skip'; note = $note; clock = '' } }
+    return @{ ok = $true; code = $d['code']; action = $d['action']; note = $note; clock = '' }
 }
