@@ -1,4 +1,4 @@
-## 2026-10-23 - deliver no longer writes the WBS; the WBS steps moved to gfixRecv.wbs, local copy only (v2.35.0)
+## 2026-10-23 - deliver no longer writes the WBS (moved to gfixRecv.wbs, local copy only); plan reads a filtered WBS to the end (v2.35.0)
 
 10/23: the WBS is fine again, but its 最新計画 columns (AF / AG) had come back
 as an older version that had been fixed by hand twice. The tool never writes
@@ -15,6 +15,14 @@ are tested on the office PC, nothing automatic touches the shared WBS.
   `-Var wbsPath=<local copy>` with no default -- without it the run stops at
   the first step (`file.assert_exists`). No `profile` key, so the menu does not
   list it; `-Only` picks the jobs.
+- `excel.read_rows`: a sheet saved with a filter on is read down to the
+  bottom of the filter range. Ctrl+Up (End(xlUp)) stops at the last VISIBLE
+  row: 10/23 the WBS carried someone's filter (27 rows visible, the last at
+  4243), so plan never saw SJODJWBV (4276) and `-Only SJODWWBV` said "not in
+  any set". A whole-column filter (past row 200000) is not followed (warning).
+  Same class of bug as v2.33.1's excel.mark_rows fix. KNOWLEDGE K-33.
+- RUNBOOK: `-Only` names must be in one of plan's sets; jobs further ahead
+  than `aheadDays` working days need `-Var aheadDays=N` (10/23 for 10/28: 3).
 - KNOWLEDGE K-24 (10/23 note, what to find out: where the WBS lives, which
   values came back) and K-32 (AF1 series: one job sends two I/Fs -- watch the
   file counts on the 10/28 AF1 jobs). RUNBOOK 4b step 5 rewritten.

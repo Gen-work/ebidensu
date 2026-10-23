@@ -132,6 +132,7 @@ ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
   打完会**复述一遍**（`-> 4 jobs today: …`），`Enter` = 对，打别的 = 换一个答案。
   **已经知道要做哪几本时**：`ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W -Only MJODWSPQ,QJODWSPP,SJODWSPQ`
   —— `-Only` 就是这个面板的答案（不管它们在哪个集合：今天、遅れ、先取り、别人的），只复述一遍等你按 Enter。
+  但名字必须在**某个集合里**：先取り只看 `aheadDays` 个工作日（默认 2），更远的会报 `not in any set`——10/23（周五）先做 10/28 的就加 `-Var aheadDays=3`。
   （v2.28.0 以前 plan 不认 `-Only`：只拿 AF = 今天、担当是你的行，所以 10/21 的、或者 WBS 担当写着别人的那几本，plan 不会放进清单，track 的 `-Only` 就说 not in the worklist。）
 - 选中的行写进作业清单：`WORKDAY` = 今天；`GFIX_DATE` = 今天，**track 已经 ok 的行保持原来的日子**（logs / evidence 接着那天的做）。
   `GFIX_DATE` 变了的行 track / logs / evidence / **deliver** 清空（重跑）。保留的行写 `hold` 列。

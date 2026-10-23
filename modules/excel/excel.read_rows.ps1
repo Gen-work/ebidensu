@@ -82,6 +82,19 @@ function Invoke-Step {
                 $r = [int]$ws.Cells.Item($bottom, $cn).End(-4162).Row   # xlUp
                 if ($r -gt $last) { $last = $r }
             }
+            # Ctrl+Up stops at the last VISIBLE row: a plan saved with a
+            # filter on (10/23: someone else's view of the WBS, 27 rows
+            # visible) hid every row below 4243 and SJODJWBV (4276) was never
+            # read. With a filter on, read down to the bottom of the filter
+            # range too (the rows are read, not the filter state).
+            try {
+                if ([bool]$ws.FilterMode -or [bool]$ws.AutoFilterMode) {
+                    $af = $ws.AutoFilter.Range
+                    $fLast = [int]$af.Row + [int]$af.Rows.Count - 1
+                    if ($fLast -gt 200000) { $Ctx.Log.Warn(('{0} has a filter on whole columns (to row {1}): reading only to row {2} -- rows hidden below it are missed' -f $In['sheet'], $fLast, $last)) }
+                    elseif ($fLast -gt $last) { $Ctx.Log.Info(('{0} has a filter on: read to row {1} (Ctrl+Up stopped at {2})' -f $In['sheet'], $fLast, $last)); $last = $fLast }
+                }
+            } catch { }
         }
         if ($last -lt $first) { return @{ ok = $true; records = @(); matched = 0; scanned = 0; plucked = @() } }
         $data = @{}
