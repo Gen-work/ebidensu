@@ -132,6 +132,7 @@ ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W
   打完会**复述一遍**（`-> 4 jobs today: …`），`Enter` = 对，打别的 = 换一个答案。
   **已经知道要做哪几本时**：`ebi.ps1 run workflows\gfixRecv.plan.json -WorkDir $W -Only MJODWSPQ,QJODWSPP,SJODWSPQ`
   —— `-Only` 就是这个面板的答案（不管它们在哪个集合：今天、遅れ、先取り、别人的），只复述一遍等你按 Enter。
+  但名字必须在**某个集合里**：先取り只看 `aheadDays` 个工作日（默认 2），更远的会报 `not in any set`——10/23（周五）先做 10/28 的就加 `-Var aheadDays=3`。
   （v2.28.0 以前 plan 不认 `-Only`：只拿 AF = 今天、担当是你的行，所以 10/21 的、或者 WBS 担当写着别人的那几本，plan 不会放进清单，track 的 `-Only` 就说 not in the worklist。）
 - 选中的行写进作业清单：`WORKDAY` = 今天；`GFIX_DATE` = 今天，**track 已经 ok 的行保持原来的日子**（logs / evidence 接着那天的做）。
   `GFIX_DATE` 变了的行 track / logs / evidence / **deliver** 清空（重跑）。保留的行写 `hold` 列。
@@ -355,7 +356,7 @@ GATE 的面板上：
 
 ---
 
-## 4b. 交付：`gfixRecv.deliver`（v2.26.0 起；10/19 起「先全部写、一次确认；再全部草稿、一次确认」；10/20 起最后填 WBS 実績）
+## 4b. 交付：`gfixRecv.deliver`（v2.26.0 起；10/19 起「先全部写、一次确认；再全部草稿、一次确认」；10/20–10/22 最后填 WBS 実績，10/23 起拿掉）
 
 ```powershell
 ebi.ps1 run workflows\gfixRecv.deliver.json -WorkDir $W -Only QJODWSPN,RJODWSPN,SJODWSPN
@@ -372,14 +373,14 @@ evidence = ok 的行：
 4. **一次确认全部送出**（after / sent）：所有草稿窗口被调到前面，逐封检查（收件人、主题里的 job 名、正文里的文件名）并按「送信」，全部送完回控制台按 `Enter` → 这几本一起 `deliver = ok`。
    `s` = 稍后再送：检查表的行已经保存，deliver 仍是 pending；从「下書き」里送完后再跑一次 deliver，它会看到检查表里已经有这几行，直接记 ok，不会再建草稿。
 
-5. **WBS 的実績**（v2.29.0 起；v2.34.0 起「薄紫确认、确认后才真正写」）：全部送出（第 4 步 `Enter`）之后：
-   - 问实绩日（Enter = 今天，也可以打 `10/21`）和工数（Enter = 0.1）。
-   - 等 WBS 没人开着，打开（**不是**只读；只读就停下，说是谁开着——可能就是你自己的 Excel）。
-   - 写哪几行：A = job、B = 受信、G = 修正後実施 / 結果まとめ、P = 你（`owner` / `owner←○○` / `○○→owner`）。写 AJ = AK = 实绩日、AQ = 工数。
-   - **只写空格子**；**有公式的格子不写**（看起来空也不写，面板列出「has a formula」）；日期写进「常规」格式的格子会设成 `yyyy/m/d`（和手打日期一样）。
-   - 写到的格子涂成**薄紫色**（`#E6D6FF`；表里已经有相近的颜色就换下一个候选），Excel 调到前面，面板列出每一行。被筛选藏起来的行标 `(hidden by a filter)`。
-   - `Enter` = 对：**不保存**关掉这份（薄紫色不会进文件），重新打开，写同样的值（**不涂色**），保存。
-   - `s` / `q` / 其他 = 不对：**不保存**关掉，WBS 保持原样（自己手填）。
+5. **WBS 的実績：v2.35.0 起 deliver 不再写，自己手填 AJ / AK / AQ。**
+   10/23：WBS 的「最新計画」（AF / AG）被改回了旧版——有人手工改过两次，又回去了。原因没查清，工具也从没写过 AF / AG；在查清之前，deliver 不打开共享的 WBS。
+   原来的步骤（问实绩日和工数 → 薄紫确认 → `Enter` 才不涂色地重写、保存）搬到了 `gfixRecv.wbs.json`，**只开本地副本**，用来在办公室 PC 上测试：
+   ```powershell
+   Copy-Item <共享的 WBS> C:\work\wbs-copy.xlsx
+   ebi.ps1 run workflows\gfixRecv.wbs.json -WorkDir $W -Profile gfix-recv -Var wbsPath=C:\work\wbs-copy.xlsx -Only QJODWWBV
+   ```
+   不给 `wbsPath` 就在第一步停下。测试时除了 AJ / AK / AQ，也看一眼 AF / AG 有没有变。
 
 检查表被别人开着时，`open` 会说是谁，等对方关掉再 `r`。需要 Classic Outlook（新版 Outlook 不能自动化）。
 

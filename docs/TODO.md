@@ -12,6 +12,13 @@ file stays small. Designed-then-shelved work lives in
   look old (UNFINISHED RUN: Enter = new run, other-day runs in red). Fix:
   a per-row fingerprint in the ledger key (e.g. the source's `orderBy` /
   a declared `source.ledgerKey` column such as GFIX_DATE).
+- **gfix-recv: WBS writing is OFF in deliver (v2.35.0, 10/23)** -- the
+  WBS's 最新計画 (AF / AG) came back as an older version twice; cause not
+  known. Before writing the shared WBS again: (a) find where the WBS lives (a
+  plain share file, or a Teams / SharePoint-synced folder where nothing is
+  locked); (b) run `gfixRecv.wbs` on a LOCAL COPY and check AF / AG did not
+  change; (c) decide whether the save must refuse when the file on disk is
+  newer than when it was opened. KNOWLEDGE K-24.
 - **gfix-recv: first office run of the v2.29.0 plan / menu / WBS dates**
   (DETOUR-GFIX-001.10). On the office PC: (0) `gift` for M/SJODWSPQ,
   QJODWSPP (10/20): the GIFT date / time came over from mapping.xlsx M / N,
