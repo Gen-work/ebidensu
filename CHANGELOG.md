@@ -1,3 +1,24 @@
+## 2026-10-23 - deliver no longer writes the WBS; the WBS steps moved to gfixRecv.wbs, local copy only (v2.35.0)
+
+10/23: the WBS is fine again, but its 最新計画 columns (AF / AG) had come back
+as an older version that had been fixed by hand twice. The tool never writes
+AF / AG (only AJ / AK / AQ); if it was the tool, the only way is the WHOLE file
+saved over a newer one from a stale copy. Not confirmed. Until the WBS steps
+are tested on the office PC, nothing automatic touches the shared WBS.
+
+- `gfixRecv.deliver` 0.5.0: the WBS steps (wbsOwner .. wbsSave) and their
+  teardown closes are gone; the run ends at deliver = ok and the status line
+  says to type the WBS actuals by hand. The plan / wbscheck workflows only
+  ever open the WBS read-only and are unchanged.
+- new `gfixRecv.wbs` 0.1.0: the same steps (light-violet check, Enter = close
+  without saving, reopen, write without the fill, save), but the file is
+  `-Var wbsPath=<local copy>` with no default -- without it the run stops at
+  the first step (`file.assert_exists`). No `profile` key, so the menu does not
+  list it; `-Only` picks the jobs.
+- KNOWLEDGE K-24 (10/23 note, what to find out: where the WBS lives, which
+  values came back) and K-32 (AF1 series: one job sends two I/Fs -- watch the
+  file counts on the 10/28 AF1 jobs). RUNBOOK 4b step 5 rewritten.
+
 ## 2026-10-22 - WBS actuals: checked in light violet first, saved only after Enter and without the fill; formula cells never written (v2.34.0)
 
 10/22: the leader said the WBS lines owned by the operator looked broken.
