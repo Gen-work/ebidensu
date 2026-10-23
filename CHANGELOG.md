@@ -1,3 +1,21 @@
+## 2026-10-23 - HOST pictures side by side on one row are one shot (export_pictures firstPerRow) (v2.36.1)
+
+10/23 the three AF1 books: the DF pictures were not lined up with the HOST
+pictures ("more than two HOST pictures for this pair", "3 HOST picture
+set(s) but 2 DF pair(s)"). The send-data sheet holds a wide record shot
+several times scrolled right, pasted side by side (a group at column A and
+another at column 272 starting on the same row; COLUMNS 000726... /
+005216...). Every one of them shows the same line numbers, so the ranges
+read 1-19, 1-19, 1704-1722, 1704-1722, ... and the sets broke.
+
+- `excel.export_pictures`: new input `firstPerRow` -- of the pictures that
+  start on the same sheet row, only the leftmost is exported (pure
+  ExcelExportPictures-FirstPerRow, unit-tested).
+- `gfixRecv.evidence` 0.8.1: `hostPics` uses it.
+- profile checklist: the "second file pair BY HAND" line now says the run
+  writes those labels (v2.36.0).
+- KNOWLEDGE K-30 note, catalog regenerated.
+
 ## 2026-10-23 - every file pair's section on the compare sheet gets its labels (excel.label_sections) (v2.36.0)
 
 10/23 FJODWAF1 sends two files (CSV1 / CSV2, STEP:MQFX0020 / MQFX0030).

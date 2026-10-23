@@ -341,6 +341,16 @@ Assert-Equal '3' (@($pl['missing']) -join ',') 'label_sections: set 3 has no 3rd
 $pl1 = ExcelLabelSections-Plan -Starts $st -Labels $labels -Cells @{ B = 'A' } -StartAt 1
 Assert-Equal 3 ([int]$pl1['writes'][0]['row']) 'label_sections: from set 1, set 1 goes to row 3 (compare sheet B3)'
 
+# --- 12. excel.export_pictures firstPerRow (10/23 FJODWAF1: shots side by side) ---
+Write-Host '  -- excel.export_pictures firstPerRow'
+[void](. Import-EbiStep -Registry $reg -Use 'excel.export_pictures')
+$side = @(
+    @{ name = 'g25'; row = 5; left = 0 }, @{ name = 'g39'; row = 5; left = 9000 },
+    @{ name = 'g5'; row = 36; left = 0 }, @{ name = 'g43'; row = 36; left = 9000 },
+    @{ name = 'g47'; row = 68; left = 0 }, @{ name = 'g1'; row = 99; left = 0 }, @{ name = 'x'; row = 0; left = 0 }
+)
+Assert-Equal 'g25,g5,g47,g1,x' ((@(ExcelExportPictures-FirstPerRow -Shapes $side) | ForEach-Object { $_['name'] }) -join ',') 'export_pictures: firstPerRow keeps the leftmost picture of each row (a shape with no row is kept)'
+
 Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
 $failed = Complete-Tests
 exit $failed

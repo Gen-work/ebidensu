@@ -25,6 +25,7 @@ $Manifest = @{
     hideMarks = @{ type='bool';   default=$true; desc='in a group, hide the shapes that are not pictures (red boxes) while it is exported, then show them again' }
     only     = @{ type='int';     default=0; desc='export only the n-th picture (1 = the first, top-left); 0 = all' }
     scale    = @{ type='int';     default=3; desc='export size against the size on the sheet (bigger reads better for OCR)' }
+    firstPerRow = @{ type='bool'; default=$false; desc='several pictures starting on the same sheet row -> only the leftmost (10/23 FJODWAF1: a wide record is shot several times scrolled right, side by side; every shot shows the same lines)' }
   }
   outputs    = @{
     paths  = @{ type='list'; desc='the exported PNGs, top-to-bottom (a picture that would not export is left out, with a warning)' }
@@ -56,12 +57,25 @@ function ExcelExportPictures-Shapes {
             $nm = ''
             try { $nm = [string]$sh.Name } catch { }
             if (@(6, 7, 10, 11, 13, 20) -contains $t) {
-                [void]$take.Add(@{ shape = $sh; name = $nm; type = $t; top = [double]$sh.Top; left = [double]$sh.Left })
+                $row = 0; try { $row = [int]$sh.TopLeftCell.Row } catch { }
+                [void]$take.Add(@{ shape = $sh; name = $nm; type = $t; top = [double]$sh.Top; left = [double]$sh.Left; row = $row })
             } else { [void]$other.Add(('{0} (type {1})' -f $nm, $t)) }
         }
     } catch { }
     $sorted = @($take | Sort-Object -Property @{ Expression = { $_['top'] } }, @{ Expression = { $_['left'] } })
     return @{ shapes = $sorted; other = $other.ToArray() }
+}
+
+function ExcelExportPictures-FirstPerRow {
+    # PURE. Shapes sorted top, then left -> only the first (leftmost) of the
+    # ones that start on the same sheet row; a shape with no row (0) is kept.
+    param($Shapes)
+    $seen = @{}
+    return @(foreach ($p in @($Shapes)) {
+        $r = [int]$p['row']
+        if ($r -gt 0) { if ($seen.Contains($r)) { continue }; $seen[$r] = $true }
+        $p
+    })
 }
 
 function Invoke-Step {
@@ -74,6 +88,13 @@ function Invoke-Step {
     foreach ($old in @(Get-ChildItem -LiteralPath $dir -Filter 'pic*.png' -File -ErrorAction SilentlyContinue)) { Remove-Item -LiteralPath $old.FullName -Force -ErrorAction SilentlyContinue }
     $found = ExcelExportPictures-Shapes -Worksheet $ws
     $pics = @($found['shapes'])
+    $sideBySide = 0
+    if ([bool]$In['firstPerRow']) {
+        $kept = @(ExcelExportPictures-FirstPerRow -Shapes $pics)
+        $sideBySide = $pics.Count - $kept.Count
+        if ($sideBySide -gt 0) { $Ctx.Log.Info(('{0}: {1} picture(s) beside another on the same row left out (the same lines, scrolled right)' -f $In['sheet'], $sideBySide)) }
+        $pics = $kept
+    }
     $groups = @($pics | Where-Object { [int]$_['type'] -eq 6 } | ForEach-Object { [string]$_['name'] })
     $warn = New-Object System.Collections.ArrayList
     if ($pics.Count -eq 0) {
