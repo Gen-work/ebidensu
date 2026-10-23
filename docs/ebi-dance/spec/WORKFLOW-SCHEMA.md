@@ -513,6 +513,24 @@ COM 对象当场变成孤儿:没有名字能传给 `excel.close`,谁也关不掉
 
 `bit` 的名字 → 位值映射在 profile 的 `worklist.json` 里声明。
 
+### 7.3a `flow.redo` — 回到同一 item 里更早的一步(2026-10-23)
+
+```jsonc
+{ "id": "gateRedo", "use": "flow.redo",
+  "with": { "action": "{{steps.gate.out.action}}",
+            "map": { "retime": "start", "recheck": "gift" },
+            "answer": "{{steps.gate.out.clock}}" } }
+```
+
+`action` 在 `map` 里时,输出 `redo` = 要回去的 step id,runner 把这个
+item 的执行位置跳回那一步,中间的 step 全部重跑(输出被新的覆盖)。
+只往**前**跳(写了后面的 id = warning `redo_refused`,照常往下);一个
+item 最多跳 5 次(warning `redo_limit`)。`answer` 交给跳回后**第一个**
+运行的 step,当作那里打的字(`$Ctx.RedoAnswer`,用一次就清;
+`human.paste` 把它当开始时刻,不再弹面板)。只认 `use = flow.redo`
+的输出——别的 step 输出里有 `redo` 也不会跳。跳回之后中断、再
+resume 的情况**还没有专门测试**(ledger 里同一 step 会有两遍的记录)。
+
 ### 7.4 `flow.call` — 子工作流 ⚠ 暂未排期
 
 ```jsonc

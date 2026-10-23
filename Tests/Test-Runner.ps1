@@ -226,6 +226,32 @@ function Invoke-Step {
 
 # fake.count: counts its real invocations per name in a file (for resume
 # tests: a replayed step must NOT bump the count).
+# fake.answer: a gate stand-in for flow.redo (10/23): action "again" on its
+# first call (or always, with always=true), "go" after; got = what the
+# runner handed it as typed (ctx.RedoAnswer).
+Write-Fixture 'fake.answer.ps1' @'
+$Manifest = @{
+  id = 'fake.answer'; group = 'fake'; summary = 'fixture: answer again, then go'; tier = 'core'
+  effects = 'pure'; needs = @(); provides = @(); releases = @(); idempotent = $true
+  inputs  = @{ name = @{ type='string'; required=$true }; always = @{ type='bool'; default=$false } }
+  outputs = @{ action = @{ type='string' }; got = @{ type='string' }; n = @{ type='int' } }
+  failures = @( @{ id = 'never'; transient = $false } )
+  example = @{ use='fake.answer'; with=@{ name='x' } }
+}
+function Invoke-Step {
+    param($In, $Ctx)
+    $f = Join-Path $Ctx['WorkDir'] ('answer-' + $In['name'] + '.txt')
+    $n = 0
+    if (Test-Path -LiteralPath $f) { $n = [int]([System.IO.File]::ReadAllText($f).Trim()) }
+    $n++
+    [System.IO.File]::WriteAllText($f, [string]$n)
+    $a = if ([bool]$In['always'] -or $n -eq 1) { 'again' } else { 'go' }
+    return @{ ok = $true; action = $a; got = [string]$Ctx['RedoAnswer']; n = $n }
+}
+'@
+New-Item -ItemType Directory -Path (Join-Path $modules 'flow') -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/flow/flow.redo.ps1') -Destination (Join-Path $modules 'flow/flow.redo.ps1')
+
 Write-Fixture 'fake.count.ps1' @'
 $Manifest = @{
   id = 'fake.count'; group = 'fake'; summary = 'fixture: count real invocations'; tier = 'core'
@@ -864,6 +890,29 @@ try {
     $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-p103-only' -Profile $profile -Only @('A3 / JOB_B', 'A1 / JOB_B')
     Assert-Equal 'A1 / JOB_B,A3 / JOB_B' (@($res['items'] | ForEach-Object { $_['key'] }) -join ',') 'only: -Only keeps just the named keys (in table order)'
 
+    # -- flow.redo (10/23): an answer sends the item back to an earlier step
+    $wf = New-EachWorkflow -Name 'redo' -Source '{ "table": "wl", "select": { "pendingWhen": "always" }, "limit": 1 }' `
+        -Each '[ { "id": "g", "use": "fake.answer", "with": { "name": "redo1" } }, { "id": "r", "use": "flow.redo", "with": { "action": "{{steps.g.out.action}}", "map": { "again": "g" }, "answer": "10:15" } }, { "id": "after", "use": "fake.count", "with": { "name": "redo1after" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-redo' -Profile $profile
+    Assert-True ($res['ok']) 'redo: the run is ok'
+    $gRecs = @($res['steps'] | Where-Object { $_['id'] -eq 'g' })
+    Assert-Equal 2 $gRecs.Count 'redo: the step gone back to ran twice'
+    Assert-Equal '' ([string]$gRecs[0]['outputs']['got']) 'redo: the first pass got no answer'
+    Assert-Equal '10:15' ([string]$gRecs[1]['outputs']['got']) 'redo: the step after the jump got the answer as typed'
+    Assert-Equal 1 @($res['steps'] | Where-Object { $_['id'] -eq 'after' }).Count 'redo: the step after flow.redo ran once (only on the pass that went on)'
+    Assert-Equal 'ok' ([string]$res['items'][0]['status']) 'redo: the item is ok'
+
+    $wf = New-EachWorkflow -Name 'redoloop' -Source '{ "table": "wl", "select": { "pendingWhen": "always" }, "limit": 1 }' `
+        -Each '[ { "id": "g", "use": "fake.answer", "with": { "name": "redo2", "always": true } }, { "id": "r", "use": "flow.redo", "with": { "action": "{{steps.g.out.action}}", "map": { "again": "g" } } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-redoloop' -Profile $profile
+    Assert-Equal 6 @($res['steps'] | Where-Object { $_['id'] -eq 'g' }).Count 'redo: at most 5 jumps an item (6 runs), then it goes on'
+    Assert-True ([string]$res['items'][0]['status'] -eq 'ok') 'redo: a refused jump does not fail the item'
+
+    $wf = New-EachWorkflow -Name 'redofwd' -Source '{ "table": "wl", "select": { "pendingWhen": "always" }, "limit": 1 }' `
+        -Each '[ { "id": "g", "use": "fake.answer", "with": { "name": "redo3" } }, { "id": "r", "use": "flow.redo", "with": { "action": "{{steps.g.out.action}}", "map": { "again": "later" } } }, { "id": "later", "use": "fake.count", "with": { "name": "redo3later" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-redofwd' -Profile $profile
+    Assert-Equal 1 @($res['steps'] | Where-Object { $_['id'] -eq 'g' }).Count 'redo: never forward (a later step id is refused, the item goes on)'
+
     # -- keyColumns override on source; a template that cannot resolve; vars override
     $wf = New-EachWorkflow -Name 'keycols' -Source '{ "table": "wl", "select": { "pendingWhen": "always" }, "keyColumns": ["Correl_ID_S"], "limit": 1 }' `
         -Each '[ { "id": "e", "use": "fake.item", "with": { "a": "{{item.key}}", "b": "{{vars.side}}" } } ]'
@@ -1193,7 +1242,7 @@ try {
     . (Join-Path $here 'StepContract.ps1')
     $specText = [System.IO.File]::ReadAllText((Join-Path (Split-Path $here -Parent) 'docs/ebi-dance/spec/STEP-CONTRACT.md'))
     $kinds = Get-StepContractMustReleaseKinds -Text $specText
-    foreach ($name in @('fake.ensure', 'fake.capture', 'fake.release', 'fake.pure', 'fake.fail', 'fake.needbook', 'fake.noresource', 'fake.load', 'fake.item', 'fake.flaky', 'fake.count', 'fake.destroy')) {
+    foreach ($name in @('fake.ensure', 'fake.capture', 'fake.release', 'fake.pure', 'fake.fail', 'fake.needbook', 'fake.noresource', 'fake.load', 'fake.item', 'fake.flaky', 'fake.count', 'fake.destroy', 'fake.answer')) {
         $findings = @(Test-StepFileContract -Path (Join-Path (Join-Path $modules 'fake') ($name + '.ps1')) -MustRelease $kinds)
         Assert-Equal 0 $findings.Count ('fixture ' + $name + ' passes the step contract checker' + $(if ($findings.Count -gt 0) { ': ' + (($findings | ForEach-Object { $_['rule'] + ' ' + $_['message'] }) -join '; ') } else { '' }))
     }

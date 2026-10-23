@@ -232,13 +232,20 @@ function Read-EbiGateAnswer {
         ''            -> the Default action (when one is offered)
         'r' 's' 'q'   -> that action, if offered
         'm some text' -> action 'm' with note 'some text' (if 'm' offered)
+        't 10:15'     -> action 't' with note '10:15' when the action is
+                         offered with text = $true (10/23: a new start time)
         '2'           -> action '2' for numbered choices
       Keys are matched case-insensitively; anything not offered is ok=$false.
     #>
     param([string]$Text, $Actions, [string]$Default = '')
     $keys = New-Object System.Collections.ArrayList
+    $textKeys = New-Object System.Collections.ArrayList
+    [void]$textKeys.Add('m')
     foreach ($a in @($Actions)) {
-        if ($a -is [System.Collections.IDictionary]) { [void]$keys.Add(([string]$a['key']).ToLowerInvariant()) }
+        if ($a -is [System.Collections.IDictionary]) {
+            [void]$keys.Add(([string]$a['key']).ToLowerInvariant())
+            if ($a.Contains('text') -and [bool]$a['text']) { [void]$textKeys.Add(([string]$a['key']).ToLowerInvariant()) }
+        }
         elseif ($null -ne $a) { [void]$keys.Add((([string]$a -split '=')[0]).ToLowerInvariant()) }
     }
     $t = if ($null -eq $Text) { '' } else { $Text.Trim() }
@@ -251,7 +258,7 @@ function Read-EbiGateAnswer {
     $key = $m.Groups[1].Value.ToLowerInvariant()
     $note = if ($m.Groups[2].Success) { $m.Groups[2].Value.Trim() } else { '' }
     if (-not ($keys -contains $key)) { return @{ ok = $false; action = ''; note = '' } }
-    if ($key -ne 'm' -and $note -ne '') { return @{ ok = $false; action = ''; note = '' } }   # "s something" is a typo, not a skip
+    if (-not ($textKeys -contains $key) -and $note -ne '') { return @{ ok = $false; action = ''; note = '' } }   # "s something" is a typo, not a skip
     return @{ ok = $true; action = $key; note = $note }
 }
 

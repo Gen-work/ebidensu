@@ -232,6 +232,17 @@ function Get-EbiWorkflowProblems {
 
 function Get-EbiErrorPolicies { return @('retry', 'ask', 'skip', 'fail') }
 
+function Get-EbiRedoIndex {
+    # PURE. The index of the each step named Id, looked for only BEFORE the
+    # index Before (flow.redo goes back, never forward); -1 when none.
+    param($Calls, [string]$Id, [int]$Before)
+    $list = @($Calls)
+    for ($i = [Math]::Min($Before, $list.Count) - 1; $i -ge 0; $i--) {
+        if ($list[$i] -is [System.Collections.IDictionary] -and [string]$list[$i]['id'] -eq $Id) { return $i }
+    }
+    return -1
+}
+
 function Test-EbiOnErrorShape {
     # PURE. Problems with an onError object (WORKFLOW-SCHEMA 6): policy in
     # the four, times / backoffMs numbers, byFailure a map of the same.
@@ -1045,7 +1056,18 @@ function Invoke-EbiWorkflow {
                     $itemRec = @{ key = $key; group = $group; status = 'ok'; failure = ''; message = '' }
                     Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Key $key -Tags $tagsBase -Action 'item' -Status 'start' -Data @{ group = $group }
                     $itemDone = $false
-                    foreach ($call in $workflow['each']) {
+                    # flow.redo (10/23): an answer sends the item back to an
+                    # earlier step -- the index jumps, the steps in between run
+                    # again; at most 5 jumps an item. ctx.RedoAnswer is what
+                    # the first step after the jump reads as typed (once).
+                    $eachCalls = @($workflow['each'])
+                    $redoCount = 0
+                    $ctx['RedoAnswer'] = ''
+                    $ci = -1
+                    while ($true) {
+                        $ci++
+                        if ($ci -ge $eachCalls.Count) { break }
+                        $call = $eachCalls[$ci]
                         $once = if ($call.Contains('once') -and $null -ne $call['once']) { [string]$call['once'] } else { '' }
                         if ($once -eq 'groupEnd') { continue }
                         if ($itemDone) {
@@ -1062,6 +1084,7 @@ function Invoke-EbiWorkflow {
                             }
                         }
                         $done = . Invoke-EbiStepWithPolicy -State $state -Section 'each' -Call $call -Scope $scope -Steps $steps -Key $key -Group $group -LedgerGroup $(if ($once -eq 'group') { $group } else { '' })
+                        $ctx['RedoAnswer'] = ''
                         foreach ($r in $done['records']) { [void]$records.Add($r) }
                         switch ([string]$done['outcome']) {
                             'cancelled' { $itemRec['status'] = 'cancelled'; $itemRec['failure'] = 'cancelled'; $itemRec['message'] = ([string]$call['id'] + ': ' + $done['last']['message']); $cancelled = $true; $stopped = $true; $itemDone = $true; [void]$unrecovered.Add($done['last']) }
@@ -1069,7 +1092,30 @@ function Invoke-EbiWorkflow {
                             'skip'      { $itemRec['status'] = 'skip'; $itemRec['failure'] = $done['last']['failure']; $itemRec['message'] = ([string]$call['id'] + ': ' + $done['last']['message']); $itemDone = $true }
                             default     { if ($once -eq 'group') { $groupOutputs[$group][[string]$call['id']] = $done['last']['outputs'] } }
                         }
+                        if ($itemDone -or [string]$call['use'] -ne 'flow.redo' -or [string]$done['outcome'] -ne 'ok') { continue }
+                        $redoOut = $done['last']['outputs']
+                        $redoTo = if ($redoOut -is [System.Collections.IDictionary] -and $null -ne $redoOut['redo']) { [string]$redoOut['redo'] } else { '' }
+                        if ($redoTo -eq '') { continue }
+                        $target = Get-EbiRedoIndex -Calls $eachCalls -Id $redoTo -Before $ci
+                        if ($target -lt 0) {
+                            $w = @{ code = 'redo_refused'; message = ('flow.redo: no earlier step "' + $redoTo + '" in each -- going on') }
+                            Write-EbiStepLine -Status 'warn' -Section 'each' -Id ([string]$call['id']) -Use 'flow.redo' -Key $key -Detail $w['message']
+                            if ($done['last'] -is [System.Collections.IDictionary]) { if (-not $done['last'].Contains('warnings')) { $done['last']['warnings'] = @() }; $done['last']['warnings'] = @($done['last']['warnings']) + @($w) }
+                            continue
+                        }
+                        if ($redoCount -ge 5) {
+                            $w = @{ code = 'redo_limit'; message = ('flow.redo: this item already went back 5 times -- going on') }
+                            Write-EbiStepLine -Status 'warn' -Section 'each' -Id ([string]$call['id']) -Use 'flow.redo' -Key $key -Detail $w['message']
+                            if ($done['last'] -is [System.Collections.IDictionary]) { if (-not $done['last'].Contains('warnings')) { $done['last']['warnings'] = @() }; $done['last']['warnings'] = @($done['last']['warnings']) + @($w) }
+                            continue
+                        }
+                        $redoCount++
+                        $ctx['RedoAnswer'] = $(if ($null -ne $redoOut['answer']) { [string]$redoOut['answer'] } else { '' })
+                        Write-EbiStepLine -Status 'info' -Section 'each' -Id ([string]$call['id']) -Use 'flow.redo' -Key $key -Detail ('back to "' + $redoTo + '" (' + $redoCount + '/5)' + $(if ($ctx['RedoAnswer'] -ne '') { ', answer ' + $ctx['RedoAnswer'] } else { '' }))
+                        Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Key $key -Tags @{ workflow = $wfId; step = [string]$call['id']; use = 'flow.redo'; group = $group } -Action 'redo' -Status 'ok' -Message ('back to ' + $redoTo)
+                        $ci = $target - 1
                     }
+                    $ctx['RedoAnswer'] = ''
                     [void]$itemRecords.Add($itemRec)
                     Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Key $key -Tags $tagsBase -Action 'item' -Status $itemRec['status'] -Message $itemRec['message'] -Data @{ group = $group; failure = $itemRec['failure'] }
                 }

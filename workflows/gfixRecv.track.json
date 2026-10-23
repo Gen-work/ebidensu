@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -408,7 +408,34 @@
         "evidence": [
           "{{steps.gift.out.paths}}",
           "{{steps.dl.out.paths}}"
-        ]
+        ],
+        "enterOk": false,
+        "retime": true,
+        "recheck": true
+      },
+      "label": ""
+    },
+    {
+      "id": "pairGateAside",
+      "use": "file.set_aside",
+      "label": "t 10:15 (開始時刻ちがい): いま落としたファイルを DATA\\GFIX から capture の set-aside へ(納品フォルダに他のジョブのファイルを残さない)",
+      "when": "steps.pairGate.out.action == retime",
+      "with": {
+        "paths": "{{steps.dl.out.paths}}",
+        "toDir": "{{vars.capture}}/{{item.keySafe}}/set-aside"
+      }
+    },
+    {
+      "id": "pairGateRedo",
+      "use": "flow.redo",
+      "label": "t 10:15 -> 開始時刻からやり直し(打った時刻で) / r -> GIFT のファイル一覧から比べ直し",
+      "with": {
+        "action": "{{steps.pairGate.out.action}}",
+        "map": {
+          "retime": "start",
+          "recheck": "gift"
+        },
+        "answer": "{{steps.pairGate.out.clock}}"
       }
     },
     {
@@ -456,7 +483,34 @@
         "evidence": [
           "{{steps.gaShot.out.path}}",
           "{{steps.df.out.paths}}"
-        ]
+        ],
+        "enterOk": false,
+        "retime": true,
+        "recheck": true
+      },
+      "label": ""
+    },
+    {
+      "id": "gateAside",
+      "use": "file.set_aside",
+      "label": "t 10:15 (開始時刻ちがい): いま落としたファイルを DATA\\GFIX から capture の set-aside へ(納品フォルダに他のジョブのファイルを残さない)",
+      "when": "steps.gate.out.action == retime",
+      "with": {
+        "paths": "{{steps.dl.out.paths}}",
+        "toDir": "{{vars.capture}}/{{item.keySafe}}/set-aside"
+      }
+    },
+    {
+      "id": "gateRedo",
+      "use": "flow.redo",
+      "label": "t 10:15 -> 開始時刻からやり直し(打った時刻で) / r -> GIFT のファイル一覧から比べ直し",
+      "with": {
+        "action": "{{steps.gate.out.action}}",
+        "map": {
+          "retime": "start",
+          "recheck": "gift"
+        },
+        "answer": "{{steps.gate.out.clock}}"
       }
     },
     {

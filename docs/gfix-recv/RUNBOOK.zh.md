@@ -224,7 +224,13 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
    配不上时会停下来问你（**不猜**）。
 7. 自动：每一对文件启动一次 DF.exe（窗口 1133×429，一屏正好 16 行）→ Ctrl+Home 截图；
    超过 16 行的再 Ctrl+End 截一张 → 关掉 DF。
-8. **GATE**：内容一致就直接过；不一致或不确定会问你（`Enter` = ok / `n` = ng / `s` = 先跳过）。
+8. **GATE**：内容一致就直接过；不一致或不确定会问你（`o` = ok / `n` = ng / `s` = 先跳过）。
+   **v2.37.0 起**（6 的配对 GATE 和这里的 GATE 都一样）：
+   - **只按 `Enter` 不算 ok**，要打 `o`（10/23：行数不一样时顺手 Enter，把别的 job 的文件当成了这个 job 的）。
+   - `t 10:15` = **开始时刻错了**：刚下载的文件挪到 `capture\gfix\<W名>\set-aside\`（不留在 `DATA\GFIX` 里，交付不会带出去），
+     作业清单的 GFIX_TIME 改成 10:15，这个 job 从开始时刻那步重新来（不再问开始时刻；「正常終了」那一步要再按一次 Enter）。
+   - `r` = 你在 `DATA\GIFT\<J名>` 里**手工换好了文件**：重新列文件、配对、比较。GFIX 那边的文件错了就用 `t`（按对的时刻重新下载）。
+   - 同一个 job 最多回头 5 次，之后照常往下走。
    **OPEN 侧异常终了**（10/13 的 JJDSWM41：GoAnywhere 的 Send 行红叉、解決済み = No）：读完这个 job 的行、截完 GoAnywhere 的图就**停在这里**——
    不下载、不比较、不开 DF；SHARE 面板的文字变成「OPEN側で異常終了でした。」+ 哪一行 No，只带 GoAnywhere 一张图，贴到 Teams 让他们知道；
    作业清单 `track = ng`。之后 logs / evidence 碰到这行会自己跳过（「track judged this job ng: nothing to collect」），HOST 侧重跑后把 `track` 清空再跑一次就行。

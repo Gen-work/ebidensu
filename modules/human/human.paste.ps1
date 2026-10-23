@@ -190,6 +190,17 @@ function Invoke-Step {
           'k = no message (start = now)   s = skip this job   q = stop the run')
     }
     $what = $head.ToArray()
+    # a gate sent the item back with a start time (human.gate t 10:15 ->
+    # flow.redo -> the runner's ctx.RedoAnswer): take it, ask nothing
+    $redoAnswer = if ($null -ne $Ctx['RedoAnswer']) { ([string]$Ctx['RedoAnswer']).Trim() } else { '' }
+    if ($redoAnswer -ne '') {
+        $rt = HumanPaste-Typed -Answer $redoAnswer
+        if ($rt['kind'] -eq 'time') {
+            $Ctx.Log.Info(('{0}: start time {1} (typed at the gate)' -f $expect, [string]$rt['clock']))
+            return @{ ok = $true; text = ''; fields = (HumanPaste-EmptyFields -Pattern $pattern); clock = [string]$rt['clock']; date = $now.ToString('yyyy-MM-dd'); source = 'typed'; fresh = $true }
+        }
+        $Ctx.Log.Warn(('{0}: the gate''s answer "{1}" is not a time: asking here' -f $expect, $redoAnswer))
+    }
     while ($true) {
         $r = Show-EbiGate -Title 'PASTE' -What $what -Next $next -Actions @(@{ key = 'c'; label = 'Enter / 13:30 / n / message / k / s / q' }) -Default 'c' -Auto 'c' -DryRun ([bool]$Ctx['DryRun']) -Raw
         $now = Get-Date
