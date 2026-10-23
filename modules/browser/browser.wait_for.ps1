@@ -5,7 +5,7 @@
 # business. The last text read is archived whether or not it matched --
 # a timeout with the page text on disk is a diagnosable timeout.
 # A page that does not update by itself (a list behind a refresh button)
-# takes a refreshRecipe: find:<text> / keys:<SendKeys> / wait:<ms> entries
+# takes a refreshRecipe: find:<text> / findenter:<text> / keys:<SendKeys> / wait:<ms> entries
 # run before every read (kernel/Native.ps1 Invoke-EbiKeyRecipe).
 
 . (Join-Path $PSScriptRoot '..\..\kernel\Native.ps1')
@@ -28,7 +28,7 @@ $Manifest = @{
     timeoutSec = @{ type='int'; default=12; desc='give up after this many seconds' }
     pollMs     = @{ type='int'; default=800; desc='wait between reads' }
     archiveTo  = @{ type='path'; default=''; desc='write the last text read here (relative: under the work dir)' }
-    refreshRecipe = @{ type='list'; default=@(); desc='run before every read: find:<text> | keys:<SendKeys> | wait:<ms> (e.g. a refresh button the page needs)' }
+    refreshRecipe = @{ type='list'; default=@(); desc='run before every read: find:<text> | findenter:<text> | keys:<SendKeys> | wait:<ms> (e.g. a refresh button the page needs)' }
     deselectRecipe = @{ type='list'; default=@(); desc='instead of deselectAt: keys run after the last read to drop the Ctrl+A selection without a click (e.g. find:<a label at the top>)' }
     expectPage = @{ type='list'; default=@(); desc='texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes)' }
     settledAfter = @{ type='string'; default=''; desc='ISO time after which the page cannot change any more (the end of the time window): when it is already past, one read decides -- no polling' }

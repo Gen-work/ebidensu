@@ -27,7 +27,7 @@ $Manifest = @{
   inputs     = @{
     window       = @{ type='session'; sessionKind='window'; required=$true }
     terms        = @{ type='list';   required=$true; desc='exact texts of the links to open, one download each' }
-    recipe       = @{ type='list';   default=@(); desc='after opening: find:<text> | keys:<SendKeys> | wait:<ms>, in order' }
+    recipe       = @{ type='list';   default=@(); desc='after opening: find:<text> | findenter:<text> | keys:<SendKeys> | wait:<ms>, in order' }
     openWaitMs   = @{ type='int';    default=2500; desc='wait after Enter on the link' }
     downloadDir  = @{ type='path';   default=''; desc='where the browser saves; empty = the user''s Downloads' }
     glob         = @{ type='string'; default='*' }

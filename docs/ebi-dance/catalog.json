@@ -153,7 +153,7 @@
         },
         "recipe": {
           "default": [],
-          "desc": "after opening: find:<text> | keys:<SendKeys> | wait:<ms>, in order",
+          "desc": "after opening: find:<text> | findenter:<text> | keys:<SendKeys> | wait:<ms>, in order",
           "type": "list"
         },
         "skipExisting": {
@@ -837,7 +837,7 @@
         },
         "refreshRecipe": {
           "default": [],
-          "desc": "run before every read: find:<text> | keys:<SendKeys> | wait:<ms> (e.g. a refresh button the page needs)",
+          "desc": "run before every read: find:<text> | findenter:<text> | keys:<SendKeys> | wait:<ms> (e.g. a refresh button the page needs)",
           "type": "list"
         },
         "settledAfter": {

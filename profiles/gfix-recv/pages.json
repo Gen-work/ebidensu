@@ -21,9 +21,9 @@
       ]
     },
     "_refresh_doc": "Find 詳細 (the filter row's dropdown), Esc, ONE Tab = the refresh button (the round arrow), Enter. Until 10/21 the recipe found フィルタリングする and counted 5 Tabs (日付範囲 / プロジェクト名 / the x that clears it / 詳細 / refresh -- operator 10/21 screenshot): the x is there only while プロジェクト名 holds a value, so with that filter empty the 5th Tab is the ☰ menu and nothing refreshes. Counting from 詳細 skips every filter chip.",
+    "_refresh_doc2": "10/23: find:詳細 + one Tab still landed elsewhere some days (wrong_page). The refresh button carries its own text 更新 (title 更新, a hidden span): findenter:更新 = Ctrl+F 更新, Enter (the search surely runs; 1/1 on this page, so it stays on the button), Esc (the focus is left on the button), Enter = click. If the find bar ever shows 1/2, another 更新 is on the page -- go back to find:更新 or the 詳細 recipe in ebi.local.json.",
     "refreshRecipe": [
-      "find:詳細",
-      "keys:{TAB}",
+      "findenter:更新",
       "keys:{ENTER}",
       "wait:2500"
     ],
