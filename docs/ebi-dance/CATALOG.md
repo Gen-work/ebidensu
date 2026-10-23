@@ -63,7 +63,7 @@ Per term: Ctrl+F it, open it, key a download, collect the file, go back
 | `glob` | string |  | * |  |  |
 | `nameTemplate` | string |  | {term}{ext} |  | {term} {ext} {name}: the destination file name |
 | `openWaitMs` | int |  | 2500 |  | wait after Enter on the link |
-| `recipe` | list |  | [] |  | after opening: find:<text> \| keys:<SendKeys> \| wait:<ms>, in order |
+| `recipe` | list |  | [] |  | after opening: find:<text> \| findenter:<text> \| keys:<SendKeys> \| wait:<ms>, in order |
 | `skipExisting` | bool |  | true |  | a term whose destination file already exists is not downloaded again |
 | `terms` | list | yes |  |  | exact texts of the links to open, one download each |
 | `timeoutSec` | int |  | 60 |  |  |
@@ -344,7 +344,7 @@ Poll the page text until it contains a string, or time out
 | `expectPage` | list |  | [] |  | texts the RIGHT page always shows; a read without them stops at once with wrong_page (a refresh that navigated away must not be repeated for minutes) |
 | `nearAny` | list |  | [] |  | texts of a WIDER window: when the deadline passes without a contains / containsAny hit but one of these is on the page, the step returns ok with found = false (a later step proposes the nearby row) instead of failing with timeout -- the operator typed a time that is off, not a page that is late |
 | `pollMs` | int |  | 800 |  | wait between reads |
-| `refreshRecipe` | list |  | [] |  | run before every read: find:<text> \| keys:<SendKeys> \| wait:<ms> (e.g. a refresh button the page needs) |
+| `refreshRecipe` | list |  | [] |  | run before every read: find:<text> \| findenter:<text> \| keys:<SendKeys> \| wait:<ms> (e.g. a refresh button the page needs) |
 | `settledAfter` | string |  | (empty) |  | ISO time after which the page cannot change any more (the end of the time window): when it is already past, one read decides -- no polling |
 | `timeoutSec` | int |  | 12 |  | give up after this many seconds |
 | `window` | session:window | yes |  |  | the window to read |

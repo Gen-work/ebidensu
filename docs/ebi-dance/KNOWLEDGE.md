@@ -150,6 +150,13 @@
 - **写新 workflow 时**:「今天做哪些」要分清计划和实绩两个来源,把「做完了」的信号写回原表,而不是只在工具里记;人手填的实绩只当参考。
 - **来源**:10/19～10/20 WBS 实数据(DETOUR-GFIX-001.10)+ 操作员说明(DBC 全部在等;AJ 靠人手填)。
 
+### K-34 GoAnywhere 的「更新」:直接找按钮自己的字
+- **发生了什么**:10/23 track 在 CJODWAF1 上报 `wrong_page`:旧配方 Ctrl+F「詳細」→ Esc → Tab → Enter,数 Tab 的落点不稳,Enter 打到了别的控件,页面离开了「完了したジョブ」。
+- **现在的对策**(v2.35.1,操作员 10/23):更新按钮本身带文字「更新」(title 和一个看不见的 span)。新的配方写法 `findenter:<文字>` = Ctrl+F、贴文字、**Enter**(保证搜索真的执行;页面上只有一处时停在原地 `1/1`)、Esc(焦点留在按钮上)。后面 `keys:{ENTER}` 就是点它。
+- **注意**:Enter 在查找栏里是「下一个」。页面上有两处「更新」时会跳到第二处——只对页面上只出现一次的字用 `findenter:`。查找栏显示 `1/2` 时,在 ebi.local.json 里改回 `find:更新` 或旧的「詳細」配方。
+- **写新 workflow 时**:要按一个按钮,先找它自己的字(按钮文字、title 常常也在页面文字里),不要从别的标签数 Tab。
+- **来源**:10/23 track 的 FAILED 面板、操作员贴的按钮 HTML(`title="更新"`、`<span class="ui-button-text">更新</span>`)。
+
 ### K-33 WBS 存盘时带着别人的筛选:最后几百行读不到
 - **发生了什么**:10/23 plan 把 QJODWWBV、RJODWWBV 放进「今天」,同样是厳、AF = AG = 10/23 的 SJODWWBV 却报 `not in any set`。WBS 存盘时开着别人的筛选(送信 / リソース修正 / HOST / 竹村),全表只有 27 行看得见,最后一个看得见的是第 4243 行。`excel.read_rows` 用 Ctrl+↑(`End(xlUp)`)找最后一行,筛选下它停在最后一个**看得见**的行,所以 4243 行以下(SJODJWBV 在 4276)整个没读。
 - **现在的对策**(v2.35.0):`excel.read_rows` 发现表上开着筛选,就一直读到筛选范围的最后一行(日志写 `has a filter on: read to row N`)。只读值,不动筛选。筛选范围是整列(超过 20 万行)时不读到底,给 warning。`excel.mark_rows` 在 10/21(v2.33.1)已经用 UsedRange 兜底过。

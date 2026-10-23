@@ -466,23 +466,30 @@ function Invoke-EbiFindText {
     # starts no new search, Esc then left the focus where it was, and the
     # Tabs of the recipe walked to another control (the first office run
     # landed on a different page from the second refresh on).
-    param([string]$Text)
+    # -Enter (recipe findenter:, operator 10/23): one Enter in the box before
+    # Esc, so the search surely runs even if the paste did not start one.
+    # With ONE match on the page it stays on it (1/1); with two it moves to
+    # the second -- use it only for a text the page shows once.
+    param([string]$Text, [switch]$Enter)
+    $enterFlag = [bool]$Enter.IsPresent
     Set-EbiClipboardText -Text $Text
     Send-EbiKeys -Keys '^{f}' -WaitMs 300
     Send-EbiKeys -Keys '^a' -WaitMs 100
     Send-EbiKeys -Keys '{BACKSPACE}' -WaitMs 250
     Send-EbiKeys -Keys '^v' -WaitMs 600
+    if ($enterFlag) { Send-EbiKeys -Keys '{ENTER}' -WaitMs 400 }
     Send-EbiKeys -Keys '{ESC}' -WaitMs 300
 }
 
 function Test-EbiKeyRecipe {
-    # PURE. Every entry is find:<text> | keys:<SendKeys> | wait:<ms>.
+    # PURE. Every entry is find:<text> | findenter:<text> | keys:<SendKeys> |
+    # wait:<ms>.
     # @{ ok; message }.
     param($Recipe)
     $i = 0
     foreach ($r in @($Recipe)) {
         $i++
-        if ([string]$r -notmatch '^(find:.+|keys:.+|wait:\d+)$') { return @{ ok = $false; message = ('recipe entry ' + $i + ' "' + [string]$r + '" is not find:<text>, keys:<SendKeys> or wait:<ms>') } }
+        if ([string]$r -notmatch '^(find:.+|findenter:.+|keys:.+|wait:\d+)$') { return @{ ok = $false; message = ('recipe entry ' + $i + ' "' + [string]$r + '" is not find:<text>, findenter:<text>, keys:<SendKeys> or wait:<ms>') } }
     }
     return @{ ok = $true; message = '' }
 }
@@ -491,7 +498,8 @@ function Invoke-EbiKeyRecipe {
     <#
       Run a key recipe against a window, re-checking the foreground before
       each entry (P0-R12). Entries: find:<text> (Invoke-EbiFindText),
-      keys:<SendKeys>, wait:<ms>. @{ ok; failure; message } -- failure is
+      findenter:<text> (the same with an Enter before Esc), keys:<SendKeys>,
+      wait:<ms>. @{ ok; failure; message } -- failure is
       foreground_lost or recipe_invalid.
     #>
     param([IntPtr]$HWnd, $Recipe, [int]$KeyWaitMs = 300)
@@ -503,6 +511,7 @@ function Invoke-EbiKeyRecipe {
         $fg = Set-EbiForeground -HWnd $HWnd -SettleMs 150
         if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message'] } }
         if ($s -match '^find:(.+)$') { Invoke-EbiFindText -Text $Matches[1] }
+        elseif ($s -match '^findenter:(.+)$') { Invoke-EbiFindText -Text $Matches[1] -Enter }
         elseif ($s -match '^keys:(.+)$') { Send-EbiKeys -Keys $Matches[1] -WaitMs $KeyWaitMs }
     }
     return @{ ok = $true; failure = ''; message = '' }

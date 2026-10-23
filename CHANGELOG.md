@@ -1,3 +1,21 @@
+## 2026-10-23 - GoAnywhere refresh: aim at the 更新 button itself (findenter:); key recipes gain findenter:<text> (v2.35.1)
+
+10/23 track on CJODWAF1 stopped with wrong_page: the refresh recipe found
+詳細, closed the find bar and counted one Tab to the round-arrow button, and
+the Enter landed somewhere else. The button carries its own text 更新 (title
+and a hidden span), so the recipe now finds that directly.
+
+- key recipes (kernel/Native.ps1 Invoke-EbiKeyRecipe, used by
+  browser.wait_for / browser.download_each): new entry `findenter:<text>` =
+  Ctrl+F, paste, Enter, Esc. The Enter makes sure the search runs even when
+  a paste did not start one (operator's idea); with one match it stays on it,
+  with two it moves to the second -- only for a text the page shows once.
+- profile gfix-recv `pages.goAnywhere.refreshRecipe`:
+  `findenter:更新`, `keys:{ENTER}`, `wait:2500` (was find:詳細 + Tab + Enter).
+  ebi.local.json can still override it.
+- Test-Steps: Test-EbiKeyRecipe accepts findenter / refuses it empty.
+  KNOWLEDGE K-34, RUNBOOK 3 / table updated, catalog regenerated.
+
 ## 2026-10-23 - deliver no longer writes the WBS (moved to gfixRecv.wbs, local copy only); plan reads a filtered WBS to the end (v2.35.0)
 
 10/23: the WBS is fine again, but its 最新計画 columns (AF / AG) had come back

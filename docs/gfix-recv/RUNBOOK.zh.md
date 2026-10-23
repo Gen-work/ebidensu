@@ -213,7 +213,7 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
    - 消息是别的 job 的：面板会写出两个名字，等你复制对的那条；`s` = 先跳过这个 job（留到下次），`k` = 不用消息、时刻 = 现在。
 2. **PREPARE 面板**：「Teams の『ジョブ:XXXが正常終了しました。』が来たら Enter」。
    reaction 你自己在 Teams 点。
-3. 自动：在 GoAnywhere 上执行 Ctrl+F「詳細」→ Esc → Tab → Enter（**更新**，不按 F5），
+3. 自动：在 GoAnywhere 上执行 Ctrl+F「更新」→ Enter → Esc → Enter（直接点**更新**按钮，不按 F5；v2.35.1 前是「詳細」→ Esc → Tab → Enter），
    直到出现开始时刻 −2 分 ～ +13 分之间任意一分钟的行 → 读文本 → 挑出这个 job 的行 → Receive 的 job 号。
    读完文本后会**点一下页面空白处**（`pages.goAnywhere.deselectAt`，默认 1700,900），取消 Ctrl+A 留下的全选
    （Edge 里按 Esc 取消不了），不然截图会是一片蓝。
@@ -241,7 +241,7 @@ ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $W
 | 看什么 | 文件 | 不对的话 |
 |---|---|---|
 | GoAnywhere 截图范围是不是 p4 那样 | `goanywhere.png` | `ebi.local.json` 里覆盖 `pages.goAnywhere.crop`（left/right/top/firstRowTop/rowHeight） |
-| 「更新」按钮配方有没有点到 | 控制台：超时（timeout）= 没刷新出来 | `pages.goAnywhere.refreshRecipe`（从「詳細」数 Tab 的次数） |
+| 「更新」按钮配方有没有点到 | 控制台：超时（timeout）= 没刷新出来 | `pages.goAnywhere.refreshRecipe`（v2.35.1 起 `findenter:更新`；查找栏显示 `1/2` 就是页面上有两处「更新」） |
 | DF 是不是一屏 16 行 | `df\*__first.png` | `layout.df.width/height` |
 | Teams 粘贴时图片在不在 | Teams | 把 `layout.share.mode` 改成 `"sequence"`（文字、图片分几次贴） |
 | 截图里有没有残留的蓝色全选 | `goanywhere.png`、证据里的 Jenkins 图 | `deselectAt` 换一个空白位置（窗口内像素） |
