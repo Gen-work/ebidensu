@@ -26,6 +26,7 @@ submitted, moved or deleted.
   gate; summary columns B / C_JK / C_BS for `ebi status -Profile jod-kadou`)
   and **`kadou.evidence`** (one book per job: GFIX受信結果 + GFIXデータ).
 - docs/kadou/RUNBOOK.zh.md (the operator's steps); profile README.
+- KNOWLEDGE K-44 + checklist item 12: the operator had done the day by hand before the tool was ready -- every phase must accept hand-made input (a folder + naming rule), ship the assembly end first.
 
 ### Not done (said in the runbook)
 - バッチ処理状況一覧's search form is filled by the operator; its window
