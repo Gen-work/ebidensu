@@ -6775,7 +6775,8 @@
         "use": "verify.df_ranges",
         "with": {
           "pairs": "{{steps.track.out.data.pairs}}",
-          "ranges": "{{steps.hostLines.out.ranges}}"
+          "ranges": "{{steps.hostLines.out.ranges}}",
+          "shots": "{{steps.track.out.data.dfShots}}"
         }
       },
       "failures": [
@@ -6805,7 +6806,7 @@
           "type": "int"
         },
         "pairs": {
-          "desc": "the DF file pairs in capture order (track.json pairs: lines = the file's line count)",
+          "desc": "the DF file pairs as track listed them (track.json pairs: lines = the file's line count)",
           "required": true,
           "type": "list"
         },
@@ -6813,10 +6814,15 @@
           "default": [],
           "desc": "screen.read_line_numbers ranges of the HOST pictures, sheet order",
           "type": "list"
+        },
+        "shots": {
+          "default": [],
+          "desc": "track's DF shots, one per pair in the same order (track.json dfShots); handed back in the new order for screen.launch_capture reuse",
+          "type": "list"
         }
       },
       "needs": [],
-      "notes": "Pure. A pair with no START picture, an unreadable picture or more than two pictures keeps the default pictures, with an alert.",
+      "notes": "Pure. A pair with no START picture, an unreadable picture (unless the pair is an empty file) or more than two pictures keeps the default pictures, with an alert. Feed pairs / shots out of this step to screen.launch_capture so the plans line up with them.",
       "outputs": {
         "alert": {
           "desc": "one line for the gate when a pair could not be lined up for a reason a person should check, else empty",
@@ -6826,13 +6832,29 @@
           "desc": "pairs whose pictures follow the HOST ranges",
           "type": "int"
         },
+        "moved": {
+          "desc": "the order differs from the input",
+          "type": "bool"
+        },
+        "order": {
+          "desc": "for each output pair, its index in the input (0-based)",
+          "type": "list"
+        },
+        "pairs": {
+          "desc": "the pairs in the send-data sheet's order (pairs no HOST slot took come last, as listed)",
+          "type": "list"
+        },
         "plans": {
-          "desc": "@{ mode; first; end; reason } per pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) | free (no alignment: empty lines dropped) | default (nothing to align to)",
+          "desc": "@{ mode; first; end; reason } per output pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) | empty (a 0-line file under a HOST picture with no line numbers) | free (no alignment: empty lines dropped) | default (nothing to align to)",
           "type": "list"
         },
         "reason": {
           "desc": "one line per pair, for the run log / gate",
           "type": "string"
+        },
+        "shots": {
+          "desc": "the shots input in that same order",
+          "type": "list"
         }
       },
       "provides": [],

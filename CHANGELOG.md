@@ -1,3 +1,25 @@
+## 2026-10-26 - evidence: DF pictures follow the send-data sheet's order; an empty file under a HOST picture with no line numbers is not an alert; a blank row between file sets (v2.38.1)
+
+10/26 K/LJODWAF1 (one job, two I/F): the send-data sheet has STEP ..20
+(678 records) first and STEP ..30 (empty) second; track paired the files in
+name order, empty F...0006 first. evidence gave the first HOST set to the
+empty file, the data file got "no HOST picture from 000001", the HOST
+picture of the empty set was "could not be read", the DF stack on the vs
+sheet was the wrong way round against its B/G labels, and the second set's
+label sat right under the first set's pictures.
+
+- `verify.df_ranges`: HOST pictures become slots in sheet order (a picture
+  with no line numbers is a slot of its own = an empty data set); each slot
+  takes the first pair whose line count fits (HOST last - 1, up to maxExtra
+  more; a blank slot takes a 0-line pair), the slots left take the pairs
+  left in order. New input `shots`; new outputs `pairs` / `shots` (in that
+  order), `order`, `moved`; new plan mode `empty` (no alert).
+- `gfixRecv.evidence` 0.9.0: `dfShots` runs on `dfRanges.out.pairs` and
+  reuses `dfRanges.out.shots`; `dfPlan` gapRows 2 (a blank row, then the
+  next set's label row).
+- Tests: Test-GfixRecvSteps (slots, assign, the K/LJODWAF1 case, already in
+  order, a missing picture). KNOWLEDGE K-43 (and a K-17 note for v2.38.0).
+
 ## 2026-10-26 - gift: files already in DATA\GIFT are checked against the GIFT run, not trusted for being there (verify.file_window) (v2.38.0)
 
 10/26 the five AF1 books: gift said ok for all five because each

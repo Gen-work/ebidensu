@@ -12,7 +12,14 @@
 #     dropped), the numbers cannot be lined up: the default pictures are kept (16 lines
 #     from the top, the END view's 17), no alignment.
 # HOST pictures are taken in sheet order; a picture whose numbers start at
-# 000001 opens the next file pair. Pure.
+# 000001 opens the next file pair. A picture with no line numbers is a
+# HOST view of an empty data set (10/26 K/LJODWAF1: one job, two I/F --
+# STEP ..20 with 678 records, STEP ..30 empty): it takes the 0-line pair.
+# The pairs come from track in file-name order, which need not be the
+# send-data sheet's order (there 0006 = the empty one came first): each
+# HOST slot takes the pair whose line count fits it, so the DF pictures
+# are stacked -- and labelled by excel.label_sections -- in the send-data
+# sheet's order. Pure.
 
 $Manifest = @{
   id         = 'verify.df_ranges'
@@ -25,14 +32,19 @@ $Manifest = @{
   releases   = @()
   idempotent = $true
   inputs     = @{
-    pairs    = @{ type='list'; required=$true; desc='the DF file pairs in capture order (track.json pairs: lines = the file''s line count)' }
+    pairs    = @{ type='list'; required=$true; desc='the DF file pairs as track listed them (track.json pairs: lines = the file''s line count)' }
+    shots    = @{ type='list'; default=@(); desc='track''s DF shots, one per pair in the same order (track.json dfShots); handed back in the new order for screen.launch_capture reuse' }
     ranges   = @{ type='list'; default=@(); desc='screen.read_line_numbers ranges of the HOST pictures, sheet order' }
     offset   = @{ type='int';  default=1; desc='HOST line n = DF line n - offset' }
     maxLines = @{ type='int';  default=40; desc='a picture asked for more lines than this is not trusted (default kept)' }
     maxExtra = @{ type='int';  default=2; desc='DF lines past the HOST''s last line still lined up (a trailing line the HOST does not show, or a last line OCR missed under a red box); more = not lined up' }
   }
   outputs    = @{
-    plans   = @{ type='list';   desc='@{ mode; first; end; reason } per pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) | free (no alignment: empty lines dropped) | default (nothing to align to)' }
+    pairs   = @{ type='list';   desc='the pairs in the send-data sheet''s order (pairs no HOST slot took come last, as listed)' }
+    shots   = @{ type='list';   desc='the shots input in that same order' }
+    order   = @{ type='list';   desc='for each output pair, its index in the input (0-based)' }
+    moved   = @{ type='bool';   desc='the order differs from the input' }
+    plans   = @{ type='list';   desc='@{ mode; first; end; reason } per output pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) | empty (a 0-line file under a HOST picture with no line numbers) | free (no alignment: empty lines dropped) | default (nothing to align to)' }
     aligned = @{ type='int';    desc='pairs whose pictures follow the HOST ranges' }
     alert   = @{ type='string'; desc='one line for the gate when a pair could not be lined up for a reason a person should check, else empty' }
     reason  = @{ type='string'; desc='one line per pair, for the run log / gate' }
@@ -40,8 +52,8 @@ $Manifest = @{
   failures   = @(
     @{ id = 'input_invalid'; transient = $false }
   )
-  example    = @{ use = 'verify.df_ranges'; with = @{ pairs = '{{steps.track.out.data.pairs}}'; ranges = '{{steps.hostLines.out.ranges}}' } }
-  notes      = 'Pure. A pair with no START picture, an unreadable picture or more than two pictures keeps the default pictures, with an alert.'
+  example    = @{ use = 'verify.df_ranges'; with = @{ pairs = '{{steps.track.out.data.pairs}}'; ranges = '{{steps.hostLines.out.ranges}}'; shots = '{{steps.track.out.data.dfShots}}' } }
+  notes      = 'Pure. A pair with no START picture, an unreadable picture (unless the pair is an empty file) or more than two pictures keeps the default pictures, with an alert. Feed pairs / shots out of this step to screen.launch_capture so the plans line up with them.'
 }
 
 function VerifyDfRanges-Sets {
@@ -102,27 +114,123 @@ function VerifyDfRanges-Plan {
     return @{ mode = 'align'; first = $first; end = $end; reason = ('HOST 000001-{0:000000} / {1:000000}-{2:000000} -> DF 00001-{3:00000} / {4:00000}-{5:00000}{6}' -f $s['last'], $f['first'], $f['last'], $first, ([int]$f['first'] - $Offset), $Lines, $(if ($extra -gt 0) { (' (the file runs ' + $extra + ' line(s) past the HOST''s last: the END picture shows them too)') } else { '' })) }
 }
 
+function VerifyDfRanges-Slots {
+    # PURE. Ranges in sheet order -> slots @(@{ kind = 'set'; set } |
+    # @{ kind = 'blank' }): the readable pictures grouped as in
+    # VerifyDfRanges-Sets, and each picture with no line numbers a slot of
+    # its own (it closes the pair before it). Also extra (some set had more
+    # than two pictures) and stray (readable pictures that opened nothing).
+    param($Ranges)
+    $slots = New-Object System.Collections.ArrayList
+    $stray = 0; $extra = $false
+    $runs = New-Object System.Collections.ArrayList
+    $run = New-Object System.Collections.ArrayList
+    foreach ($r in @($Ranges)) {
+        if (-not ($r -is [System.Collections.IDictionary])) { continue }
+        if ([bool]$r['ok']) { [void]$run.Add($r); continue }
+        [void]$runs.Add(@{ kind = 'run'; ranges = $run.ToArray() }); $run = New-Object System.Collections.ArrayList
+        [void]$runs.Add(@{ kind = 'blank' })
+    }
+    [void]$runs.Add(@{ kind = 'run'; ranges = $run.ToArray() })
+    foreach ($x in $runs) {
+        if ([string]$x['kind'] -eq 'blank') { [void]$slots.Add(@{ kind = 'blank' }); continue }
+        if (@($x['ranges']).Count -eq 0) { continue }
+        $g = VerifyDfRanges-Sets -Ranges $x['ranges']
+        foreach ($st in @($g['sets'])) { [void]$slots.Add(@{ kind = 'set'; set = $st }) }
+        $stray += [int]$g['bad']
+        if ([bool]$g['extra']) { $extra = $true }
+    }
+    return @{ slots = $slots.ToArray(); stray = $stray; extra = $extra }
+}
+
+function VerifyDfRanges-Assign {
+    # PURE. Slots + pair line counts -> @{ order = pair index per slot (-1 =
+    # no pair), rest = pair indexes no slot took, in input order }.
+    # 1. a set slot takes the first free pair whose line count fits its
+    #    HOST last line (- offset, up to maxExtra more);
+    # 2. a blank slot takes the first free 0-line pair;
+    # 3. slots still empty take the free pairs left, in order (what they
+    #    cannot line up the plan says);
+    # so pairs that fit keep the sheet's order and nothing is dropped.
+    param($Slots, [int[]]$Lines, [int]$Offset = 1, [int]$MaxExtra = 2)
+    $slotsA = @($Slots)
+    $order = New-Object int[] $slotsA.Count
+    for ($k = 0; $k -lt $order.Length; $k++) { $order[$k] = -1 }
+    $used = New-Object bool[] $Lines.Length
+    for ($k = 0; $k -lt $slotsA.Count; $k++) {
+        $sl = $slotsA[$k]
+        for ($i = 0; $i -lt $Lines.Length; $i++) {
+            if ($used[$i]) { continue }
+            $fits = $false
+            if ([string]$sl['kind'] -eq 'blank') { $fits = ($Lines[$i] -eq 0) }
+            else {
+                $st = $sl['set']
+                $hostLast = if ($null -ne $st['finish']) { [int]$st['finish']['last'] } else { [int]$st['start']['last'] }
+                $x = $Lines[$i] - ($hostLast - $Offset)
+                $fits = ($x -ge 0 -and $x -le $MaxExtra)
+            }
+            if ($fits) { $order[$k] = $i; $used[$i] = $true; break }
+        }
+    }
+    for ($k = 0; $k -lt $slotsA.Count; $k++) {
+        if ($order[$k] -ge 0) { continue }
+        for ($i = 0; $i -lt $Lines.Length; $i++) { if (-not $used[$i]) { $order[$k] = $i; $used[$i] = $true; break } }
+    }
+    $rest = @(for ($i = 0; $i -lt $Lines.Length; $i++) { if (-not $used[$i]) { $i } })
+    return @{ order = @($order); rest = $rest }
+}
+
 function Invoke-Step {
     param($In, $Ctx)
     $pairs = @(@($In['pairs']) | Where-Object { $_ -is [System.Collections.IDictionary] })
-    $g = VerifyDfRanges-Sets -Ranges $In['ranges']
-    $sets = @($g['sets'])
+    $shotsIn = @($In['shots'])
+    $g = VerifyDfRanges-Slots -Ranges $In['ranges']
+    $slots = @($g['slots'])
+    $lines = [int[]]@($pairs | ForEach-Object { [int]$_['lines'] })
+    if ($null -eq $lines) { $lines = [int[]]@() }
+    $a = VerifyDfRanges-Assign -Slots $slots -Lines $lines -Offset ([int]$In['offset']) -MaxExtra ([int]$In['maxExtra'])
     $plans = New-Object System.Collections.ArrayList
+    $outPairs = New-Object System.Collections.ArrayList
+    $outShots = New-Object System.Collections.ArrayList
+    $outOrder = New-Object System.Collections.ArrayList
     $why = New-Object System.Collections.ArrayList
     $alerts = New-Object System.Collections.ArrayList
     $aligned = 0
     $any = (@(@($In['ranges']) | Where-Object { $_ -is [System.Collections.IDictionary] }).Count -gt 0)
-    for ($i = 0; $i -lt $pairs.Count; $i++) {
-        $set = if ($i -lt $sets.Count) { $sets[$i] } else { $null }
-        $p = VerifyDfRanges-Plan -Lines ([int]$pairs[$i]['lines']) -Set $set -Offset ([int]$In['offset']) -MaxLines ([int]$In['maxLines']) -MaxExtra ([int]$In['maxExtra'])
-        [void]$plans.Add($p)
+    $blankLeft = 0; $setLeft = 0
+    $take = New-Object System.Collections.ArrayList
+    for ($k = 0; $k -lt $slots.Count; $k++) {
+        $i = [int]$a['order'][$k]
+        if ($i -lt 0) { if ([string]$slots[$k]['kind'] -eq 'blank') { $blankLeft++ } else { $setLeft++ }; continue }
+        [void]$take.Add(@{ i = $i; slot = $slots[$k] })
+    }
+    foreach ($i in @($a['rest'])) { [void]$take.Add(@{ i = [int]$i; slot = $null }) }
+    foreach ($t in $take) {
+        $i = [int]$t['i']; $sl = $t['slot']
+        $n = [int]$pairs[$i]['lines']
+        if ($null -ne $sl -and [string]$sl['kind'] -eq 'blank') {
+            $p = if ($n -eq 0) { @{ mode = 'empty'; first = 0; end = 0; reason = 'an empty file; its HOST picture shows no line numbers' } }
+                 else { @{ mode = 'default'; first = 0; end = 0; reason = ('its HOST picture could not be read (no line numbers) for a ' + $n + '-line file') } }
+        } else {
+            $set = if ($null -ne $sl) { $sl['set'] } else { $null }
+            $p = VerifyDfRanges-Plan -Lines $n -Set $set -Offset ([int]$In['offset']) -MaxLines ([int]$In['maxLines']) -MaxExtra ([int]$In['maxExtra'])
+        }
+        [void]$plans.Add($p); [void]$outPairs.Add($pairs[$i]); [void]$outOrder.Add($i)
+        if ($shotsIn.Count -gt 0) { [void]$outShots.Add($(if ($i -lt $shotsIn.Count) { $shotsIn[$i] } else { $null })) }
         if ($p['mode'] -eq 'align') { $aligned++ }
         $name = [string]$pairs[$i]['rightName']
-        [void]$why.Add(('{0}: {1} -- {2}' -f $(if ($name) { $name } else { 'pair ' + ($i + 1) }), $p['mode'], $p['reason']))
-        if ($p['mode'] -eq 'default' -and $any) { [void]$alerts.Add(('DF pictures of {0} NOT lined up with the HOST pictures: {1} -- check them by hand' -f $(if ($name) { $name } else { 'pair ' + ($i + 1) }), $p['reason'])) }
+        $shown = if ($name) { $name } else { 'pair ' + ($i + 1) }
+        [void]$why.Add(('{0}: {1} -- {2}' -f $shown, $p['mode'], $p['reason']))
+        if ($p['mode'] -eq 'default' -and $any) { [void]$alerts.Add(('DF pictures of {0} NOT lined up with the HOST pictures: {1} -- check them by hand' -f $shown, $p['reason'])) }
     }
-    if ($any -and [int]$g['bad'] -gt 0) { [void]$alerts.Add(('{0} HOST picture(s) on the send-data sheet could not be read (no line numbers)' -f $g['bad'])) }
-    if ($sets.Count -gt $pairs.Count) { [void]$alerts.Add(('{0} HOST picture set(s) but {1} DF pair(s)' -f $sets.Count, $pairs.Count)) }
+    $bad = [int]$g['stray'] + $blankLeft
+    if ($any -and $bad -gt 0) { [void]$alerts.Add(('{0} HOST picture(s) on the send-data sheet could not be read (no line numbers)' -f $bad)) }
+    if ($setLeft -gt 0) { [void]$alerts.Add(('{0} HOST picture set(s) but {1} DF pair(s)' -f ($slots.Count - $blankLeft), $pairs.Count)) }
+    $moved = $false
+    for ($k = 0; $k -lt $outOrder.Count; $k++) { if ([int]$outOrder[$k] -ne $k) { $moved = $true } }
+    if ($moved) { $Ctx.Log.Info(('DF pairs put in the send-data sheet''s order: ' + (@($outPairs | ForEach-Object { [string]$_['rightName'] }) -join ', '))) }
     foreach ($w in $why) { $Ctx.Log.Info($w) }
-    return @{ ok = $true; plans = $plans.ToArray(); aligned = $aligned; alert = ($alerts -join ' / '); reason = ($why -join ' / ') }
+    # a pair track left no shot for keeps a null there, so the index still
+    # matches the pair (launch_capture reuses nothing for it)
+    return @{ ok = $true; pairs = $outPairs.ToArray(); shots = $outShots.ToArray(); order = $outOrder.ToArray(); moved = $moved; plans = $plans.ToArray(); aligned = $aligned; alert = ($alerts -join ' / '); reason = ($why -join ' / ') }
 }

@@ -672,6 +672,25 @@ try {
     Assert-Equal 'default' (VerifyDfRanges-Plan -Lines 61 -Set $null)['mode'] 'df ranges: no HOST set -> default'
     $g = VerifyDfRanges-Sets -Ranges @(@{ ok = $false }, (& $rg 1 17))
     Assert-Equal 1 $g['bad'] 'df ranges: an unreadable picture is counted'
+    # 10/26 K/LJODWAF1: one job, two I/F. Send-data sheet: STEP ..20 (678
+    # records, HOST 1-17 / 663-679) then STEP ..30 (empty: no line numbers).
+    # track listed the empty 0006 first -> the DF stack follows the sheet
+    $sl = VerifyDfRanges-Slots -Ranges @((& $rg 1 17), (& $rg 663 679), @{ ok = $false })
+    Assert-Equal 'set,blank' (@($sl['slots'] | ForEach-Object { $_['kind'] }) -join ',') 'df slots: a picture with no line numbers is a slot of its own'
+    $as = VerifyDfRanges-Assign -Slots $sl['slots'] -Lines @(0, 678)
+    Assert-Equal '1,0' (@($as['order']) -join ',') 'df assign: the 678-line pair goes under the 20 STEP, the empty one under the blank picture'
+    $kp = @(@{ lines = 0; rightName = 'F202610260006.csv' }, @{ lines = 678; rightName = 'F202610260007.csv' })
+    $ks = @(@{ first = 's6.png'; last = '' }, @{ first = 's7.png'; last = 's7e.png' })
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $kp; shots = $ks; ranges = @((& $rg 1 17), (& $rg 663 679), @{ ok = $false; reason = 'no numbers' }) }
+    Assert-Equal 'F202610260007.csv,F202610260006.csv' (@($dr['pairs'] | ForEach-Object { $_['rightName'] }) -join ',') 'df ranges step: pairs in the send-data order'
+    Assert-Equal 's7.png,s6.png' (@($dr['shots'] | ForEach-Object { $_['first'] }) -join ',') 'df ranges step: track''s shots follow their pairs (reuse stays right)'
+    Assert-True ($dr['moved'] -and (@($dr['order']) -join ',') -eq '1,0') 'df ranges step: says the order moved'
+    Assert-True ($dr['plans'][0]['mode'] -eq 'align' -and $dr['plans'][0]['first'] -eq 16 -and $dr['plans'][1]['mode'] -eq 'empty') ('df ranges step: data pair lined up, empty pair = empty: ' + $dr['reason'])
+    Assert-Equal '' $dr['alert'] 'df ranges step: an empty file under a picture with no numbers is not an alert'
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = @($kp[1], $kp[0]); ranges = @((& $rg 1 17), (& $rg 663 679), @{ ok = $false }) }
+    Assert-True ((-not $dr['moved']) -and @($dr['shots']).Count -eq 0) 'df ranges step: already in order -> not moved; no shots given -> none handed back'
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $kp; ranges = @((& $rg 1 17), (& $rg 663 679)) }
+    Assert-True ((@($dr['pairs'] | ForEach-Object { $_['rightName'] }) -join ',') -eq 'F202610260007.csv,F202610260006.csv' -and $dr['plans'][1]['mode'] -eq 'default') 'df ranges step: no picture for the empty one -> it goes last, default'
     # launch_capture follows an align plan: start heights moved by 18 px a line
     $in = @{ screenLines = 16; linesEnd = 17; height = 432; heightEnd = 476; fitPitchPx = 18; linesField = 'lines'; secondField = 'long'; keysMid = 'MID'; keysSecond = 'END' }
     $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 5684 } -In $in -Plan @{ mode = 'align'; first = 18; end = 20 }

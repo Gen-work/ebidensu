@@ -2226,23 +2226,28 @@ Per DF pair: the lines its first / END picture must show to match the HOST pictu
 | `maxExtra` | int |  | 2 |  | DF lines past the HOST's last line still lined up (a trailing line the HOST does not show, or a last line OCR missed under a red box); more = not lined up |
 | `maxLines` | int |  | 40 |  | a picture asked for more lines than this is not trusted (default kept) |
 | `offset` | int |  | 1 |  | HOST line n = DF line n - offset |
-| `pairs` | list | yes |  |  | the DF file pairs in capture order (track.json pairs: lines = the file's line count) |
+| `pairs` | list | yes |  |  | the DF file pairs as track listed them (track.json pairs: lines = the file's line count) |
 | `ranges` | list |  | [] |  | screen.read_line_numbers ranges of the HOST pictures, sheet order |
+| `shots` | list |  | [] |  | track's DF shots, one per pair in the same order (track.json dfShots); handed back in the new order for screen.launch_capture reuse |
 
 | output | type | desc |
 |--------|------|------|
 | `alert` | string | one line for the gate when a pair could not be lined up for a reason a person should check, else empty |
 | `aligned` | int | pairs whose pictures follow the HOST ranges |
-| `plans` | list | @{ mode; first; end; reason } per pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) \| free (no alignment: empty lines dropped) \| default (nothing to align to) |
+| `moved` | bool | the order differs from the input |
+| `order` | list | for each output pair, its index in the input (0-based) |
+| `pairs` | list | the pairs in the send-data sheet's order (pairs no HOST slot took come last, as listed) |
+| `plans` | list | @{ mode; first; end; reason } per output pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) \| empty (a 0-line file under a HOST picture with no line numbers) \| free (no alignment: empty lines dropped) \| default (nothing to align to) |
 | `reason` | string | one line per pair, for the run log / gate |
+| `shots` | list | the shots input in that same order |
 
 failures: `input_invalid` (not transient)
 
 ```json
-{"id":"df_ranges","use":"verify.df_ranges","with":{"pairs":"{{steps.track.out.data.pairs}}","ranges":"{{steps.hostLines.out.ranges}}"}}
+{"id":"df_ranges","use":"verify.df_ranges","with":{"pairs":"{{steps.track.out.data.pairs}}","ranges":"{{steps.hostLines.out.ranges}}","shots":"{{steps.track.out.data.dfShots}}"}}
 ```
 
-Notes: Pure. A pair with no START picture, an unreadable picture or more than two pictures keeps the default pictures, with an alert.
+Notes: Pure. A pair with no START picture, an unreadable picture (unless the pair is an empty file) or more than two pictures keeps the default pictures, with an alert. Feed pairs / shots out of this step to screen.launch_capture so the plans line up with them.
 
 ### `verify.file_window`
 
