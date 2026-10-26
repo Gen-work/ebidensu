@@ -561,6 +561,16 @@ Tests/                  Run-Tests.ps1 (parse-checks every .ps1 in the tree, then
                         steps idempotent, prefixed helper names, ASCII source.
                         The mustRelease kind table is PARSED OUT of the spec, so
                         adding a kind stays a one-file edit.
+tools/review/           Python 3 side tool (openpyxl + Pillow), NOT a phase or
+                        step: read-only pre-delivery self-review of the J4
+                        evidence workbooks before they go to the reviewer.
+                        check_book.py = automatic checks (save state, font,
+                        log labels vs the log they were cut from, START/END
+                        blocks, stray yellow, compare-sheet B/G labels, red
+                        boxes off any picture); drawings.py = list / render
+                        pictures + shapes by their CELL ANCHORS (the xfrm is
+                        often stale). Patterns: KNOWLEDGE.md section 5
+                        (K-36..K-42).
 docs/Parked-Ideas.md    designed-then-deliberately-shelved work, with what
                         it would take to resume. NOT on the TODO list.
                         Currently holds the whole D2 image-check line

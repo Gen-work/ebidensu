@@ -26,6 +26,7 @@
 8. **默认行为先问操作员的偏好**(Enter 的含义、对不上时停不停、重试几次、旧 run 怎么处理、数字容差),并告诉他在哪里改。问法见 `INTERVIEW.md` 的 6.5。不问,操作员就以为「程序只能这样」(K-05、K-06、K-10 都是跑过之后才说出来的偏好)。
 9. 把「页面上的一行」和「这本」对上的东西,如果只有一个(GFIX 受信是开始时刻),它要来自**当天现场的话**(Teams「実施します」),不是计划表;计划表的时刻只当默认值,面板上写清它可能是计划(K-21)。
 10. 人工回答在 `-Resume` 时**重新问**,不要从 ledger 重放:回答错了正是要恢复的原因(K-18)。
+11. 往证迹簿里写标签、涂色、画框的 step:标签从来源推、不写死;涂色前确认这一行有字;多组的每一组都要写(K-36 ～ K-41)。交付前跑 `tools/review/check_book.py`(第 5 节)。
 
 ---
 
@@ -287,6 +288,63 @@
 - **原因**:模板 HTML 里 token 单独占一个 `<span>`,前面带了空格。
 - **现在的对策**:`human.draft_mail trimBefore`(默认开)会删掉 `_` 或 `>` 和 token 之间的空格;操作员手里的 bat 也修好了。
 - **来源**:10/15 反馈第 11 条。
+
+---
+
+## 5. 交付前自查(交给加瀬さん之前)
+
+10/23 起,每天交付前把要交的 J4 证迹簿过一遍。清单是 Check Sheet_J4 的历史指摘 +
+10/23 自查 14 本(3 轮)找到的错。能自动查的放进了 `tools/review/check_book.py`,
+要看图的用 `tools/review/drawings.py render`(用法见 `tools/review/README.md`)。
+
+### K-36 日志标签和实际的日志名对不上
+- **症状**:10/23 RJODWWBV / SJODWWBV / RJODWDBC 的 GIFT受信結果 标签写成 `GIFTReceiverUnzip.log`(多一个 r);FJODWWBV 的 GFIX受信結果 写成 `GFIXReceive.log`,下面贴的却是 GFIXReceiverUnzip 那一段。
+- **原因**:shell 和日志行里是 `GIFTReceiverUnzip`(有 r),日志**文件**叫 `GIFTReceiveUnzip.log`(没有 r);照着日志行抄标签就多了 r。zip 的 job 用 Unzip 日志,TXT 的 job 用 `GIFTReceive.log` / `GFIXReceive.log`,换 job 时标签没跟着换。加瀬さん 10/21 对 LJODWWBV 指摘过同一件事(「GFIXReceive.log→GIFTReceiveUnzip.log」)。
+- **现在的对策**:`check_book.py` 从标签下面第一条 `...Receiver[Unzip] START` 推出应有的标签,不一致报 NG。GFIX 侧的标签由 profile 的 `receiveLogBySource` 按来源文件名决定;GIFT 侧是手贴的,要自己看。
+- **写新 workflow 时**:标签从**来源**推(日志文件名、日志行),不要写死;一份证迹里同一种东西只能有一种写法。
+- **来源**:10/23 自查 round 1 / 2 / 3。
+
+### K-37 日志段的头尾:缺 START、混进下一次运行
+- **症状**:10/23 RJODWCP2 GIFT受信結果 B253:END + 日期之后多了一行 `GIFTReceiver START JJPCRS1220260609145936820375`(下一次运行的开头)。CJODWAF1 GIFT受信結果:标签下面直接是日期行,第一个文件的 `GIFTReceiver START ...136696303` 那一行没有,对应的 END 在 B365。
+- **原因**:手工从日志里框选复制,多选了一行 / 少选了一行。同一个相関ID的日志里一天有好几次运行,前后挨着。
+- **规则**:一段 = 从 START 到 END + 日期行;AF1 这种一个 job 两个文件的,两次运行的 START / END 交错是正常的,但每个文件都要有 START 和 END。
+- **现在的对策**:`check_book.py`:段首不是 START、END 没有对应的 START、START 没有 END、最后一个 END + 日期之后还有行,都报 NG。
+- **来源**:10/23 自查 round 1(RJODWCP2)、round 2(CJODWAF1)。参考 Check Sheet 10/07「208行目不要な行」。
+
+### K-38 没有文字的格子留着黄色
+- **症状**:10/23 RJODWCP2 GIFT受信結果 B255、QJODWWBV GIFT受信結果 B262 各有一格黄色,没有文字,压在 Jenkins 图下面(打开表看不到,删图或挪图就露出来)。
+- **原因**:未确认。两本都在 Jenkins 图锚定的那一行附近,像是同一个步骤留下的(手工还是工具,没查)。
+- **现在的对策**:`check_book.py` 报「黄色在空行上」。黄色涂到文字结尾、不要过长(Check Sheet 10/20「文字最後まで」、07/01「長すぎるのでAWセルくらいまで」)也一起查(WARN,约 3 字 / 列)。
+- **写新 workflow 时**:涂色之前先确认这一行有字;贴图之前不要先涂底色。
+- **来源**:10/23 自查 round 1 / 2。
+
+### K-39 多组 DF:第二组的 STEP 名写错列
+- **症状**:10/23 FJODWAF1 GIFTデータvsGFIXデータ 第二组的 `STEP:MQFX0030` 在 **C66**,MJODWAF1 在 **F66**(应在 G66,和第一组的 G3 一样);CJODWAF1 在 G68,是对的。
+- **原因**:AF1 一个 job 两个文件(K-32),第二组的相关ID / STEP 名是手补的,补到了别的列。v2.36.0 的 `excel.label_sections` 会自动写 B / G,这几本是那之前的。
+- **规则**(加瀬さん 10/13):每组 DF 图的上一行,B = 相关ID,G = 送信データ对应标签行的 STEP 名;送信データ没有 STEP 名(JOD 的 B3 空)就空着。
+- **现在的对策**:`check_book.py` 按送信データ的第 k 个标签行对第 k 组:组数不一样、相关ID 不一样、STEP 名不在 G,都报 NG。
+- **来源**:10/23 自查 round 2。
+
+### K-40 红框在图上,但没压在要框的东西上
+- **症状**:10/23 CJODWAF1 第二组 DF(CSV2,空文件)的「同一内容」红框浮在状态栏上方约两行的空白处。
+- **原因**:未确认。这本第二组的标签在第 68 行(FJODWAF1 / MJODWAF1 是 66),DF 图被挤下去约 31 px,红框没跟着动——像是放好框之后插了行。
+- **规则**:红框要压在它说明的东西上:GIFT 一览 = 这个 job 的那几行;Detail = RECVFILENAME;Jenkins = 这个文件那一行(两个文件就两行);DF = 最后一行的行号(= 送信データ红框行号 − 1)和「同一内容」;空文件只框「同一内容」。
+- **现在的对策**:自动只能查「框在不在任何图上」;框落在图的哪一行要看 `drawings.py render` 的图。
+- **GIFT 一览的框不在最下一行**:同一个相関ID的别的 job 在后面又发了(RJODWCP2、MJODWWBV、QJODWDBC),框的是这个 job 的那一行,对的。加瀬さん指摘过两次「処理ステータスへの赤枠は、最新のものだけ」,可能会问;想先堵住,就在 Detail 的 SENDFILENAME 也框上(一眼看出是这个 job)。
+- **来源**:10/23 自查 round 1 / 2。
+
+### K-41 比对结果是「相違」的,证迹里要有说明
+- **症状**:10/23 RJODWCP2 的 DF 是「相違ファイル(53)」:GFIX 377 行、GIFT 324 行,GFIX 保留了空行、GIFT 没有(HOST 侧在查,10/23 决定先交证迹)。工作簿里没有任何说明,红框只在 GFIX 侧。
+- **规则**(参考 Check Sheet 08/21「差異赤枠箇所に吹き出しで…」):有差异的比对,在 DF 图旁边用吹き出し写清差在哪里、为什么、谁在查;两侧最后一行都框上。
+- **现在的对策**:操作员手加吹き出し。自动检查做不到(要读 DF 状态栏的字)。
+- **来源**:10/23 自查 round 1。
+
+### K-42 自查脚本:按单元格锚定算位置;哪些不算错
+- **发生了什么**:10/23 自查时两次把对的红框看成错的:KJODWWBV 的 Jenkins 图、CJODWAF1 的 Jenkins 图。图形自己的 `<a:xfrm>` 是插行、改行高之前的旧值,图的实际位置比它低 112 px / 211 px,还被压扁了 3%;RJODWDBC / QJODWDBC 的图是 oneCellAnchor,没有 `<xdr:to>`。
+- **对策**:`tools/review/drawings.py` 一律按 `<xdr:from>/<xdr:to>`(oneCell 用 `<xdr:from>` + `<xdr:ext>`)和行高算位置,图按锚定的大小贴。
+- **不算错的**(10/23 一度误报,已撤回):B3 快照的ジョブ列是**正式环境**的作业名(`RJODJCP2`、`KJODJWBV`,W → J);相関ID `JJPCRS13`(10/21 带着它过了审);送信データ B3 空的 JOD 簿 G3 也空(K-27);QJODWWBV 的 DATA\GIFT 文件夹叫 `QJODJWBV`(操作员:不改)。
+- **写新 workflow 时**:读别人摆好的图形,位置从锚定算;要判断「框得对不对」,先想清楚哪些是这个项目的正常写法,别把正常写法报成错。
+- **来源**:10/23 自查。
 
 ---
 
