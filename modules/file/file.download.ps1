@@ -31,6 +31,7 @@ $Manifest = @{
     countLines = @{ type='bool';  default=$false; desc='count each file''s lines (files[].lines), for verify.pair_files' }
     missingOk  = @{ type='bool';  default=$false; desc='a 404 is not a failure: the file is left out (total counts only what arrived)' }
     maxFiles   = @{ type='int';   default=0; desc='more names than this = too_many, nothing downloaded (a filter upstream let too much through); 0 = no limit' }
+    serverTime = @{ type='bool';  default=$false; desc='true: the file keeps the server''s Last-Modified time instead of the download time, so a later verify.file_window can tell which run made it (10/26 gift)' }
   }
   outputs    = @{
     paths   = @{ type='list'; desc='every file now on disk, in the order asked' }
@@ -72,7 +73,7 @@ function FileDownload-Gunzip {
 
 function FileDownload-Get {
     # One GET to a temp name, then the rename. @{ ok; failure; message; size }.
-    param([string]$Url, [string]$Dest, [int]$TimeoutSec)
+    param([string]$Url, [string]$Dest, [int]$TimeoutSec, [bool]$ServerTime = $false)
     $tmp = $Dest + '.download'
     $wc = $null
     try {
@@ -86,6 +87,8 @@ function FileDownload-Get {
         # starting 1F 8B); let .NET undo any Content-Encoding
         try { $req.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate } catch { }
         $resp = $req.GetResponse()
+        $stamp = $null
+        if ($ServerTime) { try { $lm = [string]$resp.Headers['Last-Modified']; if ($lm -ne '') { $stamp = [datetime]::Parse($lm, [System.Globalization.CultureInfo]::InvariantCulture) } } catch { $stamp = $null } }
         try {
             $in = $resp.GetResponseStream()
             $out = [System.IO.File]::Create($tmp)
@@ -94,6 +97,7 @@ function FileDownload-Get {
         [void](FileDownload-Gunzip -Path $tmp -Name $Dest)
         if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Force }
         Move-Item -LiteralPath $tmp -Destination $Dest -Force
+        if ($null -ne $stamp) { try { [System.IO.File]::SetLastWriteTime($Dest, $stamp) } catch { } }
         return @{ ok = $true; failure = ''; message = ''; size = [int64](Get-Item -LiteralPath $Dest).Length }
     } catch [System.Net.WebException] {
         $code = 0
@@ -151,7 +155,7 @@ function Invoke-Step {
             [void]$files.Add(@{ name = $j['name']; path = $j['dest']; size = [int64](Get-Item -LiteralPath $j['dest']).Length; skipped = $true; lines = (FileDownload-Lines -Path $j['dest'] -Count ([bool]$In['countLines'])); order = $j['name'] })
             continue
         }
-        $r = FileDownload-Get -Url $j['url'] -Dest $j['dest'] -TimeoutSec ([int]$In['timeoutSec'])
+        $r = FileDownload-Get -Url $j['url'] -Dest $j['dest'] -TimeoutSec ([int]$In['timeoutSec']) -ServerTime ([bool]$In['serverTime'])
         if (-not $r['ok'] -and $r['failure'] -eq 'not_found' -and [bool]$In['missingOk']) {
             $Ctx.Log.Info(('not there (404, allowed): {0}' -f $j['url']))
             $warn404 = $true

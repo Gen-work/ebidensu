@@ -1,3 +1,26 @@
+## 2026-10-26 - gift: files already in DATA\GIFT are checked against the GIFT run, not trusted for being there (verify.file_window) (v2.38.0)
+
+10/26 the five AF1 books: gift said ok for all five because each
+DATA\GIFT folder already held two files. KJODWAF1 and LJODWAF1 held
+another run's files (L's two were 7 hours apart: 10:32 and 17:45); track
+only stopped at the line counts and the files were swapped by hand.
+
+- new step `verify.file_window` (pure): a file.list listing against a run
+  day / time -- the count (FileCount), one run (the files within
+  `spreadMinutes` of each other), the day (the yyyyMMdd in the name, else
+  the file date) and the time (the file time inside -before..+after, only
+  when the file is dated that day: a copy made days later keeps the name,
+  not the run's time). code ok / ng with one line per problem.
+- `file.download`: `serverTime` keeps the server's Last-Modified time
+  instead of the download time (default off; track unchanged).
+- `gfixRecv.gift` 0.2.0: a folder with files goes through `haveChk` and
+  `haveGate` (asks on ng only; o = right after all, n = set them aside to
+  capture\gfix\<W>\set-aside-gift and take them from Jenkins, r = put
+  right by hand, check again); the download keeps the server time. Vars
+  `haveBefore` 2 / `haveAfter` 60 / `haveSpread` 15 (minutes).
+- Tests: Test-PlanSets (7 apart / together / wrong day / outside the time
+  / a later copy / one of two / no day in the name), RUNBOOK 1b, catalog.
+
 ## 2026-10-26 - pre-delivery self-review tool (tools/review) + KNOWLEDGE section 5 (v2.37.1)
 
 10/23 the day's J4 workbooks were reviewed before going to the reviewer,
