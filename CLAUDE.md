@@ -561,38 +561,22 @@ Tests/                  Run-Tests.ps1 (parse-checks every .ps1 in the tree, then
                         steps idempotent, prefixed helper names, ASCII source.
                         The mustRelease kind table is PARSED OUT of the spec, so
                         adding a kind stays a one-file edit.
-tools/review/           Python 3 side tool (openpyxl + Pillow), NOT a phase or
-                        step: read-only pre-delivery self-review of the J4
-                        evidence workbooks before they go to the reviewer.
-                        check_book.py = automatic checks (save state, font,
-                        log labels vs the log they were cut from, START/END
-                        blocks, stray yellow, compare-sheet B/G labels, red
-                        boxes off any picture); drawings.py = list / render
-                        pictures + shapes by their CELL ANCHORS (the xfrm is
-                        often stale). Patterns: KNOWLEDGE.md section 5
-                        (K-36..K-42).
+tools/review/           Python side tool (NOT a phase/step): read-only pre-delivery
+                        self-review of J4 workbooks (check_book.py checks,
+                        drawings.py by cell anchors). tools/review/README.md;
+                        patterns: KNOWLEDGE.md section 5 (K-36..K-42).
 docs/Parked-Ideas.md    designed-then-deliberately-shelved work, with what
                         it would take to resume. NOT on the TODO list.
                         Currently holds the whole D2 image-check line
                         (mock-page + PixelDigitMatch + OldSnapPixelVerify)
                         and the never-wired Repair-ProcessTimeStartFromStamp.
 docs/ProcessTime-OldSnap-MockMatch-Plan.md
-                        PARKED (see docs/Parked-Ideas.md). Designed
-                        replacement for the D2 image check: render the
-                        reference row from mock-page in Edge on the office PC
-                        (same engine/font/CSS as the snap) and whole-field
-                        template-match it via Locate-ByImage, instead of GDI+
-                        per-digit templates. Never built -- both D2
-                        generations need an office-PC calibration session
-                        that never happened, and the deterministic checks in
-                        TimeDigitVerify.ps1 cover the day-to-day 3/9 problem
-                        without one.
+                        PARKED (see docs/Parked-Ideas.md): the never-built
+                        mock-page template-match replacement for the D2 image
+                        check; TimeDigitVerify.ps1 covers the 3/9 problem.
 docs/ProcessTime-OcrBenchmark-Plan.md
-                        Phase 2/3 design: OCR benchmark test set + 3/9 fix
-                        (real-snap + synthetic-HTML ground truth, runner,
-                        datestamp hh:mm cross-correction, preprocessing tuning,
-                        optional bounding-box second-pass). Office-PC-run;
-                        CI proves pure logic only.
+                        Phase 2/3 design: OCR benchmark set + 3/9 fix.
+                        Office-PC-run; CI proves pure logic only.
 
 JenkinsSnap.ps1         Phase GiftJenkins / GfixJenkins / GiftJenkinsNoFile
 HmSnap.ps1              Phase GiftHmSnap / GfixHmSnap. MappingStore + ProgressLog
