@@ -152,11 +152,16 @@ function VerifyDfRanges-Assign {
     # 3. slots still empty take the free pairs left, in order (what they
     #    cannot line up the plan says);
     # so pairs that fit keep the sheet's order and nothing is dropped.
+    # sure: every pair with lines was placed under a readable HOST set by
+    # its count -- else (10/26 SJODWAF1: all three HOST pictures unreadable,
+    # the data ones too) the caller keeps the old order, since a blank slot
+    # may as well be an unread data picture.
     param($Slots, [int[]]$Lines, [int]$Offset = 1, [int]$MaxExtra = 2)
     $slotsA = @($Slots)
     $order = New-Object int[] $slotsA.Count
     for ($k = 0; $k -lt $order.Length; $k++) { $order[$k] = -1 }
     $used = New-Object bool[] $Lines.Length
+    $byCount = 0
     for ($k = 0; $k -lt $slotsA.Count; $k++) {
         $sl = $slotsA[$k]
         for ($i = 0; $i -lt $Lines.Length; $i++) {
@@ -169,7 +174,7 @@ function VerifyDfRanges-Assign {
                 $x = $Lines[$i] - ($hostLast - $Offset)
                 $fits = ($x -ge 0 -and $x -le $MaxExtra)
             }
-            if ($fits) { $order[$k] = $i; $used[$i] = $true; break }
+            if ($fits) { $order[$k] = $i; $used[$i] = $true; if ($Lines[$i] -gt 0) { $byCount++ }; break }
         }
     }
     for ($k = 0; $k -lt $slotsA.Count; $k++) {
@@ -177,7 +182,8 @@ function VerifyDfRanges-Assign {
         for ($i = 0; $i -lt $Lines.Length; $i++) { if (-not $used[$i]) { $order[$k] = $i; $used[$i] = $true; break } }
     }
     $rest = @(for ($i = 0; $i -lt $Lines.Length; $i++) { if (-not $used[$i]) { $i } })
-    return @{ order = @($order); rest = $rest }
+    $sure = ($byCount -eq @($Lines | Where-Object { $_ -gt 0 }).Count)
+    return @{ order = @($order); rest = $rest; sure = $sure }
 }
 
 function Invoke-Step {
@@ -189,6 +195,17 @@ function Invoke-Step {
     $lines = [int[]]@($pairs | ForEach-Object { [int]$_['lines'] })
     if ($null -eq $lines) { $lines = [int[]]@() }
     $a = VerifyDfRanges-Assign -Slots $slots -Lines $lines -Offset ([int]$In['offset']) -MaxExtra ([int]$In['maxExtra'])
+    if (-not [bool]$a['sure']) {
+        # not sure which HOST pictures go with which file: the pairs keep
+        # track's order and take the readable sets one by one (as before 10/26)
+        $old = VerifyDfRanges-Sets -Ranges $In['ranges']
+        $sets = @($old['sets'])
+        $slots = @($sets | ForEach-Object { @{ kind = 'set'; set = $_ } })
+        $ord = New-Object int[] $slots.Count
+        for ($k = 0; $k -lt $slots.Count; $k++) { $ord[$k] = $(if ($k -lt $pairs.Count) { $k } else { -1 }) }
+        $a = @{ order = @($ord); rest = @(for ($i = $slots.Count; $i -lt $pairs.Count; $i++) { $i }); sure = $false }
+        $g = @{ slots = $slots; stray = [int]$old['bad'] }
+    }
     $plans = New-Object System.Collections.ArrayList
     $outPairs = New-Object System.Collections.ArrayList
     $outShots = New-Object System.Collections.ArrayList

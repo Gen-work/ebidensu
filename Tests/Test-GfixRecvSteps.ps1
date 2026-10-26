@@ -691,6 +691,14 @@ try {
     Assert-True ((-not $dr['moved']) -and @($dr['shots']).Count -eq 0) 'df ranges step: already in order -> not moved; no shots given -> none handed back'
     $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $kp; ranges = @((& $rg 1 17), (& $rg 663 679)) }
     Assert-True ((@($dr['pairs'] | ForEach-Object { $_['rightName'] }) -join ',') -eq 'F202610260007.csv,F202610260006.csv' -and $dr['plans'][1]['mode'] -eq 'default') 'df ranges step: no picture for the empty one -> it goes last, default'
+    # 10/26 SJODWAF1: all three HOST pictures unreadable (the data ones too):
+    # not sure which is which -> track's order and the old alerts, as before
+    $sp = @(@{ lines = 1652; rightName = 'F202610260013.csv' }, @{ lines = 0; rightName = 'F202610260014.csv' })
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $sp; ranges = @(@{ ok = $false }, @{ ok = $false }, @{ ok = $false }) }
+    Assert-True ((-not $dr['moved']) -and (@($dr['pairs'] | ForEach-Object { $_['rightName'] }) -join ',') -eq 'F202610260013.csv,F202610260014.csv') 'df ranges step: nothing readable -> pairs stay in track''s order'
+    Assert-True ($dr['plans'][0]['mode'] -eq 'default' -and $dr['alert'] -match '3 HOST picture\(s\) on the send-data sheet could not be read') ('df ranges step: nothing readable -> default + the unreadable count: ' + $dr['alert'])
+    $as = VerifyDfRanges-Assign -Slots (VerifyDfRanges-Slots -Ranges @(@{ ok = $false }, (& $rg 1 20), (& $rg 1635 1653)))['slots'] -Lines @(0, 1652)
+    Assert-True ($as['sure'] -and (@($as['order']) -join ',') -eq '0,1') 'df assign: the empty set first on the sheet -> it stays first'
     # launch_capture follows an align plan: start heights moved by 18 px a line
     $in = @{ screenLines = 16; linesEnd = 17; height = 432; heightEnd = 476; fitPitchPx = 18; linesField = 'lines'; secondField = 'long'; keysMid = 'MID'; keysSecond = 'END' }
     $sp = ScreenLaunchCapture-ShotPlan -Set @{ lines = 5684 } -In $in -Plan @{ mode = 'align'; first = 18; end = 20 }

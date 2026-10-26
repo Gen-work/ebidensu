@@ -12,8 +12,12 @@ label sat right under the first set's pictures.
   with no line numbers is a slot of its own = an empty data set); each slot
   takes the first pair whose line count fits (HOST last - 1, up to maxExtra
   more; a blank slot takes a 0-line pair), the slots left take the pairs
-  left in order. New input `shots`; new outputs `pairs` / `shots` (in that
-  order), `order`, `moved`; new plan mode `empty` (no alert).
+  left in order. Only when every file with lines found its HOST set by
+  its count; otherwise (10/26 SJODWAF1: all three HOST pictures unreadable,
+  the data ones too -- a blank may be an unread data picture) the pairs
+  keep track's order as before. New input `shots`; new outputs `pairs` /
+  `shots` (in that order), `order`, `moved`; new plan mode `empty` (no
+  alert).
 - `gfixRecv.evidence` 0.9.0: `dfShots` runs on `dfRanges.out.pairs` and
   reuses `dfRanges.out.shots`; `dfPlan` gapRows 2 (a blank row, then the
   next set's label row).
