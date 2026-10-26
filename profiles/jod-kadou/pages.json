@@ -1,0 +1,105 @@
+{
+  "goAnywhere": {
+    "role": "list",
+    "label": "GoAnywhere 完了したジョブ",
+    "url": "",
+    "openHint": "GoAnywhere 監査ログ > ジョブログ > 完了したジョブ。日付範囲: Today、プロジェクト名はフローが言う I/F 名(例 JOD_VER1_IF5050_001_SSH)、表示件数 100",
+    "windowTitle": "GoAnywhere",
+    "fingerprint": {
+      "ok": [
+        "完了したジョブ",
+        "ジョブ番号"
+      ],
+      "loading": [],
+      "empty": [
+        "表示中 0"
+      ],
+      "expired": [
+        "ログイン"
+      ]
+    },
+    "_refresh_doc2": "10/23: find:詳細 + one Tab still landed elsewhere some days (wrong_page). The refresh button carries its own text 更新 (title 更新, a hidden span): findenter:更新 = Ctrl+F 更新, Enter (the search surely runs; 1/1 on this page, so it stays on the button), Esc (the focus is left on the button), Enter = click. If the find bar ever shows 1/2, another 更新 is on the page -- go back to find:更新 or the 詳細 recipe in ebi.local.json.",
+    "refreshRecipe": [
+      "findenter:更新",
+      "keys:{ENTER}",
+      "wait:2500"
+    ],
+    "jobLogRecipe": [
+      "wait:1500",
+      "find:ジョブログをダウンロードする",
+      "keys:{ENTER}"
+    ],
+    "timeoutSec": 120,
+    "pollMs": 3000,
+    "timeField": "startTime",
+    "jobLogBackKeys": "{TAB}{TAB}{ENTER}",
+    "receiveFolders": [
+      "/idsusr/Receive",
+      "/igp2usr/Receive"
+    ]
+  },
+  "jobLog": {
+    "role": "document",
+    "label": "GoAnywhere ジョブログ(ダウンロードしたファイル)",
+    "url": "",
+    "openHint": "完了したジョブ > ジョブ番号 > ジョブログをダウンロードする",
+    "fingerprint": {
+      "ok": [
+        "Job Number:",
+        "Project Name:"
+      ],
+      "loading": [],
+      "empty": [],
+      "expired": [
+        "ログイン"
+      ]
+    },
+    "timeoutSec": 30,
+    "pollMs": 1000,
+    "timeField": "time"
+  },
+  "jenkinsRecv": {
+    "role": "list",
+    "label": "Jenkins 受信フォルダ (IDSVer1 / IGP2Ver1 gfix/recv)",
+    "url": "",
+    "openHint": "Jenkins の userContent logs/batch/<host>_appl/<SYS>Ver1/gfix/recv を別ウィンドウで(IDS と IGP2 はフローが URL を切り替える)",
+    "windowTitle": "recv [Jenkins]",
+    "fingerprint": {
+      "ok": [
+        "User content"
+      ],
+      "loading": [],
+      "empty": [],
+      "expired": [
+        "ログイン"
+      ]
+    },
+    "refreshRecipe": [
+      "keys:{F5}",
+      "wait:2500"
+    ],
+    "timeoutSec": 20,
+    "pollMs": 3000,
+    "_doc": "the evidence is a screenshot of the folder listing with the transfer file highlighted by Ctrl+F (orange); the listing text decides which round is chosen (verify.job_logs preferText)"
+  },
+  "batchStatus": {
+    "role": "record",
+    "label": "バッチ処理状況一覧 (IDSXA041 / IGPXA041)",
+    "url": "",
+    "openHint": "IDS / IGP2 の バッチ処理状況一覧 を別ウィンドウで(フローが URL を切り替える)。検索は人: 相関ID / 処理種別 = データ取込 / 開始日 FROM・TO = 今日",
+    "windowTitle": "バッチ処理状況",
+    "_windowTitle_doc": "a guess (the page was never seen from here): if find_window says not_found, put a piece of the real window title in ebi.local.json { \"pages\": { \"batchStatus\": { \"windowTitle\": \"...\" } } }",
+    "fingerprint": {
+      "ok": [
+        "正常終了"
+      ],
+      "loading": [],
+      "empty": [],
+      "expired": [
+        "ログイン"
+      ]
+    },
+    "timeoutSec": 30,
+    "pollMs": 1000
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "_doc": "ONLY placeholders: the real URLs go in <WorkDir>/ebi.local.json { \"paths\": { ... } } (mask gate: no intranet host in the repo).",
+  "goAnywhereUrl": "",
+  "jenkinsRecvIds": "",
+  "jenkinsRecvIgp2": "",
+  "_jenkins_doc": "the receive folder listing: .../jenkins_ids/userContent/logs/batch/<host>_appl/IDSVer1/gfix/recv (and jenkins_igp2 .../IGP2Ver1/gfix/recv); a file there is <listing URL>/<file>",
+  "batchStatusIds": "",
+  "batchStatusIgp2": "",
+  "_batch_doc": "バッチ処理状況一覧: .../ids9a21/x/xa/IDSXA041.do and .../igp29a21/x/xa/IGPXA041.do"
+}

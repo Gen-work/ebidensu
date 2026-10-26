@@ -1,0 +1,345 @@
+{
+  "_doc": "kadou.csv: one row per transfer (相関ID), nine rows, written by the first kadou.collect run from targets.json (table.upsert: existing rows keep their progress). Columns B / C_JK / C_BS are the summary table (9 rows x B / C), collect / evidence the phase verdicts.",
+  "file": "kadou.csv",
+  "encoding": "utf8-bom",
+  "key": {
+    "columns": [
+      "CORREL"
+    ],
+    "confirmedRules": [
+      {
+        "kind": "case-insensitive"
+      }
+    ],
+    "ambiguityPolicy": "listAndAsk"
+  },
+  "dashboard": {
+    "columns": [
+      "JOB",
+      "SYS",
+      "FILE",
+      "B",
+      "C_JK",
+      "C_BS"
+    ]
+  },
+  "columns": [
+    {
+      "name": "CORREL",
+      "role": "key"
+    },
+    {
+      "name": "JOB",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "SLOT",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "SYS",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "IFNO",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "PROJECT",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "RECVDIR",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "SHELL",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "SS",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "BATCH",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "EXPECT",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "LABEL_ROW",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "PIC_ROW",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "LOG_ROW",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "JK_ROW",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "JKPIC_ROW",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "DATA_ROW",
+      "role": "text",
+      "default": ""
+    },
+    {
+      "name": "RUNS",
+      "role": "text",
+      "default": "",
+      "_doc": "today: \"<ok>/<runs> ok\" of GoAnywhere runs (B, every round)"
+    },
+    {
+      "name": "FILE",
+      "role": "text",
+      "default": "",
+      "_doc": "the transfer file chosen for the evidence (the earliest round whose B and C are both there)"
+    },
+    {
+      "name": "B",
+      "role": "text",
+      "default": "",
+      "_doc": "GFIX side (GoAnywhere job log): ok / ng / unknown (= 未取得)"
+    },
+    {
+      "name": "C_JK",
+      "role": "text",
+      "default": "",
+      "_doc": "OPEN side, the file in the Jenkins receive folder: ok / unknown"
+    },
+    {
+      "name": "C_BS",
+      "role": "text",
+      "default": "",
+      "_doc": "OPEN side, バッチ処理状況一覧: 正常終了 + batch id + 相関ID on the page: ok / ng / unknown"
+    },
+    {
+      "name": "collect",
+      "role": "verdict",
+      "default": "",
+      "doneFile": "capture/kadou/{{item.keySafe}}/collect.json",
+      "values": {
+        "ok": "ok",
+        "ng": "ng",
+        "unknown": "",
+        "pending": ""
+      }
+    },
+    {
+      "name": "evidence",
+      "role": "verdict",
+      "default": "",
+      "doneFile": "capture/kadou/{{item.keySafe}}/evidence.json",
+      "values": {
+        "ok": "ok",
+        "ng": "ng",
+        "unknown": "",
+        "pending": ""
+      }
+    },
+    {
+      "name": "note",
+      "role": "text",
+      "default": ""
+    }
+  ],
+  "_targets_doc": "The nine transfers (GFIX一覧 + 竹村さん 10/22 reference books, 07/29 run). Verification-environment 相関ID end in S (the JCL comment says M: not used). EXPECT = the attachment N column: the 07/29 actual counts, a reference only, never a verdict (awe 10/26). SLOT / *_ROW = where the transfer goes in its job book, the reference DBH layout: label 10/105/200, its batch-status picture one row below, ▼GFIXログ 54/149/244, Jenkins label 297/341/385; GFIXデータ label 3/63/123.",
+  "targets": [
+    {
+      "CORREL": "JIDSU86S",
+      "JOB": "JJODWDBF",
+      "SLOT": "1",
+      "SYS": "IDS",
+      "IFNO": "IF5050",
+      "PROJECT": "JOD_VER1_IF5050_001_SSH",
+      "RECVDIR": "/appl/IDS/IDSVer1/gfix/recv",
+      "SHELL": "IDSLB283run.sh",
+      "SS": "U",
+      "BATCH": "IDSLB283",
+      "EXPECT": "21",
+      "LABEL_ROW": "10",
+      "PIC_ROW": "11",
+      "LOG_ROW": "54",
+      "JK_ROW": "297",
+      "JKPIC_ROW": "298",
+      "DATA_ROW": "3"
+    },
+    {
+      "CORREL": "JIGPS86S",
+      "JOB": "JJODWDBF",
+      "SLOT": "2",
+      "SYS": "IGP2",
+      "IFNO": "IF5133",
+      "PROJECT": "JOD_VER1_IF5133_001_SSH",
+      "RECVDIR": "/appl/IGP2/IGP2Ver1/gfix/recv",
+      "SHELL": "IGPLC083run.sh",
+      "SS": "S",
+      "BATCH": "IGPLC083",
+      "EXPECT": "4",
+      "LABEL_ROW": "105",
+      "PIC_ROW": "106",
+      "LOG_ROW": "149",
+      "JK_ROW": "341",
+      "JKPIC_ROW": "342",
+      "DATA_ROW": "63"
+    },
+    {
+      "CORREL": "JIGPU86S",
+      "JOB": "JJODWDBF",
+      "SLOT": "3",
+      "SYS": "IGP2",
+      "IFNO": "IF5141",
+      "PROJECT": "JOD_VER1_IF5141_001_SSH",
+      "RECVDIR": "/appl/IGP2/IGP2Ver1/gfix/recv",
+      "SHELL": "IGPLB283run.sh",
+      "SS": "U",
+      "BATCH": "IGPLB283",
+      "EXPECT": "11",
+      "LABEL_ROW": "200",
+      "PIC_ROW": "201",
+      "LOG_ROW": "244",
+      "JK_ROW": "385",
+      "JKPIC_ROW": "386",
+      "DATA_ROW": "123"
+    },
+    {
+      "CORREL": "JIDSU87S",
+      "JOB": "JJODWDBH",
+      "SLOT": "1",
+      "SYS": "IDS",
+      "IFNO": "IF5050",
+      "PROJECT": "JOD_VER1_IF5050_001_SSH",
+      "RECVDIR": "/appl/IDS/IDSVer1/gfix/recv",
+      "SHELL": "IDSLB283run.sh",
+      "SS": "U",
+      "BATCH": "IDSLB283",
+      "EXPECT": "1",
+      "LABEL_ROW": "10",
+      "PIC_ROW": "11",
+      "LOG_ROW": "54",
+      "JK_ROW": "297",
+      "JKPIC_ROW": "298",
+      "DATA_ROW": "3"
+    },
+    {
+      "CORREL": "JIGPS87S",
+      "JOB": "JJODWDBH",
+      "SLOT": "2",
+      "SYS": "IGP2",
+      "IFNO": "IF5133",
+      "PROJECT": "JOD_VER1_IF5133_001_SSH",
+      "RECVDIR": "/appl/IGP2/IGP2Ver1/gfix/recv",
+      "SHELL": "IGPLC083run.sh",
+      "SS": "S",
+      "BATCH": "IGPLC083",
+      "EXPECT": "1",
+      "LABEL_ROW": "105",
+      "PIC_ROW": "106",
+      "LOG_ROW": "149",
+      "JK_ROW": "341",
+      "JKPIC_ROW": "342",
+      "DATA_ROW": "63"
+    },
+    {
+      "CORREL": "JIGPU87S",
+      "JOB": "JJODWDBH",
+      "SLOT": "3",
+      "SYS": "IGP2",
+      "IFNO": "IF5141",
+      "PROJECT": "JOD_VER1_IF5141_001_SSH",
+      "RECVDIR": "/appl/IGP2/IGP2Ver1/gfix/recv",
+      "SHELL": "IGPLB283run.sh",
+      "SS": "U",
+      "BATCH": "IGPLB283",
+      "EXPECT": "1",
+      "LABEL_ROW": "200",
+      "PIC_ROW": "201",
+      "LOG_ROW": "244",
+      "JK_ROW": "385",
+      "JKPIC_ROW": "386",
+      "DATA_ROW": "123"
+    },
+    {
+      "CORREL": "JIDSU8BS",
+      "JOB": "JJODWDBM",
+      "SLOT": "1",
+      "SYS": "IDS",
+      "IFNO": "IF5050",
+      "PROJECT": "JOD_VER1_IF5050_001_SSH",
+      "RECVDIR": "/appl/IDS/IDSVer1/gfix/recv",
+      "SHELL": "IDSLB283run.sh",
+      "SS": "U",
+      "BATCH": "IDSLB283",
+      "EXPECT": "3",
+      "LABEL_ROW": "10",
+      "PIC_ROW": "11",
+      "LOG_ROW": "54",
+      "JK_ROW": "297",
+      "JKPIC_ROW": "298",
+      "DATA_ROW": "3"
+    },
+    {
+      "CORREL": "JIGPS8BS",
+      "JOB": "JJODWDBM",
+      "SLOT": "2",
+      "SYS": "IGP2",
+      "IFNO": "IF5133",
+      "PROJECT": "JOD_VER1_IF5133_001_SSH",
+      "RECVDIR": "/appl/IGP2/IGP2Ver1/gfix/recv",
+      "SHELL": "IGPLC083run.sh",
+      "SS": "S",
+      "BATCH": "IGPLC083",
+      "EXPECT": "1",
+      "LABEL_ROW": "105",
+      "PIC_ROW": "106",
+      "LOG_ROW": "149",
+      "JK_ROW": "341",
+      "JKPIC_ROW": "342",
+      "DATA_ROW": "63"
+    },
+    {
+      "CORREL": "JIGPU8BS",
+      "JOB": "JJODWDBM",
+      "SLOT": "3",
+      "SYS": "IGP2",
+      "IFNO": "IF5141",
+      "PROJECT": "JOD_VER1_IF5141_001_SSH",
+      "RECVDIR": "/appl/IGP2/IGP2Ver1/gfix/recv",
+      "SHELL": "IGPLB283run.sh",
+      "SS": "U",
+      "BATCH": "IGPLB283",
+      "EXPECT": "3",
+      "LABEL_ROW": "200",
+      "PIC_ROW": "201",
+      "LOG_ROW": "244",
+      "JK_ROW": "385",
+      "JKPIC_ROW": "386",
+      "DATA_ROW": "123"
+    }
+  ]
+}

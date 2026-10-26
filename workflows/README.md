@@ -17,3 +17,9 @@ here; put capabilities in `modules/` and local values in ignored local config.
   `gfixRecv.evidence.json` -- the GFIX receive verification day on profile
   `gfix-recv` (morning plan, one track round per HOST job, end-of-day logs,
   the evidence workbook). Operator guide: `docs/gfix-recv/RUNBOOK.zh.md`.
+- `kadou.collect.json` / `kadou.evidence.json` -- the 10/26 JJODWDBx operation
+  check on profile `jod-kadou` (HOST JOD -> GFIX -> OPEN IDS / IGP2, nine
+  transfers run by the verification environment every two hours): collect
+  reads every round's GoAnywhere job logs (B) and the Jenkins receive folder
+  + バッチ処理状況一覧 (C), evidence fills one book per job (GFIX受信結果 /
+  GFIXデータ). Read-only. Operator guide: `docs/kadou/RUNBOOK.zh.md`.

@@ -1,0 +1,48 @@
+2026-08-03 10:42:32           INFO      Start Date and Time: 2026-08-03 10:42:32
+2026-08-03 10:42:32           INFO      Job Number: 1000003451752
+2026-08-03 10:42:32           INFO      Project Name: /igp2usr/Receive/JOD_VER1_IF5141_001_SSH
+2026-08-03 10:42:32           INFO      Submitted By: JOD_VER1_IF5141_FTP
+2026-08-03 10:42:32           INFO      Submitted From: Trigger
+2026-08-03 10:42:32           INFO      System: hub02
+2026-08-03 10:42:32           INFO      GoAnywhere 7.8.4 running on Linux 4.18.0-240.10.1.el8_3.x86_64 (amd64)
+2026-08-03 10:42:32           INFO      Overriding variable 'CopiedFile' with value '/mnt/GoAnywhere/webdocs/igp2usr/Receive/JOD_VER1_IF5141_001_SSH/JIGPU86S.260803.10422750'
+2026-08-03 10:42:32           INFO      Overriding variable 'FileName' with value 'JIGPU86S.260803.10422750'
+2026-08-03 10:42:32           INFO      Overriding variable 'version' with value 'V2.0'
+2026-08-03 10:42:32           INFO      Executing project 'JOD_VER1_IF5141_001_SSH'
+2026-08-03 10:42:32           INFO      Project location: /mnt/GoAnywhere/projects/igp2usr/Receive/JOD_VER1_IF5141_001_SSH.xml
+2026-08-03 10:42:32           INFO      Executing module 'Main'
+2026-08-03 10:42:32           INFO      Executing task 'callProject 1.0'
+2026-08-03 10:42:32           INFO      Executing project '/99_gfixmodule/V2.0/module_t01' in current job.
+2026-08-03 10:42:32           INFO      Executing project 'module_t01'
+2026-08-03 10:42:32           INFO      Project location: /mnt/GoAnywhere/projects/99_gfixmodule/V2.0/module_t01.xml
+2026-08-03 10:42:32           INFO      Executing module 'Main'
+2026-08-03 10:42:32           INFO      Executing task 'sftp 1.0'
+2026-08-03 10:42:32           INFO      Connecting to 'batch-host' at port '22' as user 'svc-user'
+2026-08-03 10:42:32           INFO      Executing sub-task 'put'
+2026-08-03 10:42:32           INFO      Setting the data type to BINARY
+2026-08-03 10:42:32           INFO      Uploading '/mnt/GoAnywhere/webdocs/igp2usr/Receive/JOD_VER1_IF5141_001_SSH/JIGPU86S.260803.10422750' (16,654 bytes) to '/appl/IGP2/IGP2Ver1/gfix/recv/JIGPU86S.260803.10422750'
+2026-08-03 10:42:32           INFO      File '/mnt/GoAnywhere/webdocs/igp2usr/Receive/JOD_VER1_IF5141_001_SSH/JIGPU86S.260803.10422750' successfully uploaded to '/appl/IGP2/IGP2Ver1/gfix/recv/JIGPU86S.260803.10422750' (16,654 bytes)
+2026-08-03 10:42:32           INFO      1 files were uploaded successfully
+2026-08-03 10:42:32           INFO      Finished sub-task 'put'
+2026-08-03 10:42:32           INFO      Closed the FTP connection
+2026-08-03 10:42:32           INFO      Finished task 'sftp 1.0'
+2026-08-03 10:42:32           INFO      Executing task 'setVariable 2.0'
+2026-08-03 10:42:32           WARN      Variable 'subsequence_job_script' was replaced with '/appl/IGP2/shell/IGPLB283run.sh                             /appl/IGP2/IGP2Ver1/gfix/recv/JIGPU86S.260803.10422750 U'.
+2026-08-03 10:42:32           INFO      Finished task 'setVariable 2.0'
+2026-08-03 10:42:32           INFO      Executing task 'execSSH 1.0'
+2026-08-03 10:42:32           INFO      Connecting to 'batch-host' at port '22' as user 'svc-user'
+2026-08-03 10:42:32           INFO      Command: '/appl/IGP2/shell/IGPLB283run.sh                             /appl/IGP2/IGP2Ver1/gfix/recv/JIGPU86S.260803.10422750 U'
+2026-08-03 10:42:35           INFO      The Command executed successfully with return code '0'.
+2026-08-03 10:42:35           INFO      Closed the SSH connection
+2026-08-03 10:42:35           INFO      Finished task 'execSSH 1.0'
+2026-08-03 10:42:35           INFO      Executing task 'delete 1.0'
+2026-08-03 10:42:35           INFO      File '/mnt/GoAnywhere/webdocs/igp2usr/Receive/JOD_VER1_IF5141_001_SSH/JIGPU86S.260803.10422750' (16,654 bytes) was deleted.
+2026-08-03 10:42:35           INFO      1 object were deleted successfully
+2026-08-03 10:42:35           INFO      Finished task 'delete 1.0'
+2026-08-03 10:42:35           INFO      Finished module 'Main'
+2026-08-03 10:42:35           INFO      Finished project 'module_t01'
+2026-08-03 10:42:35           INFO      Project '/99_gfixmodule/V2.0/module_t01' completed normally. The job number is '1000003451752'.
+2026-08-03 10:42:35           INFO      Finished task 'callProject 1.0'
+2026-08-03 10:42:35           INFO      Finished module 'Main'
+2026-08-03 10:42:35           INFO      Finished project 'JOD_VER1_IF5141_001_SSH'
+2026-08-03 10:42:35           INFO      End Date and Time: 2026-08-03 10:42:35

@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-95 step(s) in 9 group(s).
+96 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,7 +13,7 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.set_aside`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.job_logs`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.redo`, `flow.require` |
@@ -2355,6 +2355,48 @@ failures: `input_invalid` (not transient)
 ```
 
 Notes: Pure. Folding is symmetric, so a correct name never fails for a look-alike; the cost is that two names differing only by a look-alike pair (O vs 0) are not told apart.
+
+### `verify.job_logs`
+
+Pick the GoAnywhere job logs of one transfer file and judge each run (upload, return code 0, delete, end)
+
+- file: `modules/verify/verify.job_logs.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `day` | string |  | (empty) |  | yyyy-MM-dd: only runs that started that day count; empty = every day |
+| `encoding` | string |  | mixed | mixed, utf8, cp932 |  |
+| `key` | string | yes |  |  | the transfer file name or its prefix: a log is this transfer's when its FileName equals key or starts with key + "." |
+| `paths` | list | yes |  |  | job log files (browser.download_each paths); logs of other transfers are passed over |
+| `preferText` | string |  | (empty) |  | a page text (the Jenkins receive folder): the chosen run is the earliest ok run whose file name appears in it; empty = the earliest ok run |
+| `recvDir` | string |  | (empty) |  | the directory the file must be uploaded to (/appl/IDS/IDSVer1/gfix/recv); empty = any |
+| `shell` | string |  | (empty) |  | the follow-up shell the Command line must run (IDSLB283run.sh); empty = any |
+| `ss` | string |  | (empty) |  | the last argument of the Command line (U / S); empty = any |
+
+| output | type | desc |
+|--------|------|------|
+| `chosenFile` | string | the chosen run's transfer file name; empty when none |
+| `chosenPath` | path | the chosen run's log file; empty when none |
+| `chosenStart` | string | the chosen run's start (yyyy-MM-dd HH:mm:ss) |
+| `code` | string | ok = at least one run and every run ok; ng = a run failed a check; unknown = no run |
+| `hasChosen` | bool | a run was chosen for the evidence |
+| `listed` | bool | with preferText: the chosen run's file is in that text |
+| `ngCount` | int |  |
+| `okCount` | int |  |
+| `reason` | string | one line for people: what was found, what failed |
+| `runCount` | int | runs of this transfer (that day) |
+| `runs` | list | @{ path; jobNumber; project; fileName; start; end; bytes; uploadedTo; command; returnCode; deleted; code; reasons } per run, oldest first |
+| `summary` | list | one line per run: "HH:mm:ss  <file>  ok" / "... ng: <why>" (for a gate) |
+
+failures: `file_not_found` (transient)
+
+```json
+{"id":"job_logs","use":"verify.job_logs","with":{"day":"{{run.date}}","key":"JIDSU86S","paths":["log/GoAnywhere/jobs/1000003451754.log"],"recvDir":"/appl/IDS/IDSVer1/gfix/recv","shell":"IDSLB283run.sh","ss":"U"}}
+```
+
+Notes: A verdict is never a failure: ng and unknown are outputs. file_not_found only when a listed path is missing (a download that did not land). The return code line is GoAnywhere's "The Command executed successfully with return code '0'"; a log without it (the shell never ran) is ng.
 
 ### `verify.match_record`
 

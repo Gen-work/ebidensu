@@ -1,3 +1,39 @@
+## 2026-10-26 - JJODWDBx 稼働確認: OPEN-side evidence of nine scheduled transfers, read-only (v2.39.0)
+
+10/26 (加瀬さん 10/21): the verification environment runs JJODWDBF / H / M
+by itself every two hours, three TEXT files each, HOST JOD -> GFIX -> OPEN
+IDS / IGP2. awe's part is the OPEN side only: B = the GoAnywhere job log,
+C = the Jenkins receive folder and バッチ処理状況一覧. Nothing is placed,
+submitted, moved or deleted.
+
+### Added
+- **profile `jod-kadou`**: the nine transfers (verification 相関ID ending
+  in S, I/F, Receive project, receive directory, shell + SS, batch id, the
+  attachment's counts as a reference) as `worklist.targets`, with the rows
+  each takes in its job book (the reference DBH layout); GoAnywhere page
+  (gfix-recv's), Jenkins receive folder, バッチ処理状況一覧; an empty
+  two-sheet template book (`assets/kadou-template.xlsx`, MS Gothic 10).
+- **`verify.job_logs`**: job logs -> the runs of one transfer (by the
+  log's FileName, `<correl>.YYMMDD.HHMMSScc`), each judged on upload to
+  `<recvDir>/<file>`, the Command line's shell / file / SS, return code 0,
+  deleted, End Date and Time; ok / ng / unknown for the transfer, the
+  earliest ok run (or the earliest the Jenkins listing shows) chosen for the
+  evidence. Tests/Test-KadouJobLogs.ps1 on the reference logs (07/29 DBM,
+  08/03 DBF; host / user masked).
+- **workflows `kadou.collect`** (per I/F: every job log of today; per
+  transfer: B, Jenkins listing + Ctrl+F screenshot + the received file,
+  the operator's バッチ処理状況一覧 search + screenshot + page check, one
+  gate; summary columns B / C_JK / C_BS for `ebi status -Profile jod-kadou`)
+  and **`kadou.evidence`** (one book per job: GFIX受信結果 + GFIXデータ).
+- docs/kadou/RUNBOOK.zh.md (the operator's steps); profile README.
+
+### Not done (said in the runbook)
+- バッチ処理状況一覧's search form is filled by the operator; its window
+  title is a guess (override in ebi.local.json).
+- GFIXデータ holds the received file as text, not a screenshot of
+  Jenkins' 参照 view; B3 (the attachment's rows) is pasted by hand.
+- First office run pending: nothing here has driven the real pages yet.
+
 ## 2026-10-26 - evidence: DF pictures follow the send-data sheet's order; an empty file under a HOST picture with no line numbers is not an alert; a blank row between file sets (v2.38.1)
 
 10/26 K/LJODWAF1 (one job, two I/F): the send-data sheet has STEP ..20

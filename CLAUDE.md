@@ -195,6 +195,7 @@ workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
                         gfixRecv.*.json: GFIX receive day (docs/gfix-recv/RUNBOOK.zh.md).
+                        kadou.*.json: JJODWDBx 稼働確認, profile jod-kadou (docs/kadou/RUNBOOK.zh.md).
 ebi.ps1                 ebi-dance CLI entry (P1-10, P2): help [<step>] / lint /
                         explain / dryrun / run (-Resume [-RunId], -Only, -Operator,
                         -Limit, -Var k=v, -Profile, -TimeWindow "from..to") /

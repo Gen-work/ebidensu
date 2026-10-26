@@ -1,0 +1,25 @@
+{
+  "goAnywhere": {
+    "default": "ok",
+    "rules": [
+      {
+        "field": "key",
+        "op": "present",
+        "else": "unknown",
+        "message": "no job number on the row"
+      }
+    ]
+  },
+  "jobLog": {
+    "default": "ok",
+    "rules": [
+      {
+        "field": "key",
+        "op": "matches",
+        "value": "^JI(DSU|GPS|GPU)8[67B]S\\.\\d{6}\\.\\d{8}$",
+        "else": "unknown",
+        "message": "the transfer file name does not look like <correl>.YYMMDD.HHMMSScc"
+      }
+    ]
+  }
+}
