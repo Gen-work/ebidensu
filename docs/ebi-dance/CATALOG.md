@@ -149,13 +149,14 @@ Ctrl+F search for an exact string; report whether it hit
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
 | `closeAfter` | bool |  | false |  | press Esc afterwards (the highlight goes away too) |
+| `readPage` | bool |  | true |  | read the page text first (Ctrl+A / Ctrl+C) for hit; false = no page selection is made, hit stays false |
 | `term` | string | yes |  |  | the exact string to search for |
 | `waitMs` | int |  | 400 |  | wait after the search |
 | `window` | session:window | yes |  |  | the browser window |
 
 | output | type | desc |
 |--------|------|------|
-| `hit` | bool | the page text contains the term |
+| `hit` | bool | the page text contains the term (false when readPage is false) |
 | `rect` | rect | pixel rect of the active match; null (P3: browser.find_active_row) |
 
 failures: `foreground_lost` (transient), `clipboard_error` (transient)
@@ -259,12 +260,14 @@ Send a SendKeys sequence to a registered window
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `copyAfter` | bool |  | false |  | then Ctrl+C and read the clipboard (emptied first) into copied -- e.g. what Esc left selected after a Ctrl+F |
 | `sequence` | string | yes |  |  | SendKeys syntax, e.g. ^{f} or {ESC} |
 | `waitMs` | int |  | 300 |  | wait after sending |
 | `window` | session:window | yes |  |  | the window that receives the keys |
 
 | output | type | desc |
 |--------|------|------|
+| `copied` | string | copyAfter: the clipboard text after Ctrl+C (empty when nothing was selected) |
 | `sent` | string | the sequence that was sent |
 
 failures: `foreground_lost` (transient)
@@ -502,7 +505,7 @@ Find the bands of pixel rows carrying ink in a vertical strip of a PNG
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
-| `ink` | string |  | dark | dark, blue, orange | dark text \| blue link text \| orange Ctrl+F active match |
+| `ink` | string |  | dark | dark, blue, orange, yellow | dark text \| blue link text \| orange Ctrl+F active match \| yellow the other Ctrl+F matches |
 | `maxLuma` | int |  | 160 |  | dark: pixels darker than this |
 | `mergeGap` | int |  | 1 |  | blank rows a band may contain |
 | `minHeight` | int |  | 4 |  | thinner bands are dropped (underlines, borders) |
@@ -653,12 +656,14 @@ Locate target list entries in an end-scrolled screenshot; one rect per run
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
 | `allowAbove` | bool |  | false |  | bands from the bottom: targets above the picture -> ok with above = true instead of not_found |
-| `anchorBands` | list |  | [] |  | screen.find_ink_rows bands of the hit highlight (ink orange); the first is the anchor row |
+| `anchorBands` | list |  | [] |  | screen.find_ink_rows bands of the hit highlight (ink orange); exactly one is the anchor row |
 | `anchorName` | string |  | (empty) |  | the entry the picture is anchored on (the Ctrl+F hit); with anchorBands |
 | `bands` | list |  | [] |  | screen.find_ink_rows bands of the entry column |
 | `height` | int |  | 25 |  | box height for one row, px |
+| `hitText` | string |  | (empty) |  | anchor mode: the text the hit selected (copied after Esc); not anchorName -> wrong_hit, empty -> warning hit_unverified |
 | `lastRowCenterY` | int |  | 0 |  | fallback when bands is empty: centre of the last row, px |
 | `names` | list | yes |  |  | every entry of the list in page order (parsed page text) |
+| `otherHits` | list |  | [] |  | anchor mode: bands of the other matches (ink yellow); any -> wrong_hit (the find bar is not searching for anchorName alone) |
 | `rowPitch` | int |  | 20 |  | fallback row pitch, px |
 | `targets` | list | yes |  |  | the entries to box |
 | `width` | int | yes |  |  |  |
@@ -672,7 +677,7 @@ Locate target list entries in an end-scrolled screenshot; one rect per run
 | `rects` | list | @{ x; y; w; h; names } in image px |
 | `source` | string | bands \| anchor \| pitch |
 
-failures: `not_found` (not transient)
+failures: `not_found` (not transient), `wrong_hit` (not transient)
 
 ```json
 {"id":"list_rects","use":"screen.list_rects","with":{"bands":"{{steps.ink.out.bands}}","names":"{{steps.rec.out.names}}","targets":"{{steps.mine.out.plucked}}","width":892,"x":445}}
@@ -1483,6 +1488,7 @@ Write the labels of each picture set (one row above it) from the matching set on
 
 | output | type | desc |
 |--------|------|------|
+| `cleared` | list | "B66=JJPCRS12" per stale label cleared (an earlier run wrote it where no set starts now) |
 | `missing` | list | set numbers with no label row on fromSheet (label them by hand) |
 | `sets` | int | picture sets found in shapes |
 | `written` | list | "B66=JJPCRS12" per cell written |
@@ -1493,7 +1499,7 @@ failures: `sheet_not_found` (not transient), `write_failed` (transient)
 {"id":"label_sections","use":"excel.label_sections","with":{"cells":{"B":"A","G":"B"},"fromSheet":"data","shapes":"{{steps.dfPics.out.shapes}}","sheet":"compare","startAt":2,"workbook":"wb"}}
 ```
 
-Notes: A set with no label row on fromSheet is left as it is and named in missing (warning label_missing). Cells are written as plain text, like excel.write_cell.
+Notes: A set with no label row on fromSheet is left as it is and named in missing (warning label_missing). Cells are written as plain text, like excel.write_cell. Stale labels (a source label text in a target column, below the first picture, on no set's label row) are cleared.
 
 ### `excel.mark_rows`
 

@@ -374,18 +374,25 @@
 ### K-46 隔几天重跑 evidence:Jenkins 一览里文件已经不在最下面
 - **症状**:10/26 为了改 10/23 FJODWAF1 的指摘重跑 evidence:`screen.list_rects not_found: F202610230027.csv is row 35 from the bottom, the picture has 30 text row(s)`,r 重试结果一样,只能 s。
 - **原因**:Jenkins 截图固定在一览的最下面(Ctrl+End),只能拍到最后约 30 行;隔了三天,后面又多了 30 多个文件,10/23 的文件被挤出画面。
-- **现在的对策**(v2.38.3,`gfixRecv.evidence` 0.9.2):`jkRects` 带 `allowAbove`,对象在画面上面时不再 not_found,而是 `above = true` + `anchor` = 页面顺序最上面的对象文件。之后只在 above 时跑:Ctrl+F → 贴 anchor(`browser.fill`,不碰页面的全选)→ Enter(v2.38.4:只贴不按 Enter 时,10/26 实机截到的图既没滚动也没有强调)→ 重拍同一个 `jenkins.png` → Esc 关检索栏 → 蓝字行 + 橙色当たり行(`find_ink_rows` ink `orange`,FF9632)→ `list_rects` 用 `anchorName` / `anchorBands` 从当たり行往下数 → `jkPic2`。当日的情况(above = false)和以前完全一样。
+- **现在的对策**(v2.38.3,`gfixRecv.evidence` 0.9.2):`jkRects` 带 `allowAbove`,对象在画面上面时不再 not_found,而是 `above = true` + `anchor` = 页面顺序最上面的对象文件。之后只在 above 时跑(v2.38.6,0.9.5):`browser.find`(**一个 step 里**:Ctrl+F → Ctrl+A → Backspace **清空检索栏** → 贴 anchor → Enter;`readPage false`,不碰页面的全选)→ 重拍同一个 `jenkins.png` → Esc 关检索栏并 Ctrl+C 读回当たり(`send_keys copyAfter`)→ 蓝字行 + 橙色当たり行(ink `orange`,FF9632)+ 黄色的其他当たり(ink `yellow`)→ `list_rects` 用 `anchorName` / `anchorBands` 从当たり行往下数,`otherHits` 有黄色、`hitText` 读回的不是 anchor、橙色不止一处 → `wrong_hit` 停下 → `jkPic2`。当日的情况(above = false)和以前完全一样。
 - **已确认**(10/26 实机截图):当たり颜色就是 (255,150,50),阈值 R>220、G 115～185、B<100 在文件名列抓到 14 行像素;当たり行的字变成黑色、蓝色没了 —— 由「把当たり行当一行插进去」处理。
-- **未确认**: 检索栏在截图右上角,不压文件名列(x 460～600)。第一次在办公室重跑旧日时看一眼红框。
+- **v2.38.4 / v2.38.5 的错**(10/26 实机):Ctrl+F 打开时检索栏里还留着**上一次的检索词**;当时用 `browser.fill`(Ctrl+A → Ctrl+V,而且和 Ctrl+F 分成两个 step,中间又拉了一次前台),新词没贴进去或没触发新的检索,截图里亮着的是旧检索词的黄色 / 橙色,橙色那行被当成了对象,框错了行却「校验通过」。已有的 `Invoke-EbiFindText` 早就写着这条规则:**同样的文字贴在选中的同样文字上不会开始新的检索,要先清空**。现在改成上面的做法,并且三道检查(黄色、读回、橙色只有一处)任何一道不过都停下,不框。
+- **未确认**:Esc 之后 Edge 是否把当たり留成选中状态(Ctrl+C 能读回);读不回时只给 warning `hit_unverified`,不停。检索栏在截图右上角,不压文件名列(x 460～600)。第一次在办公室重跑旧日时看一眼红框。
 - **注意**:s 跳过这条之后,这本证迹簿在这次 run 里已经被改过一部分(GFIX受信ログ、GFIXReceive.log 已经重新写进去),但 Jenkins 图没换、后面的 DF / 标签没做。跳过的这本存没存要打开看一下。
 - **来源**:10/26 操作员贴的 evidence 日志。
 
 ### K-47 失败面板上按 r,只重跑那一步 —— 读缓存的步骤怎么重试都一样
 - **症状**:10/26 FJODWAF1 `jkRects2 not_found: no Ctrl+F highlight in the picture`,按了两次 r(attempt 3),三次结果一模一样。
 - **原因**:r 只重跑失败的那一步。`screen.list_rects` 读的是前面 `jkShot2` 截好的图和 `jkText` 抓好的文字:图不重截,读几次都是同一张。重试真正需要的是**整个过程**(Ctrl+F → Enter → 截图 → 找行 → 框)再来一遍。
-- **现在的对策**(v2.38.5,`gfixRecv.evidence` 0.9.4):workflow 的 step 调用可以写 `retryFrom`(WORKFLOW-SCHEMA §2):这一步失败时按 r,runner 回到那一步重新往下跑,面板上写「r: run again from "jkFindBar" (the steps in between too)」。`jkRects2` → `jkFindBar`,`jkRects` → `jkF5`。
+- **现在的对策**(v2.38.5,`gfixRecv.evidence` 0.9.4):workflow 的 step 调用可以写 `retryFrom`(WORKFLOW-SCHEMA §2):这一步失败时按 r,runner 回到那一步重新往下跑,面板上写「r: run again from "jkFind" (the steps in between too)」。`jkRects2` → `jkFind`(0.9.5 起;0.9.4 是 `jkFindBar`),`jkRects` → `jkF5`。
 - **规则**:**读前面步骤产物(截图、页面文字、导出的图)的分析步骤,写 workflow 时就给它配 `retryFrom`,指向产生那份产物的步骤。** 只有失败原因在步骤自身(参数、计算)时,r 才该只重跑它自己。新写 workflow 时检查一遍:谁截的图、谁抓的文字,失败后重来是不是要从那里开始。
 - **来源**:10/26 操作员:「retry this step, not only read the cache but retry this procedure」。
+
+### K-48 重跑后 DF 图变高,第 2 组的标签挪了位置,旧标签留在图下面
+- **症状**:10/26 重跑 R/SJODWAF1 的 evidence,DF 从 16/17 行重拍成 18/19 行,第 2 组标签从 B66/G66 写到了 B70/G70;上次写的 B66/G66(S 还有更早的 B65/G65)没人删,压在 DF 图下面。审查要求「第 2 组标签再往上一行不能残留旧版写的 B/G 标签」。
+- **原因**:`excel.label_sections` 只写新位置,不知道上次写在哪。图(tag `df`)每次都删了重贴,标签单元格却不会跟着删。
+- **现在的对策**(v2.38.6):写之前,在目标列(B / G)里、第一张图以下、不是任何一组标签行的格子,内容和送信データ的标签文字(相关ID / STEP 名)一样的,清掉(输出 `cleared`,日志一行)。别的文字、每组自己的标签行(包括手写的)、第 1 组的 B3/G3 都不动。
+- **来源**:10/26 R/SJODWAF1 的 run 日志 + 主线的审查要点 1。
 
 ---
 

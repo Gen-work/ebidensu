@@ -340,6 +340,20 @@ Assert-Equal 'STEP:MQFX0030' ([string]$pl['writes'][0]['cells']['G']) 'label_sec
 Assert-Equal '3' (@($pl['missing']) -join ',') 'label_sections: set 3 has no 3rd label row -> missing (by hand)'
 $pl1 = ExcelLabelSections-Plan -Starts $st -Labels $labels -Cells @{ B = 'A' } -StartAt 1
 Assert-Equal 3 ([int]$pl1['writes'][0]['row']) 'label_sections: from set 1, set 1 goes to row 3 (compare sheet B3)'
+# 10/26 R/SJODWAF1: the DF pictures came out taller, set 2 moved from 66 to 70
+$st2 = @(4, 71)
+$found = @(
+    @{ row = 3;  col = 'B'; text = 'JJPCRS12' },        # set 1 (above the first picture): kept
+    @{ row = 65; col = 'B'; text = 'JJPCRS12' },        # older version's label: stale
+    @{ row = 65; col = 'G'; text = 'STEP:MQFX0030 ' },  # (trailing space)
+    @{ row = 66; col = 'B'; text = 'JJPCRS12' },        # last run's label: stale
+    @{ row = 66; col = 'G'; text = 'STEP:MQFX0030' },
+    @{ row = 70; col = 'B'; text = 'JJPCRS12' },        # set 2's row now: kept
+    @{ row = 80; col = 'B'; text = 'a note' }           # not a label: kept
+)
+$stale = @(ExcelLabelSections-Stale -Found $found -Labels $labels -Cells @{ B = 'A'; G = 'B' } -Starts $st2)
+Assert-Equal 'B65,G65,B66,G66' (@($stale | ForEach-Object { [string]$_['col'] + [string]$_['row'] }) -join ',') 'label_sections: old labels below the first picture on no set''s row are stale (K-48)'
+Assert-Equal 0 @(ExcelLabelSections-Stale -Found $found -Labels $labels -Cells @{ B = 'A'; G = 'B' } -Starts @(4, 67)).Where({ [int]$_['row'] -eq 66 }).Count 'label_sections: a set''s own label row is never cleared'
 
 # --- 12. excel.export_pictures firstPerRow (10/23 FJODWAF1: shots side by side) ---
 Write-Host '  -- excel.export_pictures firstPerRow'

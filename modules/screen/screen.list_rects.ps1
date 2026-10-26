@@ -37,7 +37,9 @@ $Manifest = @{
     rowPitch       = @{ type='int';  default=20; desc='fallback row pitch, px' }
     allowAbove     = @{ type='bool'; default=$false; desc='bands from the bottom: targets above the picture -> ok with above = true instead of not_found' }
     anchorName     = @{ type='string'; default=''; desc='the entry the picture is anchored on (the Ctrl+F hit); with anchorBands' }
-    anchorBands    = @{ type='list'; default=@(); desc='screen.find_ink_rows bands of the hit highlight (ink orange); the first is the anchor row' }
+    anchorBands    = @{ type='list'; default=@(); desc='screen.find_ink_rows bands of the hit highlight (ink orange); exactly one is the anchor row' }
+    otherHits      = @{ type='list'; default=@(); desc='anchor mode: bands of the other matches (ink yellow); any -> wrong_hit (the find bar is not searching for anchorName alone)' }
+    hitText        = @{ type='string'; default=''; desc='anchor mode: the text the hit selected (copied after Esc); not anchorName -> wrong_hit, empty -> warning hit_unverified' }
   }
   outputs    = @{
     rects   = @{ type='list'; desc='@{ x; y; w; h; names } in image px' }
@@ -48,6 +50,7 @@ $Manifest = @{
   }
   failures   = @(
     @{ id = 'not_found'; transient = $false }
+    @{ id = 'wrong_hit'; transient = $false }
   )
   example    = @{ use = 'screen.list_rects'; with = @{ names = '{{steps.rec.out.names}}'; targets = '{{steps.mine.out.plucked}}'; bands = '{{steps.ink.out.bands}}'; x = 445; width = 892 } }
   notes      = 'not_found when no target can be placed at all (with allowAbove: unless the reason is targets above the picture). Bands are matched from the bottom, or from the anchor band when anchorName is set, only as far as there are bands; an entry outside the picture is reported missing, not boxed at a guessed place. Anchor mode: the anchor row keeps its place even when its own link text lost the blue under the highlight.'
@@ -102,6 +105,15 @@ function Invoke-Step {
             if ($Ctx['DryRun']) { return @{ ok = $true; rects = @(); missing = $targets; source = 'anchor'; above = $false; anchor = $anchor } }
             return @{ ok = $false; failure = 'not_found'; message = ('no Ctrl+F highlight in the picture (searched ' + $anchorName + '; the find bar found nothing, or the highlight colour is not the orange the ink scan looks for)'); rects = @(); missing = $targets; source = 'anchor'; above = $false; anchor = $anchor }
         }
+        # 10/26 FJODWAF1: the find bar kept the OLD search; its matches
+        # (yellow, and an orange one on another file) were boxed as ours.
+        $others = @(@($In['otherHits']) | Where-Object { $_ -is [System.Collections.IDictionary] })
+        $copied = ([string]$In['hitText']).Trim()
+        $wrong = ''
+        if ($hits.Count -gt 1) { $wrong = ([string]$hits.Count + ' orange highlights in the picture, one expected') }
+        elseif ($others.Count -gt 0) { $wrong = ([string]$others.Count + ' other match(es) highlighted yellow: the find bar is not searching for ' + $anchorName + ' alone (an old search kept?)') }
+        elseif ($copied -ne '' -and $copied -ne $anchorName) { $wrong = ('the Ctrl+F hit is "' + $copied + '", not ' + $anchorName) }
+        if ($wrong -ne '') { return @{ ok = $false; failure = 'wrong_hit'; message = $wrong; rects = @(); missing = $targets; source = 'anchor'; above = $false; anchor = $anchor } }
         $ab = ScreenListRects-AnchorBand -Bands $bands -Y ([double]$hits[0]['center']) -Pitch ([double]$In['rowPitch'])
         $bands = @($ab['bands'])
         $source = 'anchor'
@@ -151,6 +163,7 @@ function Invoke-Step {
         $p = [double]$In['rowPitch']
         if ($p -gt 0 -and [Math]::Abs($gap - $p) -gt ($p * 0.35)) { [void]$warn.Add(@{ code = 'pitch_mismatch'; message = ('the last two ink bands are ' + $gap + ' px apart (row pitch ' + $p + '): something below the list may be counted as a row -- check the box') }) }
     }
+    if ($source -eq 'anchor' -and ([string]$In['hitText']).Trim() -eq '') { [void]$warn.Add(@{ code = 'hit_unverified'; message = ('could not read back the Ctrl+F hit (nothing selected after Esc): check that the box is on ' + $anchorName) }) }
     if ($warn.Count -gt 0) { $out['warnings'] = $warn.ToArray() }
     return $out
 }

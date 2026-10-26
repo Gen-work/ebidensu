@@ -1,3 +1,39 @@
+## 2026-10-26 - evidence: Ctrl+F empties the find bar first and checks the hit; stale B/G labels are cleared (v2.38.6)
+
+10/26 office re-run of an older day (v2.38.5): Edge opened Ctrl+F with the
+LAST search still in the box; the term pasted by `browser.fill` (Ctrl+A,
+Ctrl+V, a separate step after a separate Ctrl+F) did not start a new search,
+the screenshot showed the old term's yellow / orange matches, and the boxes
+went on the old orange row -- with no failure. `Invoke-EbiFindText` already
+knew the rule: re-pasting over a selection starts no new search, empty the
+box first (K-46). And the 10/26 R/SJODWAF1 re-run moved set 2's labels from
+B66/G66 to B70/G70 (taller DF pictures), leaving the old ones under the
+pictures (K-48).
+
+- `browser.find`: the box is emptied (Ctrl+A, Backspace) before the paste,
+  all in one step; `readPage` (default true) -- false makes no page
+  selection (hit stays false).
+- `browser.send_keys`: `copyAfter` -- then Ctrl+C, the clipboard (emptied
+  first) in `copied`.
+- `screen.find_ink_rows` / `Get-EbiInkCounts`: ink `yellow` (the other
+  Ctrl+F matches, FFFF00).
+- `screen.list_rects` anchor mode: failure `wrong_hit` when other matches
+  are highlighted (`otherHits`), the hit read back (`hitText`) is not the
+  anchor, or there is more than one orange band; warning `hit_unverified`
+  when nothing was read back.
+- `gfixRecv.evidence` 0.9.5: `jkFind` (browser.find, readPage false) replaces
+  jkFindBar / jkFind(fill) / jkFindGo; `jkFindEsc` copies the hit; new
+  `jkOther` (yellow); `jkRects2` gets otherHits / hitText, retryFrom
+  `jkFind`.
+- `excel.label_sections`: output `cleared` -- below the first picture, a
+  target-column cell holding one of the source labels on no set's label
+  row is cleared (an earlier run's label). Hand labels on a set's own row,
+  other text and B3/G3 are left alone.
+- Tests: Test-GfixRecvSteps (wrong_hit three ways, read-back ok,
+  hit_unverified), Test-Steps (stale labels: B65/G65/B66/G66 cleared, the
+  set rows kept).
+- KNOWLEDGE K-46 (what went wrong in v2.38.4/5), K-48; RUNBOOK.
+
 ## 2026-10-26 - runner: retryFrom -- r at a failure goes back to the capture, not just the step reading it (v2.38.5)
 
 10/26 FJODWAF1: `jkRects2 not_found`, r twice, the same result three times
