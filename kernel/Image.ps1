@@ -614,6 +614,9 @@ function Get-EbiInkCounts {
       Per pixel row, how many pixels of a vertical strip are "ink":
         dark  luminance (R+G+B)/3 below MaxLuma
         blue  B > 140 and R < 120 and G < 140 (link text)
+        orange  R > 220, 115 <= G <= 185, B < 100 (Edge's Ctrl+F active
+                match, FF9632; the other matches are yellow FFFF00 and
+                stay out). Same window as the legacy JenkinsActive* tuning.
       Strip: columns [X, X+Width), rows [YFrom, YTo) -- a negative YTo
       counts from the bottom edge (-35 = stop 35 px above it). The result
       is relative to YFrom: counts[0] is row YFrom.
@@ -647,7 +650,7 @@ function Get-EbiInkCountsCore {
         [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $buf, 0, $buf.Length)
         $bmp.UnlockBits($data)
         $counts = New-Object int[] ($y1 - $y0)
-        $blue = ($Ink -eq 'blue')
+        $blue = ($Ink -eq 'blue'); $orange = ($Ink -eq 'orange')
         for ($y = $y0; $y -lt $y1; $y++) {
             $row = $y * $stride
             $n = 0
@@ -655,6 +658,7 @@ function Get-EbiInkCountsCore {
                 $o = $row + $x * 3
                 $b = [int]$buf[$o]; $g = [int]$buf[$o + 1]; $r = [int]$buf[$o + 2]
                 if ($blue) { if ($b -gt 140 -and $r -lt 120 -and $g -lt 140) { $n++ } }
+                elseif ($orange) { if ($r -gt 220 -and $g -ge 115 -and $g -le 185 -and $b -lt 100) { $n++ } }
                 elseif ((($r + $g + $b) / 3) -lt $MaxLuma) { $n++ }
             }
             $counts[$y - $y0] = $n

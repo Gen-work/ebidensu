@@ -5052,9 +5052,11 @@
       "inputs": {
         "ink": {
           "default": "dark",
+          "desc": "dark text | blue link text | orange Ctrl+F active match",
           "enum": [
             "dark",
-            "blue"
+            "blue",
+            "orange"
           ],
           "type": "string"
         },
@@ -5498,6 +5500,21 @@
       "id": "screen.list_rects",
       "idempotent": true,
       "inputs": {
+        "allowAbove": {
+          "default": false,
+          "desc": "bands from the bottom: targets above the picture -> ok with above = true instead of not_found",
+          "type": "bool"
+        },
+        "anchorBands": {
+          "default": [],
+          "desc": "screen.find_ink_rows bands of the hit highlight (ink orange); the first is the anchor row",
+          "type": "list"
+        },
+        "anchorName": {
+          "default": "",
+          "desc": "the entry the picture is anchored on (the Ctrl+F hit); with anchorBands",
+          "type": "string"
+        },
         "bands": {
           "default": [],
           "desc": "screen.find_ink_rows bands of the entry column",
@@ -5539,8 +5556,16 @@
         }
       },
       "needs": [],
-      "notes": "not_found when no target can be placed at all. Bands are matched from the bottom only as far as there are bands; an entry scrolled off the top is reported missing, not boxed at a guessed place.",
+      "notes": "not_found when no target can be placed at all (with allowAbove: unless the reason is targets above the picture). Bands are matched from the bottom, or from the anchor band when anchorName is set, only as far as there are bands; an entry outside the picture is reported missing, not boxed at a guessed place. Anchor mode: the anchor row keeps its place even when its own link text lost the blue under the highlight.",
       "outputs": {
+        "above": {
+          "desc": "bands from the bottom: some target is above the top of the picture",
+          "type": "bool"
+        },
+        "anchor": {
+          "desc": "the topmost target in page order (what to Ctrl+F when above)",
+          "type": "string"
+        },
         "missing": {
           "desc": "targets not among names, or above the top of the picture",
           "type": "list"
@@ -5550,7 +5575,7 @@
           "type": "list"
         },
         "source": {
-          "desc": "bands | pitch",
+          "desc": "bands | anchor | pitch",
           "type": "string"
         }
       },

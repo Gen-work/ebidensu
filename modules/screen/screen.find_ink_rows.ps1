@@ -24,7 +24,7 @@ $Manifest = @{
     width    = @{ type='int';    required=$true }
     yFrom    = @{ type='int';    default=0 }
     yTo      = @{ type='int';    default=0; desc='0 = the bottom; negative = that many px above the bottom' }
-    ink      = @{ type='string'; default='dark'; enum=@('dark', 'blue') }
+    ink      = @{ type='string'; default='dark'; enum=@('dark', 'blue', 'orange'); desc='dark text | blue link text | orange Ctrl+F active match' }
     maxLuma  = @{ type='int';    default=160; desc='dark: pixels darker than this' }
     minInk   = @{ type='int';    default=2; desc='a row needs this many ink pixels' }
     mergeGap = @{ type='int';    default=1; desc='blank rows a band may contain' }

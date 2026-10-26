@@ -258,6 +258,35 @@ try {
     Assert-Equal 'pitch' $lr2['source'] 'evidence: without bands the fixed pitch is used'
     Assert-Equal 2 @($lr2['rects']).Count 'evidence: two files apart -> two boxes'
 
+    # K-46: a past day re-run -- the targets are above the end-scrolled picture
+    $old = @(for ($i = 0; $i -lt 60; $i++) { 'F2026102300{0:00}.csv' -f $i })
+    $lr3 = Invoke-TestStep 'screen.list_rects' @{ names = $old; targets = @($old[11], $old[10]); bands = $bands; x = 445; width = 892; height = 25 }
+    Assert-Equal $false $lr3['ok'] 'K-46: without allowAbove a target above the picture is still not_found'
+    Assert-True (([string]$lr3['message']).Contains('from the bottom')) 'K-46: ... and says how far up it is'
+    Assert-Equal $true $lr3['above'] 'K-46: ... and reports above'
+    $lr4 = Invoke-TestStep 'screen.list_rects' @{ names = $old; targets = @($old[11], $old[10]); bands = $bands; x = 445; width = 892; height = 25; allowAbove = $true }
+    Assert-Equal $true $lr4['ok'] 'K-46: allowAbove -> ok'
+    Assert-Equal $true $lr4['above'] 'K-46: ... above = true (the workflow Ctrl+Fs)'
+    Assert-Equal $old[10] $lr4['anchor'] 'K-46: ... anchor = the topmost target in page order, not the first listed'
+    $lr5 = Invoke-TestStep 'screen.list_rects' @{ names = $names; targets = @('F202610080005.csv'); bands = $bands; x = 445; width = 892; allowAbove = $true }
+    Assert-Equal $false $lr5['above'] 'K-46: the same-day case is not above -- jkPic runs as before'
+    Assert-Equal 1 @($lr5['rects']).Count 'K-46: ... and boxes as before'
+    # after Ctrl+F: the hit row (band 14) lost its blue under the orange
+    $noHit = @(for ($i = 0; $i -lt 30; $i++) { if ($i -ne 14) { $bands[$i] } })
+    $hit = @(@{ top = 377; bottom = 395; height = 19; center = 386 })
+    $lr6 = Invoke-TestStep 'screen.list_rects' @{ names = $old; targets = @($old[10], $old[11]); bands = $noHit; anchorName = $old[10]; anchorBands = $hit; x = 445; width = 892; height = 25; rowPitch = 20 }
+    Assert-Equal 'anchor' $lr6['source'] 'K-46: anchor mode'
+    Assert-Equal 1 @($lr6['rects']).Count 'K-46: two consecutive files around the hit -> one box'
+    Assert-Equal 374 $lr6['rects'][0]['y'] 'K-46: the box starts on the hit row even though its blue band is gone'
+    Assert-Equal 45 $lr6['rects'][0]['h'] 'K-46: ... and covers the next row too'
+    $lr7 = Invoke-TestStep 'screen.list_rects' @{ names = $old; targets = @($old[10]); bands = $bands; anchorName = $old[10]; anchorBands = @(@{ top = 379; bottom = 397; height = 19; center = 388 }); x = 445; width = 892; height = 25; rowPitch = 20 }
+    Assert-Equal 374 $lr7['rects'][0]['y'] 'K-46: a hit near a blue band snaps to that band'
+    $lr8 = Invoke-TestStep 'screen.list_rects' @{ names = $old; targets = @($old[50]); bands = $bands; anchorName = $old[10]; anchorBands = $hit; x = 445; width = 892; rowPitch = 20 }
+    Assert-Equal $false $lr8['ok'] 'K-46: a target 40 rows below the hit is outside the picture -> not_found'
+    $lr9 = Invoke-TestStep 'screen.list_rects' @{ names = $old; targets = @($old[10]); bands = $bands; anchorName = $old[10]; anchorBands = @(); x = 445; width = 892 }
+    Assert-Equal $false $lr9['ok'] 'K-46: no orange in the picture -> not_found, never a guessed box'
+    Assert-True (([string]$lr9['message']).Contains('Ctrl+F')) 'K-46: ... naming the Ctrl+F highlight'
+
     # ============================================================ plan: upsert
     $wl = @{ path = ''; columns = @('Excel_NAME', 'JOB', 'GFIX_DATE', 'GFIX_TIME', 'FileCount', 'track', 'logs', 'evidence'); rows = @() }
     $ctx['Session']['wl'] = @{ kind = 'worklist'; value = $wl; registeredBy = 'test' }
