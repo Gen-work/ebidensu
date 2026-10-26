@@ -286,6 +286,19 @@ try {
     $lr9 = Invoke-TestStep 'screen.list_rects' @{ names = $old; targets = @($old[10]); bands = $bands; anchorName = $old[10]; anchorBands = @(); x = 445; width = 892 }
     Assert-Equal $false $lr9['ok'] 'K-46: no orange in the picture -> not_found, never a guessed box'
     Assert-True (([string]$lr9['message']).Contains('Ctrl+F')) 'K-46: ... naming the Ctrl+F highlight'
+    # 10/26: the find bar kept the old search -- its matches must not be boxed
+    $anc = @{ names = $old; targets = @($old[10]); bands = $bands; anchorName = $old[10]; anchorBands = $hit; x = 445; width = 892; height = 25; rowPitch = 20 }
+    $w1 = Invoke-TestStep 'screen.list_rects' ($anc + @{ otherHits = @(@{ top = 200; bottom = 214; height = 15; center = 207 }) })
+    Assert-Equal 'wrong_hit' $w1['failure'] 'K-46: yellow matches besides the orange one -> wrong_hit (an old search is still in the bar)'
+    $w2 = Invoke-TestStep 'screen.list_rects' ($anc + @{ hitText = $old[3] })
+    Assert-Equal 'wrong_hit' $w2['failure'] 'K-46: the hit read back is another file -> wrong_hit'
+    $anc3 = $anc.Clone(); $anc3['anchorBands'] = @($hit[0], @{ top = 500; bottom = 514; height = 15; center = 507 })
+    $w3 = Invoke-TestStep 'screen.list_rects' $anc3
+    Assert-Equal 'wrong_hit' $w3['failure'] 'K-46: two orange highlights -> wrong_hit'
+    $w4 = Invoke-TestStep 'screen.list_rects' ($anc + @{ hitText = (' ' + $old[10] + ' ') })
+    Assert-Equal $true $w4['ok'] 'K-46: the hit read back is the anchor -> placed'
+    Assert-Equal 0 @(@($w4['warnings']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['code'] -eq 'hit_unverified' }).Count 'K-46: ... and not flagged unverified'
+    Assert-Equal 1 @(@($lr6['warnings']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['code'] -eq 'hit_unverified' }).Count 'K-46: no read-back -> warning hit_unverified'
 
     # ============================================================ plan: upsert
     $wl = @{ path = ''; columns = @('Excel_NAME', 'JOB', 'GFIX_DATE', 'GFIX_TIME', 'FileCount', 'track', 'logs', 'evidence'); rows = @() }

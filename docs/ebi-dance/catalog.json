@@ -355,6 +355,11 @@
           "desc": "press Esc afterwards (the highlight goes away too)",
           "type": "bool"
         },
+        "readPage": {
+          "default": true,
+          "desc": "read the page text first (Ctrl+A / Ctrl+C) for hit; false = no page selection is made, hit stays false",
+          "type": "bool"
+        },
         "term": {
           "desc": "the exact string to search for",
           "required": true,
@@ -378,7 +383,7 @@
       "notes": "A miss is not a failure: hit=false is an answer the workflow decides about (verify.assert / human.gate). Leave closeAfter false when a screenshot of the highlighted row follows.",
       "outputs": {
         "hit": {
-          "desc": "the page text contains the term",
+          "desc": "the page text contains the term (false when readPage is false)",
           "type": "bool"
         },
         "rect": {
@@ -610,6 +615,11 @@
       "id": "browser.send_keys",
       "idempotent": false,
       "inputs": {
+        "copyAfter": {
+          "default": false,
+          "desc": "then Ctrl+C and read the clipboard (emptied first) into copied -- e.g. what Esc left selected after a Ctrl+F",
+          "type": "bool"
+        },
         "sequence": {
           "desc": "SendKeys syntax, e.g. ^{f} or {ESC}",
           "required": true,
@@ -632,6 +642,10 @@
       ],
       "notes": "Not idempotent: keys sent twice are two actions. Prefer tab_to / fill / submit / find, which say what they mean; use this for the rest.",
       "outputs": {
+        "copied": {
+          "desc": "copyAfter: the clipboard text after Ctrl+C (empty when nothing was selected)",
+          "type": "string"
+        },
         "sent": {
           "desc": "the sequence that was sent",
           "type": "string"
@@ -1585,8 +1599,12 @@
       "needs": [
         "excel"
       ],
-      "notes": "A set with no label row on fromSheet is left as it is and named in missing (warning label_missing). Cells are written as plain text, like excel.write_cell.",
+      "notes": "A set with no label row on fromSheet is left as it is and named in missing (warning label_missing). Cells are written as plain text, like excel.write_cell. Stale labels (a source label text in a target column, below the first picture, on no set's label row) are cleared.",
       "outputs": {
+        "cleared": {
+          "desc": "\"B66=JJPCRS12\" per stale label cleared (an earlier run wrote it where no set starts now)",
+          "type": "list"
+        },
         "missing": {
           "desc": "set numbers with no label row on fromSheet (label them by hand)",
           "type": "list"
@@ -5052,11 +5070,12 @@
       "inputs": {
         "ink": {
           "default": "dark",
-          "desc": "dark text | blue link text | orange Ctrl+F active match",
+          "desc": "dark text | blue link text | orange Ctrl+F active match | yellow the other Ctrl+F matches",
           "enum": [
             "dark",
             "blue",
-            "orange"
+            "orange",
+            "yellow"
           ],
           "type": "string"
         },
@@ -5493,6 +5512,10 @@
         {
           "id": "not_found",
           "transient": false
+        },
+        {
+          "id": "wrong_hit",
+          "transient": false
         }
       ],
       "file": "modules/screen/screen.list_rects.ps1",
@@ -5507,7 +5530,7 @@
         },
         "anchorBands": {
           "default": [],
-          "desc": "screen.find_ink_rows bands of the hit highlight (ink orange); the first is the anchor row",
+          "desc": "screen.find_ink_rows bands of the hit highlight (ink orange); exactly one is the anchor row",
           "type": "list"
         },
         "anchorName": {
@@ -5525,6 +5548,11 @@
           "desc": "box height for one row, px",
           "type": "int"
         },
+        "hitText": {
+          "default": "",
+          "desc": "anchor mode: the text the hit selected (copied after Esc); not anchorName -> wrong_hit, empty -> warning hit_unverified",
+          "type": "string"
+        },
         "lastRowCenterY": {
           "default": 0,
           "desc": "fallback when bands is empty: centre of the last row, px",
@@ -5533,6 +5561,11 @@
         "names": {
           "desc": "every entry of the list in page order (parsed page text)",
           "required": true,
+          "type": "list"
+        },
+        "otherHits": {
+          "default": [],
+          "desc": "anchor mode: bands of the other matches (ink yellow); any -> wrong_hit (the find bar is not searching for anchorName alone)",
           "type": "list"
         },
         "rowPitch": {

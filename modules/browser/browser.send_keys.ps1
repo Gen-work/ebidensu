@@ -21,8 +21,12 @@ $Manifest = @{
     window = @{ type='session'; sessionKind='window'; required=$true; desc='the window that receives the keys' }
     sequence = @{ type='string'; required=$true; desc='SendKeys syntax, e.g. ^{f} or {ESC}' }
     waitMs = @{ type='int'; default=300; desc='wait after sending' }
+    copyAfter = @{ type='bool'; default=$false; desc='then Ctrl+C and read the clipboard (emptied first) into copied -- e.g. what Esc left selected after a Ctrl+F' }
   }
-  outputs    = @{ sent = @{ type='string'; desc='the sequence that was sent' } }
+  outputs    = @{
+    sent   = @{ type='string'; desc='the sequence that was sent' }
+    copied = @{ type='string'; desc='copyAfter: the clipboard text after Ctrl+C (empty when nothing was selected)' }
+  }
   failures   = @(
     @{ id = 'foreground_lost'; transient = $true }
   )
@@ -33,9 +37,15 @@ $Manifest = @{
 function Invoke-Step {
     param($In, $Ctx)
     $keys = [string]$In['sequence']
-    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would send keys {0}' -f $keys)); return @{ ok = $true; sent = $keys } }
+    if ($Ctx['DryRun']) { $Ctx.Log.Info(('would send keys {0}' -f $keys)); return @{ ok = $true; sent = $keys; copied = '' } }
     $fg = Set-EbiForeground -HWnd (ConvertTo-EbiHandle $In['window'])
     if (-not $fg['ok']) { return @{ ok = $false; failure = 'foreground_lost'; message = $fg['message'] } }
     Send-EbiKeys -Keys $keys -WaitMs ([int]$In['waitMs'])
-    return @{ ok = $true; sent = $keys }
+    $copied = ''
+    if ([bool]$In['copyAfter']) {
+        try { Set-EbiClipboardText -Text '' -WaitMs 100 } catch { }
+        Send-EbiKeys -Keys '^c' -WaitMs 400
+        $copied = Get-EbiClipboardText
+    }
+    return @{ ok = $true; sent = $keys; copied = $copied }
 }
