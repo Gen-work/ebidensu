@@ -1,3 +1,25 @@
+## 2026-10-26 - pre-delivery self-review tool (tools/review) + KNOWLEDGE section 5 (v2.37.1)
+
+10/23 the day's J4 workbooks were reviewed before going to the reviewer,
+against the past findings in Check Sheet_J4: 14 books in 3 rounds, 11
+problems found and fixed before delivery. The same few mistakes
+came back book after book; this keeps the checks.
+
+- `tools/review/check_book.py` (Python 3, read-only): save state (first
+  sheet, top, A3), font, log label = the log it was cut from (`Receiver`
+  vs `Receive`, Unzip vs not), log blocks (START first, START/END pairs,
+  nothing after the last END), yellow on an empty row / not to the end of
+  the text, GIFTデータvsGFIXデータ correl id in B + STEP name in G per
+  送信データ group, red boxes off any picture, mojibake. Exit 1 on NG.
+  Run against the 13 books of 10/23 it reports exactly the text-level
+  problems found by hand, and nothing on the clean books.
+- `tools/review/drawings.py`: list / render pictures and shapes by their
+  cell anchors (twoCell from/to, oneCell from + ext). The xfrm is often
+  stale; reading it twice made a correct box look wrong.
+- KNOWLEDGE section 5 (K-36..K-42): the patterns, what is NOT a mistake
+  (production job names in the B3 snap, JJPCRS13), and checklist item 11.
+- No change to VerifyTool / ebi-dance code.
+
 ## 2026-10-23 - track gates: Enter is no longer ok; t 10:15 = start again from that time, r = check the files again (flow.redo, file.set_aside) (v2.37.0)
 
 10/23 QJODWWBV / SJODWWBV: the start time written was when the Teams
