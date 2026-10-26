@@ -19,7 +19,10 @@
 # send-data sheet's order (there 0006 = the empty one came first): each
 # HOST slot takes the pair whose line count fits it, so the DF pictures
 # are stacked -- and labelled by excel.label_sections -- in the send-data
-# sheet's order. Pure.
+# sheet's order. The GFIX job logs follow the same order (10/26 review of
+# C/F/MJODWAF1: the GFIX receive log was pasted empty-file first): a job's
+# empty file uploads only its header line (99 bytes), so the n-th smallest
+# upload goes with the n-th shortest file. Pure.
 
 $Manifest = @{
   id         = 'verify.df_ranges'
@@ -35,6 +38,8 @@ $Manifest = @{
     pairs    = @{ type='list'; required=$true; desc='the DF file pairs as track listed them (track.json pairs: lines = the file''s line count)' }
     shots    = @{ type='list'; default=@(); desc='track''s DF shots, one per pair in the same order (track.json dfShots); handed back in the new order for screen.launch_capture reuse' }
     ranges   = @{ type='list'; default=@(); desc='screen.read_line_numbers ranges of the HOST pictures, sheet order' }
+    jobLogs     = @{ type='list'; default=@(); desc='the GFIX job logs (logs.json jobLogs), one per file, as listed; handed back in the pairs'' new order (output jobLogs)' }
+    jobLogBytes = @{ type='list'; default=@(); desc='the bytes each job log uploaded, same order (verify.parse_text names; 1,234 is read as 1234)' }
     offset   = @{ type='int';  default=1; desc='HOST line n = DF line n - offset' }
     maxLines = @{ type='int';  default=40; desc='a picture asked for more lines than this is not trusted (default kept)' }
     maxExtra = @{ type='int';  default=2; desc='DF lines past the HOST''s last line still lined up (a trailing line the HOST does not show, or a last line OCR missed under a red box); more = not lined up' }
@@ -43,6 +48,7 @@ $Manifest = @{
     pairs   = @{ type='list';   desc='the pairs in the send-data sheet''s order (pairs no HOST slot took come last, as listed)' }
     shots   = @{ type='list';   desc='the shots input in that same order' }
     order   = @{ type='list';   desc='for each output pair, its index in the input (0-based)' }
+    jobLogs = @{ type='list';   desc='the job logs in the output pairs'' order (the n-th smallest upload with the n-th shortest file); as listed when they cannot be matched (counts differ, two sizes or two line counts equal, no sizes)' }
     moved   = @{ type='bool';   desc='the order differs from the input' }
     plans   = @{ type='list';   desc='@{ mode; first; end; reason } per output pair: mode align (first / end = lines the first / END picture shows; end 0 = one picture) | empty (a 0-line file under a HOST picture with no line numbers) | free (no alignment: empty lines dropped) | default (nothing to align to)' }
     aligned = @{ type='int';    desc='pairs whose pictures follow the HOST ranges' }
@@ -186,6 +192,23 @@ function VerifyDfRanges-Assign {
     return @{ order = @($order); rest = $rest; sure = $sure }
 }
 
+function VerifyDfRanges-LogOrder {
+    # PURE. Line counts of the output pairs (sheet order) + the bytes each
+    # job log uploaded (as listed) -> for each output pair the index of its
+    # job log, or $null when they cannot be matched: fewer than two, the
+    # counts differ, or two sizes / two line counts are equal.
+    param([int[]]$Lines, [long[]]$Bytes)
+    if ($null -eq $Lines -or $null -eq $Bytes) { return $null }
+    if ($Lines.Length -lt 2 -or $Lines.Length -ne $Bytes.Length) { return $null }
+    if (@($Lines | Sort-Object -Unique).Count -ne $Lines.Length) { return $null }
+    if (@($Bytes | Sort-Object -Unique).Count -ne $Bytes.Length) { return $null }
+    $byLines = @(0..($Lines.Length - 1) | Sort-Object { $Lines[$_] })
+    $byBytes = @(0..($Bytes.Length - 1) | Sort-Object { $Bytes[$_] })
+    $at = New-Object int[] $Lines.Length
+    for ($r = 0; $r -lt $Lines.Length; $r++) { $at[[int]$byLines[$r]] = [int]$byBytes[$r] }
+    return ,$at
+}
+
 function Invoke-Step {
     param($In, $Ctx)
     $pairs = @(@($In['pairs']) | Where-Object { $_ -is [System.Collections.IDictionary] })
@@ -247,7 +270,23 @@ function Invoke-Step {
     for ($k = 0; $k -lt $outOrder.Count; $k++) { if ([int]$outOrder[$k] -ne $k) { $moved = $true } }
     if ($moved) { $Ctx.Log.Info(('DF pairs put in the send-data sheet''s order: ' + (@($outPairs | ForEach-Object { [string]$_['rightName'] }) -join ', '))) }
     foreach ($w in $why) { $Ctx.Log.Info($w) }
+    # the job logs: matched to the output pairs by size, else as listed
+    $logsIn = @(@($In['jobLogs']) | Where-Object { $null -ne $_ -and [string]$_ -ne '' })
+    $logsOut = $logsIn
+    if ($logsIn.Count -gt 1) {
+        $digits = @(@($In['jobLogBytes']) | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ -replace '[^0-9]', '' })
+        $at = $null
+        if ($digits.Count -eq $logsIn.Count -and @($digits | Where-Object { $_ -eq '' }).Count -eq 0) {
+            $at = VerifyDfRanges-LogOrder -Lines ([int[]]@($outPairs | ForEach-Object { [int]$_['lines'] })) -Bytes ([long[]]$digits)
+        }
+        if ($null -ne $at) {
+            $logsOut = @(foreach ($k in $at) { $logsIn[$k] })
+            $Ctx.Log.Info(('job logs in the pairs'' order: ' + (@($logsOut | ForEach-Object { Split-Path ([string]$_) -Leaf }) -join ', ')))
+        } else {
+            $Ctx.Log.Info(('job logs kept as listed (' + $logsIn.Count + ' logs, ' + $digits.Count + ' upload sizes, ' + $outPairs.Count + ' pairs: no one way to match them by size)'))
+        }
+    }
     # a pair track left no shot for keeps a null there, so the index still
     # matches the pair (launch_capture reuses nothing for it)
-    return @{ ok = $true; pairs = $outPairs.ToArray(); shots = $outShots.ToArray(); order = $outOrder.ToArray(); moved = $moved; plans = $plans.ToArray(); aligned = $aligned; alert = ($alerts -join ' / '); reason = ($why -join ' / ') }
+    return @{ ok = $true; pairs = $outPairs.ToArray(); shots = $outShots.ToArray(); order = $outOrder.ToArray(); jobLogs = $logsOut; moved = $moved; plans = $plans.ToArray(); aligned = $aligned; alert = ($alerts -join ' / '); reason = ($why -join ' / ') }
 }

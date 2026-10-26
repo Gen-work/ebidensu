@@ -564,7 +564,7 @@ Tests/                  Run-Tests.ps1 (parse-checks every .ps1 in the tree, then
 tools/review/           Python side tool (NOT a phase/step): read-only pre-delivery
                         self-review of J4 workbooks (check_book.py checks,
                         drawings.py by cell anchors). tools/review/README.md;
-                        patterns: KNOWLEDGE.md section 5 (K-36..K-42).
+                        patterns: KNOWLEDGE.md section 5 (K-36..K-46).
 docs/Parked-Ideas.md    designed-then-deliberately-shelved work, with what
                         it would take to resume. NOT on the TODO list.
                         Currently holds the whole D2 image-check line

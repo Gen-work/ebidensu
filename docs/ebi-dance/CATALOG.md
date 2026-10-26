@@ -2223,6 +2223,8 @@ Per DF pair: the lines its first / END picture must show to match the HOST pictu
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `jobLogBytes` | list |  | [] |  | the bytes each job log uploaded, same order (verify.parse_text names; 1,234 is read as 1234) |
+| `jobLogs` | list |  | [] |  | the GFIX job logs (logs.json jobLogs), one per file, as listed; handed back in the pairs' new order (output jobLogs) |
 | `maxExtra` | int |  | 2 |  | DF lines past the HOST's last line still lined up (a trailing line the HOST does not show, or a last line OCR missed under a red box); more = not lined up |
 | `maxLines` | int |  | 40 |  | a picture asked for more lines than this is not trusted (default kept) |
 | `offset` | int |  | 1 |  | HOST line n = DF line n - offset |
@@ -2234,6 +2236,7 @@ Per DF pair: the lines its first / END picture must show to match the HOST pictu
 |--------|------|------|
 | `alert` | string | one line for the gate when a pair could not be lined up for a reason a person should check, else empty |
 | `aligned` | int | pairs whose pictures follow the HOST ranges |
+| `jobLogs` | list | the job logs in the output pairs' order (the n-th smallest upload with the n-th shortest file); as listed when they cannot be matched (counts differ, two sizes or two line counts equal, no sizes) |
 | `moved` | bool | the order differs from the input |
 | `order` | list | for each output pair, its index in the input (0-based) |
 | `pairs` | list | the pairs in the send-data sheet's order (pairs no HOST slot took come last, as listed) |

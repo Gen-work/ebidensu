@@ -1,3 +1,32 @@
+## 2026-10-26 - evidence: GFIX job logs in the send-data order, the Renaming line yellow; self-review checks both (v2.38.2)
+
+10/26 review of C/F/MJODWAF1 (加瀬さん): "GFIX受信ログの添付順が違います" and
+"Renamingが確認されてません" on all three. The job logs were pasted in the
+order track found them on GoAnywhere (the CSV2 / empty file first, while
+送信データ has STEP ..20 first), and the Renaming line the newer receive
+module writes (put as <job>.tmp, then rename) was not highlighted. The
+same two were in all five AF1 books of 10/26.
+
+- `verify.df_ranges`: inputs `jobLogs` / `jobLogBytes`, output `jobLogs` --
+  the job logs in the pairs' (send-data) order, matched by size: a job's
+  empty file uploads only its header line (99 bytes), so the n-th smallest
+  upload goes with the n-th shortest file. Kept as listed when they cannot
+  be matched (counts differ, sizes or line counts tie, no sizes).
+- `gfixRecv.evidence` 0.9.1: hostPics / hostLines / dfRanges run before the
+  job log; with two or more files `jobText` + `jobBytes` (verify.parse_text,
+  `layout.evidence.jobLogUpload`) read the upload sizes; `jobLog` pastes
+  `dfRanges.out.jobLogs`.
+- `layout.evidence.highlight.jobLog`: + `INFO\s+Renaming '`.
+- `tools/review/check_book.py`: Renaming line not yellow (K-45); job-log
+  order vs the DF sets -- the set with only the 同一内容 box is the empty
+  file and must sit where the smallest upload is (K-44); two START lines
+  with one file name (K-37, CJODWAF1's round-2 fix). Run on the 10/23 and
+  10/26 AF1 books it reports every finding of the review.
+- Tests (Test-GfixRecvSteps): df_ranges job-log order (K / R / tie / no
+  sizes / one log), the Renaming highlight, the upload-size grammar.
+- KNOWLEDGE K-44, K-45, K-46 (re-running evidence days later: the Jenkins
+  files are no longer at the bottom of the list -- not handled yet), K-37 note.
+
 ## 2026-10-26 - evidence: DF pictures follow the send-data sheet's order; an empty file under a HOST picture with no line numbers is not an alert; a blank row between file sets (v2.38.1)
 
 10/26 K/LJODWAF1 (one job, two I/F): the send-data sheet has STEP ..20

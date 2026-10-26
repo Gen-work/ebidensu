@@ -6790,6 +6790,16 @@
       "id": "verify.df_ranges",
       "idempotent": true,
       "inputs": {
+        "jobLogBytes": {
+          "default": [],
+          "desc": "the bytes each job log uploaded, same order (verify.parse_text names; 1,234 is read as 1234)",
+          "type": "list"
+        },
+        "jobLogs": {
+          "default": [],
+          "desc": "the GFIX job logs (logs.json jobLogs), one per file, as listed; handed back in the pairs' new order (output jobLogs)",
+          "type": "list"
+        },
         "maxExtra": {
           "default": 2,
           "desc": "DF lines past the HOST's last line still lined up (a trailing line the HOST does not show, or a last line OCR missed under a red box); more = not lined up",
@@ -6831,6 +6841,10 @@
         "aligned": {
           "desc": "pairs whose pictures follow the HOST ranges",
           "type": "int"
+        },
+        "jobLogs": {
+          "desc": "the job logs in the output pairs' order (the n-th smallest upload with the n-th shortest file); as listed when they cannot be matched (counts differ, two sizes or two line counts equal, no sizes)",
+          "type": "list"
         },
         "moved": {
           "desc": "the order differs from the input",

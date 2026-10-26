@@ -310,6 +310,7 @@
 - **原因**:手工从日志里框选复制,多选了一行 / 少选了一行。同一个相関ID的日志里一天有好几次运行,前后挨着。
 - **规则**:一段 = 从 START 到 END + 日期行;AF1 这种一个 job 两个文件的,两次运行的 START / END 交错是正常的,但每个文件都要有 START 和 END。
 - **现在的对策**:`check_book.py`:段首不是 START、END 没有对应的 START、START 没有 END、最后一个 END + 日期之后还有行,都报 NG。
+- **10/26 补**:CJODWAF1 照 round 2 的结果补了 START,加瀬さん 仍判 NG「GIFTReceive.logのGIFTReceiver STARTが同一ファイル名となってます」——补的那行是**复制了已有的 START**,两行写成了同一个文件名。补 START 时文件名要取**它自己的 END 行**(或 Detail 页 RECVFILENAME)。`check_book.py` 现在对同名的两条 START 报 NG。
 - **来源**:10/23 自查 round 1(RJODWCP2)、round 2(CJODWAF1)。参考 Check Sheet 10/07「208行目不要な行」。
 
 ### K-38 没有文字的格子留着黄色
@@ -353,6 +354,29 @@
 - **只在有把握时换顺序**:每个有数据的文件都靠行数找到了自己的 HOST 组才换;HOST 图全读不出来时(10/26 SJODWAF1:三张都没读出行号,应该是 1-19 / 1634-1652,结果用了默认的 16 / 17 行)保持 track 的顺序,照旧报红字。为什么那三张读不出来**还没查**(要看 `capture\gfix\SJODWAF1\host\*.png`)。
 - **写新 workflow 时**:多个文件的 job,顺序要以证迹表(送信データ)为准,不要以文件名或到达顺序为准。
 - **来源**:10/26 evidence 的 GATE + 操作员。
+
+### K-44 GFIX受信ログ 的顺序:跟着送信データ,不是跟着 GoAnywhere
+- **症状**:10/26 加瀬さん 对 C/F/MJODWAF1 都判 NG「GFIX受信ログの添付順が違います」。三本都是 CSV2(C/M 是空文件 99 bytes,F 是 16 KB 的错误一览)那份 job log 在前、CSV1 在后;送信データ 上是 ..20(CSV1)在前。同天的 K/L/Q/SJODWAF1 也一样,只有 RJODWAF1 碰巧是对的。
+- **原因**:evidence 按 logs.json 的 `jobLogs` 原样贴,那是 track 在 GoAnywhere 一览里找到 Receive 行的顺序(一览新的在上)。两个 I/F 几乎同时开始,哪个 job 号大不固定(R 的数据 job 号大,其他七本是空的那个大),所以 job 号、时刻都排不对。
+- **规则**(加瀬さん 10/26):GFIX受信ログ 里 job log 的顺序 = 送信データ 的组顺序 = DF 的组顺序(K-43)。
+- **现在的对策**(v2.38.2):evidence 先跑 `verify.df_ranges`(送信データ 的顺序),再贴 job log。多文件时读每份 job log 的 `Uploading ... (N bytes)`(`layout.evidence.jobLogUpload`):空文件只上传表头一行(99 bytes),所以第 n 小的上传配第 n 短的文件,job log 按 DF 的组顺序贴。大小或行数有相同的、个数对不上:保持原顺序(日志里写一行)。`check_book.py`:DF 里只有「同一内容」一个框的组 = 空文件,它的位置要和最小的上传对上,不对报 NG。
+- **还没做**:GFIXReceive.log 的段(`file.extract_blocks`)仍按 job log 原来的顺序切;AF1 两个文件是交错写的一段(block_interleaved),这次没有被指摘。
+- **写新 workflow 时**:一个 job 有几份东西(图、日志、文件)时,全部跟同一个顺序走,而且那个顺序要来自证迹表(送信データ),不要各自按到达顺序。
+- **来源**:10/26 加瀬さん 对 10/23 AF1 三本的指摘;10/26 AF1 五本自查。
+
+### K-45 GFIX受信ログ:Renaming 一行也涂黄
+- **症状**:10/26 加瀬さん 对 C/F/MJODWAF1 都判 NG「Renamingが確認されてません」。job log 里有 `Renaming '.../1000004917996.tmp' to '.../JJPCRS12...'`,但黄色只涂了 uploaded 和 Command 两行。
+- **原因**:GoAnywhere 的接收模块(module_t01 V2.0)在 put 之后加了 chmod / rename(先传成 `<job号>.tmp`,再改成相関ID的文件名)。10/08 的 job log 还没有这一步,highlight 的模式是照那时定的。
+- **规则**(推断,操作员确认后改这里):每份 job log 的 uploaded / Renaming / Command 三行涂黄。
+- **现在的对策**(v2.38.2):`layout.evidence.highlight.jobLog` 加 `INFO\s+Renaming '`(只涂 Renaming 那行,不涂「renamed successfully」);`check_book.py` 对没涂黄的 Renaming 行报 NG。
+- **来源**:10/26 加瀬さん 对 10/23 AF1 三本的指摘。
+
+### K-46 隔几天重跑 evidence:Jenkins 一览里文件已经不在最下面
+- **症状**:10/26 为了改 10/23 FJODWAF1 的指摘重跑 evidence:`screen.list_rects not_found: F202610230027.csv is row 35 from the bottom, the picture has 30 text row(s)`,r 重试结果一样,只能 s。
+- **原因**:Jenkins 截图固定在一览的最下面(Ctrl+End),只能拍到最后约 30 行;隔了三天,后面又多了 30 多个文件,10/23 的文件被挤出画面。
+- **现在的对策**:还没有(工具不会往上翻)。重跑旧的一天时,Jenkins 图不要让工具重拍:手工改,或等这一步支持往上翻。
+- **注意**:s 跳过这条之后,这本证迹簿在这次 run 里已经被改过一部分(GFIX受信ログ、GFIXReceive.log 已经重新写进去),但 Jenkins 图没换、后面的 DF / 标签没做。跳过的这本存没存要打开看一下。
+- **来源**:10/26 操作员贴的 evidence 日志。
 
 ---
 
