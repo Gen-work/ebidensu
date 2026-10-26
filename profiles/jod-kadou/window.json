@@ -1,0 +1,5 @@
+{
+  "_doc": "Jenkins / batch-status window size (visible px) for the screenshots. A picture is placed at native size and must fit the rows the reference layout gives it: 43 rows x 12 pt (batch status, row 11..53) and 43 rows (Jenkins, 298..340) = 516 pt = 688 px, so the height stays under ~680. Override in ebi.local.json { \"window\": { ... } }.",
+  "width": 1100,
+  "height": 680
+}

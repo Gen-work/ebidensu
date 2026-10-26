@@ -7159,6 +7159,132 @@
       "summary": "Find an expected name in OCR text, folding look-alikes; ok / ng / unknown + alert",
       "tier": "core"
     },
+    "verify.job_logs": {
+      "effects": "read",
+      "example": {
+        "use": "verify.job_logs",
+        "with": {
+          "day": "{{run.date}}",
+          "key": "JIDSU86S",
+          "paths": [
+            "log/GoAnywhere/jobs/1000003451754.log"
+          ],
+          "recvDir": "/appl/IDS/IDSVer1/gfix/recv",
+          "shell": "IDSLB283run.sh",
+          "ss": "U"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        }
+      ],
+      "file": "modules/verify/verify.job_logs.ps1",
+      "group": "verify",
+      "id": "verify.job_logs",
+      "idempotent": true,
+      "inputs": {
+        "day": {
+          "default": "",
+          "desc": "yyyy-MM-dd: only runs that started that day count; empty = every day",
+          "type": "string"
+        },
+        "encoding": {
+          "default": "mixed",
+          "enum": [
+            "mixed",
+            "utf8",
+            "cp932"
+          ],
+          "type": "string"
+        },
+        "key": {
+          "desc": "the transfer file name or its prefix: a log is this transfer's when its FileName equals key or starts with key + \".\"",
+          "required": true,
+          "type": "string"
+        },
+        "paths": {
+          "desc": "job log files (browser.download_each paths); logs of other transfers are passed over",
+          "required": true,
+          "type": "list"
+        },
+        "preferText": {
+          "default": "",
+          "desc": "a page text (the Jenkins receive folder): the chosen run is the earliest ok run whose file name appears in it; empty = the earliest ok run",
+          "type": "string"
+        },
+        "recvDir": {
+          "default": "",
+          "desc": "the directory the file must be uploaded to (/appl/IDS/IDSVer1/gfix/recv); empty = any",
+          "type": "string"
+        },
+        "shell": {
+          "default": "",
+          "desc": "the follow-up shell the Command line must run (IDSLB283run.sh); empty = any",
+          "type": "string"
+        },
+        "ss": {
+          "default": "",
+          "desc": "the last argument of the Command line (U / S); empty = any",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "A verdict is never a failure: ng and unknown are outputs. file_not_found only when a listed path is missing (a download that did not land). The return code line is GoAnywhere's \"The Command executed successfully with return code '0'\"; a log without it (the shell never ran) is ng.",
+      "outputs": {
+        "chosenFile": {
+          "desc": "the chosen run's transfer file name; empty when none",
+          "type": "string"
+        },
+        "chosenPath": {
+          "desc": "the chosen run's log file; empty when none",
+          "type": "path"
+        },
+        "chosenStart": {
+          "desc": "the chosen run's start (yyyy-MM-dd HH:mm:ss)",
+          "type": "string"
+        },
+        "code": {
+          "desc": "ok = at least one run and every run ok; ng = a run failed a check; unknown = no run",
+          "type": "string"
+        },
+        "hasChosen": {
+          "desc": "a run was chosen for the evidence",
+          "type": "bool"
+        },
+        "listed": {
+          "desc": "with preferText: the chosen run's file is in that text",
+          "type": "bool"
+        },
+        "ngCount": {
+          "type": "int"
+        },
+        "okCount": {
+          "type": "int"
+        },
+        "reason": {
+          "desc": "one line for people: what was found, what failed",
+          "type": "string"
+        },
+        "runCount": {
+          "desc": "runs of this transfer (that day)",
+          "type": "int"
+        },
+        "runs": {
+          "desc": "@{ path; jobNumber; project; fileName; start; end; bytes; uploadedTo; command; returnCode; deleted; code; reasons } per run, oldest first",
+          "type": "list"
+        },
+        "summary": {
+          "desc": "one line per run: \"HH:mm:ss  <file>  ok\" / \"... ng: <why>\" (for a gate)",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Pick the GoAnywhere job logs of one transfer file and judge each run (upload, return code 0, delete, end)",
+      "tier": "core"
+    },
     "verify.match_record": {
       "effects": "pure",
       "example": {

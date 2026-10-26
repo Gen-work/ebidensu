@@ -1,0 +1,21 @@
+{
+  "_doc": "JJODWDBx 稼働確認 (J4, OPEN side): HOST (JOD) -> GFIX -> OPEN (IDS / IGP2), 3 jobs x 3 I/F, run by the verification environment every 2 hours 8:00-18:00. One worklist row per transfer (相関ID).",
+  "sides": {
+    "before": "HOST",
+    "after": "OPEN"
+  },
+  "roles": {
+    "entry": "入口",
+    "form": "検索画面",
+    "record": "結果画面",
+    "list": "一覧",
+    "document": "帳票"
+  },
+  "columns": {
+    "group": "JOB",
+    "deliverable": "JOB"
+  },
+  "messages": {
+    "openPages": "準備(Edge、それぞれ別ウィンドウ): (1) GoAnywhere「完了したジョブ」最大化(日付範囲 Today、表示 100 件) (2) Jenkins の受信フォルダ(IDSVer1 か IGP2Ver1 の gfix/recv。どちらでも、フローが切り替える) (3) バッチ処理状況一覧(IDS か IGP2。どちらでも)。データの配置・ジョブの実行はしない(見るだけ)。できたら Enter"
+  }
+}

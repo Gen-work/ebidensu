@@ -1,0 +1,39 @@
+{
+  "_doc": "The job book (one per job): only the two OPEN-side sheets of the reference J4 book. assets/kadou-template.xlsx carries them empty (MS Gothic 10, column widths of the reference); the flow copies it to evidence/<bookPrefix><JOB><bookSuffix> once and fills it. The send-side sheets (送信データ / GFIX送信結果) are the HOST teams.",
+  "template": "profiles/jod-kadou/assets/kadou-template.xlsx",
+  "evidenceDir": "evidence",
+  "bookPrefix": "J4検証資料(REQ-000xxxxx_GIFT廃止対応)_",
+  "bookSuffix": "_稼働確認.xlsx",
+  "_book_doc": "the real REQ number goes in ebi.local.json { \"layout\": { \"bookPrefix\": \"...\" } } if the delivered name needs it",
+  "sheets": {
+    "recv": "GFIX受信結果",
+    "data": "GFIXデータ"
+  },
+  "labels": {
+    "jobLog": "▼GFIXログ",
+    "jenkins": "Jenkinsの受信フォルダ",
+    "jenkinsRow": 296
+  },
+  "font": {
+    "name": "ＭＳ ゴシック",
+    "size": 10
+  },
+  "highlight": {
+    "jobLog": [
+      "INFO\\s+Command: "
+    ],
+    "unitsPerColumn": 3
+  },
+  "dataMaxLines": 58,
+  "saveDialogs": [
+    "機密区分の登録"
+  ],
+  "homeCell": "A1",
+  "checklist": [
+    "B3 の図(添付資料 9 行表のこのジョブの 3 行)は手で貼る",
+    "各 相関ID の下: バッチ処理状況一覧 = 正常終了、件数(参考: 7/29 実績)",
+    "▼GFIXログ: Command の行が黄色、uploaded / return code 0 / deleted / End Date and Time がある",
+    "Jenkinsの受信フォルダ: 対象ファイルが Ctrl+F でオレンジ",
+    "GFIXデータ: 受信ファイルの中身(Jenkins から取ったもの)"
+  ]
+}
