@@ -29,6 +29,9 @@
 #      (6.3), no new record. "once": "groupEnd": runs once after the
 #      group's last item (7.2), even when that item was skipped by a
 #      policy -- a registered group resource must still be released
+#    - retryFrom (each only): r at the ask re-runs from that earlier step,
+#      not just the failed one -- a step that reads a picture or text an
+#      earlier step captured would only read the same cache (K-47).
 #    - onError (6): retry (only a failure the manifest marks transient;
 #      backoff doubles; exhausted -> ask) / ask (r retry, s skip this
 #      item, q cancel) / skip / fail (abort the run); byFailure overrides
@@ -214,6 +217,13 @@ function Get-EbiWorkflowProblems {
             if ($call.Contains('when') -and $null -ne $call['when']) {
                 $w = ConvertFrom-EbiWhen -Text ([string]$call['when'])
                 if (-not $w['ok']) { [void]$problems.Add(('{0}: {1}' -f $where, $w['message'])) }
+            }
+            if ($call.Contains('retryFrom') -and $null -ne $call['retryFrom']) {
+                # r at the ask re-runs from this earlier step (10/26 K-47)
+                $rf = [string]$call['retryFrom']
+                if ($section -ne 'each') { [void]$problems.Add(('{0}: "retryFrom" is only meaningful in "each"' -f $where)) }
+                elseif ($call.Contains('once') -and $null -ne $call['once']) { [void]$problems.Add(('{0}: "retryFrom" cannot go with "once"' -f $where)) }
+                elseif ($rf -eq '' -or $rf -eq $id -or -not $seen.Contains($rf)) { [void]$problems.Add(('{0}: "retryFrom" must name an earlier step of "each", got "{1}"' -f $where, $rf)) }
             }
             if ($call.Contains('once') -and $null -ne $call['once']) {
                 $once = [string]$call['once']
@@ -464,8 +474,13 @@ function Invoke-EbiStepWithPolicy {
             $ebiPol['decision'] = 'ask'    # exhausted (WORKFLOW-SCHEMA 6)
         }
         if ($ebiPol['decision'] -eq 'ask') {
-            $ebiPol['answer'] = [string](& $State['ask'] @{ kind = 'error'; section = $Section; id = $ebiPol['id']; use = $ebiPol['use']; key = $Key; group = $Group; failure = $ebiPol['rec']['failure']; message = $ebiPol['rec']['message']; attempt = $ebiPol['attempt']; transient = $ebiPol['policy']['transient']; policy = $ebiPol['policy']['policy']; evidence = $ebiPol['rec']['outputs'] })
+            $ebiPol['from'] = $(if ($Section -eq 'each' -and $Call.Contains('retryFrom') -and $null -ne $Call['retryFrom']) { [string]$Call['retryFrom'] } else { '' })
+            $ebiPol['answer'] = [string](& $State['ask'] @{ kind = 'error'; section = $Section; id = $ebiPol['id']; use = $ebiPol['use']; key = $Key; group = $Group; failure = $ebiPol['rec']['failure']; message = $ebiPol['rec']['message']; attempt = $ebiPol['attempt']; transient = $ebiPol['policy']['transient']; policy = $ebiPol['policy']['policy']; evidence = $ebiPol['rec']['outputs']; retryFrom = $ebiPol['from'] })
             Write-TraceEvent -WorkDir $State['workDir'] -RunId $State['runId'] -Phase $Section -Key $Key -Tags @{ workflow = $State['workflowId']; step = $ebiPol['id']; use = $ebiPol['use'] } -Action 'ask' -Status $ebiPol['answer'] -Message ('operator answered ' + $ebiPol['answer'])
+            if ($ebiPol['answer'] -eq 'r' -and $ebiPol['from'] -ne '') {
+                # retryFrom: the caller jumps back; this step runs again in turn
+                return @{ outcome = 'retryFrom'; target = $ebiPol['from']; records = $ebiPol['records'].ToArray(); last = $ebiPol['rec']; replayed = $false }
+            }
             if ($ebiPol['answer'] -eq 'r') { continue }
             if ($ebiPol['answer'] -eq 'q') {
                 $ebiPol['rec']['failure'] = 'cancelled'; $ebiPol['rec']['message'] = ('operator cancelled after: ' + $ebiPol['rec']['message'])
@@ -1086,6 +1101,17 @@ function Invoke-EbiWorkflow {
                         $done = . Invoke-EbiStepWithPolicy -State $state -Section 'each' -Call $call -Scope $scope -Steps $steps -Key $key -Group $group -LedgerGroup $(if ($once -eq 'group') { $group } else { '' })
                         $ctx['RedoAnswer'] = ''
                         foreach ($r in $done['records']) { [void]$records.Add($r) }
+                        if ([string]$done['outcome'] -eq 'retryFrom') {
+                            # every jump is an operator's r, so no count limit
+                            $target = Get-EbiRedoIndex -Calls $eachCalls -Id ([string]$done['target']) -Before $ci
+                            if ($target -lt 0) { $target = $ci }
+                            # -Resume: the steps gone back over run for real, not from the ledger
+                            for ($rj = $target; $rj -le $ci; $rj++) { $rk = Get-EbiLedgerKey -Item $key -Step ([string]$eachCalls[$rj]['id']); if ($state['ledgerDone'].Contains($rk)) { [void]$state['ledgerDone'].Remove($rk) } }
+                            Write-EbiStepLine -Status 'info' -Section 'each' -Id ([string]$call['id']) -Use ([string]$call['use']) -Key $key -Detail ('r: again from "' + [string]$eachCalls[$target]['id'] + '"')
+                            Write-TraceEvent -WorkDir $WorkDir -RunId $RunId -Phase 'each' -Key $key -Tags @{ workflow = $wfId; step = [string]$call['id']; use = [string]$call['use']; group = $group } -Action 'retryFrom' -Status 'ok' -Message ('again from ' + [string]$eachCalls[$target]['id'])
+                            $ci = $target - 1
+                            continue
+                        }
                         switch ([string]$done['outcome']) {
                             'cancelled' { $itemRec['status'] = 'cancelled'; $itemRec['failure'] = 'cancelled'; $itemRec['message'] = ([string]$call['id'] + ': ' + $done['last']['message']); $cancelled = $true; $stopped = $true; $itemDone = $true; [void]$unrecovered.Add($done['last']) }
                             'fail'      { $itemRec['status'] = 'fail'; $itemRec['failure'] = $done['last']['failure']; $itemRec['message'] = ([string]$call['id'] + ': ' + $done['last']['message']); $aborted = $true; $stopped = $true; $itemDone = $true; [void]$unrecovered.Add($done['last']) }

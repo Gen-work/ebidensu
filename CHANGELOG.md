@@ -1,3 +1,26 @@
+## 2026-10-26 - runner: retryFrom -- r at a failure goes back to the capture, not just the step reading it (v2.38.5)
+
+10/26 FJODWAF1: `jkRects2 not_found`, r twice, the same result three times
+-- r re-ran only `screen.list_rects`, which reads the picture `jkShot2`
+already took. The operator: "retry this step, not only read the cache but
+retry this procedure" (K-47).
+
+- Runner: a step call may carry `retryFrom: "<earlier each step id>"`.
+  r at that step's failure panel jumps back there; the steps in between
+  run again (under `-Resume` they are not replayed from the ledger). Load-
+  time check: each only, an earlier step, not with `once`. The automatic
+  `retry` policy is unchanged.
+- Gate: the FAILED panel says `r: run again from "<id>" (the steps in
+  between too)`; the question carries `retryFrom`.
+- `gfixRecv.evidence` 0.9.4: `jkRects` retryFrom `jkF5`, `jkRects2`
+  retryFrom `jkFindBar`.
+- `screen.list_rects`: the not_found messages no longer claim r reads the
+  same picture.
+- WORKFLOW-SCHEMA §2 `retryFrom`; KNOWLEDGE K-47 (the rule: an analysis
+  step that reads an earlier capture gets a retryFrom to that capture).
+- Tests (Test-Runner): r goes back and re-runs the capture, s still
+  skips without going back, the load-time checks.
+
 ## 2026-10-26 - evidence: Enter after pasting the Ctrl+F term on a past-day re-run (v2.38.4)
 
 First office re-run of 10/23 FJODWAF1 with v2.38.3: `jkRects2 not_found: no

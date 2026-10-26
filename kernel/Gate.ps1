@@ -434,13 +434,14 @@ function Invoke-EbiGateAsk {
     # track.json does not appear by retrying). 10/14 Enter = s; 10/15 split.
     $transient = $Question.Contains('transient') -and [bool]$Question['transient']
     $enter = if ($transient) { 'r' } else { 's' }
+    $again = if ($Question.Contains('retryFrom') -and [string]$Question['retryFrom'] -ne '') { 'run again from "' + [string]$Question['retryFrom'] + '" (the steps in between too)' } else { 'run this step again' }
     $what = New-Object System.Collections.ArrayList
     [void]$what.Add(('{0} ({1}){2}' -f $where, $Question['use'], $attemptText))
     [void]$what.Add(([string]$Question['failure'] + ': ' + [string]$Question['message']))
     foreach ($h in @(Get-EbiFailureHints -Failure ([string]$Question['failure']) -Message ([string]$Question['message']) -Use ([string]$Question['use']))) { [void]$what.Add('hint: ' + $h) }
     $r = Show-EbiGate -Title 'FAILED' `
         -What $what.ToArray() `
-        -Next @($(if ($enter -eq 'r') { 'r / Enter: run this step again' } else { 'r: run this step again' }), $(if ($enter -eq 's') { 's / Enter: skip this item, leave it pending' } else { 's: skip this item, leave it pending' }), 'q: cancel the whole run (teardown still runs)') `
+        -Next @($(if ($enter -eq 'r') { 'r / Enter: ' + $again } else { 'r: ' + $again }), $(if ($enter -eq 's') { 's / Enter: skip this item, leave it pending' } else { 's: skip this item, leave it pending' }), 'q: cancel the whole run (teardown still runs)') `
         -Evidence $evidence.ToArray() `
         -Actions @(@{ key = 'r'; label = $(if ($enter -eq 'r') { 'retry (Enter)' } else { 'retry' }) }, @{ key = 's'; label = $(if ($enter -eq 's') { 'skip item (Enter)' } else { 'skip item' }) }, @{ key = 'q'; label = 'quit' }) `
         -Default $enter -Auto 's' -Reader $Reader -DryRun $DryRun

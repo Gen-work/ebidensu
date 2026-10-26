@@ -124,6 +124,7 @@ PowerShell 5.1 默认直接终止进程,不触发 `finally`;就算 runner 注册
 | `when` | 条件,见 §5 |
 | `onError` | 覆盖顶层策略 |
 | `label` | 可选,`ebi explain` 里显示的说明文字 |
+| `retryFrom` | 可选,只在 `each`,同一段里**更早**一步的 `id`。这一步失败、人在面板上按 r 时,不是只重跑这一步,而是从那一步起整段重跑(中间的步骤都重新执行;`-Resume` 时它们也不从 ledger 回放)。给「读前面截的图 / 抓的文字」的步骤用:只重跑它,读到的还是同一份缓存(K-47)。自动 `retry` 策略不受影响 |
 | `front` | 可选,一个 `window` 种类的 Session 名。runner 在调用前把那个窗口拉到前台——给**自己不带窗口、却要看屏幕**的 step 用(例:`screen.capture_region` 截某个页面)。见 `STEP-CONTRACT.md` §4 的前台规则 |
 
 ### 2.1 `id` 为什么是必填的(P0-R3)

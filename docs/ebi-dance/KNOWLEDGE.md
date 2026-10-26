@@ -380,6 +380,13 @@
 - **注意**:s 跳过这条之后,这本证迹簿在这次 run 里已经被改过一部分(GFIX受信ログ、GFIXReceive.log 已经重新写进去),但 Jenkins 图没换、后面的 DF / 标签没做。跳过的这本存没存要打开看一下。
 - **来源**:10/26 操作员贴的 evidence 日志。
 
+### K-47 失败面板上按 r,只重跑那一步 —— 读缓存的步骤怎么重试都一样
+- **症状**:10/26 FJODWAF1 `jkRects2 not_found: no Ctrl+F highlight in the picture`,按了两次 r(attempt 3),三次结果一模一样。
+- **原因**:r 只重跑失败的那一步。`screen.list_rects` 读的是前面 `jkShot2` 截好的图和 `jkText` 抓好的文字:图不重截,读几次都是同一张。重试真正需要的是**整个过程**(Ctrl+F → Enter → 截图 → 找行 → 框)再来一遍。
+- **现在的对策**(v2.38.5,`gfixRecv.evidence` 0.9.4):workflow 的 step 调用可以写 `retryFrom`(WORKFLOW-SCHEMA §2):这一步失败时按 r,runner 回到那一步重新往下跑,面板上写「r: run again from "jkFindBar" (the steps in between too)」。`jkRects2` → `jkFindBar`,`jkRects` → `jkF5`。
+- **规则**:**读前面步骤产物(截图、页面文字、导出的图)的分析步骤,写 workflow 时就给它配 `retryFrom`,指向产生那份产物的步骤。** 只有失败原因在步骤自身(参数、计算)时,r 才该只重跑它自己。新写 workflow 时检查一遍:谁截的图、谁抓的文字,失败后重来是不是要从那里开始。
+- **来源**:10/26 操作员:「retry this step, not only read the cache but retry this procedure」。
+
 ---
 
 ## 9. 从人的回答里长出规则(反馈闭环)
