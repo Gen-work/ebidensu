@@ -502,7 +502,7 @@ Find the bands of pixel rows carrying ink in a vertical strip of a PNG
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
-| `ink` | string |  | dark | dark, blue |  |
+| `ink` | string |  | dark | dark, blue, orange | dark text \| blue link text \| orange Ctrl+F active match |
 | `maxLuma` | int |  | 160 |  | dark: pixels darker than this |
 | `mergeGap` | int |  | 1 |  | blank rows a band may contain |
 | `minHeight` | int |  | 4 |  | thinner bands are dropped (underlines, borders) |
@@ -652,6 +652,9 @@ Locate target list entries in an end-scrolled screenshot; one rect per run
 
 | input | type | required | default | enum | desc |
 |-------|------|----------|---------|------|------|
+| `allowAbove` | bool |  | false |  | bands from the bottom: targets above the picture -> ok with above = true instead of not_found |
+| `anchorBands` | list |  | [] |  | screen.find_ink_rows bands of the hit highlight (ink orange); the first is the anchor row |
+| `anchorName` | string |  | (empty) |  | the entry the picture is anchored on (the Ctrl+F hit); with anchorBands |
 | `bands` | list |  | [] |  | screen.find_ink_rows bands of the entry column |
 | `height` | int |  | 25 |  | box height for one row, px |
 | `lastRowCenterY` | int |  | 0 |  | fallback when bands is empty: centre of the last row, px |
@@ -663,9 +666,11 @@ Locate target list entries in an end-scrolled screenshot; one rect per run
 
 | output | type | desc |
 |--------|------|------|
+| `above` | bool | bands from the bottom: some target is above the top of the picture |
+| `anchor` | string | the topmost target in page order (what to Ctrl+F when above) |
 | `missing` | list | targets not among names, or above the top of the picture |
 | `rects` | list | @{ x; y; w; h; names } in image px |
-| `source` | string | bands \| pitch |
+| `source` | string | bands \| anchor \| pitch |
 
 failures: `not_found` (not transient)
 
@@ -673,7 +678,7 @@ failures: `not_found` (not transient)
 {"id":"list_rects","use":"screen.list_rects","with":{"bands":"{{steps.ink.out.bands}}","names":"{{steps.rec.out.names}}","targets":"{{steps.mine.out.plucked}}","width":892,"x":445}}
 ```
 
-Notes: not_found when no target can be placed at all. Bands are matched from the bottom only as far as there are bands; an entry scrolled off the top is reported missing, not boxed at a guessed place.
+Notes: not_found when no target can be placed at all (with allowAbove: unless the reason is targets above the picture). Bands are matched from the bottom, or from the anchor band when anchorName is set, only as far as there are bands; an entry outside the picture is reported missing, not boxed at a guessed place. Anchor mode: the anchor row keeps its place even when its own link text lost the blue under the highlight.
 
 ### `screen.ocr`
 

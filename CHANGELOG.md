@@ -1,3 +1,31 @@
+## 2026-10-26 - evidence: re-running a past day finds the Jenkins files by Ctrl+F instead of failing (v2.38.3)
+
+10/26, re-running 10/23 FJODWAF1 for the review fixes: `jkRects not_found:
+F202610230027.csv is row 35 from the bottom, the picture has 30 text
+row(s)`. The Jenkins picture is always the end of the list (Ctrl+End,
+about 30 rows); three days later 30+ newer files sit below the target.
+Every re-run of an older day hit it (K-46).
+
+- `screen.list_rects`: `allowAbove` -- targets above the end-scrolled
+  picture give ok + `above = true` + `anchor` (the topmost target in page
+  order) instead of not_found; `anchorName` + `anchorBands` count the
+  bands from the Ctrl+F hit instead of from the bottom (source `anchor`).
+  The hit row keeps its place when its link text lost the blue under the
+  highlight; no highlight -> not_found, never a guessed box.
+- `screen.find_ink_rows` / `Get-EbiInkCounts`: ink `orange` (Edge's active
+  match FF9632; the yellow other matches stay out).
+- `gfixRecv.evidence` 0.9.2: `jkRects` allowAbove; `jkPic` only when not
+  above; when above: `jkFindBar` (^f) -> `jkFind` (browser.fill the anchor
+  -- not browser.find, whose page Ctrl+A would leave the list selected) ->
+  `jkShot2` (same `jenkins.png`) -> `jkFindEsc` -> `jkInk2` (blue) /
+  `jkHit` (orange) -> `jkRects2` -> `jkPic2`. Same-day runs unchanged.
+- Tests (Test-GfixRecvSteps): above with / without allowAbove, the anchor
+  is the topmost target, same-day not above, anchor mode with and without
+  a blue band on the hit row, a target outside the picture, no highlight.
+- KNOWLEDGE K-46 (what is handled, what is unconfirmed), RUNBOOK.
+- Static-checked only: the orange threshold and the find-bar picture need
+  one office-PC re-run of an older day.
+
 ## 2026-10-26 - evidence: GFIX job logs in the send-data order, the Renaming line yellow; self-review checks both (v2.38.2)
 
 10/26 review of C/F/MJODWAF1 (加瀬さん): "GFIX受信ログの添付順が違います" and

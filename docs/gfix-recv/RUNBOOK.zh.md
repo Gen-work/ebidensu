@@ -343,6 +343,8 @@ GFIX受信結果（按样本 QJDSWM39 的版式）：
 - 空一行：`GFIXReceive.log` + 这次转送的 START…END 块（含 END 后面的日期行），黄色标记 `FileGIFTGetBLBean.execute() fileName` 和 `file stored :`。
 - 空一行：Jenkins 截图（F5 → Ctrl+End）+ 红框框住收到的文件行。行的位置是按蓝色链接文字的行，对照一览文本**从最后一行往上数**找到的；
   用样本截图验证过（样本红框 481px，算出来 482px）。
+  隔几天重跑旧的一天时，文件已经不在最后约 30 行里（K-46）：工具改成 Ctrl+F 最上面的那个文件名 → Edge 把那一行滚到画面里、
+  涂成橙色 → 重新截图（检索栏会留在截图右上）→ Esc 关掉检索栏 → 从橙色那一行往下数着框。截图里没找到橙色时停下来（`not_found`），不猜位置。
 
 GIFTデータvsGFIXデータ：
 
