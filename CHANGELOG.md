@@ -1,3 +1,18 @@
+## 2026-10-26 - evidence: Enter after pasting the Ctrl+F term on a past-day re-run (v2.38.4)
+
+First office re-run of 10/23 FJODWAF1 with v2.38.3: `jkRects2 not_found: no
+Ctrl+F highlight in the picture`. The term was pasted into the find bar but
+the picture showed neither a scroll nor a highlight; pressing Enter by hand
+brought F202610230027.csv into view in orange (255,150,50 -- the ink
+threshold matches; the hit text turns black, so its blue band is gone and
+the inserted hit band is what places it).
+
+- `gfixRecv.evidence` 0.9.3: `jkFindGo` sends {ENTER} after `jkFind`
+  (wait 1200 ms) before `jkShot2`.
+- `screen.list_rects`: the no-highlight message says r reads the same
+  picture again (retrying that step cannot help; s, then run again).
+- KNOWLEDGE K-46: what the office screenshot confirmed.
+
 ## 2026-10-26 - evidence: re-running a past day finds the Jenkins files by Ctrl+F instead of failing (v2.38.3)
 
 10/26, re-running 10/23 FJODWAF1 for the review fixes: `jkRects not_found:

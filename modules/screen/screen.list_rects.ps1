@@ -100,7 +100,7 @@ function Invoke-Step {
         if ($ai -lt 0) { return @{ ok = $false; failure = 'not_found'; message = ('the anchor ' + $anchorName + ' is not in the page text'); rects = @(); missing = $targets; source = 'anchor'; above = $false; anchor = $anchor } }
         if ($hits.Count -eq 0) {
             if ($Ctx['DryRun']) { return @{ ok = $true; rects = @(); missing = $targets; source = 'anchor'; above = $false; anchor = $anchor } }
-            return @{ ok = $false; failure = 'not_found'; message = ('no Ctrl+F highlight in the picture (searched ' + $anchorName + '; the find bar found nothing, or the highlight colour is not the orange the ink scan looks for)'); rects = @(); missing = $targets; source = 'anchor'; above = $false; anchor = $anchor }
+            return @{ ok = $false; failure = 'not_found'; message = ('no Ctrl+F highlight in the picture (searched ' + $anchorName + '; the find bar found nothing, or the highlight colour is not the orange the ink scan looks for) -- r reads the same picture again; s, then run again'); rects = @(); missing = $targets; source = 'anchor'; above = $false; anchor = $anchor }
         }
         $ab = ScreenListRects-AnchorBand -Bands $bands -Y ([double]$hits[0]['center']) -Pitch ([double]$In['rowPitch'])
         $bands = @($ab['bands'])
