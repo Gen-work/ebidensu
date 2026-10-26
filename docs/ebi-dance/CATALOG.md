@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-94 step(s) in 9 group(s).
+95 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,7 +13,7 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.set_aside`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.redo`, `flow.require` |
@@ -908,6 +908,7 @@ HTTP GET files (base URL + names, or one URL) into a folder
 | `names` | list |  | [] |  | file names under baseUrl; each is saved under the same name |
 | `overwrite` | bool |  | true |  | false: an existing file is kept and reported as skipped |
 | `saveAs` | path |  | (empty) |  | with url: the file to write (relative: under the work dir) |
+| `serverTime` | bool |  | false |  | true: the file keeps the server's Last-Modified time instead of the download time, so a later verify.file_window can tell which run made it (10/26 gift) |
 | `timeoutSec` | int |  | 60 |  |  |
 | `url` | string |  | (empty) |  | one full URL instead of baseUrl + names |
 
@@ -2242,6 +2243,42 @@ failures: `input_invalid` (not transient)
 ```
 
 Notes: Pure. A pair with no START picture, an unreadable picture or more than two pictures keeps the default pictures, with an alert.
+
+### `verify.file_window`
+
+Check files already in a folder against a run day / time (count, together, day, time)
+
+- file: `modules/verify/verify.file_window.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `afterMinutes` | int |  | 60 |  | wider than the download window: a file saved by hand lands a while after the run |
+| `beforeMinutes` | int |  | 2 |  |  |
+| `clock` | string |  | (empty) |  | the run time (HH:mm[:ss] or an Excel day fraction); blank = the time is not checked |
+| `date` | string |  | (empty) |  | the run day (yyyy-MM-dd, yyyy/M/d, ...); blank = only count and together are checked |
+| `expect` | int |  | -1 |  | how many files the job has; -1 = unknown (not checked) |
+| `expectFallback` | string |  | (empty) |  | used when expect is -1 (a worklist FileCount cell); not a positive number = none |
+| `files` | list | yes |  |  | file.list files (name, modified) |
+| `label` | string |  | run |  | what the time is, in the messages ("GIFT run") |
+| `nameDate` | string |  | ^F(\d{8}) |  | regex whose group 1 is the yyyyMMdd in a file name; blank = use the file date only |
+| `spreadMinutes` | int |  | 15 |  | one job's files further apart than this = not one run |
+
+| output | type | desc |
+|--------|------|------|
+| `code` | string | ok \| ng (no files: ok, nothing to check) |
+| `lines` | list | each file as "name  MM/dd HH:mm:ss" |
+| `problems` | list | one line per problem (empty when ok) |
+| `reason` | string |  |
+
+failures: `rules_invalid` (not transient)
+
+```json
+{"id":"file_window","use":"verify.file_window","with":{"clock":"{{item.GIFT_TIME}}","date":"{{item.GIFT_DATE}}","expectFallback":"{{item.FileCount}}","files":"{{steps.have.out.files}}","label":"GIFT run"}}
+```
+
+Notes: Pure: decides from the listing only. The file time is LastWriteTime: a copy keeps the original time, a browser download takes the download time, file.download with serverTime takes the server's.
 
 ### `verify.filter_records`
 

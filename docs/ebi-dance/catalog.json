@@ -2895,6 +2895,11 @@
           "desc": "with url: the file to write (relative: under the work dir)",
           "type": "path"
         },
+        "serverTime": {
+          "default": false,
+          "desc": "true: the file keeps the server's Last-Modified time instead of the download time, so a later verify.file_window can tell which run made it (10/26 gift)",
+          "type": "bool"
+        },
         "timeoutSec": {
           "default": 60,
           "type": "int"
@@ -6833,6 +6838,103 @@
       "provides": [],
       "releases": [],
       "summary": "Per DF pair: the lines its first / END picture must show to match the HOST pictures",
+      "tier": "core"
+    },
+    "verify.file_window": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.file_window",
+        "with": {
+          "clock": "{{item.GIFT_TIME}}",
+          "date": "{{item.GIFT_DATE}}",
+          "expectFallback": "{{item.FileCount}}",
+          "files": "{{steps.have.out.files}}",
+          "label": "GIFT run"
+        }
+      },
+      "failures": [
+        {
+          "id": "rules_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.file_window.ps1",
+      "group": "verify",
+      "id": "verify.file_window",
+      "idempotent": true,
+      "inputs": {
+        "afterMinutes": {
+          "default": 60,
+          "desc": "wider than the download window: a file saved by hand lands a while after the run",
+          "type": "int"
+        },
+        "beforeMinutes": {
+          "default": 2,
+          "type": "int"
+        },
+        "clock": {
+          "default": "",
+          "desc": "the run time (HH:mm[:ss] or an Excel day fraction); blank = the time is not checked",
+          "type": "string"
+        },
+        "date": {
+          "default": "",
+          "desc": "the run day (yyyy-MM-dd, yyyy/M/d, ...); blank = only count and together are checked",
+          "type": "string"
+        },
+        "expect": {
+          "default": -1,
+          "desc": "how many files the job has; -1 = unknown (not checked)",
+          "type": "int"
+        },
+        "expectFallback": {
+          "default": "",
+          "desc": "used when expect is -1 (a worklist FileCount cell); not a positive number = none",
+          "type": "string"
+        },
+        "files": {
+          "desc": "file.list files (name, modified)",
+          "required": true,
+          "type": "list"
+        },
+        "label": {
+          "default": "run",
+          "desc": "what the time is, in the messages (\"GIFT run\")",
+          "type": "string"
+        },
+        "nameDate": {
+          "default": "^F(\\d{8})",
+          "desc": "regex whose group 1 is the yyyyMMdd in a file name; blank = use the file date only",
+          "type": "string"
+        },
+        "spreadMinutes": {
+          "default": 15,
+          "desc": "one job's files further apart than this = not one run",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "Pure: decides from the listing only. The file time is LastWriteTime: a copy keeps the original time, a browser download takes the download time, file.download with serverTime takes the server's.",
+      "outputs": {
+        "code": {
+          "desc": "ok | ng (no files: ok, nothing to check)",
+          "type": "string"
+        },
+        "lines": {
+          "desc": "each file as \"name  MM/dd HH:mm:ss\"",
+          "type": "list"
+        },
+        "problems": {
+          "desc": "one line per problem (empty when ok)",
+          "type": "list"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Check files already in a folder against a run day / time (count, together, day, time)",
       "tier": "core"
     },
     "verify.filter_records": {

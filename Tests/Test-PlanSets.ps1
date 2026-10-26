@@ -30,7 +30,7 @@ $log | Add-Member -MemberType ScriptMethod -Name Debug -Value { param($m) }
 $ctx = @{ WorkDir = [System.IO.Path]::GetTempPath(); RunId = 'test'; Profile = $prof; Log = $log; DryRun = $false; Session = @{}; Item = $null; KeyColumns = @('Excel_NAME') }
 
 $loaded = @{}
-foreach ($u in @('table.day_sets', 'human.pick', 'excel.mark_rows', 'verify.filter_records', 'verify.time_candidates', 'verify.parse_text')) {
+foreach ($u in @('table.day_sets', 'human.pick', 'excel.mark_rows', 'verify.filter_records', 'verify.time_candidates', 'verify.parse_text', 'verify.file_window')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -252,6 +252,33 @@ Assert-Equal 'no_date' $c['failure'] 'gift: no GIFT date -> no_date'
 $daySets = @((VerifyTimeCandidates-Find -Records $jr['records'] -Date '2026/9/11' -Clock '' -NamePattern $pat)['sets'])
 $x = HumanPick-Resolve -Text '0026' -Sets $daySets -Presets @() -Level 'first'
 Assert-Equal 'F202609110026.csv' (@($x['keys']) -join ',') 'gift: a file is picked by part of its name'
+
+# gift: files already in DATA\GIFT checked against the GIFT run (10/26:
+# K/LJODWAF1 held another run's files; L's two were 7 hours apart)
+$fw = @(@{ name = 'F202609280003.csv'; modified = '2026-09-28T10:32:44' }, @{ name = 'F202609280004.csv'; modified = '2026-09-28T17:45:13' })
+$c = VerifyFileWindow-Check -Files $fw -Date '' -Clock '' -Label 'GIFT run'
+Assert-Equal 'ng' $c['code'] 'gift have: no GIFT day, but two files 7 hours apart are not one run'
+Assert-True ((@($c['problems']) -join ' ') -like '*432 min apart*') ('gift have: says how far apart: ' + $c['reason'])
+$fq = @(@{ name = 'F202609280008.csv'; modified = '2026-09-28T11:16:19' }, @{ name = 'F202609280009.csv'; modified = '2026-09-28T11:16:27' })
+$c = VerifyFileWindow-Check -Files $fq -Date '2026/9/28' -Clock '11:00' -Expect 2 -Label 'GIFT run'
+Assert-Equal 'ok' $c['code'] ('gift have: two files 8 s apart, 16 min after the GIFT time, the day in the name -> ok: ' + $c['reason'])
+Assert-Equal 'F202609280008.csv  09/28 11:16:19' @($c['lines'])[0] 'gift have: each file shown with its time'
+$c = VerifyFileWindow-Check -Files $fq -Date '2026/9/30' -Clock '11:00' -Label 'GIFT run'
+Assert-True ($c['code'] -eq 'ng' -and (@($c['problems'])[0]) -like 'F202609280008.csv is from 09/28, the GIFT run was 09/30*') ('gift have: the name''s day is not the GIFT day -> ng: ' + $c['reason'])
+$c = VerifyFileWindow-Check -Files $fq -Date '2026/9/28' -Clock '9:00' -Label 'GIFT run'
+Assert-True ($c['code'] -eq 'ng' -and (@($c['problems']) -join ' ') -like '*11:16:19 is outside the GIFT run 09:00:00 (08:58-10:00)*') ('gift have: same day, hours later than the GIFT time -> ng: ' + $c['reason'])
+$c = VerifyFileWindow-Check -Files @(@{ name = 'F202609280008.csv'; modified = '2026-10-01T09:00:00' }) -Date '2026/9/28' -Clock '11:00' -Label 'GIFT run'
+Assert-Equal 'ok' $c['code'] 'gift have: a copy made days later -- the name gives the day, the copy''s time is not held against it'
+$c = VerifyFileWindow-Check -Files @($fq[0]) -Date '2026/9/28' -Clock '11:00' -Expect 2 -Label 'GIFT run'
+Assert-True ($c['code'] -eq 'ng' -and (@($c['problems'])[0]) -eq '1 file(s) here, the job has 2') 'gift have: one file of two -> ng'
+$c = VerifyFileWindow-Check -Files @(@{ name = 'gift.csv'; modified = '2026-09-27T23:59:00' }) -Date '2026-09-28' -Label 'GIFT run'
+Assert-Equal 'ng' $c['code'] 'gift have: no day in the name -> the file date is the day'
+$c = VerifyFileWindow-Check -Files @() -Date '2026-09-28'
+Assert-Equal 'ok' $c['code'] 'gift have: nothing listed, nothing to check'
+$x = Invoke-TestStep 'verify.file_window' @{ files = $fq; date = '2026/9/28'; clock = '0.4583333'; expectFallback = '2'; label = 'GIFT run' }
+Assert-True ($x['ok'] -and $x['code'] -eq 'ok') ('gift have step: Excel day fraction 11:00, FileCount 2 -> ok: ' + $x['reason'])
+$x = Invoke-TestStep 'verify.file_window' @{ files = $fq; expectFallback = '3' }
+Assert-Equal 'ng' $x['code'] 'gift have step: the FileCount cell counts'
 
 $f = Invoke-TestStep 'verify.filter_records' @{ records = @($r['records']); where = @(@{ field = 'Excel_NAME'; op = 'in'; value = @() }); emptyOk = $true }
 Assert-True ($f['ok'] -and $f['matched'] -eq 0) 'filter_records emptyOk: picking nothing is an answer, not not_found'
