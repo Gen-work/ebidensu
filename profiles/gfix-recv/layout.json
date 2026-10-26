@@ -31,13 +31,22 @@
     "highlight": {
       "jobLog": [
         "successfully uploaded to",
-        "INFO\\s+Command: "
+        "INFO\\s+Command: ",
+        "INFO\\s+Renaming '"
       ],
       "receiveLog": [
         "FileGIFTGetBLBean\\.execute\\(\\) fileName",
         "file stored :"
       ],
       "unitsPerColumn": 3
+    },
+    "jobLogUpload": {
+      "_doc": "verify.parse_text grammar for the bytes a GFIX job log uploaded (one Uploading line per job log): the empty file of a job uploads only its header line (99 bytes). evidence orders the job logs by it (verify.df_ranges jobLogBytes; 10/26 review of C/F/MJODWAF1). Here, not in grammar.json: grammar keys are page names.",
+      "parser": "regex",
+      "pattern": "Uploading '[^']*' \\((?<key>[0-9,]+) bytes\\) to ",
+      "ignore": [
+        "^(?!.*Uploading '[^']*' \\([0-9,]+ bytes\\) to )"
+      ]
     },
     "compareFirstRow": 4,
     "list": {
@@ -61,7 +70,7 @@
     },
     "checklist": [
       "GFIX受信結果 B3: the Excel snap is THIS job's row(s) (its ジョブ column is compared with GIFT受信結果's picture 1 by pixels; red when they differ); several rows that look the same -> the snap runs on to 元ファイル(SNDFILE), and GIFT受信結果's picture 1 is the same new snap",
-      "GFIX受信ログ from row 8, label bold; yellow rows on the Command / uploaded lines",
+      "GFIX受信ログ from row 8, label bold; yellow rows on the uploaded / Renaming / Command lines; with two files, the job log of the send-data sheet's first set first (加瀬さん 10/26)",
       "GFIXReceive.log block: yellow on fileName / file stored",
       "Jenkins picture: red box on this job's file",
       "GIFTデータvsGFIXデータ: B3 = the IF name, G3 = the STEP name (送信データ B3), DF pictures + red boxes, the same records as the HOST pictures on 送信データ (DF line = HOST line - 1; a red line above says when they could not be lined up); every further file pair: its correl id (B) + STEP name (G) one row above its DF pictures, written by the run from 送信データ's matching label row (v2.36.0)"

@@ -137,7 +137,15 @@ def check_recv_logs(wb, rep):
             if block and not RUN_LINE.match(block[0][1].strip()):
                 rep.ng('%s!B%d' % (sn, block[0][0]), 'block does not start with a START line: %r'
                        % block[0][1][:50], 'K-37')
-            starts = {m.group(4): r for r, m in runs if m.group(3) == 'START'}
+            starts = {}
+            for r, m in runs:
+                if m.group(3) != 'START':
+                    continue
+                if m.group(4) in starts:
+                    rep.ng('%s!B%d' % (sn, r), 'START %s again (B%d): two START lines with one file name'
+                           % (m.group(4), starts[m.group(4)]), 'K-37')
+                else:
+                    starts[m.group(4)] = r
             ends = {m.group(4): r for r, m in runs if m.group(3) == 'END'}
             for f, r in ends.items():
                 if f not in starts:
@@ -215,6 +223,84 @@ def check_compare_labels(wb, rep):
             rep.ng('%s!G%d' % (S_COMPARE, r), msg, 'K-39')
 
 
+UPLOAD = re.compile(r"Uploading '[^']*' \(([0-9,]+) bytes\) to ")
+
+
+def gfix_job_blocks(ws):
+    """GFIX受信ログ on GFIX受信結果: one block per job log (split on 'Start Date
+    and Time'), each @{ row; bytes; renames = [(row, yellow)] }."""
+    rows = [(r, str(ws.cell(r, 2).value)) for r in range(1, ws.max_row + 1)
+            if ws.cell(r, 2).value is not None]
+    start = next((i for i, (r, v) in enumerate(rows) if v.strip() == 'GFIX受信ログ'), None)
+    if start is None:
+        return []
+    blocks = []
+    for r, v in rows[start + 1:]:
+        if v.strip().endswith('.log'):
+            break
+        if 'Start Date and Time' in v:
+            blocks.append({'row': r, 'bytes': None, 'renames': []})
+        if not blocks:
+            continue
+        m = UPLOAD.search(v)
+        if m and blocks[-1]['bytes'] is None:
+            blocks[-1]['bytes'] = int(m.group(1).replace(',', ''))
+        if re.search(r"INFO\s+Renaming '", v):
+            blocks[-1]['renames'].append((r, any(is_yellow(ws.cell(r, c)) for c in range(2, 6))))
+    return blocks
+
+
+def compare_groups(path, wb):
+    """GIFTデータvsGFIXデータ: per file set (a correl-id label row in B opens one),
+    whether its DF is an empty file -- only the 同一内容 box, no line-number box."""
+    if S_COMPARE not in wb.sheetnames:
+        return []
+    ws = wb[S_COMPARE]
+    starts = [r for r in range(3, ws.max_row + 1)
+              if ws.cell(r, 2).value and re.match(r'^[A-Z0-9]{6,}$', str(ws.cell(r, 2).value).strip())]
+    if not starts:
+        return []
+    bk = Book(path)
+    part = next((p for n, p, st in bk.sheets() if n == S_COMPARE), None)
+    boxes = [it['anchor'][1] + 1 for it in sheet_items(bk, part)
+             if it['kind'] == 'sp' and (it.get('line') or '').upper() == 'FF0000' and it.get('anchor')]
+    out = []
+    for k, r0 in enumerate(starts):
+        r1 = starts[k + 1] if k + 1 < len(starts) else 10 ** 9
+        n = sum(1 for b in boxes if r0 <= b < r1)
+        out.append({'row': r0, 'boxes': n, 'empty': n == 1})
+    return out
+
+
+def check_gfix_job_logs(path, wb, rep):
+    """GFIX受信ログ (加瀬さん 10/26, C/F/MJODWAF1): the Renaming line of each job
+    log is yellow (K-45); with several files the job logs follow the
+    送信データ / DF order -- the empty file (smallest upload, 99 bytes) sits
+    where the DF set is empty (K-44)."""
+    if S_GFIX_RECV not in wb.sheetnames:
+        return
+    blocks = gfix_job_blocks(wb[S_GFIX_RECV])
+    for b in blocks:
+        for r, yellow in b['renames']:
+            if not yellow:
+                rep.ng('%s!B%d' % (S_GFIX_RECV, r), 'GFIX受信ログ: the Renaming line is not yellow', 'K-45')
+    if len(blocks) < 2:
+        return
+    groups = compare_groups(path, wb)
+    sizes = [b['bytes'] for b in blocks]
+    if len(groups) != len(blocks) or None in sizes or len(set(sizes)) != len(sizes):
+        return
+    empty = {k for k, g in enumerate(groups) if g['empty']}
+    if not empty or len(empty) == len(groups):
+        return
+    smallest = set(sorted(range(len(sizes)), key=lambda k: sizes[k])[:len(empty)])
+    if smallest != empty:
+        order = ', '.join('B%d %s bytes' % (b['row'], format(b['bytes'], ',')) for b in blocks)
+        want = ', '.join('set %d %s' % (k + 1, 'empty' if g['empty'] else 'data') for k, g in enumerate(groups))
+        rep.ng('%s!B%d' % (S_GFIX_RECV, blocks[0]['row']),
+               'GFIX受信ログ order differs from the DF sets (%s; DF: %s)' % (order, want), 'K-44')
+
+
 def check_shapes(path, rep):
     """Every red box should sit on a picture; a box over nothing is a leftover."""
     bk = Book(path)
@@ -243,6 +329,7 @@ def check_book(path):
     check_recv_logs(wb, rep)
     check_yellow(wb, rep)
     check_compare_labels(wb, rep)
+    check_gfix_job_logs(path, wb, rep)
     check_shapes(path, rep)
     return rep.print()
 

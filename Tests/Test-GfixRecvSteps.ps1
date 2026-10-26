@@ -231,6 +231,12 @@ try {
     Assert-True ($endCol -gt 60 -and $endCol -lt 100) ('evidence: the file stored highlight ends around column BZ (got ' + (ConvertTo-EbiColumnLetter $endCol) + ')')
     $jobHits = @(Find-EbiLineHits -Lines @(Get-EbiTextLines -Text $job['text']) -Patterns $prof['layout']['evidence']['highlight']['jobLog'])
     Assert-Equal 2 $jobHits.Count 'evidence: the job log has exactly the upload line and the Command line to highlight'
+    # 10/26 review ("Renaming not confirmed"): the newer job logs carry a
+    # rename sub-task; its Renaming line is yellow too
+    $renHits = @(Find-EbiLineHits -Lines @("2026-10-26 10:45:33           INFO      Renaming '/appl/JPC/JPCVer1/gfix/recv/1000004968681.tmp' to '/appl/JPC/JPCVer1/gfix/recv/JJPCRS1220260717142539080561'", '2026-10-26 10:45:33           INFO      1 files and 0 directories were renamed successfully') -Patterns $prof['layout']['evidence']['highlight']['jobLog'])
+    Assert-Equal 1 $renHits.Count 'evidence: the Renaming line is highlighted (not the renamed-successfully line)'
+    $up = Invoke-TestStep 'verify.parse_text' @{ text = $job['text']; grammar = $prof['layout']['evidence']['jobLogUpload'] }
+    Assert-Equal '869' (@($up['names']) -join ',') 'evidence: the upload size from the job log (not the deleted line)'
     $miss = Invoke-TestStep 'file.extract_blocks' @{ paths = @('log/GFIXReceive/1008.log'); blockKeys = @('JJPCRS12NOTHERE'); saveTo = 'capture/x.txt' }
     Assert-True (-not $miss['ok'] -and $miss['failure'] -eq 'not_found') 'evidence: a transfer with no block is not_found'
 
@@ -689,6 +695,20 @@ try {
     Assert-Equal '' $dr['alert'] 'df ranges step: an empty file under a picture with no numbers is not an alert'
     $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = @($kp[1], $kp[0]); ranges = @((& $rg 1 17), (& $rg 663 679), @{ ok = $false }) }
     Assert-True ((-not $dr['moved']) -and @($dr['shots']).Count -eq 0) 'df ranges step: already in order -> not moved; no shots given -> none handed back'
+    # 10/26 review of C/F/MJODWAF1 ("GFIX receive log in the wrong order"):
+    # the job logs follow the pairs; the empty file uploads 99 bytes
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $kp; ranges = @((& $rg 1 17), (& $rg 663 679), @{ ok = $false }); jobLogs = @('j8572.log', 'j8571.log'); jobLogBytes = @('99', '417,269') }
+    Assert-Equal 'j8571.log,j8572.log' (@($dr['jobLogs']) -join ',') 'df ranges step: job logs in the send-data order (the 417,269-byte upload with the 678-line file first)'
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = @($kp[1], $kp[0]); ranges = @((& $rg 1 17), (& $rg 663 679), @{ ok = $false }); jobLogs = @('j9182.log', 'j9181.log'); jobLogBytes = @('1,144,871', '99') }
+    Assert-Equal 'j9182.log,j9181.log' (@($dr['jobLogs']) -join ',') 'df ranges step: job logs already in order stay (RJODWAF1)'
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $kp; ranges = @((& $rg 1 17), (& $rg 663 679), @{ ok = $false }); jobLogs = @('a.log', 'b.log'); jobLogBytes = @('99', '99') }
+    Assert-Equal 'a.log,b.log' (@($dr['jobLogs']) -join ',') 'df ranges step: two uploads of the same size -> job logs kept as listed'
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $kp; ranges = @((& $rg 1 17), (& $rg 663 679), @{ ok = $false }); jobLogs = @('a.log', 'b.log') }
+    Assert-Equal 'a.log,b.log' (@($dr['jobLogs']) -join ',') 'df ranges step: no upload sizes -> job logs kept as listed'
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = @($kp[1]); ranges = @((& $rg 1 17), (& $rg 663 679)); jobLogs = @('only.log') }
+    Assert-Equal 'only.log' (@($dr['jobLogs']) -join ',') 'df ranges step: one job log is handed back as it is'
+    Assert-Equal '1,0' (@(VerifyDfRanges-LogOrder -Lines @(678, 0) -Bytes @(99, 417269)) -join ',') 'df log order: the bigger upload goes with the longer file'
+    Assert-True ($null -eq (VerifyDfRanges-LogOrder -Lines @(678, 0) -Bytes @(99))) 'df log order: counts differ -> no order'
     $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $kp; ranges = @((& $rg 1 17), (& $rg 663 679)) }
     Assert-True ((@($dr['pairs'] | ForEach-Object { $_['rightName'] }) -join ',') -eq 'F202610260007.csv,F202610260006.csv' -and $dr['plans'][1]['mode'] -eq 'default') 'df ranges step: no picture for the empty one -> it goes last, default'
     # 10/26 SJODWAF1: all three HOST pictures unreadable (the data ones too):

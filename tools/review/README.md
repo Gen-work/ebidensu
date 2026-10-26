@@ -2,7 +2,7 @@
 
 交给加瀬さん之前,把当天要交的 `J4検証資料(...)_<job>.xlsx` 过一遍。
 **只读**,不改工作簿。规则来自 Check Sheet_J4 的历史指摘和 10/23 的自查,
-见 `docs/ebi-dance/KNOWLEDGE.md` 第 5 节(K-36 ～ K-42)。
+见 `docs/ebi-dance/KNOWLEDGE.md` 第 5 节(K-36 ～ K-46)。
 
 不是 VerifyTool 的 phase,也不是 ebi-dance 的 step:是 Python 3 的旁路工具,
 在云端会话(或任何装了 Python 的机器)上跑。
@@ -34,7 +34,9 @@ python3 tools/review/drawings.py render <book.xlsx> <输出文件夹>
 | 保存状态:第一张表、各表滚到顶、光标 A3 | Check Sheet「セル選択をA3にした上で保存」 |
 | 字体全是 ＭＳ ゴシック | Check Sheet「文字フォントが変わってしまってます」 |
 | 日志标签粗体;标签 = 实际日志名(`GIFTReceiveUnzip.log` 等) | K-36 |
-| 日志段:以 START 开头,START / END 成对,END + 日期之后不混进别的运行 | K-37 |
+| 日志段:以 START 开头,START / END 成对、不同名,END + 日期之后不混进别的运行 | K-37 |
+| GFIX受信ログ:多份 job log 的顺序跟着 DF 的组(空文件 = 最小的上传) | K-44 |
+| GFIX受信ログ:Renaming 一行涂黄 | K-45 |
 | 没有文字的行不留黄色;黄色涂到文字结尾、不过长 | K-38 |
 | GIFTデータvsGFIXデータ:每组的相关ID 在 B、STEP 名在 G,和送信データ一一对应 | K-39 |
 | 红框落在某张图上(不是孤零零浮着) | Check Sheet「最背面に赤枠の残骸」 |
