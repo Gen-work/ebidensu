@@ -374,8 +374,9 @@
 ### K-46 隔几天重跑 evidence:Jenkins 一览里文件已经不在最下面
 - **症状**:10/26 为了改 10/23 FJODWAF1 的指摘重跑 evidence:`screen.list_rects not_found: F202610230027.csv is row 35 from the bottom, the picture has 30 text row(s)`,r 重试结果一样,只能 s。
 - **原因**:Jenkins 截图固定在一览的最下面(Ctrl+End),只能拍到最后约 30 行;隔了三天,后面又多了 30 多个文件,10/23 的文件被挤出画面。
-- **现在的对策**(v2.38.3,`gfixRecv.evidence` 0.9.2):`jkRects` 带 `allowAbove`,对象在画面上面时不再 not_found,而是 `above = true` + `anchor` = 页面顺序最上面的对象文件。之后只在 above 时跑:Ctrl+F → 贴 anchor(`browser.fill`,不碰页面的全选)→ 重拍同一个 `jenkins.png` → Esc 关检索栏 → 蓝字行 + 橙色当たり行(`find_ink_rows` ink `orange`,FF9632)→ `list_rects` 用 `anchorName` / `anchorBands` 从当たり行往下数 → `jkPic2`。当日的情况(above = false)和以前完全一样。
-- **未确认**:① Edge 的当たり颜色是不是 FF9632(阈值 R>220、G 115～185、B<100,和旧 `JenkinsActive*` 一致),没找到橙色会 `not_found` 停下,不会框错;② 当たり行的链接字被涂橙后还剩不剩蓝色 —— 两种情况都处理了(附近有蓝行就对齐,没有就把当たり行当一行插进去);③ 检索栏在截图右上角,不压文件名列(x 460～600)。第一次在办公室重跑旧日时看一眼红框。
+- **现在的对策**(v2.38.3,`gfixRecv.evidence` 0.9.2):`jkRects` 带 `allowAbove`,对象在画面上面时不再 not_found,而是 `above = true` + `anchor` = 页面顺序最上面的对象文件。之后只在 above 时跑:Ctrl+F → 贴 anchor(`browser.fill`,不碰页面的全选)→ Enter(v2.38.4:只贴不按 Enter 时,10/26 实机截到的图既没滚动也没有强调)→ 重拍同一个 `jenkins.png` → Esc 关检索栏 → 蓝字行 + 橙色当たり行(`find_ink_rows` ink `orange`,FF9632)→ `list_rects` 用 `anchorName` / `anchorBands` 从当たり行往下数 → `jkPic2`。当日的情况(above = false)和以前完全一样。
+- **已确认**(10/26 实机截图):当たり颜色就是 (255,150,50),阈值 R>220、G 115～185、B<100 在文件名列抓到 14 行像素;当たり行的字变成黑色、蓝色没了 —— 由「把当たり行当一行插进去」处理。
+- **未确认**: 检索栏在截图右上角,不压文件名列(x 460～600)。第一次在办公室重跑旧日时看一眼红框。
 - **注意**:s 跳过这条之后,这本证迹簿在这次 run 里已经被改过一部分(GFIX受信ログ、GFIXReceive.log 已经重新写进去),但 Jenkins 图没换、后面的 DF / 标签没做。跳过的这本存没存要打开看一下。
 - **来源**:10/26 操作员贴的 evidence 日志。
 
