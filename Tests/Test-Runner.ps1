@@ -416,6 +416,10 @@ try {
     Assert-True (($probs -join ' ') -like '*"schema" is required*') 'schema is required (P0-R15)'
     $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 2; id = 'w' })
     Assert-True (($probs -join ' ') -like '*newer than this runner*') 'a newer schema is refused'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; each = @( @{ id = 'a'; use = 'fake.pure'; retryFrom = 'b' }, @{ id = 'b'; use = 'fake.pure' } ) })
+    Assert-True (($probs -join ' ') -like '*"retryFrom" must name an earlier step*') 'retryFrom: a later step id is a problem (K-47)'
+    $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; setup = @( @{ id = 'a'; use = 'fake.pure' }, @{ id = 'b'; use = 'fake.pure'; retryFrom = 'a' } ) })
+    Assert-True (($probs -join ' ') -like '*"retryFrom" is only meaningful in "each"*') 'retryFrom: only in each'
     $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; each = @() })
     Assert-True (($probs -join ' ') -like '*needs a "source"*') 'each without source is a problem'
     $probs = @(Get-EbiWorkflowProblems -Workflow @{ schema = 1; id = 'w'; source = @{ table = 'wl'; select = @{ field = 'f'; pendingWhen = '!= done' } }; each = @() })
@@ -1008,6 +1012,20 @@ try {
     Assert-Equal 'cancelled' $res['failure'] 'ask: q cancels the run'
     Assert-Equal 'cancelled' $res['items'][0]['status'] 'ask: ... the item is cancelled'
     Assert-Equal 'ok' (Get-Rec $res 'bye')['status'] 'ask: ... teardown still ran'
+
+    # -- retryFrom (10/26 K-47): r goes back to the capture, not just the step reading it
+    Reset-Counters; Set-Answers @('r')
+    $wf = New-PolicyWorkflow -Name 'retryfrom' -Each '[ { "id": "shot", "use": "fake.count", "with": { "name": "rfshot" } }, { "id": "look", "use": "fake.flaky", "retryFrom": "shot", "with": { "name": "rflook", "failUntil": 1, "mode": "not_found" } }, { "id": "after", "use": "fake.count", "with": { "name": "rfafter" } } ]'
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-retryfrom' -Profile $profile -AskHandler $handler
+    Assert-True ($res['ok']) 'retryFrom: the run is ok after r'
+    Assert-Equal 2 (Get-Count 'rfshot') 'retryFrom: r re-ran the earlier capture step'
+    Assert-Equal 'fail,ok' (@((Get-ItemRecs $res 'look') | ForEach-Object { $_['status'] }) -join ',') 'retryFrom: ... then the failed step again, which passed'
+    Assert-Equal 1 (Get-Count 'rfafter') 'retryFrom: the step after runs once'
+    Assert-Equal 'shot' ([string]$script:asked[0]['retryFrom']) 'retryFrom: the question names where r goes back to'
+    Reset-Counters; Set-Answers @('s')
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $work -ModulesRoot $modules -RunId 'r-retryfrom-s' -Profile $profile -AskHandler $handler
+    Assert-Equal 'skip' $res['items'][0]['status'] 'retryFrom: s still skips the item'
+    Assert-Equal 1 (Get-Count 'rfshot') 'retryFrom: ... without going back'
     $askEv = @(Read-TraceEvents -WorkDir $work -RunId 'r-p104-askq' | Where-Object { $_['action'] -eq 'ask' })
     Assert-Equal 'q' $askEv[0]['status'] 'ask: the answer is traced'
 
