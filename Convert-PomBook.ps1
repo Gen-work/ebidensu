@@ -33,6 +33,12 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ProjectLabels.ps1')
 . (Join-Path $PSScriptRoot 'PomBook.ps1')
 . (Join-Path $PSScriptRoot 'ExcelHelpers.ps1')
+. (Join-Path $PSScriptRoot 'kernel\Native.ps1')
+
+# The office PC's classification add-in pops up on every save; Esc answers it
+# (operator 10/27, same as layout.evidence.saveDialogs). U+6A5F U+5BC6 U+533A
+# U+5206 U+306E U+767B U+9332 = 'kimitsu kubun no touroku'.
+$saveDialogs = @([string]([char]0x6A5F) + [char]0x5BC6 + [char]0x533A + [char]0x5206 + [char]0x306E + [char]0x767B + [char]0x9332)
 
 # ---- collect the books ----
 $books = New-Object System.Collections.ArrayList
@@ -128,7 +134,8 @@ try {
 
         if ($null -eq $excel) {
             $excel = New-ExcelApp
-            # Visible so the office save add-in's dialog (classification) can be answered.
+            # Visible: the classification dialog is answered with Esc (Start-EbiDialogWatch),
+            # and the operator can still answer it by hand if that misses.
             $excel.Visible = $true
             $excel.DisplayAlerts = $false
         }
@@ -155,7 +162,12 @@ try {
                 }
             }
             $wb.Worksheets.Item(1).Activate()
-            $wb.Save()
+            $watch = Start-EbiDialogWatch -TitleParts $saveDialogs
+            try { $wb.Save() } finally {
+                $seen = Stop-EbiDialogWatch $watch
+                foreach ($t in @($seen['answered'])) { Write-Host ('            answered "' + $t + '" with Esc') }
+                foreach ($t in @($seen['missed'])) { Write-Host ('  [warn ] "' + $t + '" popped up and could not be brought to the front -- answer it by hand') -ForegroundColor Yellow }
+            }
             $ok = $true
         } finally {
             Close-Workbook $wb $false
