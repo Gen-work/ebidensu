@@ -1,3 +1,18 @@
+## 2026-10-27 - review tool: DF title file names vs the receive logs (v2.38.11)
+
+10/27 加瀬さん NG on LJODWAF1 (STEP MQFX0030): the delivered book's second
+DF compared GIFT F202609280003.csv, KJODWAF1's empty file, again. The
+10/26 hand fix had pasted the right DF (...0005) as 図 1 on top of the
+tool's old one; when the old picture was to be removed, 図 1 was deleted
+instead. Both are empty-file DFs saying 同一内容; only the title differs.
+
+- `tools/review/df_files.py` (new), called by `check_book.py`: OCRs each
+  DF picture's title bar / [1] [2] lines on GIFTデータvsGFIXデータ and
+  checks the GIFT / GFIX file names against the "file stored" lines of
+  the logs on GIFT受信結果 / GFIX受信結果 (exact name, three reads, any
+  one naming a stored file is enough). Over the 31 uploaded books it
+  flags the three LJODWAF1 versions and nothing else. KNOWLEDGE K-53.
+
 ## 2026-10-27 - retry by procedure, counts kept for reruns, GIFT picture 1 only on the operator's o (v2.38.10)
 
 10/27 office run, the operator's answers to the review questions.
