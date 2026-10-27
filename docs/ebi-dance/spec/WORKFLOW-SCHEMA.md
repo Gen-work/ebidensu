@@ -836,6 +836,7 @@ outputs、setup 每次重跑、`once: group` 的 ledger 键)在一次真实中�
 - [ ] 每个 step 调用都有非空 `id`,且在同段内唯一(P0-R3:ledger 记账键,§2.1)
 - [ ] 用到 `tier: fallback` 的 step → **警告**,提示需要校准
 - [ ] 有 `destructive` 且 `confirm: false` → **警告**,列出位置
+- [ ] `each` 里读前面取材(`effects = ui` 的步骤,或截图 / 下载 / 导出图 / OCR 类步骤;隔几步也算)的分析步骤,manifest 能因内容失败(`not_found`、`wrong_page`、`parse_error`……)却没写 `retryFrom` → **警告**(K-47:r 只会再读同一份缓存;`table`/`flow`/`excel`/`progress`/`human`/`file` 组不查,`when` 不算读)
 - [ ] `profile` 字段指向的 profile 存在且能加载
 - [ ] `page` 字段(有的话)指向的 page 在 `pages.json` 里存在(P0-R6)
 - [ ] 每个 `type='session'` 参数的字面量名字,都能在它前面找到一个

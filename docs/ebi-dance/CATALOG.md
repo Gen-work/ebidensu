@@ -2821,6 +2821,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 |-------|------|----------|---------|------|------|
 | `countsGroup` | string |  | counts |  | the named group that holds the counts: counts typed by hand ("5 ken 13:30") land in it |
 | `defaultClock` | string |  | (empty) |  | a start time already known (the worklist row): Enter takes it, n takes now |
+| `defaultCounts` | string |  | (empty) |  | counts already known (the worklist row): used for the countsGroup field when the answer brought none |
 | `expect` | string |  | (empty) |  | value the expectGroup must have (full-width folded, case-insensitive); empty = any |
 | `expectGroup` | string |  | job |  |  |
 | `message` | string | yes |  |  | what to copy (shown on the panel) |
@@ -2830,6 +2831,7 @@ Operator copies a chat message; read it from the clipboard, check it, note the t
 | output | type | desc |
 |--------|------|------|
 | `clock` | string | HH:mm:ss: when Enter was pressed, or the time typed |
+| `countsSource` | string | given (from the message / typed now: write it back to the row) \| worklist (defaultCounts) \| "" (none) |
 | `date` | string | yyyy-MM-dd of that moment |
 | `fields` | map | every named group of the pattern ("" when it did not match / no message) |
 | `fresh` | bool | the time was decided just now (now / typed) and should be written back to the row |

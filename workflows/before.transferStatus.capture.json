@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "before.transferStatus.capture",
   "title": "MQ transfer status page: capture + verdict for every pending key (before side)",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "profile": "host-open",
   "page": "transferStatus",
 
@@ -46,14 +46,14 @@
                 "pollMs": "{{page.pollMs}}",
                 "archiveTo": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.txt" } },
 
-    { "id": "assert", "use": "browser.assert_page",
+    { "id": "assert", "use": "browser.assert_page", "retryFrom": "wait",
       "with": { "text": "{{steps.wait.out.text}}", "fingerprint": "{{page.fingerprint}}" } },
 
     { "id": "shot", "use": "screen.capture_window",
       "with": { "window": "mainWindow",
                 "saveAs": "capture/{{vars.side}}_{{page.id}}/{{item.keySafe}}.png" } },
 
-    { "id": "crop", "use": "screen.crop",
+    { "id": "crop", "use": "screen.crop", "retryFrom": "shot",
       "with": { "path": "{{steps.shot.out.path}}",
                 "left": "{{page.crop.left}}", "top": "{{page.crop.top}}",
                 "right": "{{page.crop.right}}", "bottom": "{{page.crop.bottom}}" } },
@@ -61,7 +61,7 @@
     { "id": "rec", "use": "verify.parse_text",
       "with": { "text": "{{steps.wait.out.text}}", "grammar": "{{page.grammar}}" } },
 
-    { "id": "row", "use": "verify.match_record",
+    { "id": "row", "use": "verify.match_record", "retryFrom": "wait",
       "with": { "records": "{{steps.rec.out.records}}",
                 "key": "{{item.Correl_ID_S}}",
                 "tieBreak": "newest",

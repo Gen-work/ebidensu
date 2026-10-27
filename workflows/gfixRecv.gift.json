@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.gift",
   "title": "GFIX受信: GIFT 側のファイルがあるか(DATA/GIFT/<J名> / <W名>)。無ければ Jenkins の一覧から GIFT 実行日時の前後で探して落とす",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "profile": "gfix-recv",
 
   "vars": {
@@ -75,7 +75,7 @@
     { "id": "jkRec", "use": "verify.parse_text",
       "when": "steps.have.out.total == 0",
       "with": { "text": "{{steps.jkText.out.text}}", "grammar": "{{profile.grammar.jenkinsReport}}" } },
-    { "id": "cand", "use": "verify.time_candidates",
+    { "id": "cand", "use": "verify.time_candidates", "retryFrom": "jkText",
       "label": "GIFT 実行日時(mapping.xlsx M / N)の -2..+13 分にあるファイル。数が合えば確定",
       "when": "steps.have.out.total == 0",
       "with": { "records": "{{steps.jkRec.out.records}}", "date": "{{item.GIFT_DATE}}", "clock": "{{item.GIFT_TIME}}",
@@ -87,7 +87,7 @@
       "when": "steps.have.out.total == 0",
       "with": { "title": "GIFT files: {{item.JOB}}", "sets": "{{steps.cand.out.sets}}", "presets": "{{steps.cand.out.presets}}",
                 "info": "{{steps.cand.out.info}}", "noun": "file", "autoPick": "{{steps.cand.out.certain}}" } },
-    { "id": "dl", "use": "file.download",
+    { "id": "dl", "use": "file.download", "retryFrom": "jkText",
       "label": "選んだファイルを DATA/GIFT/<J名> へ",
       "when": "steps.pick.out.any == true",
       "with": { "baseUrl": "{{profile.paths.jenkinsReportUrl}}", "names": "{{steps.pick.out.picked}}",

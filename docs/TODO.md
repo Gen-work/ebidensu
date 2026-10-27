@@ -5,6 +5,14 @@ file stays small. Designed-then-shelved work lives in
 [`Parked-Ideas.md`](Parked-Ideas.md) instead; release history lives in
 [`../CHANGELOG.md`](../CHANGELOG.md).
 
+- **gfix-recv: talk about pixel compare / OCR** (10/27, KNOWLEDGE K-51).
+  Neither is stable without a dedicated library: the picture-1 pixel
+  compare false-alarms on hand-pasted pictures (AB1 / U35 / U36), Windows
+  OCR reads MS Gothic 9 as 3 and misses line numbers, Tesseract is
+  cloud-only. Decide with the operator: keep them as hints only, install
+  an OCR library on the office PC, or resume the mock-page template line
+  (Parked-Ideas D2). Until then a picture is replaced only on the
+  operator's o.
 - **ebi-dance: ledger key per day** (10/15, docs/ebi-dance/KNOWLEDGE.md
   K-05). The ledger replays by "<job> | <step>", not by date: resuming an
   old run after the same job came back with a new GFIX_DATE would replay
