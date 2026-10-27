@@ -635,6 +635,19 @@ JenkinsDownload.ps1     Jenkins receive-file download glue: Select-Jenkins
                         (reports the passed-over entries as Superseded).
                         Unit-tested via Tests\Test-JenkinsDownload.ps1.
 Probe-Shapes.ps1        lists all shapes in an evidence workbook (calibration aid)
+PomBook.ps1             pure POM-book sheet plan (dot-source, no param(), no
+                        COM; needs ProjectLabels.ps1 first): Get-PomBookPlan
+                        turns an old-layout book's sheet names into rename /
+                        copy / new-compare actions so GFIX send/recv result
+                        appear twice, (henkou-mae) = first run and (henkou-go)
+                        = the rerun after the fix, plus a blank GFIX
+                        before/after compare sheet; GIFT sheets and
+                        GIFT-vs-GFIX stay in place. Unit-tested
+                        (Tests\Test-PomBook.ps1).
+Convert-PomBook.ps1     STANDALONE (has param(): -File / &). Performs the
+                        PomBook plan with Excel COM on a COPY of each book
+                        in -OutDir (default <dir>\pom_converted); originals
+                        never touched; -DryRun prints the plan, no Excel.
 Probe-SheetFormat.ps1   read-only cell-FORMAT probe (calibration aid):
                         dumps a workbook's / one sheet's column widths, row
                         heights and distinct format signatures (NumberFormat,
@@ -661,7 +674,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `ProjectLabels.ps1`, `ProgressLog.ps1`, `AlignCompare.ps1`, `ConfigOverlay.ps1`,
 `Common.ps1`, `WorkbookResolver.ps1`, `SendMetadata.ps1`, `OcrWindows.ps1`,
 `EvidenceImageExport.ps1`, `SnapLocalize.ps1`, `Find-ActiveHighlightRow.ps1`,
-`ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`. In `modules/verify/`:
+`ProcessTimeParse.ps1`, `ProcessTimeCheck.ps1`, `PomBook.ps1`. In `modules/verify/`:
 `GfixLog.ps1`, `GfixJobList.ps1`, `ScreenRegion.ps1`, `SnapVerify.ps1`,
 `OwnerFilter.ps1`, `GiftMqProcessTime.ps1`. In `legacy/`: `OldSnapVerify.ps1`, `PixelDigitMatch.ps1`,
 `OldSnapPixelVerify.ps1`, `TimeDigitVerify.ps1`. In `kernel/`: `Json.ps1`, `Trace.ps1`,

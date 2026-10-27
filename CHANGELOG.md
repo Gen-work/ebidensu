@@ -1,3 +1,26 @@
+## 2026-10-27 - Convert-PomBook: old-layout POM books get the before / after sheets (v2.39.0)
+
+10/27: the POM jobs (failed on the first run, fixed, run again) are
+delivered in the JJPCRR12_JJDLWA09 / JJPCRR12_JJDSWPA1 layout -- GFIX
+送信結果 and GFIX受信結果 each twice, (変更前) = the first run and
+(変更後) = the rerun, plus GFIXデータ_変更前後比較. The other books in
+the operator's share (YJDSWM39 and the other *JDSWM39 / CJDSWM40) are
+still in the old layout.
+
+- `PomBook.ps1` (new, pure): `Get-PomBookPlan` -- GFIX send / recv result
+  renamed (変更前) and copied right behind as (変更後) (a placeholder
+  until the rerun evidence goes in); GIFT送信結果 / GIFT受信結果 /
+  GIFTデータvsGFIXデータ stay where they are; a blank GFIXデータ_変更前後比較
+  at the end (A1 file-name formula and B3 data name of GIFT-vs-GFIX, no
+  pictures). No JJPCRR12 sheets (only books named after JJPCRR12 have
+  them). A book already in the POM layout is skipped; one with neither
+  layout is reported and left alone.
+- `Convert-PomBook.ps1` (new, standalone): does the plan with Excel COM on
+  a copy in `-OutDir` (default `<dir>\pom_converted`); pictures and red
+  boxes travel with Worksheet.Copy. `-DryRun` prints the plan and the
+  resulting sheet order without starting Excel.
+- `Tests/Test-PomBook.ps1` (new). Cloud: static-checked only (no pwsh);
+  run Tests\Run-Tests.ps1 and a `-DryRun` on the office PC first.
 ## 2026-10-27 - track: r on a GoAnywhere / Jenkins miss refreshes the page and reads it again (v2.38.9)
 
 10/27 office run: JJODWAB1's Enter at "wait for HOST" went in before the
