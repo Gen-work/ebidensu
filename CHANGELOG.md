@@ -1,3 +1,20 @@
+## 2026-10-27 - track: r on a GoAnywhere / Jenkins miss refreshes the page and reads it again (v2.38.9)
+
+10/27 office run: JJODWAB1's Enter at "wait for HOST" went in before the
+HOST job finished. GoAnywhere showed only the Send row, `recv` failed
+`not_found`, and r three times re-filtered the same captured `gaText` text
+-- the page was never refreshed, so the only way on was s and a second
+track run. The K-47 rule (an analysis step over an earlier step's capture
+gets a `retryFrom` pointing at that capture) had been applied to evidence
+only.
+
+- `gfixRecv.track` 0.9.1: `mine` and `recv` retry from `gaText` (refresh
+  GoAnywhere, wait, parse, re-shoot goanywhere.png with the rows now
+  there); `jkMine` retries from `jkText` (Jenkins F5, for a file not yet
+  in the report).
+- Tests: the df log order assertion no longer wraps the returned array in
+  `@(...)` (`-join` gave `System.Int32[]`); Run-Tests is back to the 3
+  known failures.
 ## 2026-10-27 - review tool: OCR check of the GIFT list box against the Detail pages (v2.38.8)
 
 10/27 JJODWAB1 and JJODWU33: the red box on the GIFT transfer list was on

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -209,6 +209,7 @@
     {
       "id": "mine",
       "use": "verify.filter_records",
+      "retryFrom": "gaText",
       "label": "このジョブの行(Send + Receive)",
       "with": {
         "records": "{{steps.gaRec.out.records}}",
@@ -262,6 +263,7 @@
       "id": "recv",
       "use": "verify.filter_records",
       "when": "steps.hostStatus.out.code == ok",
+      "retryFrom": "gaText",
       "label": "Receive の行 = GFIX に着いたファイル",
       "with": {
         "records": "{{steps.mine.out.records}}",
@@ -321,6 +323,7 @@
       "id": "jkMine",
       "when": "steps.hostStatus.out.code == ok",
       "use": "verify.filter_records",
+      "retryFrom": "jkText",
       "label": "Receive の時間帯に report に置かれたファイル",
       "with": {
         "records": "{{steps.jkRec.out.records}}",
