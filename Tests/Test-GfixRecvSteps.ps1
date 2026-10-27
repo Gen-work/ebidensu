@@ -749,7 +749,9 @@ try {
     Assert-Equal 'a.log,b.log' (@($dr['jobLogs']) -join ',') 'df ranges step: no upload sizes -> job logs kept as listed'
     $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = @($kp[1]); ranges = @((& $rg 1 17), (& $rg 663 679)); jobLogs = @('only.log') }
     Assert-Equal 'only.log' (@($dr['jobLogs']) -join ',') 'df ranges step: one job log is handed back as it is'
-    Assert-Equal '1,0' (@(VerifyDfRanges-LogOrder -Lines @(678, 0) -Bytes @(99, 417269)) -join ',') 'df log order: the bigger upload goes with the longer file'
+    # assigned like the step does: @(...) would wrap the ',$at' array in another one
+    $logOrder = VerifyDfRanges-LogOrder -Lines @(678, 0) -Bytes @(99, 417269)
+    Assert-Equal '1,0' ($logOrder -join ',') 'df log order: the bigger upload goes with the longer file'
     Assert-True ($null -eq (VerifyDfRanges-LogOrder -Lines @(678, 0) -Bytes @(99))) 'df log order: counts differ -> no order'
     $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $kp; ranges = @((& $rg 1 17), (& $rg 663 679)) }
     Assert-True ((@($dr['pairs'] | ForEach-Object { $_['rightName'] }) -join ',') -eq 'F202610260007.csv,F202610260006.csv' -and $dr['plans'][1]['mode'] -eq 'default') 'df ranges step: no picture for the empty one -> it goes last, default'
