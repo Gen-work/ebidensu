@@ -10,9 +10,13 @@ Usage:
 Prints one block per book: NG lines (fix before delivery), WARN lines (look),
 then a one-line summary. Exit code 1 when any book has an NG.
 
+With Tesseract installed (apt install tesseract-ocr; pip install pytesseract)
+it also OCRs GIFT受信結果: the GIFT list box must cover the rows the Detail
+pages show, and each Detail's RECVFILENAME must be a START of the log (K-50).
+
 What it does NOT check (look at the pictures, drawings.py render):
-  - whether a red box sits on the right row of a screenshot
-  - whether the GIFT list box / Jenkins box / DF box match each other
+  - whether the Jenkins box / DF box sit on the right row of a screenshot
+  - whether the Jenkins box / DF box match each other
   - whether a DF that differs carries an explanation (callout)
 """
 import re
@@ -25,6 +29,7 @@ import openpyxl
 
 sys.path.insert(0, __import__('os').path.dirname(__file__))
 from drawings import Book, sheet_items, M  # noqa: E402
+import gift_list  # noqa: E402
 
 warnings.filterwarnings('ignore')
 
@@ -357,6 +362,34 @@ def check_shapes(path, rep):
                        % (it['name'], a[1] + 1 if a else '?'), 'Check Sheet 08/04')
 
 
+def check_gift_list(path, wb, rep):
+    """GIFT受信結果 by OCR (K-50): the list box covers the Detail pages' rows
+    (SENDDATETIMECHAR inside the boxed Msgid), and each Detail's
+    RECVFILENAME is one of the log's START lines."""
+    if S_GIFT_RECV not in wb.sheetnames:
+        return
+    if not gift_list.ocr_available():
+        rep.warn(S_GIFT_RECV, 'OCR not available (tesseract-ocr + pytesseract): the GIFT list box was not checked', 'K-50')
+        return
+    bk = Book(path)
+    part = next((p for n, p, st in bk.sheets() if n == S_GIFT_RECV), None)
+    if part is None:
+        return
+    info = gift_list.read_sheet(bk, part)
+    for lvl, msg in gift_list.judge(info):
+        (rep.ng if lvl == 'NG' else rep.warn)(S_GIFT_RECV, msg, 'K-50')
+    ws = wb[S_GIFT_RECV]
+    starts = []
+    for r in range(1, ws.max_row + 1):
+        m = RUN_LINE.match(str(ws.cell(r, 2).value or '').strip())
+        if m and m.group(3) == 'START':
+            starts.append(re.sub(r'\D', '', m.group(4)))
+    for name, sdt, recv in info['details']:
+        if starts and len(recv) >= 16 and not any(gift_list.near_in(recv, s) or gift_list.near_in(s, recv) for s in starts):
+            rep.ng(S_GIFT_RECV, 'Detail %r RECVFILENAME ...%s is not a START of GIFTReceive.log on this sheet '
+                   '(its START line is missing, or the Detail page is another transfer\'s)' % (name, recv[-16:]), 'K-50')
+
+
 def check_book(path):
     rep = Report(path)
     try:
@@ -371,6 +404,7 @@ def check_book(path):
     check_compare_labels(path, wb, rep)
     check_gfix_job_logs(path, wb, rep)
     check_shapes(path, rep)
+    check_gift_list(path, wb, rep)
     return rep.print()
 
 
