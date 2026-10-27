@@ -121,6 +121,29 @@ Assert-True ($res['ok']) ('lint: a correct workflow has no errors' + $(if (-not 
 Assert-True ((Warns $res) -like '*needs "browser"*' -and (Warns $res) -like '*needs "excel"*') 'lint: needs excel / browser are warnings'
 Assert-True ($res['warnings'].Count -eq 2) 'lint: ... and nothing else is warned about'
 
+# K-47: a step reading an earlier capture, failing on its content, with no retryFrom
+$rf = Wf @'
+{ "schema": 1, "id": "rf", "title": "t", "version": "1.0.0", "profile": "test", "page": "ts",
+  "source": { "table": "wl", "select": { "field": "status", "pendingWhen": "!= ok" } },
+  "setup": [
+    { "id": "load",   "use": "fake.load",   "with": { "path": "{{profile.worklist.file}}", "as": "wl" } },
+    { "id": "ensure", "use": "fake.ensure", "with": { "as": "mainWindow" } }
+  ],
+  "each": [
+    { "id": "gate", "use": "fake.gate", "with": { "code": "x" } },
+    { "id": "read", "use": "fake.shot", "with": { "window": "mainWindow", "saveAs": "{{steps.gate.out.code}}.png" } },
+    { "id": "read2", "use": "fake.shot", "with": { "window": "mainWindow", "saveAs": "{{steps.read.out.path}}" } },
+    { "id": "read3", "use": "fake.shot", "retryFrom": "gate", "with": { "window": "mainWindow", "saveAs": "{{steps.gate.out.code}}.png" } },
+    { "id": "after", "use": "fake.shot", "when": "steps.gate.out.action != skip", "with": { "window": "mainWindow", "saveAs": "a.png" } }
+  ] }
+'@
+$res = Invoke-EbiLint -Workflow $rf -Catalog $catalog -Profile $profile -MustRelease $mustRelease
+$w = Warns $res
+Assert-True ($w -like '*each/read: reads gate and can fail not_found*add "retryFrom": "gate" (K-47)*') 'lint K-47: an analysis of an earlier capture with no retryFrom is warned'
+Assert-True ($w -like '*each/read2: reads gate*') 'lint K-47: ... also through a step in between (the capture is inherited)'
+Assert-True ($w -notlike '*each/read3*') 'lint K-47: retryFrom silences it'
+Assert-True ($w -notlike '*each/after*') 'lint K-47: a when on a capture is not a read'
+
 $bad = Wf @'
 { "schema": 1, "id": "bad", "profile": "test", "page": "nope",
   "vars": { "side": "before" },

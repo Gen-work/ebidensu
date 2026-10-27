@@ -354,6 +354,7 @@
 - **现在的对策**(v2.38.1):`verify.df_ranges` 按送信データ上 HOST 图的顺序排 DF:每个 HOST 组拿行数对得上的文件(HOST 最后行号 − 1 = 文件行数,允许多 0..2 行);**读不出行号的 HOST 图 = 空数据**,拿 0 行的文件,不再报红字。排好的 pairs / shots 交给 `screen.launch_capture`(重拍和复用都按新顺序)。`excel.stack_plan` 的 `gapRows` = 2:两组之间空一行,再一行写第二组的标签。
 - **只在有把握时换顺序**:每个有数据的文件都靠行数找到了自己的 HOST 组才换;HOST 图全读不出来时(10/26 SJODWAF1:三张都没读出行号,应该是 1-19 / 1634-1652,结果用了默认的 16 / 17 行)保持 track 的顺序,照旧报红字。为什么那三张读不出来**还没查**(要看 `capture\gfix\SJODWAF1\host\*.png`)。
 - **写新 workflow 时**:多个文件的 job,顺序要以证迹表(送信データ)为准,不要以文件名或到达顺序为准。
+- **10/27 补(U33 的红字多报)**:JJODWU33 三个文件,两组按行号对上、空文件那组拿到了它的空白图(只显示控制记录 000001 的那张),**所有组都已经摆好**,却还剩 1 张读不出行号的图,GATE 上画了红字「1 HOST picture(s) … could not be read」。那张多半是 HOST 画面右滚后的另一半(没有行号列;事后的本子里第 128 行的 Ctrl+G 组就是 左半 + 右半 两张图,运行时导出算成了 2 张——事后的副本只有 5 组,没法完全证实)。v2.38.10:每组都 `align` / `empty` 摆好了,剩下的读不出的图只写进 reason,不再画红;有组没摆好(`default`)时照旧画红(SJODWAF1 那种)。
 - **来源**:10/26 evidence 的 GATE + 操作员。
 
 ### K-44 GFIX受信ログ 的顺序:跟着送信データ,不是跟着 GoAnywhere
@@ -388,7 +389,10 @@
 - **现在的对策**(v2.38.5,`gfixRecv.evidence` 0.9.4):workflow 的 step 调用可以写 `retryFrom`(WORKFLOW-SCHEMA §2):这一步失败时按 r,runner 回到那一步重新往下跑,面板上写「r: run again from "jkFind" (the steps in between too)」。`jkRects2` → `jkFind`(0.9.5 起;0.9.4 是 `jkFindBar`),`jkRects` → `jkF5`。
 - **10/27 track 也一样**(v2.38.9,`gfixRecv.track` 0.9.1):JJODWAB1 在 HOST「正常終了」之前按了 Enter,GoAnywhere 上只有 Send 一行,`recv not_found`;r 了三次都是同一份 `gaText` 文字,页面没再刷新,只能 s 后重跑整个 track。`mine` / `recv` → `gaText`(刷新 GoAnywhere、重读、重截 goanywhere.png),`jkMine` → `jkText`(Jenkins F5,文件还没放进 report 时同样的情况)。
 - **规则**:**读前面步骤产物(截图、页面文字、导出的图)的分析步骤,写 workflow 时就给它配 `retryFrom`,指向产生那份产物的步骤。** 只有失败原因在步骤自身(参数、计算)时,r 才该只重跑它自己。新写 workflow 时检查一遍:谁截的图、谁抓的文字,失败后重来是不是要从那里开始。
-- **来源**:10/26 操作员:「retry this step, not only read the cache but retry this procedure」。
+- **教训:重试的单位是「过程」(procedure),不是「步骤」**(v2.38.10):一个过程 = 一次取材(截图 / 抓页面文字 / 下载 / 导出图 / 人贴的消息)+ 读它的所有分析。分析因为「看到的东西」失败(`not_found`、`wrong_page`、`parse_error`、`no_date`……),重来就要从取材开始;只有 I/O 类失败(`write_failed`、`save_failed`)才在步骤内自动 retry。
+- **现在 lint 会提醒**(`kernel/Lint.ps1`,WORKFLOW-SCHEMA §9):`each` 里一个步骤的 `with` 读到前面的取材(`effects = ui` 的步骤,或 `screen.capture_*` / `screen.launch_capture` / `screen.ocr` / `file.download` / `browser.download_each` / `excel.export_pictures`;中间隔几步也算,取材会传下去),它的 manifest 又能因内容失败,却没写 `retryFrom` → 警告「r would read the same capture -- add "retryFrom": "…"」。`table` / `flow` / `excel` / `progress` / `human` / `file` 组不查;`when` 只决定跑不跑,不算读。
+- **10/27 全面检查后补上的**:`gfixRecv.track` 0.9.2:`win` / `wide` → `start`(贴的开始消息读不出时刻,重贴),`near` / `winAt` / `jkDay` → `gaText`,`dl` → `jkText`;`gfixRecv.gift` 0.2.1:`cand` / `dl` → `jkText`;`before.transferStatus.capture` 1.0.1:`assert` / `row` → `wait`,`crop` → `shot`。lint 在全部 workflow 上去掉 `retryFrom` 时报 14 处,补上后 0 处。
+- **来源**:10/26 操作员:「retry this step, not only read the cache but retry this procedure」;10/27:「check all step which could be a procedure. then make the retry in procedure unit as a lesson」。
 
 ### K-48 重跑后 DF 图变高,第 2 组的标签挪了位置,旧标签留在图下面
 - **症状**:10/26 重跑 R/SJODWAF1 的 evidence,DF 从 16/17 行重拍成 18/19 行,第 2 组标签从 B66/G66 写到了 B70/G70;上次写的 B66/G66(S 还有更早的 B65/G65)没人删,压在 DF 图下面。审查要求「第 2 组标签再往上一行不能残留旧版写的 B/G 标签」。
@@ -411,6 +415,20 @@
 - **规则**:一览两行一组(时刻行 + Msgid 行);Detail 页的 SENDDATETIMECHAR(例 `202609290215302760`)就在那一组的 Msgid 里(`A2009999A…0140` + `202609290215302760` + `0001`)。红框要盖住 **Detail 页对应的每一组的两行**,多个文件就是连着的几组。
 - **现在的对策**(v2.38.8):`check_book.py` 用 OCR(Tesseract)读红框下面的 Msgid 和每张 Detail 的 SENDDATETIMECHAR,对不上报 NG「not on a boxed list row」;Detail 的 RECVFILENAME 不是日志里的 START 也报 NG。容许 OCR 读错 1 位。10/27 的 10 本上:AB1、U33 报出,其余不误报。
 - **来源**:10/27 自查(AB1、U33)。
+
+### K-51 画素比较、OCR 都不稳(没有专用的库时):要商量
+- **症状**:10/27 AB1 / U35 / U36 的 `pic1Cmp` 判 DIFFERENT(分数 32～38),是误报:1 行的 job 不撮到 SNDFILE,`giftSnap` 不跑,GIFT受信結果 的 1 枚目还是 9/29 手贴的图(1037×63,今天工具撮的是 1042×69,筛选按钮的图标也不同),画素一比就差很多。
+- **原因**:画素比较只在「同一台机器、同一个工具、同样缩放」撮的两张图之间可靠;手贴的图大小、边距、图标都会不一样。OCR 这边:Windows OCR 把 MS Gothic 的 9 读成 3(TimeDigitVerify)、行号读不出(K-43 SJODWAF1);Tesseract 只在云端装着(`tools/review/gift_list.py`),办公室没有。**两条路在没有专门的库 / 模型时都只能当提示,不能当判定。**
+- **现在的对策**(v2.38.10):`gfixRecv.evidence` 0.9.7:1 行的 job 先拿 GIFT 侧现在的 1 枚目比一次(`preCmp`);不一样时 GATE 问「用今天撮的一览差し替える?」,**只有操作员打 o 才换**(`giftAsk` → `giftSnap2`,Enter 不算同意;无控制台 / DryRun 一律不换),换了之后 `pic1Cmp` 比的是新图。答案记进 gate.json(`giftPic1Replace`)。
+- **TODO(要和操作员商量)**:画素 / OCR 检查要不要继续扩、扩到什么程度;是否在办公室装 Tesseract(或别的 OCR 库)、用 mock 页模板(docs/Parked-Ideas.md 的 D2 线)代替画素比较。docs/TODO.md 有一条。
+- **来源**:10/27 审查 + 操作员:「a knowledge that said pixel compare not stable and ocr not stable without a library... we need to talk, as a todo. and change pic only in operator's permission」。
+
+### K-52 重跑时没有开始消息,Teams 的返信少了件数
+- **症状**:10/27 重跑 track 时,开始时刻用作业列表的 GFIX_TIME(Enter),剪贴板里没有 Teams 的开始消息,`sendCounts` / `recvCounts` 没有件数,返信文只有「受信しました」,没有「(受信データ:…件)」。
+- **原因**:件数只在 `human.paste` 读到消息的那一次存在,没写回作业列表;开始时刻(GFIX_TIME)当初就写回了,件数没有。
+- **现在的对策**(v2.38.10,`gfixRecv.track` 0.9.2):`human.paste` 多了 `defaultCounts` 输入和 `countsSource` 输出;第一次读到件数(消息里、或手打 `5件 13:30`)时 `saveCounts` 写进 gfixrecv.csv 的新列 `GFIX_COUNTS`;之后的重跑答案里没有件数,就用这一列的值(日志「counts … from the row」)。消息里有件数时以消息为准并覆盖。
+- **规则**:人只说一次的事(开始时刻、件数、选过的文件),第一次就写回作业列表,重跑时从那里拿。
+- **来源**:10/27 操作员:「把第一次读到的件数存下来 is a good idea」。
 
 ---
 

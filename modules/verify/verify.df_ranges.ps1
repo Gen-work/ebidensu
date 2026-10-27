@@ -264,7 +264,13 @@ function Invoke-Step {
         if ($p['mode'] -eq 'default' -and $any) { [void]$alerts.Add(('DF pictures of {0} NOT lined up with the HOST pictures: {1} -- check them by hand' -f $shown, $p['reason'])) }
     }
     $bad = [int]$g['stray'] + $blankLeft
-    if ($any -and $bad -gt 0) { [void]$alerts.Add(('{0} HOST picture(s) on the send-data sheet could not be read (no line numbers)' -f $bad)) }
+    # 10/27 JJODWU33: every pair lined up (two aligned, the empty one on its
+    # blank picture) and one more picture with no line numbers was left --
+    # the scrolled-right half of a HOST screen. It costs nothing, so it is
+    # said in the reason, not drawn red on the gate.
+    $placed = ($plans.Count -gt 0 -and @($plans | Where-Object { @('align', 'empty') -notcontains [string]$_['mode'] }).Count -eq 0)
+    if ($any -and $bad -gt 0 -and $placed) { [void]$why.Add(('{0} more HOST picture(s) with no line numbers left over after every pair was lined up (a scrolled-right half, a control-record-only screen): not an alert' -f $bad)) }
+    elseif ($any -and $bad -gt 0) { [void]$alerts.Add(('{0} HOST picture(s) on the send-data sheet could not be read (no line numbers)' -f $bad)) }
     if ($setLeft -gt 0) { [void]$alerts.Add(('{0} HOST picture set(s) but {1} DF pair(s)' -f ($slots.Count - $blankLeft), $pairs.Count)) }
     $moved = $false
     for ($k = 0; $k -lt $outOrder.Count; $k++) { if ([int]$outOrder[$k] -ne $k) { $moved = $true } }

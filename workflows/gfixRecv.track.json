@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.track",
   "title": "GFIX受信: HOST のジョブ終了ごとに GoAnywhere / Jenkins / DF を確認して Teams に返す",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "profile": "gfix-recv",
   "page": "goAnywhere",
   "vars": {
@@ -75,6 +75,7 @@
         "expect": "{{item.Excel_NAME}}",
         "expectGroup": "job",
         "defaultClock": "{{item.GFIX_TIME}}",
+        "defaultCounts": "{{item.GFIX_COUNTS}}",
         "messageWithTime": "{{item.Excel_NAME}} ({{item.GFIX_DATE}}) 開始 {{item.GFIX_TIME}}: {{profile.vocabulary.messages.startConfirm}}"
       }
     },
@@ -101,6 +102,17 @@
       }
     },
     {
+      "id": "saveCounts",
+      "use": "table.set",
+      "when": "steps.start.out.countsSource == given",
+      "label": "読んだ件数を作業リストの GFIX_COUNTS に書く: やり直しでメッセージがなくても返信文に件数が出る (10/27)",
+      "with": {
+        "worklist": "wl",
+        "field": "GFIX_COUNTS",
+        "value": "{{steps.start.out.fields.counts}}"
+      }
+    },
+    {
       "id": "waitHost",
       "use": "human.prepare",
       "label": "Teams の「正常終了しました」を待つ",
@@ -111,6 +123,7 @@
     {
       "id": "win",
       "use": "verify.time_window",
+      "retryFrom": "start",
       "with": {
         "date": "{{item.GFIX_DATE}}",
         "clock": "{{steps.start.out.clock}}",
@@ -122,6 +135,7 @@
     {
       "id": "wide",
       "use": "verify.time_window",
+      "retryFrom": "start",
       "label": "その外側 ±5 分: 打った時刻がずれていた時に「近くの行」を見つける範囲",
       "with": {
         "date": "{{item.GFIX_DATE}}",
@@ -158,6 +172,7 @@
     {
       "id": "near",
       "use": "verify.nearest_time",
+      "retryFrom": "gaText",
       "label": "時間帯に行が無かった時だけ: 一番近い行の開始時刻を提案(見つかっていればそのまま)",
       "with": {
         "found": "{{steps.gaText.out.found}}",
@@ -198,6 +213,7 @@
     {
       "id": "winAt",
       "use": "verify.time_window",
+      "retryFrom": "gaText",
       "label": "確定した開始時刻の -2..+13 分",
       "with": {
         "date": "{{item.GFIX_DATE}}",
@@ -287,6 +303,7 @@
       "id": "jkDay",
       "when": "steps.hostStatus.out.code == ok",
       "use": "verify.time_window",
+      "retryFrom": "gaText",
       "label": "Jenkins の一覧に出る日付の形 (yyyy/MM/dd)",
       "with": {
         "date": "{{item.GFIX_DATE}}",
@@ -348,6 +365,7 @@
       "id": "dl",
       "when": "steps.hostStatus.out.code == ok",
       "use": "file.download",
+      "retryFrom": "jkText",
       "with": {
         "baseUrl": "{{profile.paths.jenkinsReportUrl}}",
         "names": "{{steps.jkMine.out.plucked}}",
@@ -529,6 +547,7 @@
           "startGiven": "{{steps.start.out.clock}}",
           "startProposed": "{{steps.near.out.changed}}",
           "startSource": "{{steps.start.out.source}}",
+          "countsSource": "{{steps.start.out.countsSource}}",
           "startMessage": "{{steps.start.out.text}}",
           "sendCounts": "{{steps.sendCounts.out.expected}}",
           "receivedCountsText": "{{steps.recvCounts.out.text}}",

@@ -16,6 +16,11 @@
 # Only what the pattern names is read (job, counts); the rest of the text --
 # Teams adds reaction lines -- is ignored.
 #
+# 10/27: the counts the first run read are kept too (defaultCounts:
+# gfixrecv.csv GFIX_COUNTS, written back by the workflow when countsSource
+# is 'given'): a rerun that takes the row's time with no message still has
+# them, so the Teams reply still says how many records came in.
+#
 # The panel stays until the clipboard holds a matching message for the
 # expected job, the operator goes on without one (k: the time is now), or
 # skips the item (s -> operator_skip, which a workflow maps to policy skip)
@@ -43,6 +48,7 @@ $Manifest = @{
     defaultClock = @{ type='string'; default=''; desc='a start time already known (the worklist row): Enter takes it, n takes now' }
     messageWithTime = @{ type='string'; default=''; desc='shown instead of message when defaultClock is set (the copy-the-message text does not fit a rerun)' }
     countsGroup = @{ type='string'; default='counts'; desc='the named group that holds the counts: counts typed by hand ("5 ken 13:30") land in it' }
+    defaultCounts = @{ type='string'; default=''; desc='counts already known (the worklist row): used for the countsGroup field when the answer brought none' }
   }
   outputs    = @{
     text    = @{ type='string'; desc='the clipboard text used ("" when going on without one)' }
@@ -51,6 +57,7 @@ $Manifest = @{
     date    = @{ type='string'; desc='yyyy-MM-dd of that moment' }
     source  = @{ type='string'; desc='now | typed | worklist | without | auto (pasted / typed text with no time in it is now)' }
     fresh   = @{ type='bool';   desc='the time was decided just now (now / typed) and should be written back to the row' }
+    countsSource = @{ type='string'; desc='given (from the message / typed now: write it back to the row) | worklist (defaultCounts) | "" (none)' }
   }
   failures   = @(
     @{ id = 'operator_quit'; transient = $false }
@@ -159,7 +166,30 @@ function HumanPaste-Decide {
     return @{ kind = 'again' }
 }
 
+function HumanPaste-FillCounts {
+    # PURE. A successful answer with no counts takes defaultCounts; says
+    # where the counts came from (countsSource).
+    param($Result, [string]$CountsGroup, [string]$DefaultCounts)
+    if (-not $Result['ok']) { $Result['countsSource'] = ''; return $Result }
+    $f = $Result['fields']
+    if ($null -eq $f) { $f = @{}; $Result['fields'] = $f }
+    $have = if ($f.Contains($CountsGroup) -and $null -ne $f[$CountsGroup]) { ([string]$f[$CountsGroup]).Trim() } else { '' }
+    if ($have -ne '') { $Result['countsSource'] = 'given' }
+    elseif (-not [string]::IsNullOrWhiteSpace($DefaultCounts)) { $f[$CountsGroup] = $DefaultCounts.Trim(); $Result['countsSource'] = 'worklist' }
+    else { $Result['countsSource'] = '' }
+    return $Result
+}
+
 function Invoke-Step {
+    param($In, $Ctx)
+    $r = HumanPaste-Ask -In $In -Ctx $Ctx
+    $r = HumanPaste-FillCounts -Result $r -CountsGroup ([string]$In['countsGroup']) -DefaultCounts ([string]$In['defaultCounts'])
+    if ($r['countsSource'] -eq 'worklist') { $Ctx.Log.Info(('{0}: counts {1} from the row (read on an earlier run)' -f [string]$In['expect'], [string]$r['fields'][[string]$In['countsGroup']])) }
+    return $r
+}
+
+function HumanPaste-Ask {
+    # The panel loop; Invoke-Step adds the row's counts afterwards.
     param($In, $Ctx)
     $now = Get-Date
     $expect = [string]$In['expect']
