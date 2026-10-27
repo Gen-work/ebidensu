@@ -856,6 +856,11 @@ every .ps1 + runs the unit tests). Encoding check: `powershell -File Check-Encod
   only the host-team-managed send sheets are fetched from J4.
 - **Align -Apply** syncs values + formats (Range.Copy) and is experimental.
 
+## Working with the operator
+
+Before handing the operator anything to run, read `docs/ebi-dance/OPERATOR.md`:
+ready-to-paste commands (branch, env, paths), read back and get a yes before acting.
+
 ## TODOs
 
 Open work lives in [`docs/TODO.md`](docs/TODO.md).

@@ -27,6 +27,7 @@ submitted, moved or deleted.
   and **`kadou.evidence`** (one book per job: GFIX受信結果 + GFIXデータ).
 - docs/kadou/RUNBOOK.zh.md (the operator's steps); profile README.
 - KNOWLEDGE K-44 + checklist item 12: the operator had done the day by hand before the tool was ready -- every phase must accept hand-made input (a folder + naming rule), ship the assembly end first.
+- docs/ebi-dance/OPERATOR.md (operator 10/27 review): how an Agent hands work to the operator -- ready-to-paste commands for branch / env / paths, read back and get a yes before acting; CLAUDE.md points to it.
 
 ### Not done (said in the runbook)
 - バッチ処理状況一覧's search form is filled by the operator; its window
