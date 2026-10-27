@@ -12,7 +12,9 @@ then a one-line summary. Exit code 1 when any book has an NG.
 
 With Tesseract installed (apt install tesseract-ocr; pip install pytesseract)
 it also OCRs GIFT受信結果: the GIFT list box must cover the rows the Detail
-pages show, and each Detail's RECVFILENAME must be a START of the log (K-50).
+pages show, and each Detail's RECVFILENAME must be a START of the log (K-50);
+and every DF picture on GIFTデータvsGFIXデータ must compare files the GIFT /
+GFIX receive logs stored (K-53: the file names in the DF title).
 
 What it does NOT check (look at the pictures, drawings.py render):
   - whether the Jenkins box / DF box sit on the right row of a screenshot
@@ -30,6 +32,7 @@ import openpyxl
 sys.path.insert(0, __import__('os').path.dirname(__file__))
 from drawings import Book, sheet_items, M  # noqa: E402
 import gift_list  # noqa: E402
+import df_files  # noqa: E402
 
 warnings.filterwarnings('ignore')
 
@@ -390,6 +393,22 @@ def check_gift_list(path, wb, rep):
                    '(its START line is missing, or the Detail page is another transfer\'s)' % (name, recv[-16:]), 'K-50')
 
 
+def check_df_files(path, wb, rep):
+    """GIFTデータvsGFIXデータ by OCR (K-53): each DF picture's GIFT / GFIX file
+    is one the receive log on GIFT受信結果 / GFIX受信結果 stored."""
+    if S_COMPARE not in wb.sheetnames or not gift_list.ocr_available():
+        return
+    stored = {side: df_files.stored_files(wb[s]) for side, s in (('GIFT', S_GIFT_RECV), ('GFIX', S_GFIX_RECV)) if s in wb.sheetnames}
+    if not any(stored.values()):
+        return
+    bk = Book(path)
+    part = next((p for n, p, st in bk.sheets() if n == S_COMPARE), None)
+    if part is None:
+        return
+    for lvl, name, row, msg in df_files.judge(df_files.read_pictures(bk, part), stored):
+        (rep.ng if lvl == 'NG' else rep.warn)('%s!%r row %d' % (S_COMPARE, name, row), msg, 'K-53')
+
+
 def check_book(path):
     rep = Report(path)
     try:
@@ -405,6 +424,7 @@ def check_book(path):
     check_gfix_job_logs(path, wb, rep)
     check_shapes(path, rep)
     check_gift_list(path, wb, rep)
+    check_df_files(path, wb, rep)
     return rep.print()
 
 
