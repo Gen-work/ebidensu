@@ -14,9 +14,9 @@ $L = Get-ProjectLabels
 $P = Get-PomBookLabels
 
 # ---- the delivered sample's sheet names (built from code points) ----
-Assert-Equal ([int][char]$P.GfixSendBefore[-4]) 0x5909 'before label starts with henkou'
-Assert-Equal ([int][char]$P.GfixSendBefore[-2]) 0x524D 'before label ends with mae'
-Assert-Equal ([int][char]$P.GfixRecvAfter[-2]) 0x5F8C 'after label ends with go'
+Assert-Equal ([int][char]$P.GfixSendBefore[-4]) (0x5909) 'before label starts with henkou'
+Assert-Equal ([int][char]$P.GfixSendBefore[-2]) (0x524D) 'before label ends with mae'
+Assert-Equal ([int][char]$P.GfixRecvAfter[-2]) (0x5F8C) 'after label ends with go'
 Assert-Equal ($P.GfixSendBefore.Substring(0, $L['SheetGfixSend'].Length + 1)) ($L['SheetGfixSend'] + '(') 'ASCII paren after the base name'
 Assert-Equal ($P.PomCompare.Length) 14 'GFIX de-ta _ henkou mae go hikaku = 14 chars'
 
