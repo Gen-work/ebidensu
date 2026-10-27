@@ -385,6 +385,7 @@
 - **症状**:10/26 FJODWAF1 `jkRects2 not_found: no Ctrl+F highlight in the picture`,按了两次 r(attempt 3),三次结果一模一样。
 - **原因**:r 只重跑失败的那一步。`screen.list_rects` 读的是前面 `jkShot2` 截好的图和 `jkText` 抓好的文字:图不重截,读几次都是同一张。重试真正需要的是**整个过程**(Ctrl+F → Enter → 截图 → 找行 → 框)再来一遍。
 - **现在的对策**(v2.38.5,`gfixRecv.evidence` 0.9.4):workflow 的 step 调用可以写 `retryFrom`(WORKFLOW-SCHEMA §2):这一步失败时按 r,runner 回到那一步重新往下跑,面板上写「r: run again from "jkFind" (the steps in between too)」。`jkRects2` → `jkFind`(0.9.5 起;0.9.4 是 `jkFindBar`),`jkRects` → `jkF5`。
+- **10/27 track 也一样**(v2.38.7,`gfixRecv.track` 0.9.1):JJODWAB1 在 HOST「正常終了」之前按了 Enter,GoAnywhere 上只有 Send 一行,`recv not_found`;r 了三次都是同一份 `gaText` 文字,页面没再刷新,只能 s 后重跑整个 track。`mine` / `recv` → `gaText`(刷新 GoAnywhere、重读、重截 goanywhere.png),`jkMine` → `jkText`(Jenkins F5,文件还没放进 report 时同样的情况)。
 - **规则**:**读前面步骤产物(截图、页面文字、导出的图)的分析步骤,写 workflow 时就给它配 `retryFrom`,指向产生那份产物的步骤。** 只有失败原因在步骤自身(参数、计算)时,r 才该只重跑它自己。新写 workflow 时检查一遍:谁截的图、谁抓的文字,失败后重来是不是要从那里开始。
 - **来源**:10/26 操作员:「retry this step, not only read the cache but retry this procedure」。
 
