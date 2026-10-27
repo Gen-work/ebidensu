@@ -312,6 +312,7 @@
 - **现在的对策**:`check_book.py`:段首不是 START、END 没有对应的 START、START 没有 END、最后一个 END + 日期之后还有行,都报 NG。
 - **10/26 补**:CJODWAF1 照 round 2 的结果补了 START,加瀬さん 仍判 NG「GIFTReceive.logのGIFTReceiver STARTが同一ファイル名となってます」——补的那行是**复制了已有的 START**,两行写成了同一个文件名。补 START 时文件名要取**它自己的 END 行**(或 Detail 页 RECVFILENAME)。`check_book.py` 现在对同名的两条 START 报 NG。
 - **来源**:10/23 自查 round 1(RJODWCP2)、round 2(CJODWAF1)。参考 Check Sheet 10/07「208行目不要な行」。
+- **10/27 补**:Q/SJODWAF1 的 GIFTReceive.log 同样缺一条 START,10/26 指出后 10/27 的版本里还在——GIFT受信結果 是以前手贴的,evidence 不重写它,所以每次重跑都不会自己好。v2.38.7 起 evidence 在 GATE 前读 GIFT受信結果 B 列(`verify.log_blocks`),END 没有 START / START 没有 END 就在 GATE 上**红字**,交付前就能看到。
 
 ### K-38 没有文字的格子留着黄色
 - **症状**:10/23 RJODWCP2 GIFT受信結果 B255、QJODWWBV GIFT受信結果 B262 各有一格黄色,没有文字,压在 Jenkins 图下面(打开表看不到,删图或挪图就露出来)。
@@ -393,6 +394,14 @@
 - **原因**:`excel.label_sections` 只写新位置,不知道上次写在哪。图(tag `df`)每次都删了重贴,标签单元格却不会跟着删。
 - **现在的对策**(v2.38.6):写之前,在目标列(B / G)里、第一张图以下、不是任何一组标签行的格子,内容和送信データ的标签文字(相关ID / STEP 名)一样的,清掉(输出 `cleared`,日志一行)。别的文字、每组自己的标签行(包括手写的)、第 1 组的 B3/G3 都不动。
 - **来源**:10/26 R/SJODWAF1 的 run 日志 + 主线的审查要点 1。
+- **10/27 补**:F/K/R/S 四本都有残留(B65、B66、B71)。`check_book.py` 现在按位置点名:标签行的下一行没有图开始的,就报 NG「a label on no set's row」,不再只说「3 行标签对 2 组」。
+
+### K-49 别的 job 的空文件当了 GIFT 侧;手贴新图后,旧图和红框留在下面
+- **症状**:10/26 LJODWAF1 的 DF 第 2 组(空文件)GIFT 侧是 `F202609280003.csv`(KJODWAF1 的空文件),本该是 `...0005`。10/27 手工重截 DF 贴成「図 1」之后,工具原来的 `verifyPic_df_4` 还压在下面,「同一内容」的红框 `verifyMark_df_4_1` 还按旧图的位置摆着,没压在新图的「同一内容」上(K-40)。
+- **原因**:① `DATA\GIFT\LJODWAF1` 里放进了别的 job 的空文件。空文件只有表头一行,和**任何**空文件比都是「同一内容」,track 的比较、DF 都看不出来。② 手贴的图比原图高,红框是工具按原图量的,不会跟着新图走;旧图不删就一直在下面。
+- **现在的对策**(v2.38.7,`gfixRecv.evidence` 0.9.6):evidence 读 GIFT受信結果 的 GIFTReceive.log(`excel.read_rows` → `verify.log_blocks`):日志里 `file stored : [...]` 收到的文件名,要包含 DF 的 GIFT 侧文件名(track.json pairs 的 `leftName`),不包含就在 GATE 上红字「another job's file in the DATA folder?」。`check_book.py`:手贴的图盖住工具的 `verifyPic_*` 超过一半时报 NG「pasted over」——删掉旧图,把框放到新图上。
+- **规则**:GIFT 侧文件以 GIFT 日志 / Detail 页的文件名为准,不以「比较结果一致」为准。手工换图时:**删旧图、重新放框**,或者把正确的文件放进 DATA 文件夹后重跑 evidence(工具会自己删旧图、按新图放框)。
+- **来源**:10/26 审查(L 的 0003)、10/27 L 的手工修正版。
 
 ---
 
