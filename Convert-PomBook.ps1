@@ -74,6 +74,8 @@ function New-PomBookCompareSheet($wb, $action) {
         $src = Get-SheetByName $wb $action.template
         $src.Copy([System.Reflection.Missing]::Value, $last)
         $ws = $wb.Worksheets.Item($wb.Worksheets.Count)
+        # Shapes lists top-level items only: a Ctrl+G group (picture + red boxes,
+        # as on the JJDSWPA1 sample's compare sheet) goes with its group.
         for ($i = $ws.Shapes.Count; $i -ge 1; $i--) { $ws.Shapes.Item($i).Delete() }
         $keep = @{ 'A1' = $ws.Range('A1').Formula; 'B3' = $ws.Range('B3').Formula }
         [void]$ws.Cells.ClearContents()
@@ -107,6 +109,7 @@ try {
             Write-Host ('  [plan ] ' + $name)
             foreach ($a in $plan.actions) {
                 switch ($a.op) {
+                    'delete'     { Write-Host ('            delete  ' + $a.sheet) }
                     'rename'     { Write-Host ('            rename  ' + $a.sheet + ' -> ' + $a.name) }
                     'copyAfter'  { Write-Host ('            copy    ' + $a.sheet + ' -> ' + $a.name) }
                     'newCompare' { Write-Host ('            new     ' + $a.name) }
@@ -134,6 +137,9 @@ try {
         try {
             foreach ($a in $plan.actions) {
                 switch ($a.op) {
+                    'delete' {
+                        (Get-SheetByName $wb $a.sheet).Delete()
+                    }
                     'rename' {
                         (Get-SheetByName $wb $a.sheet).Name = $a.name
                     }
