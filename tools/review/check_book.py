@@ -189,22 +189,44 @@ def check_yellow(wb, rep):
                          'Check Sheet 07/01')
 
 
-def check_compare_labels(wb, rep):
+def compare_label_rows(path, wb):
+    """GIFTデータvsGFIXデータ label rows (a correl id in B): [(row, vals, stale)].
+    A set's label row is row 3 or the row right above a picture anchored in
+    column B; a label anywhere else was left by an earlier run whose pictures
+    sat elsewhere (10/27 F/K/R/S: B65, B66, B71 -- K-48)."""
+    cmp_ = wb[S_COMPARE]
+    bk = Book(path)
+    part = next((p for n, p, st in bk.sheets() if n == S_COMPARE), None)
+    pic_rows = {it['anchor'][1] + 1 for it in sheet_items(bk, part)
+                if it['kind'] == 'pic' and it.get('anchor') and it['anchor'][0] == 1} if part else set()
+    out = []
+    for r in range(3, cmp_.max_row + 1):
+        vals = {c.column_letter: str(c.value).strip() for c in cmp_[r] if c.value is not None}
+        if vals.get('B') and re.match(r'^[A-Z0-9]{6,}$', vals['B']):
+            out.append((r, vals, bool(pic_rows) and r != 3 and (r + 1) not in pic_rows))
+    return out
+
+
+def check_compare_labels(path, wb, rep):
     """GIFTデータvsGFIXデータ: each file pair is labelled correl id in B and the STEP
-    name of 送信データ's matching label row in G (Check Sheet 10/13, K-32)."""
+    name of 送信データ's matching label row in G (Check Sheet 10/13, K-32); no
+    label left where no set starts (K-48)."""
     if S_SEND not in wb.sheetnames or S_COMPARE not in wb.sheetnames:
         return
-    send, cmp_ = wb[S_SEND], wb[S_COMPARE]
+    send = wb[S_SEND]
     send_labels = []
     for r in range(3, send.max_row + 1):
         a = send.cell(r, 1).value
         if a and re.match(r'^[A-Z0-9]{6,}$', str(a).strip()):
             send_labels.append((str(a).strip(), (str(send.cell(r, 2).value or '')).strip()))
     cmp_rows = []
-    for r in range(3, cmp_.max_row + 1):
-        vals = {c.column_letter: str(c.value).strip() for c in cmp_[r] if c.value is not None}
-        if vals.get('B') and re.match(r'^[A-Z0-9]{6,}$', vals['B']):
-            cmp_rows.append((r, vals))
+    for r, vals, stale in compare_label_rows(path, wb):
+        if stale:
+            cells = '/'.join('%s%d' % (c, r) for c in ('B', 'G') if vals.get(c))
+            rep.ng('%s!B%d' % (S_COMPARE, r), '%s: a label on no set\'s row (no picture starts at row %d) '
+                   '-- left by an earlier run, delete it' % (cells, r + 1), 'K-48')
+            continue
+        cmp_rows.append((r, vals))
     if len(cmp_rows) != len(send_labels):
         rep.ng(S_COMPARE, '%d label row(s) but 送信データ has %d file group(s)'
                % (len(cmp_rows), len(send_labels)), 'K-39')
@@ -255,9 +277,7 @@ def compare_groups(path, wb):
     whether its DF is an empty file -- only the 同一内容 box, no line-number box."""
     if S_COMPARE not in wb.sheetnames:
         return []
-    ws = wb[S_COMPARE]
-    starts = [r for r in range(3, ws.max_row + 1)
-              if ws.cell(r, 2).value and re.match(r'^[A-Z0-9]{6,}$', str(ws.cell(r, 2).value).strip())]
+    starts = [r for r, vals, stale in compare_label_rows(path, wb) if not stale]
     if not starts:
         return []
     bk = Book(path)
@@ -301,11 +321,31 @@ def check_gfix_job_logs(path, wb, rep):
                'GFIX受信ログ order differs from the DF sets (%s; DF: %s)' % (order, want), 'K-44')
 
 
+def overlap(a, b):
+    return max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(0, min(a[3], b[3]) - max(a[1], b[1]))
+
+
 def check_shapes(path, rep):
-    """Every red box should sit on a picture; a box over nothing is a leftover."""
+    """Every red box should sit on a picture; a box over nothing is a leftover.
+    A picture pasted by hand over one the tool placed (verifyPic_*) leaves the
+    old picture and its boxes (verifyMark_*) underneath, the boxes measured on
+    the old one (10/27 LJODWAF1: 図 1 over verifyPic_df_4, the 同一内容 box
+    no longer on 同一内容 -- K-49)."""
     bk = Book(path)
     for name, part, state in bk.sheets():
         items = sheet_items(bk, part)
+        for t in items:
+            if t['kind'] != 'pic' or not t['name'].startswith('verifyPic_'):
+                continue
+            area = max(1, (t['box'][2] - t['box'][0]) * (t['box'][3] - t['box'][1]))
+            for h in items:
+                if h['kind'] == 'pic' and not h['name'].startswith('verify') and h.get('z', 0) > t.get('z', 0) \
+                        and overlap(h['box'], t['box']) >= 0.5 * area:
+                    a = t.get('anchor')
+                    rep.ng('%s!%s' % (name, ('B%d' % (a[1] + 1)) if a else '?'),
+                           '%r is pasted over %r: the old picture and its boxes (verifyMark_%s_*) stay underneath, '
+                           'measured on the old one -- delete the old picture, re-place the boxes on the new one'
+                           % (h['name'], t['name'], t['name'][len('verifyPic_'):]), 'K-49')
         pics = [i['box'] for i in items if i['kind'] == 'pic']
         for it in items:
             if it['kind'] != 'sp' or (it.get('line') or '').upper() != 'FF0000':
@@ -328,7 +368,7 @@ def check_book(path):
     check_fonts(wb, rep)
     check_recv_logs(wb, rep)
     check_yellow(wb, rep)
-    check_compare_labels(wb, rep)
+    check_compare_labels(path, wb, rep)
     check_gfix_job_logs(path, wb, rep)
     check_shapes(path, rep)
     return rep.print()

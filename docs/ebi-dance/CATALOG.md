@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-95 step(s) in 9 group(s).
+96 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,7 +13,7 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.set_aside`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.log_blocks`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.redo`, `flow.require` |
@@ -2369,6 +2369,44 @@ failures: `input_invalid` (not transient)
 ```
 
 Notes: Pure. Folding is symmetric, so a correct name never fails for a look-alike; the cost is that two names differing only by a look-alike pair (O vs 0) are not told apart.
+
+### `verify.log_blocks`
+
+Check a pasted receive log: START / END pairs, stored files include the compared files
+
+- file: `modules/verify/verify.log_blocks.ps1`
+- effects: `pure` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `endPattern` | string |  | Receiver\s+END\s+(\S+) |  | regex; group 1 = the transfer id |
+| `field` | string |  | line |  | records: the field with the text |
+| `filePattern` | string |  | file stored : \[[^\]]*?([^/\\\]]+)\] |  | regex; group 1 = a stored file name |
+| `label` | string |  | the log |  | what the lines are, for the reason / alert wording |
+| `lines` | list |  | [] |  | the log lines: strings, or records (excel.read_rows) whose field holds the line |
+| `pairs` | list |  | [] |  | the DF pairs (track.json pairs); their side file names must be among the stored files |
+| `side` | string |  | left | left, right | which file of a pair the log stored (left = GIFT) |
+| `startPattern` | string |  | Receiver\s+START\s+(\S+) |  | regex; group 1 = the transfer id |
+
+| output | type | desc |
+|--------|------|------|
+| `alert` | string | the reason when code is ng, else empty: the gate draws it red |
+| `code` | string | ok \| ng \| unknown (no lines, or no START / END / stored file read) |
+| `ends` | list | transfer ids with an END line, in order |
+| `files` | list | file names the log stored, in order |
+| `missing` | list | compared file names the log did not store |
+| `reason` | string | one line for the gate |
+| `starts` | list | transfer ids with a START line, in order |
+| `unpaired` | list | "END <id> without START" / "START <id> without END" |
+
+failures: `input_invalid` (not transient)
+
+```json
+{"id":"log_blocks","use":"verify.log_blocks","with":{"label":"GIFTReceive.log (GIFT receive result)","lines":"{{steps.giftLogRows.out.records}}","pairs":"{{steps.track.out.data.pairs}}"}}
+```
+
+Notes: Pure. A pair whose side has no name (no leftName / left path) is not checked, nor one whose extension the log stored no file of (a ZIP transfer stores the .zip). Stored files are compared by file name, case-insensitive.
 
 ### `verify.match_record`
 

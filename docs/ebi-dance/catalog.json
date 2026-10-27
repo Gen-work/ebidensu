@@ -7231,6 +7231,113 @@
       "summary": "Find an expected name in OCR text, folding look-alikes; ok / ng / unknown + alert",
       "tier": "core"
     },
+    "verify.log_blocks": {
+      "effects": "pure",
+      "example": {
+        "use": "verify.log_blocks",
+        "with": {
+          "label": "GIFTReceive.log (GIFT receive result)",
+          "lines": "{{steps.giftLogRows.out.records}}",
+          "pairs": "{{steps.track.out.data.pairs}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.log_blocks.ps1",
+      "group": "verify",
+      "id": "verify.log_blocks",
+      "idempotent": true,
+      "inputs": {
+        "endPattern": {
+          "default": "Receiver\\s+END\\s+(\\S+)",
+          "desc": "regex; group 1 = the transfer id",
+          "type": "string"
+        },
+        "field": {
+          "default": "line",
+          "desc": "records: the field with the text",
+          "type": "string"
+        },
+        "filePattern": {
+          "default": "file stored : \\[[^\\]]*?([^/\\\\\\]]+)\\]",
+          "desc": "regex; group 1 = a stored file name",
+          "type": "string"
+        },
+        "label": {
+          "default": "the log",
+          "desc": "what the lines are, for the reason / alert wording",
+          "type": "string"
+        },
+        "lines": {
+          "default": [],
+          "desc": "the log lines: strings, or records (excel.read_rows) whose field holds the line",
+          "type": "list"
+        },
+        "pairs": {
+          "default": [],
+          "desc": "the DF pairs (track.json pairs); their side file names must be among the stored files",
+          "type": "list"
+        },
+        "side": {
+          "default": "left",
+          "desc": "which file of a pair the log stored (left = GIFT)",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "type": "string"
+        },
+        "startPattern": {
+          "default": "Receiver\\s+START\\s+(\\S+)",
+          "desc": "regex; group 1 = the transfer id",
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "Pure. A pair whose side has no name (no leftName / left path) is not checked, nor one whose extension the log stored no file of (a ZIP transfer stores the .zip). Stored files are compared by file name, case-insensitive.",
+      "outputs": {
+        "alert": {
+          "desc": "the reason when code is ng, else empty: the gate draws it red",
+          "type": "string"
+        },
+        "code": {
+          "desc": "ok | ng | unknown (no lines, or no START / END / stored file read)",
+          "type": "string"
+        },
+        "ends": {
+          "desc": "transfer ids with an END line, in order",
+          "type": "list"
+        },
+        "files": {
+          "desc": "file names the log stored, in order",
+          "type": "list"
+        },
+        "missing": {
+          "desc": "compared file names the log did not store",
+          "type": "list"
+        },
+        "reason": {
+          "desc": "one line for the gate",
+          "type": "string"
+        },
+        "starts": {
+          "desc": "transfer ids with a START line, in order",
+          "type": "list"
+        },
+        "unpaired": {
+          "desc": "\"END <id> without START\" / \"START <id> without END\"",
+          "type": "list"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Check a pasted receive log: START / END pairs, stored files include the compared files",
+      "tier": "core"
+    },
     "verify.match_record": {
       "effects": "pure",
       "example": {
