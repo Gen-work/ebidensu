@@ -49,7 +49,7 @@ foreach ($u in @('table.upsert', 'verify.time_window', 'verify.parse_text', 'ver
                  'verify.derive_fields', 'human.paste', 'screen.launch_capture', 'browser.wait_for', 'browser.download_each', 'file.download', 'excel.tidy',
                  'verify.record_counts', 'verify.nearest_time', 'verify.owner_pattern', 'excel.open', 'verify.assert_each', 'flow.require',
                  'verify.find_token', 'screen.ocr', 'human.gate', 'excel.append_row', 'human.draft_mail', 'human.share',
-                 'screen.read_line_numbers', 'verify.df_ranges', 'excel.export_pictures', 'screen.compare_strip')) {
+                 'screen.read_line_numbers', 'verify.df_ranges', 'excel.export_pictures', 'screen.compare_strip', 'verify.log_blocks')) {
     $r = . Import-EbiStep -Registry $reg -Use $u
     if (-not $r['ok']) { throw ('cannot load ' + $u + ': ' + $r['message']) }
     $loaded[$u] = $r['Entry']
@@ -299,6 +299,32 @@ try {
     Assert-Equal $true $w4['ok'] 'K-46: the hit read back is the anchor -> placed'
     Assert-Equal 0 @(@($w4['warnings']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['code'] -eq 'hit_unverified' }).Count 'K-46: ... and not flagged unverified'
     Assert-Equal 1 @(@($lr6['warnings']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['code'] -eq 'hit_unverified' }).Count 'K-46: no read-back -> warning hit_unverified'
+
+    # ============================================================ verify.log_blocks (10/27 Q / S / L)
+    $st = '[26/09/28 10:45:36:010 JST] host           DEBUG GCM SYSTEM GCMFileStorageServiceImpl storeFile    [                        :in]             : file stored : [/files/JPCVer/data/report/{0}]'
+    $logL = @(
+        @{ line = 'GIFTReceive.log'; _row = 1 },
+        @{ line = 'GIFTReceiver START JJPCRS1220260610065409702332' }, @{ line = 'GIFTReceiver START JJPCRS1220260703091759411629' },
+        @{ line = ($st -f 'F202609280004.csv') }, @{ line = ($st -f 'F202609280005.csv') },
+        @{ line = 'GIFTReceiver END JJPCRS1220260610065409702332' }, @{ line = 'GIFTReceiver END JJPCRS1220260703091759411629' }
+    )
+    $pairsL = @(@{ left = 'C:\w\DATA\GIFT\LJODWAF1\F202609280004.csv'; leftName = 'F202609280004.csv'; rightName = 'F202610260008.csv' },
+                @{ left = 'C:\w\DATA\GIFT\LJODWAF1\F202609280003.csv'; leftName = 'F202609280003.csv'; rightName = 'F202610260009.csv' })
+    $lb = Invoke-TestStep 'verify.log_blocks' @{ lines = $logL; pairs = $pairsL }
+    Assert-Equal 'ng' $lb['code'] 'log_blocks: the DF compares a GIFT file the log never stored -> ng (10/26 L: K''s empty file)'
+    Assert-Equal 'F202609280003.csv' (@($lb['missing']) -join ',') 'log_blocks: ... naming it'
+    Assert-Equal 'F202609280004.csv,F202609280005.csv' (@($lb['files']) -join ',') 'log_blocks: stored files read from "file stored : [...]"'
+    $pairsL[1]['leftName'] = 'F202609280005.csv'
+    $lb2 = Invoke-TestStep 'verify.log_blocks' @{ lines = $logL; pairs = $pairsL }
+    Assert-Equal 'ok' $lb2['code'] 'log_blocks: both STARTs, both ENDs, the compared files stored -> ok'
+    $logQ = @($logL | Where-Object { [string]$_['line'] -ne 'GIFTReceiver START JJPCRS1220260610065409702332' })
+    $lb3 = Invoke-TestStep 'verify.log_blocks' @{ lines = $logQ; pairs = $pairsL }
+    Assert-Equal 'ng' $lb3['code'] 'log_blocks: an END without its START -> ng (10/26 Q / S)'
+    Assert-Equal 'END JJPCRS1220260610065409702332 without START' (@($lb3['unpaired']) -join ',') 'log_blocks: ... naming the transfer'
+    $lb4 = Invoke-TestStep 'verify.log_blocks' @{ lines = @(@{ line = ($st -f 'F202609280004.zip') }, @{ line = 'GIFTReceiver START A' }, @{ line = 'GIFTReceiver END A' }); pairs = $pairsL }
+    Assert-Equal 'ok' $lb4['code'] 'log_blocks: a ZIP transfer stores the .zip -- the compared .csv names are not checked against it'
+    $lb5 = Invoke-TestStep 'verify.log_blocks' @{ lines = @() }
+    Assert-Equal 'unknown' $lb5['code'] 'log_blocks: no lines -> unknown, no alert'
 
     # ============================================================ plan: upsert
     $wl = @{ path = ''; columns = @('Excel_NAME', 'JOB', 'GFIX_DATE', 'GFIX_TIME', 'FileCount', 'track', 'logs', 'evidence'); rows = @() }

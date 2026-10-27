@@ -312,6 +312,7 @@
 - **现在的对策**:`check_book.py`:段首不是 START、END 没有对应的 START、START 没有 END、最后一个 END + 日期之后还有行,都报 NG。
 - **10/26 补**:CJODWAF1 照 round 2 的结果补了 START,加瀬さん 仍判 NG「GIFTReceive.logのGIFTReceiver STARTが同一ファイル名となってます」——补的那行是**复制了已有的 START**,两行写成了同一个文件名。补 START 时文件名要取**它自己的 END 行**(或 Detail 页 RECVFILENAME)。`check_book.py` 现在对同名的两条 START 报 NG。
 - **来源**:10/23 自查 round 1(RJODWCP2)、round 2(CJODWAF1)。参考 Check Sheet 10/07「208行目不要な行」。
+- **10/27 补**:Q/SJODWAF1 的 GIFTReceive.log 同样缺一条 START,10/26 指出后 10/27 的版本里还在——GIFT受信結果 是以前手贴的,evidence 不重写它,所以每次重跑都不会自己好。v2.38.7 起 evidence 在 GATE 前读 GIFT受信結果 B 列(`verify.log_blocks`),END 没有 START / START 没有 END 就在 GATE 上**红字**,交付前就能看到。
 
 ### K-38 没有文字的格子留着黄色
 - **症状**:10/23 RJODWCP2 GIFT受信結果 B255、QJODWWBV GIFT受信結果 B262 各有一格黄色,没有文字,压在 Jenkins 图下面(打开表看不到,删图或挪图就露出来)。
@@ -385,7 +386,7 @@
 - **症状**:10/26 FJODWAF1 `jkRects2 not_found: no Ctrl+F highlight in the picture`,按了两次 r(attempt 3),三次结果一模一样。
 - **原因**:r 只重跑失败的那一步。`screen.list_rects` 读的是前面 `jkShot2` 截好的图和 `jkText` 抓好的文字:图不重截,读几次都是同一张。重试真正需要的是**整个过程**(Ctrl+F → Enter → 截图 → 找行 → 框)再来一遍。
 - **现在的对策**(v2.38.5,`gfixRecv.evidence` 0.9.4):workflow 的 step 调用可以写 `retryFrom`(WORKFLOW-SCHEMA §2):这一步失败时按 r,runner 回到那一步重新往下跑,面板上写「r: run again from "jkFind" (the steps in between too)」。`jkRects2` → `jkFind`(0.9.5 起;0.9.4 是 `jkFindBar`),`jkRects` → `jkF5`。
-- **10/27 track 也一样**(v2.38.7,`gfixRecv.track` 0.9.1):JJODWAB1 在 HOST「正常終了」之前按了 Enter,GoAnywhere 上只有 Send 一行,`recv not_found`;r 了三次都是同一份 `gaText` 文字,页面没再刷新,只能 s 后重跑整个 track。`mine` / `recv` → `gaText`(刷新 GoAnywhere、重读、重截 goanywhere.png),`jkMine` → `jkText`(Jenkins F5,文件还没放进 report 时同样的情况)。
+- **10/27 track 也一样**(v2.38.9,`gfixRecv.track` 0.9.1):JJODWAB1 在 HOST「正常終了」之前按了 Enter,GoAnywhere 上只有 Send 一行,`recv not_found`;r 了三次都是同一份 `gaText` 文字,页面没再刷新,只能 s 后重跑整个 track。`mine` / `recv` → `gaText`(刷新 GoAnywhere、重读、重截 goanywhere.png),`jkMine` → `jkText`(Jenkins F5,文件还没放进 report 时同样的情况)。
 - **规则**:**读前面步骤产物(截图、页面文字、导出的图)的分析步骤,写 workflow 时就给它配 `retryFrom`,指向产生那份产物的步骤。** 只有失败原因在步骤自身(参数、计算)时,r 才该只重跑它自己。新写 workflow 时检查一遍:谁截的图、谁抓的文字,失败后重来是不是要从那里开始。
 - **来源**:10/26 操作员:「retry this step, not only read the cache but retry this procedure」。
 
@@ -394,6 +395,22 @@
 - **原因**:`excel.label_sections` 只写新位置,不知道上次写在哪。图(tag `df`)每次都删了重贴,标签单元格却不会跟着删。
 - **现在的对策**(v2.38.6):写之前,在目标列(B / G)里、第一张图以下、不是任何一组标签行的格子,内容和送信データ的标签文字(相关ID / STEP 名)一样的,清掉(输出 `cleared`,日志一行)。别的文字、每组自己的标签行(包括手写的)、第 1 组的 B3/G3 都不动。
 - **来源**:10/26 R/SJODWAF1 的 run 日志 + 主线的审查要点 1。
+- **10/27 补**:F/K/R/S 四本都有残留(B65、B66、B71)。`check_book.py` 现在按位置点名:标签行的下一行没有图开始的,就报 NG「a label on no set's row」,不再只说「3 行标签对 2 组」。
+
+### K-49 别的 job 的空文件当了 GIFT 侧;手贴新图后,旧图和红框留在下面
+- **症状**:10/26 LJODWAF1 的 DF 第 2 组(空文件)GIFT 侧是 `F202609280003.csv`(KJODWAF1 的空文件),本该是 `...0005`。10/27 手工重截 DF 贴成「図 1」之后,工具原来的 `verifyPic_df_4` 还压在下面,「同一内容」的红框 `verifyMark_df_4_1` 还按旧图的位置摆着,没压在新图的「同一内容」上(K-40)。
+- **原因**:① `DATA\GIFT\LJODWAF1` 里放进了别的 job 的空文件。空文件只有表头一行,和**任何**空文件比都是「同一内容」,track 的比较、DF 都看不出来。② 手贴的图比原图高,红框是工具按原图量的,不会跟着新图走;旧图不删就一直在下面。
+- **现在的对策**(v2.38.7,`gfixRecv.evidence` 0.9.6):evidence 读 GIFT受信結果 的 GIFTReceive.log(`excel.read_rows` → `verify.log_blocks`):日志里 `file stored : [...]` 收到的文件名,要包含 DF 的 GIFT 侧文件名(track.json pairs 的 `leftName`),不包含就在 GATE 上红字「another job's file in the DATA folder?」。`check_book.py`:手贴的图盖住工具的 `verifyPic_*` 超过一半时报 NG「pasted over」——删掉旧图,把框放到新图上。
+- **规则**:GIFT 侧文件以 GIFT 日志 / Detail 页的文件名为准,不以「比较结果一致」为准。手工换图时:**删旧图、重新放框**,或者把正确的文件放进 DATA 文件夹后重跑 evidence(工具会自己删旧图、按新图放框)。
+- **来源**:10/26 审查(L 的 0003)、10/27 L 的手工修正版。
+
+
+### K-50 GIFT 一览的红框框错行(复制别的本子的红框)
+- **症状**:10/27 JJODWAB1:一览红框在第 9 行(11:00:41,1 件 / 99 bytes),Detail 页和 GIFTReceive.log 都是第 10 行(11:15:30,3 件 / 346 bytes)。JJODWU33:红框骑在第 8 行下半和第 9 行上半之间,3 个文件其实是第 7～9 行。10/26 KJODWAF1 也是一览红框框错行。
+- **原因**:AB1 和 U33 用的是同一天(9/29)同一张一览画面,红框也在同一个位置(L44)——一本做好后复制到另一本,没按自己的行重新摆。一览和 Detail 都是图片,人眼核对容易漏。
+- **规则**:一览两行一组(时刻行 + Msgid 行);Detail 页的 SENDDATETIMECHAR(例 `202609290215302760`)就在那一组的 Msgid 里(`A2009999A…0140` + `202609290215302760` + `0001`)。红框要盖住 **Detail 页对应的每一组的两行**,多个文件就是连着的几组。
+- **现在的对策**(v2.38.8):`check_book.py` 用 OCR(Tesseract)读红框下面的 Msgid 和每张 Detail 的 SENDDATETIMECHAR,对不上报 NG「not on a boxed list row」;Detail 的 RECVFILENAME 不是日志里的 START 也报 NG。容许 OCR 读错 1 位。10/27 的 10 本上:AB1、U33 报出,其余不误报。
+- **来源**:10/27 自查(AB1、U33)。
 
 ---
 

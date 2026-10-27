@@ -2,7 +2,7 @@
 
 交给加瀬さん之前,把当天要交的 `J4検証資料(...)_<job>.xlsx` 过一遍。
 **只读**,不改工作簿。规则来自 Check Sheet_J4 的历史指摘和 10/23 的自查,
-见 `docs/ebi-dance/KNOWLEDGE.md` 第 5 节(K-36 ～ K-46)。
+见 `docs/ebi-dance/KNOWLEDGE.md` 第 5 节(K-36 ～ K-50)。
 
 不是 VerifyTool 的 phase,也不是 ebi-dance 的 step:是 Python 3 的旁路工具,
 在云端会话(或任何装了 Python 的机器)上跑。
@@ -11,7 +11,12 @@
 
 ```
 pip install openpyxl pillow
+# GIFT 一览红框的 OCR 检查(K-50)要 Tesseract;没有就只给一条 WARN、跳过这一项
+apt install tesseract-ocr        # Windows: 装 Tesseract,让 tesseract.exe 在 PATH 上
+pip install pytesseract
 ```
+
+OCR 每本约 5～10 秒。
 
 ## 用法
 
@@ -39,12 +44,15 @@ python3 tools/review/drawings.py render <book.xlsx> <输出文件夹>
 | GFIX受信ログ:Renaming 一行涂黄 | K-45 |
 | 没有文字的行不留黄色;黄色涂到文字结尾、不过长 | K-38 |
 | GIFTデータvsGFIXデータ:每组的相关ID 在 B、STEP 名在 G,和送信データ一一对应 | K-39 |
+| GIFTデータvsGFIXデータ:标签只在每组图的正上方一行;别处的(旧版留下的)点名报出 | K-48 |
+| 手贴的图盖住工具贴的图(`verifyPic_*`):旧图和旧红框还在下面 | K-49 |
+| GIFT受信結果(OCR):一览红框框住的行 = Detail 页那几行(Detail 的 SENDDATETIMECHAR 在框里的 Msgid 里);Detail 的 RECVFILENAME = 日志的 START | K-50 |
 | 红框落在某张图上(不是孤零零浮着) | Check Sheet「最背面に赤枠の残骸」 |
 | 乱码(`�`、`縺繧` 一类) | Check Sheet「文字化けしてます」 |
 
 ## 还要人眼看的(render 出来的图)
 
-- GIFT 一览的红框行 ↔ Detail 的 RECVFILENAME ↔ 日志的 START/END 是同一个文件。
+- GIFT 一览的红框行(没装 Tesseract 时;装了的话 K-50 自动查)。
 - Jenkins 红框行的文件名 / 时刻 / 大小 ↔ 日志时刻 ↔ DF 标题里的文件名。
 - DF 红框行号 = 送信データ红框行号 − 1;空文件的 DF 只框「同一内容」,框要压在字上(K-40)。
 - 比对结果是「相違ファイル」的,有没有吹き出し说明(K-41)。

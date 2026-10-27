@@ -1,4 +1,4 @@
-## 2026-10-27 - track: r on a GoAnywhere / Jenkins miss refreshes the page and reads it again (v2.38.7)
+## 2026-10-27 - track: r on a GoAnywhere / Jenkins miss refreshes the page and reads it again (v2.38.9)
 
 10/27 office run: JJODWAB1's Enter at "wait for HOST" went in before the
 HOST job finished. GoAnywhere showed only the Send row, `recv` failed
@@ -15,6 +15,48 @@ only.
 - Tests: the df log order assertion no longer wraps the returned array in
   `@(...)` (`-join` gave `System.Int32[]`); Run-Tests is back to the 3
   known failures.
+## 2026-10-27 - review tool: OCR check of the GIFT list box against the Detail pages (v2.38.8)
+
+10/27 JJODWAB1 and JJODWU33: the red box on the GIFT transfer list was on
+the wrong row (AB1: row 9, the Detail page and the log are row 10) or
+straddled two rows (U33: half of row 8 and half of row 9; the three files
+are rows 7-9). Both books carry the same 9/29 list screenshot with the box
+at the same place -- copied, not re-placed. 10/26 KJODWAF1 had the same
+kind of miss (K-50).
+
+- `tools/review/gift_list.py` (new): OCRs (Tesseract) GIFT受信結果's
+  pictures -- the Detail pages' SENDDATETIMECHAR / RECVFILENAME, and the
+  Msgid(s) under each red box on the list picture.
+- `tools/review/check_book.py`: NG when a Detail's SENDDATETIMECHAR is in no
+  boxed Msgid (one digit of OCR slack), or a Detail's RECVFILENAME is not a
+  START of the sheet's GIFTReceive.log; WARN for a boxed row with no Detail
+  page. Without Tesseract: one WARN, the check is skipped. On the ten
+  10/27 books: AB1 and U33 reported, no false alarm on the other eight.
+- KNOWLEDGE K-50; tools/review/README (Tesseract setup).
+
+## 2026-10-27 - evidence checks the pasted GIFT log; the review tool names stale labels and pictures pasted over the tool's (v2.38.7)
+
+10/27 self-review of F/K/L/Q/R/S JODWAF1 before the second send to 加瀬さん:
+stale B/G labels on F/K/R/S (B65 / B66 / B71, K-48), L's empty-file DF
+pasted by hand over the tool's picture with the 同一内容 box left where the
+old picture had it -- the hand fix for the GIFT side being KJODWAF1's empty
+file (K-49) -- and Q/S's GIFTReceive.log still one START short (K-37).
+
+- New step `verify.log_blocks` (pure): a pasted receive log's START / END
+  pairs, and the files it says it stored (`file stored : [...]`) must
+  include the DF pairs' side files. ok / ng / unknown + alert, never a stop;
+  a ZIP transfer's .csv names are not checked against the stored .zip.
+- `gfixRecv.evidence` 0.9.6: `giftLogRows` (excel.read_rows, GIFT受信結果
+  column B) + `giftLogCheck` (verify.log_blocks against track's pairs,
+  side left); its alert goes on the `look` gate in red, its reason into
+  gate.json.
+- `tools/review/check_book.py`: a label on GIFTデータvsGFIXデータ whose next
+  row starts no picture is named (K-48) instead of only counted; a picture
+  pasted by hand over more than half of a `verifyPic_*` one is NG (K-49).
+  Run on the six 10/27 books it reports exactly the review's findings.
+- Tests (Test-GfixRecvSteps): log_blocks -- L's 0003 not stored, the fixed
+  pairs ok, Q's missing START, a ZIP transfer, no lines.
+- KNOWLEDGE K-49, notes on K-37 / K-48; tools/review/README.
 
 ## 2026-10-26 - evidence: Ctrl+F empties the find bar first and checks the hit; stale B/G labels are cleared (v2.38.6)
 
