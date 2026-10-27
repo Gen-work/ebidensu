@@ -26,27 +26,23 @@ $old = @(
     $L['SheetJushinArrow'], $L['SheetGiftRecv'], $L['SheetGfixRecv'], $L['SheetDfCompare'])
 $plan = Get-PomBookPlan -SheetNames $old
 Assert-Equal $plan.status 'convert' 'old layout converts'
-Assert-Equal (@($plan.actions).Count) 6 'one delete, two renames, two copies, one new compare'
-Assert-Equal $plan.actions[0].op 'delete' 'first: delete GIFT send'
-Assert-Equal $plan.actions[0].sheet $L['SheetGiftSend'] 'the deleted sheet is GIFT send result'
-$all = @($plan.actions)
-$acts = @($all | Select-Object -Skip 1)
-Assert-Equal $acts[0].op 'rename' 'first: rename send'
-Assert-Equal $acts[0].name $P.GfixSendBefore 'send -> (before)'
-Assert-Equal $acts[1].op 'copyAfter' 'then copy it'
-Assert-Equal $acts[1].sheet $P.GfixSendBefore 'the copy is taken from the renamed sheet'
-Assert-Equal $acts[1].name $P.GfixSendAfter 'copy is (after)'
-Assert-Equal $acts[4].op 'newCompare' 'new compare last'
-Assert-Equal $acts[4].template $L['SheetDfCompare'] 'new compare copies the look of GIFT-vs-GFIX'
+Assert-Equal (@($plan.actions).Count) 5 'two renames, two copies, one new compare'
+Assert-Equal $plan.actions[0].op 'rename' 'first: rename send'
+Assert-Equal $plan.actions[0].name $P.GfixSendBefore 'send -> (before)'
+Assert-Equal $plan.actions[1].op 'copyAfter' 'then copy it'
+Assert-Equal $plan.actions[1].sheet $P.GfixSendBefore 'the copy is taken from the renamed sheet'
+Assert-Equal $plan.actions[1].name $P.GfixSendAfter 'copy is (after)'
+Assert-Equal $plan.actions[4].op 'newCompare' 'new compare last'
+Assert-Equal $plan.actions[4].template $L['SheetDfCompare'] 'new compare copies the look of GIFT-vs-GFIX'
 
-$order = Get-PomBookResultOrder -SheetNames $old -Actions $all
+$order = Get-PomBookResultOrder -SheetNames $old -Actions $plan.actions
 $want = @(
-    $L['SheetSoshinData'], $L['SheetSoshinArrow'],
+    $L['SheetSoshinData'], $L['SheetSoshinArrow'], $L['SheetGiftSend'],
     $P.GfixSendBefore, $P.GfixSendAfter,
     $L['SheetJushinArrow'], $L['SheetGiftRecv'],
     $P.GfixRecvBefore, $P.GfixRecvAfter,
     $L['SheetDfCompare'], $P.PomCompare)
-Assert-Equal ($order -join '|') ($want -join '|') 'GIFT send gone; GIFT recv and GIFT-vs-GFIX stay in place; after right behind before'
+Assert-Equal ($order -join '|') ($want -join '|') 'GIFT sheets and GIFT-vs-GFIX stay in place; after right behind before'
 
 # ---- already POM (the JJPCRR12 samples) ----
 $pom = @($L['SheetSoshinData'], $P.GfixSendBefore, $P.GfixSendAfter, $P.GfixRecvBefore, $P.GfixRecvAfter, $P.PomCompare)

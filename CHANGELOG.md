@@ -9,11 +9,10 @@ still in the old layout.
 
 - `PomBook.ps1` (new, pure): `Get-PomBookPlan` -- GFIX send / recv result
   renamed (変更前) and copied right behind as (変更後) (a placeholder
-  until the rerun evidence goes in); GIFT送信結果 is deleted (the POM
-  layout has none); GIFT受信結果 / GIFTデータvsGFIXデータ stay where they
-  are; a blank GFIXデータ_変更前後比較
+  until the rerun evidence goes in); GIFT送信結果 / GIFT受信結果 /
+  GIFTデータvsGFIXデータ stay where they are; a blank GFIXデータ_変更前後比較
   at the end (A1 file-name formula and B3 data name of GIFT-vs-GFIX, no
-  pictures; a Ctrl+G group is removed whole). No JJPCRR12 sheets (only books named after JJPCRR12 have
+  pictures). No JJPCRR12 sheets (only books named after JJPCRR12 have
   them). A book already in the POM layout is skipped; one with neither
   layout is reported and left alone.
 - `Convert-PomBook.ps1` (new, standalone): does the plan with Excel COM on

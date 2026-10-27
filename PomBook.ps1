@@ -14,9 +14,8 @@
 #   - GFIX send / recv result -> renamed (<before>), then copied as (<after>)
 #     right after it (the copy is a placeholder until the rerun evidence
 #     goes in);
-#   - GIFT send result is deleted (the POM layout has no GIFT send sheet;
-#     operator 10/27, second answer);
-#   - GIFT recv result and GIFT-vs-GFIX compare stay where they are;
+#   - GIFT send / recv result and GIFT-vs-GFIX compare stay where they are
+#     (operator 10/27);
 #   - a new, empty GFIX before/after compare sheet goes at the end.
 # The JJPCRR12 sheets are NOT added (only books named after JJPCRR12 have
 # them).
@@ -35,7 +34,6 @@ function Get-PomBookLabels {
     @{
         GfixSend       = $L['SheetGfixSend']
         GfixRecv       = $L['SheetGfixRecv']
-        GiftSend       = $L['SheetGiftSend']
         GiftCompare    = $L['SheetDfCompare']
         GfixSendBefore = $L['SheetGfixSend'] + '(' + $before + ')'
         GfixSendAfter  = $L['SheetGfixSend'] + '(' + $after + ')'
@@ -51,8 +49,7 @@ function Get-PomBookLabels {
 #   status  'convert' : actions brings the book into the POM layout
 #           'already' : it is already in the POM layout (nothing to do)
 #           'unknown' : neither layout; missing lists the sheets not found
-#   actions ordered list of @{ op = 'delete'|'rename'|'copyAfter'|'newCompare'; ... }
-#           delete     : sheet
+#   actions ordered list of @{ op = 'rename'|'copyAfter'|'newCompare'; ... }
 #           rename     : sheet -> name
 #           copyAfter  : copy sheet, place right after it, name the copy
 #           newCompare : name; template = sheet to copy the look from ('' = blank)
@@ -71,9 +68,6 @@ function Get-PomBookPlan {
     }
 
     $actions = New-Object System.Collections.ArrayList
-    if (& $has $P.GiftSend) {
-        [void]$actions.Add(@{ op = 'delete'; sheet = $P.GiftSend })
-    }
     foreach ($pair in @(
             @($P.GfixSend, $P.GfixSendBefore, $P.GfixSendAfter),
             @($P.GfixRecv, $P.GfixRecvBefore, $P.GfixRecvAfter))) {
@@ -95,7 +89,6 @@ function Get-PomBookResultOrder {
     foreach ($n in @($SheetNames)) { [void]$order.Add($n) }
     foreach ($a in @($Actions)) {
         switch ($a.op) {
-            'delete'     { $order.Remove($a.sheet) }
             'rename'     { $i = $order.IndexOf($a.sheet); if ($i -ge 0) { $order[$i] = $a.name } }
             'copyAfter'  { $i = $order.IndexOf($a.sheet); if ($i -ge 0) { $order.Insert($i + 1, $a.name) } }
             'newCompare' { [void]$order.Add($a.name) }

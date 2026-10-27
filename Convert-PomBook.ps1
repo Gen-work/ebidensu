@@ -115,7 +115,6 @@ try {
             Write-Host ('  [plan ] ' + $name)
             foreach ($a in $plan.actions) {
                 switch ($a.op) {
-                    'delete'     { Write-Host ('            delete  ' + $a.sheet) }
                     'rename'     { Write-Host ('            rename  ' + $a.sheet + ' -> ' + $a.name) }
                     'copyAfter'  { Write-Host ('            copy    ' + $a.sheet + ' -> ' + $a.name) }
                     'newCompare' { Write-Host ('            new     ' + $a.name) }
@@ -144,9 +143,6 @@ try {
         try {
             foreach ($a in $plan.actions) {
                 switch ($a.op) {
-                    'delete' {
-                        (Get-SheetByName $wb $a.sheet).Delete()
-                    }
                     'rename' {
                         (Get-SheetByName $wb $a.sheet).Name = $a.name
                     }

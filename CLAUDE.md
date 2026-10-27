@@ -641,9 +641,8 @@ PomBook.ps1             pure POM-book sheet plan (dot-source, no param(), no
                         copy / new-compare actions so GFIX send/recv result
                         appear twice, (henkou-mae) = first run and (henkou-go)
                         = the rerun after the fix, plus a blank GFIX
-                        before/after compare sheet; GIFT send result is
-                        deleted, GIFT recv result and GIFT-vs-GFIX stay
-                        in place. Unit-tested
+                        before/after compare sheet; GIFT sheets and
+                        GIFT-vs-GFIX stay in place. Unit-tested
                         (Tests\Test-PomBook.ps1).
 Convert-PomBook.ps1     STANDALONE (has param(): -File / &). Performs the
                         PomBook plan with Excel COM on a COPY of each book
