@@ -77,7 +77,7 @@ try {
     Write-LostCsv -Track 'ok' -Logs ''
     Write-Sidecar -Key 'QJODWSPP' -Name 'track.json' -Data @{ key = 'QJODWSPP'; verdict = 'ok'; recvJobs = @('1') }
     $wf = New-LostWorkflow -Flow 'logs' -Ids @('track', 'trackLost', 'trackHere', 'trackOk')
-    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $tmp -ModulesRoot $modules -RunId 'lost-logs' -Profile $profile -AskHandler $quiet
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $tmp -ModulesRoot $modules -RunId 'lost-logs' -Profile $profile -AskHandler $quiet -AllDays
     $mj = @($res['items'] | Where-Object { $_['key'] -eq 'MJODWSPQ' })[0]
     $qj = @($res['items'] | Where-Object { $_['key'] -eq 'QJODWSPP' })[0]
     Assert-Equal 'skip' $mj['status'] ('logs: the row whose track.json is gone is skipped, not failed: ' + $mj['failure'] + ' ' + $mj['message'])
@@ -93,7 +93,7 @@ try {
     Write-LostCsv -Track 'ok' -Logs 'ok'
     Write-Sidecar -Key 'MJODWSPQ' -Name 'track.json' -Data @{ key = 'MJODWSPQ'; verdict = 'ok' }
     $wf = New-LostWorkflow -Flow 'evidence' -Ids @('track', 'trackLost', 'trackHere', 'trackOk', 'logs', 'logsLost', 'logsHere')
-    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $tmp -ModulesRoot $modules -RunId 'lost-evidence' -Profile $profile -AskHandler $quiet
+    $res = Invoke-EbiWorkflow -Path $wf -WorkDir $tmp -ModulesRoot $modules -RunId 'lost-evidence' -Profile $profile -AskHandler $quiet -AllDays
     $mj = @($res['items'] | Where-Object { $_['key'] -eq 'MJODWSPQ' })[0]
     Assert-Equal 'skip' $mj['status'] ('evidence: no logs.json -> skipped: ' + $mj['message'])
     Assert-Equal 'ok' ([string](Read-LostCsvRow 'MJODWSPQ').track) 'evidence: track.json is there -> track stays ok'

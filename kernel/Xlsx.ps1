@@ -40,7 +40,10 @@ function Get-EbiXlsxNs {
     $ns.AddNamespace('pr', 'http://schemas.openxmlformats.org/package/2006/relationships')
     $ns.AddNamespace('xdr', 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing')
     $ns.AddNamespace('a', 'http://schemas.openxmlformats.org/drawingml/2006/main')
-    return $ns
+    # the comma: a namespace manager is IEnumerable, and a bare return would
+    # hand back its prefixes as an array of strings (10/28 office run:
+    # 'Cannot find an overload for "SelectNodes" and the argument count: 2')
+    return ,$ns
 }
 
 function Read-EbiXlsx {
@@ -75,7 +78,7 @@ function Get-EbiXlsxXml {
     if (-not $Book['parts'].Contains($Part)) { return $null }
     $d = New-Object System.Xml.XmlDocument
     $d.LoadXml([string]$Book['parts'][$Part])
-    return $d
+    return ,$d    # never unrolled into its child nodes
 }
 
 function Resolve-EbiXlsxTarget {

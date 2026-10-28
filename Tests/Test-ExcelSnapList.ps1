@@ -55,7 +55,7 @@ Assert-True (-not $rc2['ok'] -and $rc2['message'] -like 'header not found: job*'
 $realG = (Read-EbiJson -Path (Join-Path $here 'fixtures/gfix-list-bix-header.json'))['value']
 $rr = ExcelSnapList-ResolveColumns -GroupTexts $realG['group'] -SubTexts $realG['sub'] -Wanted @{ left = $lay['left']; job = $lay['job']; extendTo = $lay['extendTo'] }
 Assert-True ($rr['ok'] -and $rr['columns']['left'] -eq 2 -and $rr['columns']['job'] -eq 15 -and $rr['columns']['extendTo'] -eq 18) ('real header: B (from) .. O (send job), on to R (source file): ' + $rr['message'] + ' ' + (($rr['columns'].Keys | Sort-Object | ForEach-Object { $_ + '=' + $rr['columns'][$_] }) -join ' '))
-Assert-Equal 'GFIX送受信一覧(BIX)' $lay['sheet'] 'profile: the BIX sheet is the source'
+Assert-Equal ('GFIX' + [char]0x9001 + [char]0x53D7 + [char]0x4FE1 + [char]0x4E00 + [char]0x89A7 + '(BIX)') $lay['sheet'] 'profile: the BIX sheet is the source'
 
 # Kase 10/13: repeat = the same in EVERY column from left to job
 $jjdswm51 = @(@('Host', 'JDS', '-', 'Open', 'JPC', '-', 'JJPCRS13', 'IF6000', '001', 'JDS_PRD1_IF6000_FTP', 'TEXT', 'No', 'us', 'JJDSJM51'),

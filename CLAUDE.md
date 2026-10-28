@@ -191,14 +191,9 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         Dashboard.ps1 (`ebi status` / `ebi menu`: phases = the
                         workflows naming the profile, in worklist.json verdict-
                         column order; the menu runs ebi.ps1 in a CHILD PowerShell).
-                        Xlsx.ps1 (read an .xlsx as a zip of XML parts, no
-                        Excel: sheets, styles, cells, views, drawing items
-                        with anchor-corrected boxes -- the PS port of
-                        tools/review/drawings.py) and BookReview.ps1 (the
-                        non-OCR checks of tools/review/check_book.py over
-                        it; behind verify.book_review / gfixRecv.review,
-                        10/28: the office PC has no Python;
-                        Tests\Test-BookReview.ps1).
+                        Xlsx.ps1 (an .xlsx read as zipped XML, no Excel) +
+                        BookReview.ps1 (check_book.py's non-OCR checks, behind
+                        verify.book_review / gfixRecv.review; Test-BookReview).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
@@ -297,35 +292,19 @@ ProcessTimeParse.ps1    pure HM processing start/end/duration helpers for the
                         RecordCount falls back to the count immediately before
                         the result diamond when no datestamp anchors it (JDL).
                         No Excel/OCR. Unit-tested (Tests\Test-ProcessTimeParse.ps1).
-ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") column
-                        module (dot-source, no param(), no COM): Get-ProcessTime
-                        CheckColumnSpec returns the data-driven spec for the
-                        columns appended after A..H -- I 処理時間(検算) (=E-D),
-                        J チェック (T/F compare of written vs re-derived
-                        duration), K 件数チェック (record-count check; first
-                        version flags a blank/zero/non-numeric count) -- and
-                        New-ProcessTimeCheckFormula fills a formula template's
-                        {0} with a row number. With -CountReference
-                        (Resolve-ProcessTimeCountReference expands {Tag}/
-                        {Month} in the reference workbook/sheet names;
-                        New-ProcessTimeExternalRange builds the
-                        'dir\[Book.xlsx]Sheet'!$O$1:$O$20000 qualifier;
-                        New-ProcessTimeCountLookupFormula emits the operator's
-                        INDEX/MATCH) and the spec grows to four columns --
-                        K 件数(参照) pulls the EXPECTED count out of the
-                        project's monthly workbook and L 件数チェック compares
-                        it against the OCR-read count. The layout is
-                        ALWAYS I/J/K/L -- with no reference configured K holds
-                        an inert TEXT placeholder carrying <DIR>/<BOOK>/
-                        <SHEET> tokens (New-ProcessTimeCountPlaceholderFormula,
-                        CountReference.PlaceholderWhenUnset) -- and L compares
-                        the count against K when K has a value, else against
-                        the SAME correl's other side (GIFT vs GFIX) via
-                        Get-ProcessTimeCountPairMap + the template's {1}.
-                        Equal counts read OK, INCLUDING 0 vs 0. ProcessTime.ps1's COM-side
-                        Set-ProcessTimeCheckColumns walks the spec to write the
-                        headers/formulas/number-formats uniformly after the
-                        data rows. Japanese headers via [char]. Unit-tested
+ProcessTimeCheck.ps1    pure ProcessTime output-workbook audit ("check") columns
+                        (dot-source, no param(), no COM): Get-ProcessTimeCheck
+                        ColumnSpec -> the data-driven spec for the columns
+                        after A..H, ALWAYS I/J/K/L -- I = E-D re-derived, J
+                        T/F duration check, K the expected count (an INDEX/
+                        MATCH into the monthly reference workbook, or an inert
+                        placeholder when none is configured), L the count
+                        check (vs K, else vs the same correl's other side;
+                        0 vs 0 is OK). Formula / reference helpers: New-
+                        ProcessTimeCheckFormula, Resolve-ProcessTimeCount
+                        Reference, New-ProcessTimeExternalRange. ProcessTime
+                        .ps1's Set-ProcessTimeCheckColumns writes the spec.
+                        Japanese headers via [char]. Unit-tested
                         (Tests\Test-ProcessTimeCheck.ps1).
 
   -- modules/verify/ : the same pure libs, moved out of the repo root by

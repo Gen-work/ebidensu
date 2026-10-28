@@ -1,3 +1,18 @@
+## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
+
+First office run of gfixRecv.review (JJODWU31): `read_failed: Cannot find
+an overload for "SelectNodes" and the argument count: "2"`. A function
+returning an XmlNamespaceManager hands PowerShell an IEnumerable, which it
+unrolls into the prefixes; `kernel/Xlsx.ps1` now returns it (and each
+XmlDocument) with the unary comma. Run-Tests on the office PC also showed:
+
+- Tests/Test-GfixRecvLostArtifact.ps1: its rows are dated 10/20 and the
+  runner leaves other days' rows out -- the runs pass `-AllDays`.
+- Tests/Test-ExcelSnapList.ps1: the expected sheet name was raw Japanese
+  in a no-BOM file (read as CP932 on 5.1) -- built from [char] now.
+- CLAUDE.md was 920 lines (limit 900): the ProcessTimeCheck and the new
+  Xlsx / BookReview entries shortened.
+
 ## 2026-10-28 - record counts pair by count, not by position (v2.41.1)
 
 10/28 JJODWU31: the start message said 48, 882, 9, 26; the files arrived
