@@ -5,11 +5,12 @@
   "version": "0.1.0",
   "profile": "none",
   "vars": {
-    "_doc": "ebi.ps1 run workflows\\util.wideSnap.capture.json -WorkDir <作業フォルダー> -Var dataFile=<データファイル> [-Var viewer=<sakura.exe>]. 撮った各ページ <ファイル名>__01.png .. と結合した __wide.png が <作業フォルダー>\\capture\\wide に残る。窓の高さは sakura が前回閉じたときのまま(幅だけ 1906 にそろえる)。",
+    "_doc": "ebi.ps1 run workflows\\util.wideSnap.capture.json -WorkDir <作業フォルダー> -Var dataFile=<データファイル> [-Var viewer=<sakura.exe>]. 撮った各ページ <ファイル名>__01.png .. と結合した __wide.png が <作業フォルダー>\\capture\\wide に残る。窓の大きさ・位置は sakura が前回閉じたときのまま(-Var width=1906 で幅だけそろえることもできる)。-Var close=false = 撮ったあと sakura を閉じない。",
     "dataFile": "",
     "viewer": "C:\\Program Files (x86)\\sakura\\sakura.exe",
-    "width": "1906",
+    "width": "0",
     "x": "0",
+    "close": "true",
     "capture": "capture/wide"
   },
 
@@ -22,7 +23,7 @@
       "label": "sakura で読み取り専用(-R)で開き、左上から 1 ページずつ右へ撮る。一番長い行の改行マークが写るまで",
       "with": { "exe": "{{vars.viewer}}", "file": "{{vars.dataFile}}", "args": ["-R"],
                 "needCols": "{{steps.eol.out.needCols}}", "saveDir": "{{vars.capture}}",
-                "x": "{{vars.x}}", "width": "{{vars.width}}" } },
+                "x": "{{vars.x}}", "width": "{{vars.width}}", "close": "{{vars.close}}" } },
 
     { "id": "look", "use": "human.gate",
       "label": "撮った PNG を見る: 行末(改行マーク)まで写っているか。貼り付けは手で",

@@ -62,6 +62,10 @@ with no gap and no repeat (checked seam by seam on the real pictures).
   one: the workflows no longer pass `fitLines` (the input stays, default
   0 = leave it). New `workflows/util.wideSnap.capture.json`: data file in,
   the page captures out, no Excel -- pasting is done by hand.
+- ... and the window's width and place too: both workflows default to
+  `width = 0` (leave the window as the viewer opens it; the page width is
+  read from each capture, so any width stitches). `util.wideSnap.capture`
+  takes `-Var close=false` to leave the viewer open after.
 
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 
