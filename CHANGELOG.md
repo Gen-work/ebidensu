@@ -1,3 +1,21 @@
+## 2026-10-28 - record counts pair by count, not by position (v2.41.1)
+
+10/28 JJODWU31: the start message said 48, 882, 9, 26; the files arrived
+as 8, 47, 25, 881 lines. Pairing by position gave the reply
+"8(48), 47(882), 25(9), 881(26)" -- the first two passed as "short,
+expected" under shortOk, the last two warned count_disagree. The operator
+fixed the reply by hand.
+
+- `verify.record_counts`: with as many counts as files, each count takes
+  the file that fits it best over the whole set (agrees = 0, n lines short
+  under shortOk = n, anything else does not fit); the listed order is kept
+  on a tie, and when no pairing fits throughout or there are more than 8
+  files. The text stays in the message's order ("47(48), 881(882), 8(9),
+  25(26)"). New outputs `fileOf` / `reordered`; an info line says how the
+  counts were paired when the order changed. KNOWLEDGE K-55.
+- Static-checked only (no pwsh in the cloud session): run
+  `Tests\Run-Tests.ps1` on the office PC.
+
 ## 2026-10-28 - review phase: the book's self-review on the office PC, no Python (v2.41.0)
 
 The office PC has no Python, so `tools/review/check_book.py` only ran in

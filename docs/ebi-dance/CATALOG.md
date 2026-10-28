@@ -2654,9 +2654,11 @@ Parse the per-file record counts of a start message; compare with the files' lin
 | `actual` | list | line count of each file given, in order |
 | `expected` | list | the counts in the message, in order |
 | `fileCount` | int | how many files the message names; -1 when no message |
+| `fileOf` | list | per count, in the message's order: the index (0-based) of the file it was paired with; -1 when no file |
 | `matched` | bool | every file agrees with its count (true when there is nothing to compare); a short file counts as agreeing under shortOk |
 | `reason` | string |  |
-| `short` | list | per file: how many lines fewer than its count (0 when not short) |
+| `reordered` | bool | the counts were paired with the files in another order than listed (the message's order is not the arrival order) |
+| `short` | list | per count, in the message's order: how many lines fewer its file has (0 when not short) |
 | `suffix` | string | " (" + label + text + ")" ready to append to a reply; "" when no message |
 | `text` | string | per file: "<count><unit>", or "<lines><unit>(<count><unit>)" when the file disagrees; the message's counts alone when no files were given |
 

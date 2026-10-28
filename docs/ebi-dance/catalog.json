@@ -7967,6 +7967,10 @@
           "desc": "how many files the message names; -1 when no message",
           "type": "int"
         },
+        "fileOf": {
+          "desc": "per count, in the message's order: the index (0-based) of the file it was paired with; -1 when no file",
+          "type": "list"
+        },
         "matched": {
           "desc": "every file agrees with its count (true when there is nothing to compare); a short file counts as agreeing under shortOk",
           "type": "bool"
@@ -7974,8 +7978,12 @@
         "reason": {
           "type": "string"
         },
+        "reordered": {
+          "desc": "the counts were paired with the files in another order than listed (the message's order is not the arrival order)",
+          "type": "bool"
+        },
         "short": {
-          "desc": "per file: how many lines fewer than its count (0 when not short)",
+          "desc": "per count, in the message's order: how many lines fewer its file has (0 when not short)",
           "type": "list"
         },
         "suffix": {
