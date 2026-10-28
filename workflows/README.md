@@ -17,3 +17,12 @@ here; put capabilities in `modules/` and local values in ignored local config.
   `gfixRecv.evidence.json` -- the GFIX receive verification day on profile
   `gfix-recv` (morning plan, one track round per HOST job, end-of-day logs,
   the evidence workbook). Operator guide: `docs/gfix-recv/RUNBOOK.zh.md`.
+- `util.wideSnap.json` -- a horizontally long snap (10/28): `file.line_ends`
+  reads the data file (line ends, widest line), `screen.stitch_scroll` opens
+  it read-only in sakura and captures page by page to the right until that
+  line's end mark is on a capture, then the book gets the merged PNG
+  (outside-Excel merge) and/or the same pages lined up and grouped
+  (inside-Excel merge), both through `excel.place_tiles`; after the save
+  `verify.picture_pixels` reads the .xlsx to say whether any picture lost
+  pixels. `-Var dataFile=... -Var book=... [-Var mode=both|stitched|tiles]`;
+  the book is saved -- try it on a copy first.

@@ -53,6 +53,33 @@ public static class EbiNative {
     public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
     [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SCROLLINFO { public uint cbSize; public uint fMask; public int nMin; public int nMax; public uint nPage; public int nPos; public int nTrackPos; }
+    [DllImport("user32.dll")] public static extern bool GetScrollInfo(IntPtr hwnd, int fnBar, ref SCROLLINFO lpsi);
+    [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr hWndParent, EnumProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+    [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    public static IntPtr[] ChildWindows(IntPtr parent) {
+        var list = new System.Collections.Generic.List<IntPtr>();
+        EnumChildWindows(parent, delegate (IntPtr h, IntPtr l) { list.Add(h); return true; }, IntPtr.Zero);
+        return list.ToArray();
+    }
+    public static string ClassOf(IntPtr hWnd) {
+        var sb = new System.Text.StringBuilder(256);
+        GetClassName(hWnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+    // { ok (1/0), min, max, page, pos } of a scroll bar: SB_CTL (2) for a
+    // scroll bar control, SB_HORZ (0) for a window's own bar
+    public static int[] ScrollOf(IntPtr hWnd, int bar) {
+        var si = new SCROLLINFO();
+        si.cbSize = (uint)Marshal.SizeOf(typeof(SCROLLINFO));
+        si.fMask = 0x17;   // SIF_ALL
+        if (!GetScrollInfo(hWnd, bar, ref si)) return new int[] { 0, 0, 0, 0, 0 };
+        return new int[] { 1, si.nMin, si.nMax, (int)si.nPage, si.nPos };
+    }
     public static IntPtr[] TopWindows() {
         var list = new System.Collections.Generic.List<IntPtr>();
         EnumWindows(delegate (IntPtr h, IntPtr l) { list.Add(h); return true; }, IntPtr.Zero);
@@ -526,5 +553,66 @@ function Invoke-EbiDeselect {
     $r = Get-EbiWindowRect -HWnd $HWnd
     if (-not $r['ok']) { return $false }
     Invoke-EbiClick -X ([int]$r['X'] + $X) -Y ([int]$r['Y'] + $Y) -SettleMs 300
+    return $true
+}
+
+function Get-EbiHScroll {
+    <#
+      The horizontal scroll bar of a window, read without touching it:
+      a visible child SCROLLBAR control that is not vertical (SBS_VERT),
+      the widest one (an editor's text view), else the first child (or
+      the window itself) that has a WS_HSCROLL bar of its own.
+      -> @{ ok; pos; page; min; max; atEnd; hwnd; owner; bar; rect }
+         pos / page / min / max in the bar's own units (a text view:
+         columns); atEnd = pos + page > max; bar 'ctl' | 'own'; owner =
+         the window that gets WM_HSCROLL for it; rect = the control's
+         screen rectangle (a 'ctl' bar), for a click on its trough
+    #>
+    param([IntPtr]$HWnd)
+    $none = @{ ok = $false; pos = 0; page = 0; min = 0; max = 0; atEnd = $false; hwnd = [IntPtr]::Zero; owner = [IntPtr]::Zero; bar = ''; rect = $null }
+    [void](Get-EbiNative)
+    if ($HWnd -eq [IntPtr]::Zero -or -not [EbiNative]::IsWindow($HWnd)) { return $none }
+    $kids = @([EbiNative]::ChildWindows($HWnd))
+    $best = $null; $bestW = -1
+    foreach ($c in $kids) {
+        if (-not [EbiNative]::IsWindowVisible($c)) { continue }
+        if ([EbiNative]::ClassOf($c) -ne 'ScrollBar') { continue }
+        if (([EbiNative]::GetWindowLong($c, -16) -band 0x1) -ne 0) { continue }   # GWL_STYLE & SBS_VERT
+        $r = Get-EbiWindowRect -HWnd $c
+        if (-not $r['ok'] -or [int]$r['W'] -le $bestW) { continue }
+        $best = @{ h = $c; r = $r }; $bestW = [int]$r['W']
+    }
+    $read = $null
+    if ($null -ne $best) {
+        $v = [EbiNative]::ScrollOf($best['h'], 2)
+        if ($v[0] -eq 1 -and $v[2] -gt $v[1]) { $read = @{ v = $v; hwnd = $best['h']; owner = [EbiNative]::GetParent($best['h']); bar = 'ctl'; rect = $best['r'] } }
+    }
+    if ($null -eq $read) {
+        foreach ($c in @($kids + @($HWnd))) {
+            if (([EbiNative]::GetWindowLong($c, -16) -band 0x00100000) -eq 0) { continue }   # WS_HSCROLL
+            $v = [EbiNative]::ScrollOf($c, 0)
+            if ($v[0] -eq 1 -and $v[2] -gt $v[1]) { $read = @{ v = $v; hwnd = $c; owner = $c; bar = 'own'; rect = $null }; break }
+        }
+    }
+    if ($null -eq $read) { return $none }
+    $v = $read['v']
+    $page = [Math]::Max(1, [int]$v[3])
+    return @{ ok = $true; min = [int]$v[1]; max = [int]$v[2]; page = [int]$v[3]; pos = [int]$v[4]; atEnd = (([int]$v[4] + $page) -gt [int]$v[2]);
+              hwnd = $read['hwnd']; owner = $read['owner']; bar = $read['bar']; rect = $read['rect'] }
+}
+
+function Invoke-EbiHScrollPage {
+    <#
+      One page right on a Get-EbiHScroll bar: WM_HSCROLL SB_PAGERIGHT to
+      the window that owns it (what a click on the trough sends), then
+      SB_ENDSCROLL. Never moves the mouse.
+    #>
+    param($Scroll, [int]$SettleMs = 300)
+    [void](Get-EbiNative)
+    if ($null -eq $Scroll -or -not [bool]$Scroll['ok']) { return $false }
+    $lp = if ([string]$Scroll['bar'] -eq 'ctl') { [IntPtr]$Scroll['hwnd'] } else { [IntPtr]::Zero }
+    [void][EbiNative]::SendMessage([IntPtr]$Scroll['owner'], 0x0114, [IntPtr]3, $lp)   # WM_HSCROLL, SB_PAGERIGHT
+    [void][EbiNative]::SendMessage([IntPtr]$Scroll['owner'], 0x0114, [IntPtr]8, $lp)   # SB_ENDSCROLL
+    if ($SettleMs -gt 0) { Start-Sleep -Milliseconds $SettleMs }
     return $true
 }

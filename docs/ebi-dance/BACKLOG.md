@@ -1948,7 +1948,7 @@
 
 # 未排期(想到了记在这,不承诺做)
 
-- `screen.stitch_scroll` 滚动拼接长图(纵/横)
+- `screen.stitch_scroll` 滚动拼接长图:横向已做(10/28,`workflows/util.wideSnap.json`,按页滚动 + 读数据文件定行尾);纵向未做
 - `verify.pixel` + `screen.render_html` mock HTML vs snap 像素比对
 - `browser.tab_to_labeled` 用焦点元素文本定位,替代盲数 Tab
 - `browser.scroll` / 列表翻页

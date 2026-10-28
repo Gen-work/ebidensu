@@ -9,9 +9,15 @@
 #  a book open in Excel is read through a shared read handle. Dot-source
 #  only (no param(), ASCII source, no class).
 #
-#    Read-EbiXlsx -Path            -> @{ ok; failure; message; path; parts }
-#                                     parts: part name -> XML text (only
-#                                     .xml / .rels; pictures are not read)
+#    Read-EbiXlsx -Path [-Media]   -> @{ ok; failure; message; path; parts;
+#                                     media } parts: part name -> XML text
+#                                     (.xml / .rels); media (-Media only):
+#                                     xl/media part -> @{ length; head }
+#    Get-EbiXlsxPictures -Book -Part
+#                                  -> @(@{ name; group; media; shownW;
+#                                     shownH; crop }) every picture, group
+#                                     members too, with its shown size in
+#                                     px (EMU / 9525) and its media part
 #    Get-EbiXlsxSheets -Book       -> @(@{ name; part; state }) in tab order
 #    Get-EbiXlsxStyles -Book       -> @{ xf; fonts; fills } (cellXfs order)
 #    Get-EbiXlsxCells -Book -Part -Styles
@@ -47,8 +53,11 @@ function Get-EbiXlsxNs {
 }
 
 function Read-EbiXlsx {
-    param([string]$Path)
-    $out = @{ ok = $false; failure = ''; message = ''; path = $Path; parts = @{} }
+    # -Media: also keep each xl/media/* part's length and first 64 KB
+    # (book.media: part -> @{ length; head }) -- enough for a picture's
+    # format and pixel size (Get-EbiXlsxPictures), never the whole picture.
+    param([string]$Path, [switch]$Media)
+    $out = @{ ok = $false; failure = ''; message = ''; path = $Path; parts = @{}; media = @{} }
     if (-not [System.IO.File]::Exists($Path)) { $out['failure'] = 'file_not_found'; $out['message'] = ('no file at ' + $Path); return $out }
     try {
         Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
@@ -57,6 +66,16 @@ function Read-EbiXlsx {
             $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Read)
             try {
                 foreach ($e in $zip.Entries) {
+                    if ($Media -and $e.FullName -like 'xl/media/*') {
+                        $st = $e.Open()
+                        try {
+                            $buf = New-Object byte[] ([int][Math]::Min([int64]65536, [int64]$e.Length))
+                            $got = 0
+                            while ($got -lt $buf.Length) { $n = $st.Read($buf, $got, $buf.Length - $got); if ($n -le 0) { break }; $got += $n }
+                            $out['media'][$e.FullName] = @{ length = [int64]$e.Length; head = $buf }
+                        } finally { $st.Dispose() }
+                        continue
+                    }
                     if ($e.FullName -notmatch '\.(xml|rels)$') { continue }
                     $sr = New-Object System.IO.StreamReader($e.Open(), (New-Object System.Text.UTF8Encoding($false)))
                     try { $out['parts'][$e.FullName] = $sr.ReadToEnd() } finally { $sr.Dispose() }
@@ -64,7 +83,7 @@ function Read-EbiXlsx {
             } finally { $zip.Dispose() }
         } finally { $fs.Dispose() }
     } catch {
-        $out['failure'] = 'read_failed'; $out['message'] = ('cannot read ' + $Path + ' as an .xlsx: ' + $_.Exception.Message); $out['parts'] = @{}
+        $out['failure'] = 'read_failed'; $out['message'] = ('cannot read ' + $Path + ' as an .xlsx: ' + $_.Exception.Message); $out['parts'] = @{}; $out['media'] = @{}
         return $out
     }
     if (-not $out['parts'].Contains('xl/workbook.xml')) { $out['failure'] = 'read_failed'; $out['message'] = ($Path + ' has no xl/workbook.xml: not an .xlsx'); $out['parts'] = @{}; return $out }
@@ -357,6 +376,64 @@ function Get-EbiXlsxDrawingItems {
                 }
             }
             foreach ($it in $got) { [void]$out.Add($it) }
+        }
+    }
+    return $out.ToArray()
+}
+
+function Add-EbiXlsxPictures {
+    # PURE. Walk pic / grpSp under Node into Out: SX / SY scale a child's
+    # EMU to the sheet's (a group's ext over its chExt); Group = the
+    # outermost group's name ('' at the top).
+    param($Node, $Ns, [double]$SX, [double]$SY, [string]$Group, $Rels, $Out)
+    foreach ($ch in $Node.ChildNodes) {
+        if ($ch.NodeType -ne [System.Xml.XmlNodeType]::Element) { continue }
+        if ($ch.LocalName -eq 'grpSp') {
+            $x = $ch.SelectSingleNode('xdr:grpSpPr/a:xfrm', $Ns)
+            # gx / gy, not sx / sy: variable names are case-blind, and $sx
+            # would BE the parameter $SX -- the later siblings' scale
+            $gx = $SX; $gy = $SY
+            if ($null -ne $x) {
+                $e = $x.SelectSingleNode('a:ext', $Ns); $ce = $x.SelectSingleNode('a:chExt', $Ns)
+                if ($null -ne $e -and $null -ne $ce -and [double]$ce.GetAttribute('cx') -gt 0 -and [double]$ce.GetAttribute('cy') -gt 0) {
+                    $gx = $SX * [double]$e.GetAttribute('cx') / [double]$ce.GetAttribute('cx')
+                    $gy = $SY * [double]$e.GetAttribute('cy') / [double]$ce.GetAttribute('cy')
+                }
+            }
+            $nv = $ch.SelectSingleNode('xdr:nvGrpSpPr/xdr:cNvPr', $Ns)
+            $g = if ($Group -ne '') { $Group } elseif ($null -ne $nv) { $nv.GetAttribute('name') } else { '' }
+            Add-EbiXlsxPictures -Node $ch -Ns $Ns -SX $gx -SY $gy -Group $g -Rels $Rels -Out $Out
+            continue
+        }
+        if ($ch.LocalName -ne 'pic') { continue }
+        $nv = $ch.SelectSingleNode('xdr:nvPicPr/xdr:cNvPr', $Ns)
+        $blip = $ch.SelectSingleNode('xdr:blipFill/a:blip', $Ns)
+        $emb = if ($null -ne $blip) { $blip.GetAttribute('embed', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships') } else { '' }
+        $e = $ch.SelectSingleNode('xdr:spPr/a:xfrm/a:ext', $Ns)
+        $src = $ch.SelectSingleNode('xdr:blipFill/a:srcRect', $Ns)
+        $crop = @{ l = 0; t = 0; r = 0; b = 0 }
+        if ($null -ne $src) { foreach ($k in @('l', 't', 'r', 'b')) { $v = $src.GetAttribute($k); if ($v -ne '') { $crop[$k] = [int]$v } } }
+        [void]$Out.Add(@{ name = $(if ($null -ne $nv) { $nv.GetAttribute('name') } else { '' }); group = $Group;
+                          media = $(if ($emb -ne '' -and $Rels.Contains($emb)) { [string]$Rels[$emb] } else { '' });
+                          shownW = $(if ($null -ne $e) { [Math]::Round([double]$e.GetAttribute('cx') * $SX / 9525.0, 1) } else { 0 });
+                          shownH = $(if ($null -ne $e) { [Math]::Round([double]$e.GetAttribute('cy') * $SY / 9525.0, 1) } else { 0 });
+                          crop = $crop })
+    }
+}
+
+function Get-EbiXlsxPictures {
+    # PURE. Every picture on the sheet (see the header), drawing order.
+    param($Book, [string]$Part)
+    $out = New-Object System.Collections.ArrayList
+    $rels = Get-EbiXlsxRels -Book $Book -Part $Part
+    foreach ($dp in @($rels.Values | Where-Object { $_ -match '/drawings/[^/]+\.xml$' } | Sort-Object)) {
+        $d = Get-EbiXlsxXml -Book $Book -Part $dp
+        if ($null -eq $d) { continue }
+        $ns = Get-EbiXlsxNs -Doc $d
+        $dr = Get-EbiXlsxRels -Book $Book -Part $dp
+        foreach ($anc in $d.DocumentElement.ChildNodes) {
+            if ($anc.NodeType -ne [System.Xml.XmlNodeType]::Element) { continue }
+            Add-EbiXlsxPictures -Node $anc -Ns $ns -SX 1.0 -SY 1.0 -Group '' -Rels $dr -Out $out
         }
     }
     return $out.ToArray()

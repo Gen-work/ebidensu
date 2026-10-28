@@ -192,3 +192,13 @@ capabilities in `modules/` and declarative orchestration in `workflows/`.
   since P2-09 also `Get-EbiPageKind` (the fingerprint classifier) and
   `Select-EbiNewestRecord` (the tie-break), so the fixture runner and the
   steps share them.
+- `Stitch.ps1` -- 10/28, the horizontally long snap. `Get-EbiLineEndInfo`
+  (a text file's bytes -> CRLF / LF / CR / mixed, the widest line in editor
+  columns -- SJIS double-byte and UTF-8 wide = 2 -- and `needCols`, how far
+  right a capture must reach to show that line's end mark; counted in C#),
+  `Get-EbiStitchGeometry` (where column 0 and the text band are in one
+  capture; a page scroll moves `pageCols`), `Resolve-EbiTileShift` (scroll
+  bar position > pixel overlap > one page), `Get-EbiStitchLayout` (what is
+  drawn where in the merged PNG), `Get-EbiImageHeadSize` (PNG / JPEG / GIF /
+  BMP header sizes, no GDI+), the C# `Overlap` search and
+  `New-EbiStitchedPng` (GDI+, 1:1, 96 dpi). `Tests/Test-Stitch.ps1`.
