@@ -7,11 +7,11 @@ Reset-Tests 'BookReview'
 # ---------------------------------------------------------------- fixtures
 # A tiny evidence book as XML parts (the review reads parts, not Excel).
 # ASCII sheet names / font: the checks take every name from $Names.
-$M = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
-$R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
-$P = 'http://schemas.openxmlformats.org/package/2006/relationships'
-$X = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
-$A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+$NsM = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+$NsR = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+$NsP = 'http://schemas.openxmlformats.org/package/2006/relationships'
+$NsX = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
+$NsA = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 
 function Esc { param([string]$S) return [System.Security.SecurityElement]::Escape($S) }
 
@@ -22,7 +22,7 @@ function New-SheetXml {
     foreach ($c in $Cells) { $rc = ConvertFrom-EbiCellRef -Ref $c[0]; $r = [int]$rc['row']; if (-not $byRow.Contains($r)) { $byRow[$r] = New-Object System.Collections.ArrayList }; [void]$byRow[$r].Add($c) }
     foreach ($r in $Heights.Keys) { if (-not $byRow.Contains([int]$r)) { $byRow[[int]$r] = New-Object System.Collections.ArrayList } }
     $sb = New-Object System.Text.StringBuilder
-    [void]$sb.Append('<worksheet xmlns="' + $M + '" xmlns:r="' + $R + '">')
+    [void]$sb.Append('<worksheet xmlns="' + $NsM + '" xmlns:r="' + $NsR + '">')
     [void]$sb.Append('<sheetViews><sheetView workbookViewId="0"' + $(if ($View['sel']) { ' tabSelected="1"' } else { '' }) + $(if ($View['top']) { ' topLeftCell="' + $View['top'] + '"' } else { '' }) + '>')
     if ($View['pane']) { [void]$sb.Append('<pane ySplit="2" topLeftCell="' + $View['pane'] + '" activePane="bottomLeft" state="frozen"/>') }
     [void]$sb.Append('<selection' + $(if ($View['pane']) { ' pane="bottomLeft"' } else { '' }) + ' activeCell="' + $View['act'] + '" sqref="' + $View['act'] + '"/></sheetView></sheetViews>')
@@ -55,16 +55,16 @@ function New-Anchor {
 $names = @{ send = 'SEND'; giftRecv = 'GIFTRECV'; gfixRecv = 'GFIXRECV'; compare = 'CMP'; font = 'FontX'; jobLog = 'JOBLOG' }
 
 $parts = @{}
-$parts['xl/workbook.xml'] = '<workbook xmlns="' + $M + '" xmlns:r="' + $R + '"><sheets>' +
+$parts['xl/workbook.xml'] = '<workbook xmlns="' + $NsM + '" xmlns:r="' + $NsR + '"><sheets>' +
     '<sheet name="SEND" sheetId="1" r:id="rId1"/><sheet name="GIFTRECV" sheetId="2" r:id="rId2"/>' +
     '<sheet name="GFIXRECV" sheetId="3" r:id="rId3"/><sheet name="CMP" sheetId="4" r:id="rId4"/>' +
     '<sheet name="OLD" sheetId="5" state="hidden" r:id="rId5"/></sheets></workbook>'
-$parts['xl/_rels/workbook.xml.rels'] = '<Relationships xmlns="' + $P + '">' +
+$parts['xl/_rels/workbook.xml.rels'] = '<Relationships xmlns="' + $NsP + '">' +
     '<Relationship Id="rId1" Type="t" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="t" Target="worksheets/sheet2.xml"/>' +
     '<Relationship Id="rId3" Type="t" Target="/xl/worksheets/sheet3.xml"/><Relationship Id="rId4" Type="t" Target="worksheets/sheet4.xml"/>' +
     '<Relationship Id="rId5" Type="t" Target="worksheets/sheet5.xml"/><Relationship Id="rId9" Type="t" Target="styles.xml"/></Relationships>'
 # fonts: 0 FontX, 1 FontX bold, 2 Arial; fills: 2 = solid yellow; xf: 0 plain, 1 bold, 2 Arial, 3 yellow
-$parts['xl/styles.xml'] = '<styleSheet xmlns="' + $M + '">' +
+$parts['xl/styles.xml'] = '<styleSheet xmlns="' + $NsM + '">' +
     '<fonts count="3"><font><name val="FontX"/></font><font><b/><name val="FontX"/></font><font><name val="Arial"/></font></fonts>' +
     '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/></patternFill></fill></fills>' +
     '<cellXfs count="4"><xf fontId="0" fillId="0"/><xf fontId="1" fillId="0"/><xf fontId="2" fillId="0"/><xf fontId="0" fillId="2"/></cellXfs></styleSheet>'
@@ -89,13 +89,18 @@ $parts['xl/worksheets/sheet3.xml'] = New-SheetXml -View @{ pane = 'A40'; act = '
 # a hand picture pasted over the tool's picture of set 2; a red box on nothing
 $parts['xl/worksheets/sheet4.xml'] = New-SheetXml -View @{ act = 'A1' } -Drawing $true -Cells @(
     @('B3', 'JJPCRS12', 0), @('G3', 'STEP:MQFX0020', 0), @('B32', 'JJPCRS12', 0), @('G32', 'STEP:OTHER', 0), @('B60', 'JJPCRS12', 0), @('G60', 'STEP:MQFX0030', 0))
-$parts['xl/worksheets/_rels/sheet4.xml.rels'] = '<Relationships xmlns="' + $P + '"><Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/></Relationships>'
-$parts['xl/drawings/drawing1.xml'] = '<xdr:wsDr xmlns:xdr="' + $X + '" xmlns:a="' + $A + '">' +
+$parts['xl/worksheets/_rels/sheet4.xml.rels'] = '<Relationships xmlns="' + $NsP + '"><Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/></Relationships>'
+$parts['xl/drawings/drawing1.xml'] = '<xdr:wsDr xmlns:xdr="' + $NsX + '" xmlns:a="' + $NsA + '">' +
     (New-Anchor -Kind 'pic' -Name 'verifyPic_df_1' -Col 1 -Row 3 -ToRow 25 -X0 100000 -W 9000000 -Id 2) +
     (New-Anchor -Kind 'sp' -Name 'verifyMark_df_1_1' -Col 3 -Row 20 -ToRow 21 -X0 400000 -W 500000 -Id 3) +
     (New-Anchor -Kind 'pic' -Name 'verifyPic_df_2' -Col 1 -Row 32 -ToRow 50 -X0 100000 -W 9000000 -Id 4) +
     (New-Anchor -Kind 'pic' -Name 'Picture 1' -Col 1 -Row 32 -ToRow 52 -X0 100000 -W 9000000 -Id 5) +
     (New-Anchor -Kind 'sp' -Name 'leftover' -Col 30 -Row 200 -ToRow 201 -X0 90000000 -W 500000 -Id 6) +
+    '<xdr:twoCellAnchor><xdr:from><xdr:col>30</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>300</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>40</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>310</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>' +
+    '<xdr:grpSp><xdr:nvGrpSpPr><xdr:cNvPr id="7" name="Group 1"/><xdr:cNvGrpSpPr/></xdr:nvGrpSpPr><xdr:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2000" cy="1000"/><a:chOff x="0" y="0"/><a:chExt cx="2000" cy="1000"/></a:xfrm></xdr:grpSpPr>' +
+    '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="8" name="GPic A"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill/><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1000" cy="1000"/></a:xfrm></xdr:spPr></xdr:pic>' +
+    '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="9" name="GPic B"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill/><xdr:spPr><a:xfrm><a:off x="1000" y="0"/><a:ext cx="1000" cy="1000"/></a:xfrm></xdr:spPr></xdr:pic>' +
+    '</xdr:grpSp><xdr:clientData/></xdr:twoCellAnchor>' +
     '</xdr:wsDr>'
 $parts['xl/worksheets/sheet5.xml'] = New-SheetXml -View @{ sel = $true; act = 'Z99' } -Cells @()
 $book = @{ ok = $true; parts = $parts; path = 'fixture.xlsx' }
@@ -116,12 +121,14 @@ Assert-True ($b5['bold'] -and $b5['font'] -eq 'FontX' -and $b5['text'] -eq 'GIFT
 $c20 = @($cells | Where-Object { $_['ref'] -eq 'C20' })[0]
 Assert-True ($c20['yellow'] -and -not $c20['hasValue']) 'xlsx: a style-only yellow cell has no value'
 $items = @(Get-EbiXlsxDrawingItems -Book $book -Part 'xl/worksheets/sheet4.xml')
-Assert-Equal 5 $items.Count 'xlsx: five drawing items'
+Assert-Equal 7 $items.Count 'xlsx: seven drawing items (a Ctrl+G group gives its two pictures)'
+$gb = @($items | Where-Object { $_['name'] -eq 'GPic B' })[0]
+Assert-True ($null -ne $gb -and $gb['row'] -eq 300 -and [double]$gb['box'][0] -eq 1000) 'xlsx: a grouped picture keeps its x inside the group and its anchor row'
 $p1 = @($items | Where-Object { $_['name'] -eq 'verifyPic_df_1' })[0]
 Assert-True ($p1['col'] -eq 1 -and $p1['row'] -eq 3 -and [math]::Abs([double]$p1['box'][1] - 3 * 15 * 12700) -lt 1) 'xlsx: y comes from the cell anchor (3 rows of 15 pt)'
 
 # shared strings: rich runs join, phonetic runs do not
-$ss = @{ parts = @{ 'xl/sharedStrings.xml' = '<sst xmlns="' + $M + '"><si><t>plain</t></si><si><r><t>ri</t></r><r><t>ch</t></r><rPh><t>PH</t></rPh></si></sst>' } }
+$ss = @{ parts = @{ 'xl/sharedStrings.xml' = '<sst xmlns="' + $NsM + '"><si><t>plain</t></si><si><r><t>ri</t></r><r><t>ch</t></r><rPh><t>PH</t></rPh></si></sst>' } }
 Assert-Equal 'plain|rich' (@(Get-EbiXlsxSharedStrings -Book $ss) -join '|') 'xlsx: shared strings, rich runs joined, phonetic text left out'
 
 # ---------------------------------------------------------------- the review
@@ -133,7 +140,7 @@ function Has { param([string]$Like) return (@($lines | Where-Object { $_ -like $
 
 Assert-True (Has 'NG GIFTRECV: this sheet is selected*') 'review view: a second selected sheet is NG'
 Assert-True (Has 'NG GFIXRECV: scrolled to A40*') 'review view: a sheet scrolled down (frozen pane) is NG'
-Assert-True (-not (Has '*OLD*')) 'review view: a hidden sheet is not checked'
+Assert-True (-not (Has 'NG OLD*')) 'review view: a hidden sheet is not checked'
 Assert-True (Has 'NG GFIXRECV!B21: font "Arial"*') 'review fonts: a cell in another font is NG'
 Assert-True (Has 'NG GIFTRECV!B17: 1 line(s) after the last END + date line*') 'review logs: a line after END + date is NG (K-37)'
 Assert-True (Has 'NG GIFTRECV!B15: END F3 has no START line*') 'review logs: an END without its START is NG (K-37)'
@@ -196,4 +203,5 @@ try {
     Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
 }
 
-Complete-Tests
+$fail = Complete-Tests
+exit $fail

@@ -1,3 +1,14 @@
+## 2026-10-28 - review phase fix 2: a Ctrl+G group broke the drawing read (v2.41.2)
+
+Second office run (JJODWU31): `Method invocation failed because
+[System.Double] does not contain a method named 'SelectSingleNode'`. In
+`Add-EbiXlsxShapes` the offset `$X` was the same variable as the xfrm node
+`$x` (PowerShell names ignore case), so a group's chOff / chExt lookup ran
+on a number. Renamed; Tests\Test-BookReview.ps1 now carries a Ctrl+G group
+of two pictures. The suite also ends with `exit $fail` like the others
+(Run-Tests read it as "ended without reaching its exit"), and its
+hidden-sheet assertion no longer matches the word "old" in a K-49 message.
+
 ## 2026-10-28 - POM rerun: the rerun's GFIX files go to 他対応/修正後DATA (v2.41.2)
 
 10/28 JJDSWPA1 (done by hand): the rerun's received file was saved in
