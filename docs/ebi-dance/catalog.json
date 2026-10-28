@@ -6326,9 +6326,10 @@
           "type": "int"
         },
         "frame": {
-          "default": "each",
-          "desc": "the merged PNG: each = every capture whole (window frame and all) side by side; first = one frame (the first capture's title / menu / toolbar), the text bands joined column to column",
+          "default": "aligned",
+          "desc": "the merged PNG: aligned = every capture with its window frame, the later ones cropped by the line-number strip and laid on the one before so the text runs on (the J4 books' own layout, as excel.place_tiles puts it on a sheet); each = every capture whole, side by side; first = one frame (the first capture's), the text bands joined",
           "enum": [
+            "aligned",
             "each",
             "first"
           ],

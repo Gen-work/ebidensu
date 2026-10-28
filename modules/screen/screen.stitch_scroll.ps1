@@ -43,7 +43,7 @@ $Manifest = @{
     saveDir     = @{ type='path';   required=$true }
     name        = @{ type='string'; default=''; desc='file name stem of the captures (<name>__01.png .. and <name>__wide.png); empty = the file name' }
     stitch      = @{ type='bool';   default=$true; desc='also merge the captures into <name>__wide.png' }
-    frame       = @{ type='string'; default='each'; enum=@('each', 'first'); desc='the merged PNG: each = every capture whole (window frame and all) side by side; first = one frame (the first capture''s title / menu / toolbar), the text bands joined column to column' }
+    frame       = @{ type='string'; default='aligned'; enum=@('aligned', 'each', 'first'); desc='the merged PNG: aligned = every capture with its window frame, the later ones cropped by the line-number strip and laid on the one before so the text runs on (the J4 books'' own layout, as excel.place_tiles puts it on a sheet); each = every capture whole, side by side; first = one frame (the first capture''s), the text bands joined' }
     x           = @{ type='int';    default=40 }
     y           = @{ type='int';    default=40 }
     width       = @{ type='int';    default=0; desc='visible window width; 0 = leave as the viewer opens it (the geometry defaults were measured at 1906)' }

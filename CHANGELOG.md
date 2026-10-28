@@ -68,8 +68,11 @@ with no gap and no repeat (checked seam by seam on the real pictures).
   takes `-Var close=false` to leave the viewer open after.
 - The merged `__wide.png` kept the window frame (title, menu, toolbar,
   scroll bar) on its first part only. `screen.stitch_scroll frame`:
-  `each` (new default) = every capture whole, side by side, like the
-  operator's own pictures; `first` = the old one-frame join.
+  `aligned` (default, after the operator showed their own sheet) = every
+  capture with its window frame, the later ones cropped by the
+  line-number strip and laid on the one before so ruler and text run on
+  -- the layout excel.place_tiles builds; `each` = whole captures side by
+  side; `first` = the old one-frame join.
 
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 

@@ -99,12 +99,21 @@ try {
     $pc = @($lay['pieces'])
     Assert-True ($pc[4]['tile'] -eq 2 -and $pc[4]['sx'] -eq 940 -and $pc[4]['w'] -eq 945 -and $pc[4]['dx'] -eq 3740 -and $lay['width'] -eq 4706) 'layout: a capture that repeats columns adds only the new ones'
     Assert-Equal 0 (Get-EbiStitchLayout -Starts @() -Geometry $g)['width'] 'layout: no captures -> nothing'
-    # frame each (the default, 10/28): every capture whole, side by side
+    # frame aligned (the default, 10/28: the operator's own sheet)
     $lay = Get-EbiStitchLayout -Starts @(0, 265, 530, 795, 1060) -Geometry $g
+    $pc = @($lay['pieces'])
+    Assert-True ($lay['width'] -eq 9326 -and $lay['height'] -eq 166 -and $pc.Count -eq 5) ('layout aligned: 1906 + 4 x 1855 = 9326 wide, the whole window height (got ' + $lay['width'] + ' x ' + $lay['height'] + ')')
+    Assert-True ($pc[0]['sx'] -eq 0 -and $pc[0]['w'] -eq 1906 -and $pc[0]['dx'] -eq 0) 'layout aligned: the first capture whole'
+    Assert-True ($pc[1]['sx'] -eq 30 -and $pc[1]['w'] -eq 1876 -and $pc[1]['dx'] -eq 1885 -and $pc[1]['h'] -eq 166) 'layout aligned: capture 2 frame and all, its line-number strip cropped, its column 0 right after capture 1''s column 264'
+    Assert-True ($pc[4]['dx'] + $pc[4]['w'] -eq 9326) 'layout aligned: the last capture ends the picture'
+    $lay = Get-EbiStitchLayout -Starts @(0, 265, 400) -Geometry $g
+    Assert-Equal 2830 @($lay['pieces'])[2]['dx'] 'layout aligned: a scroll cut short lays the capture further over the one before (400 x 7 + 30)'
+    # frame each: every capture whole, side by side
+    $lay = Get-EbiStitchLayout -Starts @(0, 265, 530, 795, 1060) -Geometry $g -Frame 'each'
     $pc = @($lay['pieces'])
     Assert-True ($lay['width'] -eq 9530 -and $lay['height'] -eq 166 -and $pc.Count -eq 5) ('layout each: five whole 1906 x 166 captures = 9530 x 166 (got ' + $lay['width'] + ' x ' + $lay['height'] + ')')
     Assert-True ($pc[3]['tile'] -eq 3 -and $pc[3]['sx'] -eq 0 -and $pc[3]['w'] -eq 1906 -and $pc[3]['h'] -eq 166 -and $pc[3]['dx'] -eq 5718) 'layout each: capture 4 whole, frame and all, after the third'
-    $lay = Get-EbiStitchLayout -Starts @(0, 265, 265) -Geometry $g
+    $lay = Get-EbiStitchLayout -Starts @(0, 265, 265) -Geometry $g -Frame 'each'
     Assert-Equal 2 @($lay['pieces']).Count 'layout each: a capture that adds no column is left out'
 
     # ============================================================ shift

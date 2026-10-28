@@ -831,7 +831,7 @@ Open a text file in a viewer, capture it page by page to the right until the lin
 | `exe` | path | yes |  |  | the text viewer |
 | `file` | path | yes |  |  | the text file (also what the window title must show) |
 | `fitLines` | int |  | 0 |  | height = 0: size the window to show this many lines and the [EOF] row, no more (file.line_ends lines); capped by maxHeight |
-| `frame` | string |  | each | each, first | the merged PNG: each = every capture whole (window frame and all) side by side; first = one frame (the first capture's title / menu / toolbar), the text bands joined column to column |
+| `frame` | string |  | aligned | aligned, each, first | the merged PNG: aligned = every capture with its window frame, the later ones cropped by the line-number strip and laid on the one before so the text runs on (the J4 books' own layout, as excel.place_tiles puts it on a sheet); each = every capture whole, side by side; first = one frame (the first capture's), the text bands joined |
 | `height` | int |  | 0 |  | visible window height; 0 = fitLines decides (else leave as the viewer opens it) |
 | `keysAdvance` | string |  | (empty) |  | advance = keys: the keys of one step right |
 | `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (the top-left of the file) |

@@ -154,11 +154,14 @@ function Get-EbiStitchLayout {
       PURE. The merged picture of the captures, given each capture's first
       column (Starts, Starts[0] = 0 for a view that began at the left) and
       the geometry. Frame:
-        'each'  (default, 10/28 operator: "like pic 2 -- now only the 1st
-                one has it") every capture whole, window frame and all,
-                side by side left to right: a page scroll moves exactly
-                the columns a capture shows, so nothing is lost between
-                them; a capture that adds no new column is left out
+        'aligned' (default, 10/28 operator's own sheet: "like this") every
+                capture with its window frame (title, menu, toolbar,
+                scroll bar), the later ones cropped by the line-number
+                strip (textLeft) and laid on top of the one before so its
+                column 0 continues it: ruler and text run on across the
+                seams, each capture's frame shows from where it starts --
+                what excel.place_tiles builds on the sheet
+        'each'  every capture whole, side by side, no overlap
         'first' one frame: as below
       Frame 'first':
         * the whole first capture above the band (title, menu, toolbar --
@@ -172,13 +175,25 @@ function Get-EbiStitchLayout {
       Rows below the band (the horizontal scroll bar) are left out.
       -> @{ width; height; pieces = @(@{ tile; sx; sy; w; h; dx; dy }) }
     #>
-    param($Starts, $Geometry, [string]$Frame = 'each')
+    param($Starts, $Geometry, [string]$Frame = 'aligned')
     $g = $Geometry
     $st = @(@($Starts) | ForEach-Object { [int]$_ })
     $pieces = New-Object System.Collections.ArrayList
     if ($st.Count -eq 0 -or -not [bool]$g['ok']) { return @{ width = 0; height = 0; pieces = @() } }
     $L = [int]$g['textLeft']; $cpx = [int]$g['charPx']; $page = [int]$g['pagePx']
-    if ($Frame -ne 'first') {
+    if ($Frame -eq 'aligned') {
+        $tw = [int]$g['tileW']; $base = $st[0]; $width = 0; $lastEnd = -1
+        for ($k = 0; $k -lt $st.Count; $k++) {
+            $end = $st[$k] + [int]$g['pageCols']
+            if ($k -gt 0 -and $end -le $lastEnd) { continue }   # nothing new in it
+            $crop = if ($k -gt 0) { $L } else { 0 }
+            $dx = ($st[$k] - $base) * $cpx + $crop
+            [void]$pieces.Add(@{ tile = $k; sx = $crop; sy = 0; w = ($tw - $crop); h = [int]$g['tileH']; dx = $dx; dy = 0 })
+            $width = [Math]::Max($width, $dx + $tw - $crop); $lastEnd = $end
+        }
+        return @{ width = $width; height = [int]$g['tileH']; pieces = $pieces.ToArray() }
+    }
+    if ($Frame -eq 'each') {
         $tw = [int]$g['tileW']; $x = 0; $lastEnd = -1
         for ($k = 0; $k -lt $st.Count; $k++) {
             $end = $st[$k] + [int]$g['pageCols']
