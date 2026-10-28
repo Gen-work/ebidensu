@@ -5,6 +5,31 @@ file stays small. Designed-then-shelved work lives in
 [`Parked-Ideas.md`](Parked-Ideas.md) instead; release history lives in
 [`../CHANGELOG.md`](../CHANGELOG.md).
 
+- **gfix-recv: track.json file fingerprints** (10/28, KNOWLEDGE K-54).
+  evidence reuses track.json's `pairs` / `dfShots` from the day track
+  ran; a file put right in DATA\GIFT / DATA\GFIX later is never seen
+  (10/28 LJODWAF1, K-53). v2.38.12 repairs only what the GIFT log can
+  prove. The general fix: `gfixRecv.track` writes each paired file's
+  size + last-write time (and line count) into track.json; `evidence`
+  lists the two folders again first and compares -- all the same: go
+  on; a file changed or gone and exactly one file fits: re-pair, retake
+  its DF, say so (warning + gate.json); otherwise: a red gate line naming
+  the file. Same rule for `dfShots` (a shot of a pair whose file changed
+  is never reused). Needs: `file.list` already gives name / path /
+  lines; add size + mtime, a pure compare step (or a mode of
+  `verify.pair_files`), tests on temp files, evidence wiring.
+- **gfix-recv: a review phase before deliver?** (10/28, proposed).
+  Run `tools/review/check_book.py` on the day's evidence books between
+  evidence and deliver, so a NG stops the review request instead of
+  coming back from 加瀬さん. Open question first: is Python on the
+  office PC? (check_book is Python; its OCR parts -- K-50 GIFT list box,
+  K-53 DF file names -- also need Tesseract, today cloud-only.) Options:
+  (a) Python + Tesseract installed on the office PC -> a
+  `gfixRecv.review` workflow that runs it per row and checkpoints a
+  `review` verdict column deliver requires; (b) no Python -> port the
+  non-OCR checks (labels, fonts, yellow, START / END, box on a picture)
+  to PowerShell steps; the OCR checks stay a cloud pass (upload the
+  books, as now).
 - **gfix-recv: talk about pixel compare / OCR** (10/27, KNOWLEDGE K-51).
   Neither is stable without a dedicated library: the picture-1 pixel
   compare false-alarms on hand-pasted pictures (AB1 / U35 / U36), Windows
