@@ -83,6 +83,33 @@ with no gap and no repeat (checked seam by seam on the real pictures).
   PNG by hand (`util.wideSnap.capture`), or let `util.wideSnap` put the
   pages in (mode tiles, 1:1 measured).
 
+## 2026-10-28 - review phase fix 2: a Ctrl+G group broke the drawing read (v2.41.2)
+
+Second office run (JJODWU31): `Method invocation failed because
+[System.Double] does not contain a method named 'SelectSingleNode'`. In
+`Add-EbiXlsxShapes` the offset `$X` was the same variable as the xfrm node
+`$x` (PowerShell names ignore case), so a group's chOff / chExt lookup ran
+on a number. Renamed; Tests\Test-BookReview.ps1 now carries a Ctrl+G group
+of two pictures. The suite also ends with `exit $fail` like the others
+(Run-Tests read it as "ended without reaching its exit"), and its
+hidden-sheet assertion no longer matches the word "old" in a K-49 message.
+
+## 2026-10-28 - POM rerun: the rerun's GFIX files go to 他対応/修正後DATA (v2.41.2)
+
+10/28 JJDSWPA1 (done by hand): the rerun's received file was saved in
+`<bix>/他対応/修正後DATA/JJDSWPA1/`, not next to the first run's file in
+`DATA/GFIX/JJDSWPA1/`. The flow keeps the same place.
+
+- `gfixRecv.track` 0.9.3: the download folder is `{{vars.gfixDataDir}}`
+  under paths.bix (default `DATA/GFIX`, unchanged for the day flow); the
+  POM rerun runs track with `-Var gfixDataDir=他対応/修正後DATA`. The
+  folder is created when missing (file.download did this already).
+- `layout.pom.dataDir` = `他対応/修正後DATA`; `pom/gfixRecv.pom` 0.1.2
+  looks there for the rerun file and the `.HOST` download;
+  `pom/gfixRecv.pomPlan` 0.1.1 prints the track command with the -Var.
+- RUNBOOK 4c updated. (The two v2.41.1 entries below come from parallel
+  branches that took the same number.)
+
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 
 First office run of gfixRecv.review (JJODWU31): `read_failed: Cannot find

@@ -316,9 +316,12 @@ function Add-EbiXlsxShapes {
         if ($null -eq $x) { continue }
         $o = $x.SelectSingleNode('a:off', $Ns); $e = $x.SelectSingleNode('a:ext', $Ns)
         if ($null -eq $o -or $null -eq $e) { continue }
-        $X = [double]$o.GetAttribute('x'); $Y = [double]$o.GetAttribute('y'); $W = [double]$e.GetAttribute('cx'); $H = [double]$e.GetAttribute('cy')
-        $x0 = $Tf[0] + ($X - $Tf[4]) * $Tf[2]; $y0 = $Tf[1] + ($Y - $Tf[5]) * $Tf[3]
-        $x1 = $Tf[0] + ($X + $W - $Tf[4]) * $Tf[2]; $y1 = $Tf[1] + ($Y + $H - $Tf[5]) * $Tf[3]
+        # NOT $X / $Y: PowerShell names are case-insensitive, $X would be $x,
+        # the xfrm node a group still needs (10/28 office run: "[System.Double]
+        # does not contain a method named 'SelectSingleNode'" on a Ctrl+G group)
+        $offX = [double]$o.GetAttribute('x'); $offY = [double]$o.GetAttribute('y'); $extW = [double]$e.GetAttribute('cx'); $extH = [double]$e.GetAttribute('cy')
+        $x0 = $Tf[0] + ($offX - $Tf[4]) * $Tf[2]; $y0 = $Tf[1] + ($offY - $Tf[5]) * $Tf[3]
+        $x1 = $Tf[0] + ($offX + $extW - $Tf[4]) * $Tf[2]; $y1 = $Tf[1] + ($offY + $extH - $Tf[5]) * $Tf[3]
         if ($t -eq 'grpSp') {
             $co = $x.SelectSingleNode('a:chOff', $Ns); $ce = $x.SelectSingleNode('a:chExt', $Ns)
             if ($null -eq $co -or $null -eq $ce) { continue }
