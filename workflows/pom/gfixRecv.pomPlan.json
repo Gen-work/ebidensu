@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.pomPlan",
   "title": "GFIX受信 POM 再実行: -Only の job を作業リストに入れる(WBS から、選ぶ画面なし)",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "profile": "gfix-recv",
   "_doc": "10/28 POM rerun, step 1 in the POM work folder. gfixRecv.plan would not offer these jobs: their WBS row already has an actual start (AJ) from the first run and this work folder's list has never seen them, so plan counts them as done outside the tool (table.day_sets). This flow takes the names given with -Only, finds their WBS rows (受信 / 修正後実施, the same columns as plan) and writes them into gfixrecv.csv with WORKDAY = GFIX_DATE = today -- a row whose GFIX_DATE changes gets track / logs / evidence / deliver cleared, as in plan. A name with no WBS row is reported and left out. Then: gfixRecv.track, gfixRecv.logs, pom/gfixRecv.pom.",
 
@@ -58,6 +58,6 @@
     { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
     { "id": "status", "use": "progress.status",
       "with": { "worklist": "wl", "field": "track",
-                "next": ["ebi.ps1 run workflows\\gfixRecv.track.json -WorkDir {{run.workDir}}   (GIFT と GFIX のデータが違うのは POM ではありうる: GATE で o)"] } }
+                "next": ["ebi.ps1 run workflows\\gfixRecv.track.json -WorkDir {{run.workDir}} -Var gfixDataDir={{profile.layout.pom.dataDir}}   (GIFT と GFIX のデータが違うのは POM ではありうる: GATE で o)"] } }
   ]
 }
