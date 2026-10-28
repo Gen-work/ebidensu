@@ -174,6 +174,10 @@ try {
     Assert-Equal 5 (ScreenStitchScroll-Plan -NeedCols 1213 -PageCols 265 -MaxTiles 40) 'stitch plan: 1213 columns at 265 a page = 5 captures'
     Assert-Equal 1 (ScreenStitchScroll-Plan -NeedCols 200 -PageCols 265 -MaxTiles 40) 'stitch plan: a short file = 1 capture'
     Assert-Equal 3 (ScreenStitchScroll-Plan -NeedCols 99999 -PageCols 265 -MaxTiles 3) 'stitch plan: capped at maxTiles'
+    Assert-Equal 166 (ScreenStitchScroll-FitHeight -Lines 3 -RowPx 14 -ChromePx 110 -MaxHeight 900) 'stitch height: 3 lines + [EOF] = 166 px, the J4 GFIX data picture'
+    Assert-Equal 138 (ScreenStitchScroll-FitHeight -Lines 1 -RowPx 14 -ChromePx 110 -MaxHeight 900) 'stitch height: 1 line (10/28 JIGPS8BS opened 1032 px tall)'
+    Assert-Equal 900 (ScreenStitchScroll-FitHeight -Lines 500 -RowPx 14 -ChromePx 110 -MaxHeight 900) 'stitch height: capped at maxHeight'
+    Assert-Equal 0 (ScreenStitchScroll-FitHeight -Lines 0 -RowPx 14 -ChromePx 110 -MaxHeight 900) 'stitch height: no line count -> leave the window alone'
     $wins = @(@{ handle = 11; title = 'old.txt - sakura' }, @{ handle = 12; title = 'DATA1.261026 - sakura' }, @{ handle = 13; title = 'DATA1.261026 - sakura' })
     $pk = ScreenStitchScroll-PickWindow -Windows $wins -Before @('12') -Title 'DATA1.261026'
     Assert-True ($pk['handle'] -eq 13 -and $pk['ours']) 'stitch window: the new window showing the file, ours to close'

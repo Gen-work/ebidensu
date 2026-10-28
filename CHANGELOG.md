@@ -53,7 +53,11 @@ with no gap and no repeat (checked seam by seam on the real pictures).
   resolution; the six 1906 px captures grouped inside Excel kept every
   pixel. `util.wideSnap` now defaults to `mode = tiles` (the merged PNG
   stays a file under capture/), starts the window at x 0 (1906 px from
-  x 40 ran off a 1920 px screen) and takes `-Var height=`.
+  x 40 ran off a 1920 px screen) and takes `-Var height=`. The viewer
+  opened 1032 px tall for one line: `screen.stitch_scroll fitLines` (the
+  file's line count) sizes the window to the lines + the [EOF] row --
+  chromePx 110 + rowPx 14 a row, measured on the J4 pictures (166 = 3
+  lines + [EOF]).
 
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 

@@ -46,7 +46,11 @@ $Manifest = @{
     x           = @{ type='int';    default=40 }
     y           = @{ type='int';    default=40 }
     width       = @{ type='int';    default=0; desc='visible window width; 0 = leave as the viewer opens it (the geometry defaults were measured at 1906)' }
-    height      = @{ type='int';    default=0; desc='visible window height; 0 = leave' }
+    height      = @{ type='int';    default=0; desc='visible window height; 0 = fitLines decides (else leave as the viewer opens it)' }
+    fitLines    = @{ type='int';    default=0; desc='height = 0: size the window to show this many lines and the [EOF] row, no more (file.line_ends lines); capped by maxHeight' }
+    rowPx       = @{ type='int';    default=14; desc='px a text row (J4 GFIX data pictures: 14)' }
+    chromePx    = @{ type='int';    default=110; desc='px of the window that is not text rows: title, menu, toolbar, ruler (92) + the horizontal scroll bar and border (18); 166 = 3 lines + [EOF]' }
+    maxHeight   = @{ type='int';    default=900 }
     keysFirst   = @{ type='string'; default='^{HOME}'; desc='keys before the first capture (the top-left of the file)' }
     advance     = @{ type='list';   default=@('message', 'click'); desc='how to scroll a page right, tried in order until the view moves: message | click | keys' }
     keysAdvance = @{ type='string'; default=''; desc='advance = keys: the keys of one step right' }
@@ -92,6 +96,16 @@ function ScreenStitchScroll-Plan {
     param([int]$NeedCols, [int]$PageCols, [int]$MaxTiles)
     if ($NeedCols -le 0 -or $PageCols -le 0) { return 1 }
     return [Math]::Min([Math]::Max(1, $MaxTiles), [int][Math]::Ceiling($NeedCols / [double]$PageCols))
+}
+
+function ScreenStitchScroll-FitHeight {
+    # PURE. Window height that shows Lines text rows + the [EOF] row: 0 when
+    # Lines <= 0 (leave the height alone); at most MaxHeight.
+    param([int]$Lines, [int]$RowPx, [int]$ChromePx, [int]$MaxHeight)
+    if ($Lines -le 0 -or $RowPx -le 0) { return 0 }
+    $h = $ChromePx + $RowPx * ($Lines + 1)
+    if ($MaxHeight -gt 0 -and $h -gt $MaxHeight) { $h = $MaxHeight }
+    return $h
 }
 
 function ScreenStitchScroll-PickWindow {
@@ -186,11 +200,12 @@ function Invoke-Step {
     $layout = $empty; $covered = 0; $atEnd = $false; $outW = 0; $outH = 0   # not $W / $H: names are case-blind and $h is the window
     try {
         Start-Sleep -Milliseconds ([int]$In['settleMs'])
-        if ([int]$In['width'] -gt 0 -or [int]$In['height'] -gt 0) {
+        $wantH = if ([int]$In['height'] -gt 0) { [int]$In['height'] } else { ScreenStitchScroll-FitHeight -Lines ([int]$In['fitLines']) -RowPx ([int]$In['rowPx']) -ChromePx ([int]$In['chromePx']) -MaxHeight ([int]$In['maxHeight']) }
+        if ([int]$In['width'] -gt 0 -or $wantH -gt 0) {
             # one of the two given: the other stays as the viewer opened it
             $cur = Get-EbiWindowVisibleRect -HWnd $h
             $ww = if ([int]$In['width'] -gt 0) { [int]$In['width'] } else { [int]$cur['W'] }
-            $hh = if ([int]$In['height'] -gt 0) { [int]$In['height'] } else { [int]$cur['H'] }
+            $hh = if ($wantH -gt 0) { $wantH } else { [int]$cur['H'] }
             if ($ww -gt 0 -and $hh -gt 0) { [void](Set-EbiWindowVisibleSize -HWnd $h -X ([int]$In['x']) -Y ([int]$In['y']) -W $ww -H $hh) }
         }
         $fg = Set-EbiForeground -HWnd $h

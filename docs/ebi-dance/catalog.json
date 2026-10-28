@@ -6290,6 +6290,11 @@
           "desc": "px a half-width column",
           "type": "int"
         },
+        "chromePx": {
+          "default": 110,
+          "desc": "px of the window that is not text rows: title, menu, toolbar, ruler (92) + the horizontal scroll bar and border (18); 166 = 3 lines + [EOF]",
+          "type": "int"
+        },
         "clickBottom": {
           "default": 8,
           "desc": "... and from its bottom edge",
@@ -6315,9 +6320,14 @@
           "required": true,
           "type": "path"
         },
+        "fitLines": {
+          "default": 0,
+          "desc": "height = 0: size the window to show this many lines and the [EOF] row, no more (file.line_ends lines); capped by maxHeight",
+          "type": "int"
+        },
         "height": {
           "default": 0,
-          "desc": "visible window height; 0 = leave",
+          "desc": "visible window height; 0 = fitLines decides (else leave as the viewer opens it)",
           "type": "int"
         },
         "keysAdvance": {
@@ -6329,6 +6339,10 @@
           "default": "^{HOME}",
           "desc": "keys before the first capture (the top-left of the file)",
           "type": "string"
+        },
+        "maxHeight": {
+          "default": 900,
+          "type": "int"
         },
         "maxTiles": {
           "default": 40,
@@ -6342,6 +6356,11 @@
         "needCols": {
           "default": 0,
           "desc": "columns the captures must reach (file.line_ends needCols: the widest line + its line end mark); 0 = until the view cannot scroll further",
+          "type": "int"
+        },
+        "rowPx": {
+          "default": 14,
+          "desc": "px a text row (J4 GFIX data pictures: 14)",
           "type": "int"
         },
         "saveDir": {

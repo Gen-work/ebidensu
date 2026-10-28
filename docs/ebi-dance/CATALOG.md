@@ -824,17 +824,21 @@ Open a text file in a viewer, capture it page by page to the right until the lin
 | `bandBottom` | int |  | -18 |  | row after the stitched band; <= 0 from the bottom (the horizontal scroll bar is left out) |
 | `bandTop` | int |  | 76 |  | first row stitched (the ruler); the rows above come from the first capture only |
 | `charPx` | int |  | 7 |  | px a half-width column |
+| `chromePx` | int |  | 110 |  | px of the window that is not text rows: title, menu, toolbar, ruler (92) + the horizontal scroll bar and border (18); 166 = 3 lines + [EOF] |
 | `clickBottom` | int |  | 8 |  | ... and from its bottom edge |
 | `clickRight` | int |  | 40 |  | advance = click when the scroll bar cannot be found: px from the capture's right edge |
 | `close` | bool |  | true |  | close the viewer after (only a window this step opened) |
 | `exe` | path | yes |  |  | the text viewer |
 | `file` | path | yes |  |  | the text file (also what the window title must show) |
-| `height` | int |  | 0 |  | visible window height; 0 = leave |
+| `fitLines` | int |  | 0 |  | height = 0: size the window to show this many lines and the [EOF] row, no more (file.line_ends lines); capped by maxHeight |
+| `height` | int |  | 0 |  | visible window height; 0 = fitLines decides (else leave as the viewer opens it) |
 | `keysAdvance` | string |  | (empty) |  | advance = keys: the keys of one step right |
 | `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (the top-left of the file) |
+| `maxHeight` | int |  | 900 |  |  |
 | `maxTiles` | int |  | 40 |  |  |
 | `name` | string |  | (empty) |  | file name stem of the captures (<name>__01.png .. and <name>__wide.png); empty = the file name |
 | `needCols` | int |  | 0 |  | columns the captures must reach (file.line_ends needCols: the widest line + its line end mark); 0 = until the view cannot scroll further |
+| `rowPx` | int |  | 14 |  | px a text row (J4 GFIX data pictures: 14) |
 | `saveDir` | path | yes |  |  |  |
 | `settleMs` | int |  | 700 |  | wait after the window appears / after each scroll |
 | `stitch` | bool |  | true |  | also merge the captures into <name>__wide.png |
