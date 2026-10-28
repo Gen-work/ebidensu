@@ -1956,6 +1956,91 @@
       "summary": "Put a PNG on a sheet at a cell, replacing the picture there (or the first picture) when asked",
       "tier": "core"
     },
+    "excel.prepare_sheet": {
+      "effects": "write",
+      "example": {
+        "use": "excel.prepare_sheet",
+        "with": {
+          "keepCells": [
+            "A1",
+            "B3"
+          ],
+          "sheet": "hostVsOpen",
+          "template": "compare",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "write_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.prepare_sheet.ps1",
+      "group": "excel",
+      "id": "excel.prepare_sheet",
+      "idempotent": true,
+      "inputs": {
+        "after": {
+          "default": "",
+          "desc": "a new sheet goes right after this one; empty = right after template",
+          "type": "string"
+        },
+        "clearExisting": {
+          "default": true,
+          "desc": "false = only create a missing sheet, leave an existing one as it is",
+          "type": "bool"
+        },
+        "keepCells": {
+          "default": [
+            "A1"
+          ],
+          "desc": "cells whose value survives the clear (the A1 sheet-name formula)",
+          "type": "list"
+        },
+        "sheet": {
+          "desc": "the sheet to prepare",
+          "required": true,
+          "type": "string"
+        },
+        "template": {
+          "default": "",
+          "desc": "when sheet is missing: copy this sheet (its look) and name the copy sheet; empty = a missing sheet is a failure",
+          "type": "string"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "The clear keeps the cells' formats (fonts, borders) but removes fill colours (the yellow highlight rows). Column widths and row heights are not touched.",
+      "outputs": {
+        "created": {
+          "desc": "the sheet was made by this call",
+          "type": "bool"
+        },
+        "shapesRemoved": {
+          "desc": "shapes deleted by the clear (a group counts once)",
+          "type": "int"
+        },
+        "sheet": {
+          "desc": "the sheet name",
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Create a sheet from another one's look when missing, and clear its shapes / values / fills except keepCells",
+      "tier": "core"
+    },
     "excel.quit_app": {
       "effects": "ui",
       "example": {
