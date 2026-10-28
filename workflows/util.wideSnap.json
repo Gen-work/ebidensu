@@ -13,6 +13,7 @@
     "mode": "both",
     "viewer": "C:\\Program Files (x86)\\sakura\\sakura.exe",
     "width": "1906",
+    "x": "0",
     "expectEol": "",
     "capture": "capture/wide"
   },
@@ -26,7 +27,7 @@
       "label": "sakura で読み取り専用(-R)で開き、左上から 1 ページずつ右へ撮る。一番長い行の改行マークが写るまで。撮った後 Excel の外で 1 枚に結合",
       "with": { "exe": "{{vars.viewer}}", "file": "{{vars.dataFile}}", "args": ["-R"],
                 "needCols": "{{steps.eol.out.needCols}}", "saveDir": "{{vars.capture}}",
-                "width": "{{vars.width}}" } },
+                "x": "{{vars.x}}", "width": "{{vars.width}}" } },
 
     { "id": "app", "use": "excel.ensure_app", "with": { "visible": true, "as": "xl" } },
     { "id": "open", "use": "excel.open", "with": { "app": "xl", "path": "{{vars.book}}", "as": "wb" } },
