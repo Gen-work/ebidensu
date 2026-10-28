@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "gfixRecv.review",
+  "title": "GFIX受信: 交付前の自己チェック(証跡ブックを Excel なしで読む: 表示位置・フォント・ログ・黄色・ラベル・ジョブログ順・赤枠)",
+  "version": "0.1.0",
+  "profile": "gfix-recv",
+
+  "vars": {
+    "capture": "capture/gfix",
+    "_doc": "10/28: tools/review/check_book.py (Python) is not on the office PC; these are its non-OCR checks in PowerShell (kernel/BookReview.ps1). The two OCR checks -- the GIFT list box vs the Detail pages (K-50) and the DF file names vs the receive logs (K-53) -- stay in the cloud review: upload the books as before. deliver takes only rows whose review is ok."
+  },
+
+  "source": {
+    "table": "wl",
+    "select": { "field": "review", "pendingWhen": "!= ok" },
+    "orderBy": "GFIX_TIME"
+  },
+
+  "onError": { "policy": "ask", "byFailure": { "not_met": { "policy": "skip" } } },
+
+  "setup": [
+    { "id": "load", "use": "table.load",
+      "with": { "path": "{{profile.worklist.file}}", "as": "wl" } }
+  ],
+
+  "each": [
+    { "id": "evOk", "use": "flow.require",
+      "label": "evidence が ok の行だけ(まだなら黙って飛ばす)",
+      "with": { "value": "{{item.evidence}}", "equals": "ok",
+                "message": "the evidence of this job is not ok yet: run gfixRecv.evidence first" } },
+    { "id": "book", "use": "file.find",
+      "with": { "dir": "{{profile.paths.bix}}", "glob": "{{profile.layout.evidence.glob}}", "expect": "one" } },
+    { "id": "check", "use": "verify.book_review",
+      "label": "保存されたブックを読む(Excel で開いていても読める。未保存の変更は見えない)",
+      "with": { "path": "{{steps.book.out.path}}", "sheets": "{{profile.layout.evidence.sheets}}",
+                "font": "{{profile.layout.evidence.font.name}}", "jobLog": "{{profile.layout.evidence.labels.jobLog}}" } },
+    { "id": "gate", "use": "human.gate",
+      "label": "NG があれば止まる: 直して保存 -> s(あとで流し直す)/ n。直さずに出すなら o(Enter は ok にならない)",
+      "with": { "code": "{{steps.check.out.code}}", "askWhen": ["ng", "unknown"], "enterOk": false,
+                "reason": "{{steps.check.out.reason}}", "alert": "{{steps.check.out.alert}}",
+                "evidence": ["{{steps.book.out.path}}"] } },
+    { "id": "reviewLog", "use": "file.write_json",
+      "label": "見つかったことと人の答えを残す(menu の done 判定にも使う: s で飛ばした行は残さない)",
+      "when": "steps.gate.out.action != skip",
+      "with": { "path": "{{vars.capture}}/{{item.keySafe}}/review.json",
+                "data": { "key": "{{item.key}}", "date": "{{item.GFIX_DATE}}", "book": "{{steps.book.out.path}}",
+                          "auto": { "code": "{{steps.check.out.code}}", "ng": "{{steps.check.out.ng}}", "warn": "{{steps.check.out.warn}}", "findings": "{{steps.check.out.findings}}" },
+                          "person": { "action": "{{steps.gate.out.action}}", "code": "{{steps.gate.out.code}}", "note": "{{steps.gate.out.note}}" } } } },
+    { "id": "checkpoint", "use": "flow.checkpoint",
+      "when": "steps.gate.out.action != skip",
+      "with": { "worklist": "wl", "field": "review", "value": "{{steps.gate.out.code}}" } },
+    { "id": "event", "use": "progress.event",
+      "with": { "action": "reviewed", "status": "info", "message": "{{steps.gate.out.code}} {{steps.check.out.reason}}" } }
+  ],
+
+  "teardown": [
+    { "id": "status", "use": "progress.status",
+      "with": { "worklist": "wl", "field": "review",
+                "next": ["ebi.ps1 run workflows\\gfixRecv.deliver.json -WorkDir {{run.workDir}}   (レビュー依頼: チェックシート 1 行 + メール下書き)"] } }
+  ]
+}

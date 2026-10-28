@@ -32,6 +32,7 @@
     { "name": "track", "role": "verdict", "default": "", "doneFile": "capture/gfix/{{item.keySafe}}/track.json", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "logs", "role": "verdict", "default": "", "doneFile": "capture/gfix/{{item.keySafe}}/logs.json", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "evidence", "role": "verdict", "default": "", "doneFile": "capture/gfix/{{item.keySafe}}/gate.json", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
+    { "name": "review", "role": "verdict", "default": "", "doneFile": "capture/gfix/{{item.keySafe}}/review.json", "_doc": "gfixRecv.review (10/28): the book's self-review without Excel / Python (kernel/BookReview.ps1, the non-OCR checks of tools/review/check_book.py); deliver takes only rows whose review is ok", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "deliver", "role": "verdict", "default": "", "values": { "ok": "ok", "ng": "ng", "unknown": "", "pending": "" } },
     { "name": "note", "role": "text", "default": "" }
   ]

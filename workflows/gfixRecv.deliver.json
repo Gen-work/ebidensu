@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.deliver",
   "title": "GFIX受信: レビュー依頼(チェックシートに全部書く -> 確認 -> 下書きを全部 -> 全部送ったら ok)",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "profile": "gfix-recv",
 
   "vars": {
@@ -37,6 +37,10 @@
       "label": "evidence が ok の行だけ(まだなら黙って飛ばす)",
       "with": { "value": "{{item.evidence}}", "equals": "ok",
                 "message": "the evidence of this job is not ok yet: run gfixRecv.evidence first" } },
+    { "id": "reviewOk", "use": "flow.require",
+      "label": "交付前の自己チェック(gfixRecv.review)が ok の行だけ(10/28: NG のまま 加瀬さん に出さない)",
+      "with": { "value": "{{item.review}}", "equals": "ok",
+                "message": "the self-review of this book is not ok yet: run gfixRecv.review first (fix the NG lines, or answer o there to send it as it is)" } },
     { "id": "book", "use": "file.find",
       "label": "証跡ブックのファイル名(チェックシートの レビュー対象 / メール本文)",
       "with": { "dir": "{{profile.paths.bix}}", "glob": "{{profile.layout.evidence.glob}}", "expect": "one" } },
