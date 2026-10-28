@@ -436,7 +436,9 @@
 - **原因**:三个版本对一下就清楚了——10/26 11:43 工具版:第 2 组是 `…0003`;10/26 17:55 手工修正版:新截的 DF(`…0005`)贴成「図 1」,压在工具的旧图 `verifyPic_df_4`(`…0003`)上面,两张都在 B67;10/27 10:38 交出去的版本:**删掉的是「図 1」(上面那张、对的),留下的是旧图**。两张都是空文件、都显示「同一内容」、红框位置也合得上,**只有标题栏的文件名不一样**,看图分不出来。
 - **现在的对策**(v2.38.11):`tools/review/check_book.py` 新增 `df_files.py`:OCR 每张 DF 图的标题栏和 [1]/[2] 行,读出 GIFT / GFIX 两侧的 `F` + 12 位文件名,和 GIFT受信結果 / GFIX受信結果 上日志的 `file stored` 对照,不在里面就 NG(压在下面的图也查)。`…0003` 和 `…0005` 只差一位,所以不容许 OCR 读错;改为读三次(不同裁剪 / 倍率),任何一次读到日志里的名字就算对。上传过的 31 本:L 的三个版本都报出,其余不误报。
 - **规则**:手工换图时,**先删旧图再贴新图**;同一个位置叠着两张图时,看标题栏的文件名决定删哪张。交付前跑 `check_book.py`。
-- **来源**:10/27 加瀬さん的审查 + 操作员:「but how... why???」。
+- **10/28 补:文件夹改对了,evidence 还是用 0003**:evidence 不看 `DATA\GIFT`,用的是 10/26 track 写进 `capture\gfix\<job>\track.json` 的 `pairs`(当时文件夹里还有 0003),DF 图也复用 `dfShots` 里的旧图(行数一样就不重截)。操作员手改 track.json(`pairs` 的 left / leftName 改成 0005,`dfShots` 那一项改成 `null`)后重跑,一次通过。
+- **v2.38.12 起 evidence 自己修**(`gfixRecv.evidence` 0.9.8):`verify.log_blocks` 发现 DF 比的文件不在 GIFT 日志的 `file stored` 里时,在同一个文件夹里找日志存的文件:扩展名相同、行数和这一组相同、没被别的组用的**只有一个**,就把组换成它,这一组的 DF 重截(shot = null),结束时 warning `pair_repaired`,gate.json 记 `pairRepaired`。找不到或不止一个就不动,照旧在 GATE 上画红。track.json 不改。
+- **来源**:10/27 加瀬さん的审查 + 操作员:「but how... why???」;10/28:「there is but still use 003 why」「make evidence repair the pair itself」。
 
 ---
 

@@ -2375,7 +2375,7 @@ Notes: Pure. Folding is symmetric, so a correct name never fails for a look-alik
 Check a pasted receive log: START / END pairs, stored files include the compared files
 
 - file: `modules/verify/verify.log_blocks.ps1`
-- effects: `pure` / tier: `core` / idempotent: `true`
+- effects: `read` / tier: `core` / idempotent: `true`
 - needs: - / provides: - / releases: -
 
 | input | type | required | default | enum | desc |
@@ -2386,6 +2386,8 @@ Check a pasted receive log: START / END pairs, stored files include the compared
 | `label` | string |  | the log |  | what the lines are, for the reason / alert wording |
 | `lines` | list |  | [] |  | the log lines: strings, or records (excel.read_rows) whose field holds the line |
 | `pairs` | list |  | [] |  | the DF pairs (track.json pairs); their side file names must be among the stored files |
+| `repair` | bool |  | true |  | put a compared file the log did not store right, when exactly one stored file fits (same folder, extension, line count, unused) |
+| `shots` | list |  | [] |  | the DF shots of the pairs, in the same order (track.json dfShots): a repaired pair's shot comes back null (take it again) |
 | `side` | string |  | left | left, right | which file of a pair the log stored (left = GIFT) |
 | `startPattern` | string |  | Receiver\s+START\s+(\S+) |  | regex; group 1 = the transfer id |
 
@@ -2395,8 +2397,11 @@ Check a pasted receive log: START / END pairs, stored files include the compared
 | `code` | string | ok \| ng \| unknown (no lines, or no START / END / stored file read) |
 | `ends` | list | transfer ids with an END line, in order |
 | `files` | list | file names the log stored, in order |
-| `missing` | list | compared file names the log did not store |
+| `missing` | list | compared file names the log did not store (after the repair) |
+| `pairs` | list | the pairs, with repaired sides: feed these to the DF steps |
 | `reason` | string | one line for the gate |
+| `repaired` | list | "<old> -> <new>" per repaired side |
+| `shots` | list | the shots input, null where the pair was repaired |
 | `starts` | list | transfer ids with a START line, in order |
 | `unpaired` | list | "END <id> without START" / "START <id> without END" |
 
@@ -2406,7 +2411,7 @@ failures: `input_invalid` (not transient)
 {"id":"log_blocks","use":"verify.log_blocks","with":{"label":"GIFTReceive.log (GIFT receive result)","lines":"{{steps.giftLogRows.out.records}}","pairs":"{{steps.track.out.data.pairs}}"}}
 ```
 
-Notes: Pure. A pair whose side has no name (no leftName / left path) is not checked, nor one whose extension the log stored no file of (a ZIP transfer stores the .zip). Stored files are compared by file name, case-insensitive.
+Notes: Reads only the stored files a repair would use (exists, line count); writes nothing. A pair whose side has no name (no leftName / left path) is not checked, nor one whose extension the log stored no file of (a ZIP transfer stores the .zip). Stored files are compared by file name, case-insensitive.
 
 ### `verify.match_record`
 

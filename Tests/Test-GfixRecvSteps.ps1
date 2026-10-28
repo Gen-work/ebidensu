@@ -326,6 +326,29 @@ try {
     $lb5 = Invoke-TestStep 'verify.log_blocks' @{ lines = @() }
     Assert-Equal 'unknown' $lb5['code'] 'log_blocks: no lines -> unknown, no alert'
 
+    # 10/28 L: track.json still paired K's empty 0003; the folder now holds 0004 / 0005
+    $gd = Join-Path $tmp 'DATA-GIFT-L'
+    [void](New-Item -ItemType Directory -Path $gd -Force)
+    [System.IO.File]::WriteAllText((Join-Path $gd 'F202609280004.csv'), "h`r`na`r`nb`r`n")
+    [System.IO.File]::WriteAllText((Join-Path $gd 'F202609280005.csv'), "h`r`n")
+    [System.IO.File]::WriteAllText((Join-Path $gd 'F202609280003.csv'), "h`r`n")
+    $pr = @(@{ left = (Join-Path $gd 'F202609280004.csv'); leftName = 'F202609280004.csv'; rightName = 'F202610260008.csv'; lines = 3 },
+            @{ left = (Join-Path $gd 'F202609280003.csv'); leftName = 'F202609280003.csv'; rightName = 'F202610260009.csv'; lines = 1 })
+    $sh = @(@{ name = 'F202610260008'; first = 'a.png' }, @{ name = 'F202610260009'; first = 'old.png' })
+    $lb6 = Invoke-TestStep 'verify.log_blocks' @{ lines = $logL; pairs = $pr; shots = $sh }
+    Assert-Equal 'F202609280003.csv -> F202609280005.csv' (@($lb6['repaired']) -join ',') 'log_blocks repair: the log''s file of the same folder / lines takes the place of the stray one (10/28 L)'
+    Assert-Equal 'ok' $lb6['code'] 'log_blocks repair: ... and the check passes on the repaired pairs'
+    Assert-Equal 'F202609280005.csv' $lb6['pairs'][1]['leftName'] 'log_blocks repair: the pair carries the new name ...'
+    Assert-Equal (Join-Path $gd 'F202609280005.csv') $lb6['pairs'][1]['left'] 'log_blocks repair: ... and path'
+    Assert-True ($null -eq $lb6['shots'][1] -and $lb6['shots'][0]['first'] -eq 'a.png') 'log_blocks repair: the repaired pair''s shot is null (DF taken again), the other kept'
+    Assert-Equal 'F202609280003.csv' $pr[1]['leftName'] 'log_blocks repair: the input pairs are not changed'
+    Assert-Equal 1 @(@($lb6['warnings']) | Where-Object { $_['code'] -eq 'pair_repaired' }).Count 'log_blocks repair: said as a pair_repaired warning'
+    $pr[1]['lines'] = 2
+    $lb7 = Invoke-TestStep 'verify.log_blocks' @{ lines = $logL; pairs = $pr; shots = $sh }
+    Assert-True ($lb7['code'] -eq 'ng' -and @($lb7['repaired']).Count -eq 0) 'log_blocks repair: a stored file with other lines is not taken -- the gate says ng'
+    $lb8 = Invoke-TestStep 'verify.log_blocks' @{ lines = $logL; pairs = $pr; repair = $false }
+    Assert-True ($lb8['code'] -eq 'ng' -and @($lb8['shots']).Count -eq 0) 'log_blocks: repair = false leaves the pairs; no shots in, none out'
+
     # ============================================================ plan: upsert
     $wl = @{ path = ''; columns = @('Excel_NAME', 'JOB', 'GFIX_DATE', 'GFIX_TIME', 'FileCount', 'track', 'logs', 'evidence'); rows = @() }
     $ctx['Session']['wl'] = @{ kind = 'worklist'; value = $wl; registeredBy = 'test' }
