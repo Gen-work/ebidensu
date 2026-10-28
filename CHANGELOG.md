@@ -46,6 +46,14 @@ with no gap and no repeat (checked seam by seam on the real pictures).
   (row number), which IS the script's `$R` (variable names are
   case-blind), so the sheet XML got a bad `xmlns:r`. Renamed. CLAUDE.md
   was one line over 900.
+- Office run 2 (JIGPS8BS, 1 line of 1513 columns, LF): six captures, every
+  start read from the scroll bar (265 a page), merged 11181 x 1014. In the
+  saved book the merged PNG was stored at 2679 x 243 (24 %) --
+  `verify.picture_pixels` ng: a big snap pasted as one picture DOES lose
+  resolution; the six 1906 px captures grouped inside Excel kept every
+  pixel. `util.wideSnap` now defaults to `mode = tiles` (the merged PNG
+  stays a file under capture/), starts the window at x 0 (1906 px from
+  x 40 ran off a 1920 px screen) and takes `-Var height=`.
 
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 
