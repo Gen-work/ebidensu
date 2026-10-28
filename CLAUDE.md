@@ -194,6 +194,7 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         Xlsx.ps1 (an .xlsx read as zipped XML, no Excel) +
                         BookReview.ps1 (check_book.py's non-OCR checks, behind
                         verify.book_review / gfixRecv.review; Test-BookReview).
+                        Stitch.ps1 (long snaps: line ends + page stitch; Test-Stitch).
 workflows/              JSON workflows (the artifact a human or Agent writes).
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
@@ -673,7 +674,7 @@ Only files with **no** `param()` block are ever dot-sourced. In the repo root:
 `Registry.ps1`, `Worklist.ps1`, `Ledger.ps1`, `Gate.ps1`, `Docs.ps1`, `Help.ps1`,
 `Lint.ps1`, `Explain.ps1`, `Profile.ps1`, `Runner.ps1`, `Context.ps1`, `Key.ps1`,
 `Native.ps1`, `Image.ps1`, `Table.ps1`, `Parse.ps1`, `Rules.ps1`, `ProfileCheck.ps1`,
-`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`, `Dashboard.ps1`, `Ocr.ps1`, `Mail.ps1`, `Xlsx.ps1`, `BookReview.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
+`GrammarTune.ps1`, `Mask.ps1`, `LogText.ps1`, `Layout.ps1`, `RichClip.ps1`, `Excel.ps1`, `Dashboard.ps1`, `Ocr.ps1`, `Mail.ps1`, `Xlsx.ps1`, `BookReview.ps1`, `Stitch.ps1`. Every `modules/**/<group>.<verb>.ps1` step file is dot-sourced by
 the runner too (STEP-CONTRACT: no `param()`, helpers prefixed with the step id).
 In `Tests/`: `_TestCommon.ps1`, `DocsCheck.ps1`, `StepContract.ps1`, `StepDryRun.ps1`.
 All phase scripts have `param()` and are called via `& $path @args`.

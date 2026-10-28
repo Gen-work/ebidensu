@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "id": "util.wideSnap",
+  "title": "横に長いスナップ: データファイルを sakura で開き、行末まで 1 ページずつ撮って、証跡ブックに貼る(Excel の外で 1 枚に結合 / Excel の中で並べてグループ化)",
+  "version": "0.1.0",
+  "profile": "none",
+  "vars": {
+    "_doc": "ebi.ps1 run workflows\\util.wideSnap.json -WorkDir <作業フォルダー> -Var dataFile=<データファイル> -Var book=<証跡ブック.xlsx> [-Var sheet=GFIXデータ] [-Var cell=B4] [-Var mode=tiles|both|stitched] [-Var height=<px>](既定 0 = sakura が前回閉じたときの高さのまま; width も既定 0 = そのまま)。mode tiles(既定)= 撮ったページを Excel の中で並べてグループ化。10/28 の実測: この手順(AddPicture)で入れた結合 1 枚(11181x1014)は保存後 2679x243 に縮められた。同じ大きさの結合 PNG を手で貼ったブック(JJODWDBF / DBH / DBM)は 11181 px のまま -- 原因は未確定。ページごとの図は 1906 px のまま。結合 PNG は capture/ に残るので、貼るなら手で。both = 比較用に両方。ブックは保存される: 最初はコピーで。",
+    "dataFile": "",
+    "book": "",
+    "sheet": "GFIXデータ",
+    "cell": "B4",
+    "mode": "tiles",
+    "viewer": "C:\\Program Files (x86)\\sakura\\sakura.exe",
+    "width": "0",
+    "x": "0",
+    "height": "0",
+    "expectEol": "",
+    "capture": "capture/wide"
+  },
+
+  "setup": [
+    { "id": "eol", "use": "file.line_ends",
+      "label": "データファイルの改行(CRLF / LF / CR)と一番長い行の桁数 -> どこまで右へ撮ればいいか",
+      "with": { "path": "{{vars.dataFile}}", "expect": "{{vars.expectEol}}" } },
+
+    { "id": "wide", "use": "screen.stitch_scroll",
+      "label": "sakura で読み取り専用(-R)で開き、左上から 1 ページずつ右へ撮る。一番長い行の改行マークが写るまで。撮った後 Excel の外で 1 枚に結合",
+      "with": { "exe": "{{vars.viewer}}", "file": "{{vars.dataFile}}", "args": ["-R"],
+                "needCols": "{{steps.eol.out.needCols}}", "saveDir": "{{vars.capture}}",
+                "x": "{{vars.x}}", "width": "{{vars.width}}", "height": "{{vars.height}}" } },
+
+    { "id": "app", "use": "excel.ensure_app", "with": { "visible": true, "as": "xl" } },
+    { "id": "open", "use": "excel.open", "with": { "app": "xl", "path": "{{vars.book}}", "as": "wb" } },
+
+    { "id": "png", "use": "excel.place_tiles",
+      "label": "Excel の外で結合した 1 枚を cell へ(等倍。前回この手順で貼った verifyWidePng だけ差し替え、手で貼った図はそのまま)",
+      "when": "vars.mode != tiles",
+      "with": { "workbook": "wb", "sheet": "{{vars.sheet}}", "cell": "{{vars.cell}}",
+                "tiles": ["{{steps.wide.out.stitched}}"], "name": "verifyWidePng", "gapRows": 2 } },
+
+    { "id": "tiles", "use": "excel.place_tiles",
+      "label": "Excel の中で結合: 撮った各ページをそのまま横に並べ(2 枚目以降は行番号の帯を切り取り)、桁をそろえてグループ化。mode both のときは 1 枚の図の下",
+      "when": "vars.mode != stitched",
+      "with": { "workbook": "wb", "sheet": "{{vars.sheet}}", "cell": "{{vars.cell}}", "row": "{{steps.png.out.nextRow}}",
+                "tiles": "{{steps.wide.out.tiles}}", "layout": "{{steps.wide.out.layout}}", "name": "verifyWide" } },
+
+    { "id": "save", "use": "excel.close", "with": { "workbook": "wb", "save": true } },
+
+    { "id": "pxPng", "use": "verify.picture_pixels",
+      "label": "保存したブックを Excel なしで読む: 結合した 1 枚は PNG のまま、撮った画素数のまま、等倍で表示されているか",
+      "when": "vars.mode != tiles",
+      "with": { "path": "{{vars.book}}", "sheet": "{{vars.sheet}}", "names": ["verifyWidePng"], "expect": ["{{steps.wide.out.stitched}}"] } },
+    { "id": "pxTiles", "use": "verify.picture_pixels",
+      "label": "同じく、グループの各ページ",
+      "when": "vars.mode != stitched",
+      "with": { "path": "{{vars.book}}", "sheet": "{{vars.sheet}}", "names": ["verifyWide"], "expect": "{{steps.wide.out.tiles}}" } },
+
+    { "id": "look", "use": "human.gate",
+      "label": "結合した PNG とブック(保存済み、開き直して)を目で確認: 行末(改行マーク)まで写っているか、継ぎ目で文字がずれていないか",
+      "with": { "code": "unknown", "askWhen": ["unknown"],
+                "reason": "{{steps.eol.out.eol}} 改行 / 一番長い行 {{steps.eol.out.longestLine}} 行目 {{steps.eol.out.longestCols}} 桁 -> {{steps.wide.out.coveredCols}} 桁まで {{steps.wide.out.width}} px",
+                "evidence": ["{{steps.wide.out.stitched}}", "{{vars.book}}"],
+                "alert": ["{{steps.eol.out.alert}}", "{{steps.pxPng.out.alert}}", "{{steps.pxTiles.out.alert}}"] } }
+  ],
+
+  "teardown": [
+    { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } }
+  ]
+}

@@ -19,17 +19,19 @@ function New-SheetXml {
     # Cells: @(@('B5', 'text', styleIndex), ...); View: @{ sel; top; act; pane }
     param($Cells, $View, [bool]$Drawing = $false, $Heights = @{})
     $byRow = @{}
-    foreach ($c in $Cells) { $rc = ConvertFrom-EbiCellRef -Ref $c[0]; $r = [int]$rc['row']; if (-not $byRow.Contains($r)) { $byRow[$r] = New-Object System.Collections.ArrayList }; [void]$byRow[$r].Add($c) }
-    foreach ($r in $Heights.Keys) { if (-not $byRow.Contains([int]$r)) { $byRow[[int]$r] = New-Object System.Collections.ArrayList } }
+    foreach ($c in $Cells) { $rc = ConvertFrom-EbiCellRef -Ref $c[0]; $rowNo = [int]$rc['row']; if (-not $byRow.Contains($rowNo)) { $byRow[$rowNo] = New-Object System.Collections.ArrayList }; [void]$byRow[$rowNo].Add($c) }
+    foreach ($hk in $Heights.Keys) { if (-not $byRow.Contains([int]$hk)) { $byRow[[int]$hk] = New-Object System.Collections.ArrayList } }
+    # $rowNo / $hk, never $r: variable names are case-blind, and a local
+    # $r hides the script's $R (the relationships namespace) -> xmlns:r=""
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append('<worksheet xmlns="' + $NsM + '" xmlns:r="' + $NsR + '">')
     [void]$sb.Append('<sheetViews><sheetView workbookViewId="0"' + $(if ($View['sel']) { ' tabSelected="1"' } else { '' }) + $(if ($View['top']) { ' topLeftCell="' + $View['top'] + '"' } else { '' }) + '>')
     if ($View['pane']) { [void]$sb.Append('<pane ySplit="2" topLeftCell="' + $View['pane'] + '" activePane="bottomLeft" state="frozen"/>') }
     [void]$sb.Append('<selection' + $(if ($View['pane']) { ' pane="bottomLeft"' } else { '' }) + ' activeCell="' + $View['act'] + '" sqref="' + $View['act'] + '"/></sheetView></sheetViews>')
     [void]$sb.Append('<sheetFormatPr defaultRowHeight="15"/><sheetData>')
-    foreach ($r in @($byRow.Keys | Sort-Object)) {
-        [void]$sb.Append('<row r="' + $r + '"' + $(if ($Heights.Contains($r)) { ' ht="' + $Heights[$r] + '" customHeight="1"' } else { '' }) + '>')
-        foreach ($c in $byRow[$r]) {
+    foreach ($rowNo in @($byRow.Keys | Sort-Object)) {
+        [void]$sb.Append('<row r="' + $rowNo + '"' + $(if ($Heights.Contains($rowNo)) { ' ht="' + $Heights[$rowNo] + '" customHeight="1"' } else { '' }) + '>')
+        foreach ($c in $byRow[$rowNo]) {
             if ($null -eq $c[1]) { [void]$sb.Append('<c r="' + $c[0] + '" s="' + $c[2] + '"/>') }
             else { [void]$sb.Append('<c r="' + $c[0] + '" s="' + $c[2] + '" t="inlineStr"><is><t xml:space="preserve">' + (Esc $c[1]) + '</t></is></c>') }
         }

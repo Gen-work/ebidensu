@@ -1956,6 +1956,126 @@
       "summary": "Put a PNG on a sheet at a cell, replacing the picture there (or the first picture) when asked",
       "tier": "core"
     },
+    "excel.place_tiles": {
+      "effects": "write",
+      "example": {
+        "use": "excel.place_tiles",
+        "with": {
+          "cell": "B20",
+          "layout": "{{steps.wide.out.layout}}",
+          "sheet": "data",
+          "tiles": "{{steps.wide.out.tiles}}",
+          "workbook": "wb"
+        }
+      },
+      "failures": [
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        },
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        },
+        {
+          "id": "insert_failed",
+          "transient": true
+        }
+      ],
+      "file": "modules/excel/excel.place_tiles.ps1",
+      "group": "excel",
+      "id": "excel.place_tiles",
+      "idempotent": true,
+      "inputs": {
+        "cell": {
+          "default": "B4",
+          "desc": "top-left cell of the first capture",
+          "type": "string"
+        },
+        "cropStrip": {
+          "default": true,
+          "desc": "crop the line-number strip (textLeft px) off every capture after the first",
+          "type": "bool"
+        },
+        "gapRows": {
+          "default": 0,
+          "desc": "added to nextRow",
+          "type": "int"
+        },
+        "group": {
+          "default": true,
+          "desc": "group the pictures into one shape (Ctrl+G)",
+          "type": "bool"
+        },
+        "layout": {
+          "default": {},
+          "desc": "screen.stitch_scroll layout: starts, charPx, textLeft, tileW; empty = the pictures one after another, uncropped (the merged PNG: one picture)",
+          "type": "map"
+        },
+        "name": {
+          "default": "verifyWide",
+          "desc": "name of the group (pictures: <name>_1 ..; a single picture is called name itself); an earlier run's shapes of that name are replaced",
+          "type": "string"
+        },
+        "row": {
+          "default": 0,
+          "desc": "> 0: that row of cell's column instead (excel.place_picture nextRow: under the merged picture)",
+          "type": "int"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        },
+        "tiles": {
+          "desc": "the captures, left to right (screen.stitch_scroll tiles)",
+          "required": true,
+          "type": "list"
+        },
+        "workbook": {
+          "required": true,
+          "sessionKind": "workbook",
+          "type": "session"
+        }
+      },
+      "needs": [
+        "excel"
+      ],
+      "notes": "Idempotent by name: a rerun deletes the group / pictures an earlier run named <name> / <name>_<n> first; pictures put there by hand are never touched. Every picture goes in at its native size (AddPicture -1 / -1), never scaled.",
+      "outputs": {
+        "name": {
+          "desc": "the group (or the single picture; group = false: the first picture)",
+          "type": "string"
+        },
+        "nextRow": {
+          "desc": "first row below the pictures, plus gapRows",
+          "type": "int"
+        },
+        "removed": {
+          "desc": "shapes of an earlier run replaced",
+          "type": "int"
+        },
+        "scale": {
+          "desc": "points a capture pixel (0.75 = native at 96 dpi)",
+          "type": "any"
+        },
+        "shapes": {
+          "desc": "picture names, left to right",
+          "type": "list"
+        },
+        "widthPt": {
+          "desc": "width of the whole, points",
+          "type": "any"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Put page captures of a long line side by side on a sheet, lined up by column, cropped and grouped",
+      "tier": "core"
+    },
     "excel.prepare_sheet": {
       "effects": "write",
       "example": {
@@ -3247,6 +3367,107 @@
       "provides": [],
       "releases": [],
       "summary": "Find the file(s) for a key or glob; full-width and stamped names tolerated",
+      "tier": "core"
+    },
+    "file.line_ends": {
+      "effects": "read",
+      "example": {
+        "use": "file.line_ends",
+        "with": {
+          "expect": "LF",
+          "path": "{{vars.dataFile}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        }
+      ],
+      "file": "modules/file/file.line_ends.ps1",
+      "group": "file",
+      "id": "file.line_ends",
+      "idempotent": true,
+      "inputs": {
+        "encoding": {
+          "default": "sjis",
+          "desc": "sjis: a 2-byte character is 2 columns (also right for plain ASCII); utf8: wide characters 2. A UTF-8 BOM switches to utf8",
+          "enum": [
+            "sjis",
+            "utf8"
+          ],
+          "type": "string"
+        },
+        "expect": {
+          "default": "",
+          "desc": "the line end the file must have; another one is the alert",
+          "enum": [
+            "",
+            "CRLF",
+            "LF",
+            "CR"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "desc": "relative: under the work dir",
+          "required": true,
+          "type": "path"
+        },
+        "tabWidth": {
+          "default": 4,
+          "desc": "the editor's tab width",
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "outputs": {
+        "alert": {
+          "desc": "mixed line ends, or not the expected one; else empty",
+          "type": "string"
+        },
+        "bytes": {
+          "type": "int"
+        },
+        "cr": {
+          "type": "int"
+        },
+        "crlf": {
+          "type": "int"
+        },
+        "eol": {
+          "desc": "CRLF | LF | CR | mixed | none",
+          "type": "string"
+        },
+        "lastEol": {
+          "desc": "the last line ends with a line end",
+          "type": "bool"
+        },
+        "lf": {
+          "type": "int"
+        },
+        "lines": {
+          "type": "int"
+        },
+        "longestChars": {
+          "type": "int"
+        },
+        "longestCols": {
+          "desc": "its width without the line end, columns",
+          "type": "int"
+        },
+        "longestLine": {
+          "desc": "1-based",
+          "type": "int"
+        },
+        "needCols": {
+          "desc": "columns a capture must reach to show that line's end mark",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Line ends (CRLF / LF / CR) of a text file and the width of its widest line in editor columns",
       "tier": "core"
     },
     "file.list": {
@@ -5996,6 +6217,259 @@
       "summary": "Move or copy an image to <dir>/<keySafe>[__<tag>].<ext>",
       "tier": "core"
     },
+    "screen.stitch_scroll": {
+      "effects": "ui",
+      "example": {
+        "use": "screen.stitch_scroll",
+        "with": {
+          "args": [
+            "-R"
+          ],
+          "exe": "{{vars.viewer}}",
+          "file": "{{vars.dataFile}}",
+          "needCols": "{{steps.eol.out.needCols}}",
+          "saveDir": "capture/wide"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "no_window",
+          "transient": true
+        },
+        {
+          "id": "foreground_lost",
+          "transient": true
+        },
+        {
+          "id": "save_failed",
+          "transient": true
+        },
+        {
+          "id": "geometry",
+          "transient": false
+        },
+        {
+          "id": "not_at_line_end",
+          "transient": false
+        }
+      ],
+      "file": "modules/screen/screen.stitch_scroll.ps1",
+      "group": "screen",
+      "id": "screen.stitch_scroll",
+      "idempotent": true,
+      "inputs": {
+        "advance": {
+          "default": [
+            "message",
+            "click"
+          ],
+          "desc": "how to scroll a page right, tried in order until the view moves: message | click | keys",
+          "type": "list"
+        },
+        "args": {
+          "default": [],
+          "desc": "arguments before the file (e.g. a read-only switch)",
+          "type": "list"
+        },
+        "bandBottom": {
+          "default": -18,
+          "desc": "row after the stitched band; <= 0 from the bottom (the horizontal scroll bar is left out)",
+          "type": "int"
+        },
+        "bandTop": {
+          "default": 76,
+          "desc": "first row stitched (the ruler); the rows above come from the first capture only",
+          "type": "int"
+        },
+        "charPx": {
+          "default": 7,
+          "desc": "px a half-width column",
+          "type": "int"
+        },
+        "chromePx": {
+          "default": 110,
+          "desc": "px of the window that is not text rows: title, menu, toolbar, ruler (92) + the horizontal scroll bar and border (18); 166 = 3 lines + [EOF]",
+          "type": "int"
+        },
+        "clickBottom": {
+          "default": 8,
+          "desc": "... and from its bottom edge",
+          "type": "int"
+        },
+        "clickRight": {
+          "default": 40,
+          "desc": "advance = click when the scroll bar cannot be found: px from the capture's right edge",
+          "type": "int"
+        },
+        "close": {
+          "default": true,
+          "desc": "close the viewer after (only a window this step opened)",
+          "type": "bool"
+        },
+        "exe": {
+          "desc": "the text viewer",
+          "required": true,
+          "type": "path"
+        },
+        "file": {
+          "desc": "the text file (also what the window title must show)",
+          "required": true,
+          "type": "path"
+        },
+        "fitLines": {
+          "default": 0,
+          "desc": "height = 0: size the window to show this many lines and the [EOF] row, no more (file.line_ends lines); capped by maxHeight",
+          "type": "int"
+        },
+        "frame": {
+          "default": "aligned",
+          "desc": "the merged PNG: aligned = every capture with its window frame, the later ones cropped by the line-number strip and laid on the one before so the text runs on (the J4 books' own layout, as excel.place_tiles puts it on a sheet); each = every capture whole, side by side; first = one frame (the first capture's), the text bands joined",
+          "enum": [
+            "aligned",
+            "each",
+            "first"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "default": 0,
+          "desc": "visible window height; 0 = fitLines decides (else leave as the viewer opens it)",
+          "type": "int"
+        },
+        "keysAdvance": {
+          "default": "",
+          "desc": "advance = keys: the keys of one step right",
+          "type": "string"
+        },
+        "keysFirst": {
+          "default": "^{HOME}",
+          "desc": "keys before the first capture (the top-left of the file)",
+          "type": "string"
+        },
+        "maxHeight": {
+          "default": 900,
+          "type": "int"
+        },
+        "maxTiles": {
+          "default": 40,
+          "type": "int"
+        },
+        "name": {
+          "default": "",
+          "desc": "file name stem of the captures (<name>__01.png .. and <name>__wide.png); empty = the file name",
+          "type": "string"
+        },
+        "needCols": {
+          "default": 0,
+          "desc": "columns the captures must reach (file.line_ends needCols: the widest line + its line end mark); 0 = until the view cannot scroll further",
+          "type": "int"
+        },
+        "rowPx": {
+          "default": 14,
+          "desc": "px a text row (J4 GFIX data pictures: 14)",
+          "type": "int"
+        },
+        "saveDir": {
+          "required": true,
+          "type": "path"
+        },
+        "settleMs": {
+          "default": 700,
+          "desc": "wait after the window appears / after each scroll",
+          "type": "int"
+        },
+        "stitch": {
+          "default": true,
+          "desc": "also merge the captures into <name>__wide.png",
+          "type": "bool"
+        },
+        "textLeft": {
+          "default": 30,
+          "desc": "px from the capture's left edge to column 0 (past the line-number strip)",
+          "type": "int"
+        },
+        "textRight": {
+          "default": 19,
+          "desc": "px from the right edge back to the text area's end (the vertical scroll bar)",
+          "type": "int"
+        },
+        "width": {
+          "default": 0,
+          "desc": "visible window width; 0 = leave as the viewer opens it (the geometry defaults were measured at 1906)",
+          "type": "int"
+        },
+        "windowTitle": {
+          "default": "",
+          "desc": "the viewer window title contains this; empty = the file name",
+          "type": "string"
+        },
+        "windowWaitSec": {
+          "default": 15,
+          "type": "int"
+        },
+        "x": {
+          "default": 40,
+          "type": "int"
+        },
+        "y": {
+          "default": 40,
+          "type": "int"
+        }
+      },
+      "needs": [],
+      "notes": "not_at_line_end: the captures and the merged PNG are kept and named in the message (maxTiles reached, or the view stopped short of needCols: the viewer wraps lines, or its line width setting is narrower than the file). The geometry defaults are the J4 GFIX data pictures (a 1906 px wide window); a capture must come out pixel for pixel, so run at 100 % display scaling.",
+      "outputs": {
+        "atScrollEnd": {
+          "type": "bool"
+        },
+        "coveredCols": {
+          "desc": "columns 0 .. coveredCols-1 are on a capture",
+          "type": "int"
+        },
+        "height": {
+          "type": "int"
+        },
+        "how": {
+          "desc": "per capture after the first: scroll | match | page (how its start was known)",
+          "type": "list"
+        },
+        "layout": {
+          "desc": "@{ textLeft; textRight; bandTop; bandBottom; charPx; pageCols; tileW; tileH; starts } for excel.place_tiles",
+          "type": "map"
+        },
+        "needCols": {
+          "type": "int"
+        },
+        "reachedEnd": {
+          "desc": "needCols > 0: the line end is on the last capture; else the view could not scroll further",
+          "type": "bool"
+        },
+        "starts": {
+          "desc": "the first column of each capture",
+          "type": "list"
+        },
+        "stitched": {
+          "desc": "the merged PNG; empty when stitch = false",
+          "type": "path"
+        },
+        "tiles": {
+          "desc": "the captures, left to right",
+          "type": "list"
+        },
+        "width": {
+          "desc": "its width, px",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Open a text file in a viewer, capture it page by page to the right until the line end, merge into one long PNG",
+      "tier": "core"
+    },
     "table.day_sets": {
       "effects": "pure",
       "example": {
@@ -7894,6 +8368,88 @@
       "provides": [],
       "releases": [],
       "summary": "Parse page text into records with a delimited / labeled / columns / regex grammar",
+      "tier": "core"
+    },
+    "verify.picture_pixels": {
+      "effects": "read",
+      "example": {
+        "use": "verify.picture_pixels",
+        "with": {
+          "expect": [],
+          "names": [
+            "verifyWide",
+            "verifyWidePng"
+          ],
+          "path": "{{vars.book}}",
+          "sheet": "{{vars.sheet}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": true
+        },
+        {
+          "id": "read_failed",
+          "transient": true
+        },
+        {
+          "id": "sheet_not_found",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.picture_pixels.ps1",
+      "group": "verify",
+      "id": "verify.picture_pixels",
+      "idempotent": true,
+      "inputs": {
+        "expect": {
+          "default": [],
+          "desc": "the source PNGs of the matched pictures, in drawing order: their pixel sizes must be kept",
+          "type": "list"
+        },
+        "minScale": {
+          "default": 0.995,
+          "desc": "shown / stored (after a crop) below this = scaled down on the sheet",
+          "type": "any"
+        },
+        "names": {
+          "default": [],
+          "desc": "picture or group names (a group = all its pictures); empty = every picture on the sheet",
+          "type": "list"
+        },
+        "path": {
+          "desc": "the saved .xlsx",
+          "required": true,
+          "type": "path"
+        },
+        "sheet": {
+          "required": true,
+          "type": "string"
+        }
+      },
+      "needs": [],
+      "notes": "A check, never a stop: ng is the gate's alert. Excel keeps a PNG as it was given unless the file's picture compression applies (it resamples pictures shown smaller than they are, down to the default resolution) -- so ng with scale < 1 is the one to fix.",
+      "outputs": {
+        "alert": {
+          "desc": "the reason when code is not ok",
+          "type": "string"
+        },
+        "code": {
+          "desc": "ok | ng | unknown",
+          "type": "string"
+        },
+        "pictures": {
+          "desc": "@{ name; group; media; format; bytes; mediaW; mediaH; shownW; shownH; scale; sourceW; sourceH; verdict; why }",
+          "type": "list"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Read a saved workbook: are the named pictures stored and shown at their full pixels (PNG, not resampled)?",
       "tier": "core"
     },
     "verify.record_counts": {

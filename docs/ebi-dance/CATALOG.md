@@ -4,16 +4,16 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-98 step(s) in 9 group(s).
+102 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
-| screen | `screen.capture_region`, `screen.capture_window`, `screen.compare_strip`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.read_line_numbers`, `screen.row_region`, `screen.save` |
-| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.set_aside`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
-| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.prepare_sheet`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
+| screen | `screen.capture_region`, `screen.capture_window`, `screen.compare_strip`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.read_line_numbers`, `screen.row_region`, `screen.save`, `screen.stitch_scroll` |
+| file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.line_ends`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.set_aside`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
+| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.place_tiles`, `excel.prepare_sheet`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.assert_each`, `verify.book_review`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.log_blocks`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.book_review`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.log_blocks`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.picture_pixels`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.redo`, `flow.require` |
@@ -809,6 +809,70 @@ failures: `file_not_found` (not transient), `save_failed` (transient)
 
 Notes: An existing file of the same name is replaced: re-running a key re-captures it. A key that had to be folded is reported as a warning (key_folded).
 
+### `screen.stitch_scroll`
+
+Open a text file in a viewer, capture it page by page to the right until the line end, merge into one long PNG
+
+- file: `modules/screen/screen.stitch_scroll.ps1`
+- effects: `ui` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `advance` | list |  | ["message","click"] |  | how to scroll a page right, tried in order until the view moves: message \| click \| keys |
+| `args` | list |  | [] |  | arguments before the file (e.g. a read-only switch) |
+| `bandBottom` | int |  | -18 |  | row after the stitched band; <= 0 from the bottom (the horizontal scroll bar is left out) |
+| `bandTop` | int |  | 76 |  | first row stitched (the ruler); the rows above come from the first capture only |
+| `charPx` | int |  | 7 |  | px a half-width column |
+| `chromePx` | int |  | 110 |  | px of the window that is not text rows: title, menu, toolbar, ruler (92) + the horizontal scroll bar and border (18); 166 = 3 lines + [EOF] |
+| `clickBottom` | int |  | 8 |  | ... and from its bottom edge |
+| `clickRight` | int |  | 40 |  | advance = click when the scroll bar cannot be found: px from the capture's right edge |
+| `close` | bool |  | true |  | close the viewer after (only a window this step opened) |
+| `exe` | path | yes |  |  | the text viewer |
+| `file` | path | yes |  |  | the text file (also what the window title must show) |
+| `fitLines` | int |  | 0 |  | height = 0: size the window to show this many lines and the [EOF] row, no more (file.line_ends lines); capped by maxHeight |
+| `frame` | string |  | aligned | aligned, each, first | the merged PNG: aligned = every capture with its window frame, the later ones cropped by the line-number strip and laid on the one before so the text runs on (the J4 books' own layout, as excel.place_tiles puts it on a sheet); each = every capture whole, side by side; first = one frame (the first capture's), the text bands joined |
+| `height` | int |  | 0 |  | visible window height; 0 = fitLines decides (else leave as the viewer opens it) |
+| `keysAdvance` | string |  | (empty) |  | advance = keys: the keys of one step right |
+| `keysFirst` | string |  | ^{HOME} |  | keys before the first capture (the top-left of the file) |
+| `maxHeight` | int |  | 900 |  |  |
+| `maxTiles` | int |  | 40 |  |  |
+| `name` | string |  | (empty) |  | file name stem of the captures (<name>__01.png .. and <name>__wide.png); empty = the file name |
+| `needCols` | int |  | 0 |  | columns the captures must reach (file.line_ends needCols: the widest line + its line end mark); 0 = until the view cannot scroll further |
+| `rowPx` | int |  | 14 |  | px a text row (J4 GFIX data pictures: 14) |
+| `saveDir` | path | yes |  |  |  |
+| `settleMs` | int |  | 700 |  | wait after the window appears / after each scroll |
+| `stitch` | bool |  | true |  | also merge the captures into <name>__wide.png |
+| `textLeft` | int |  | 30 |  | px from the capture's left edge to column 0 (past the line-number strip) |
+| `textRight` | int |  | 19 |  | px from the right edge back to the text area's end (the vertical scroll bar) |
+| `width` | int |  | 0 |  | visible window width; 0 = leave as the viewer opens it (the geometry defaults were measured at 1906) |
+| `windowTitle` | string |  | (empty) |  | the viewer window title contains this; empty = the file name |
+| `windowWaitSec` | int |  | 15 |  |  |
+| `x` | int |  | 40 |  |  |
+| `y` | int |  | 40 |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `atScrollEnd` | bool |  |
+| `coveredCols` | int | columns 0 .. coveredCols-1 are on a capture |
+| `height` | int |  |
+| `how` | list | per capture after the first: scroll \| match \| page (how its start was known) |
+| `layout` | map | @{ textLeft; textRight; bandTop; bandBottom; charPx; pageCols; tileW; tileH; starts } for excel.place_tiles |
+| `needCols` | int |  |
+| `reachedEnd` | bool | needCols > 0: the line end is on the last capture; else the view could not scroll further |
+| `starts` | list | the first column of each capture |
+| `stitched` | path | the merged PNG; empty when stitch = false |
+| `tiles` | list | the captures, left to right |
+| `width` | int | its width, px |
+
+failures: `file_not_found` (not transient), `no_window` (transient), `foreground_lost` (transient), `save_failed` (transient), `geometry` (not transient), `not_at_line_end` (not transient)
+
+```json
+{"id":"stitch_scroll","use":"screen.stitch_scroll","with":{"args":["-R"],"exe":"{{vars.viewer}}","file":"{{vars.dataFile}}","needCols":"{{steps.eol.out.needCols}}","saveDir":"capture/wide"}}
+```
+
+Notes: not_at_line_end: the captures and the merged PNG are kept and named in the message (maxTiles reached, or the view stopped short of needCols: the viewer wraps lines, or its line width setting is narrower than the file). The geometry defaults are the J4 GFIX data pictures (a 1906 px wide window); a capture must come out pixel for pixel, so run at 100 % display scaling.
+
 ## file
 
 ### `file.assert_exists`
@@ -1007,6 +1071,42 @@ failures: `dir_not_found` (not transient), `file_not_found` (transient), `ambigu
 ```
 
 Notes: file_not_found is transient on purpose: a download that has not landed yet is the usual cause, and a retry after a wait is the right first move. Match order is kernel/Key.ps1's: exact stem, suffix/prefix rules stripped (the batch stamp), full-width folded, case folded; the first tier with hits wins.
+
+### `file.line_ends`
+
+Line ends (CRLF / LF / CR) of a text file and the width of its widest line in editor columns
+
+- file: `modules/file/file.line_ends.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `encoding` | string |  | sjis | sjis, utf8 | sjis: a 2-byte character is 2 columns (also right for plain ASCII); utf8: wide characters 2. A UTF-8 BOM switches to utf8 |
+| `expect` | string |  | (empty) | , CRLF, LF, CR | the line end the file must have; another one is the alert |
+| `path` | path | yes |  |  | relative: under the work dir |
+| `tabWidth` | int |  | 4 |  | the editor's tab width |
+
+| output | type | desc |
+|--------|------|------|
+| `alert` | string | mixed line ends, or not the expected one; else empty |
+| `bytes` | int |  |
+| `cr` | int |  |
+| `crlf` | int |  |
+| `eol` | string | CRLF \| LF \| CR \| mixed \| none |
+| `lastEol` | bool | the last line ends with a line end |
+| `lf` | int |  |
+| `lines` | int |  |
+| `longestChars` | int |  |
+| `longestCols` | int | its width without the line end, columns |
+| `longestLine` | int | 1-based |
+| `needCols` | int | columns a capture must reach to show that line's end mark |
+
+failures: `file_not_found` (transient)
+
+```json
+{"id":"line_ends","use":"file.line_ends","with":{"expect":"LF","path":"{{vars.dataFile}}"}}
+```
 
 ### `file.list`
 
@@ -1605,6 +1705,44 @@ failures: `sheet_not_found` (not transient), `file_not_found` (transient), `inse
 ```
 
 Notes: Not idempotent for replace = none (a rerun adds a second copy); atCell and first replace what is there, so a rerun ends with one picture.
+
+### `excel.place_tiles`
+
+Put page captures of a long line side by side on a sheet, lined up by column, cropped and grouped
+
+- file: `modules/excel/excel.place_tiles.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `cell` | string |  | B4 |  | top-left cell of the first capture |
+| `cropStrip` | bool |  | true |  | crop the line-number strip (textLeft px) off every capture after the first |
+| `gapRows` | int |  | 0 |  | added to nextRow |
+| `group` | bool |  | true |  | group the pictures into one shape (Ctrl+G) |
+| `layout` | map |  | {} |  | screen.stitch_scroll layout: starts, charPx, textLeft, tileW; empty = the pictures one after another, uncropped (the merged PNG: one picture) |
+| `name` | string |  | verifyWide |  | name of the group (pictures: <name>_1 ..; a single picture is called name itself); an earlier run's shapes of that name are replaced |
+| `row` | int |  | 0 |  | > 0: that row of cell's column instead (excel.place_picture nextRow: under the merged picture) |
+| `sheet` | string | yes |  |  |  |
+| `tiles` | list | yes |  |  | the captures, left to right (screen.stitch_scroll tiles) |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `name` | string | the group (or the single picture; group = false: the first picture) |
+| `nextRow` | int | first row below the pictures, plus gapRows |
+| `removed` | int | shapes of an earlier run replaced |
+| `scale` | any | points a capture pixel (0.75 = native at 96 dpi) |
+| `shapes` | list | picture names, left to right |
+| `widthPt` | any | width of the whole, points |
+
+failures: `sheet_not_found` (not transient), `file_not_found` (transient), `input_invalid` (not transient), `insert_failed` (transient)
+
+```json
+{"id":"place_tiles","use":"excel.place_tiles","with":{"cell":"B20","layout":"{{steps.wide.out.layout}}","sheet":"data","tiles":"{{steps.wide.out.tiles}}","workbook":"wb"}}
+```
+
+Notes: Idempotent by name: a rerun deletes the group / pictures an earlier run named <name> / <name>_<n> first; pictures put there by hand are never touched. Every picture goes in at its native size (AddPicture -1 / -1), never scaled.
 
 ### `excel.prepare_sheet`
 
@@ -2630,6 +2768,37 @@ failures: `grammar_invalid` (not transient), `no_records` (transient)
 ```
 
 Notes: no_records is transient: the usual cause is a page still loading. A labeled grammar always yields one record; a label it could not find is a warning (label_missing) with the field blank, and verify.assert's present/empty rules decide what that means.
+
+### `verify.picture_pixels`
+
+Read a saved workbook: are the named pictures stored and shown at their full pixels (PNG, not resampled)?
+
+- file: `modules/verify/verify.picture_pixels.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `expect` | list |  | [] |  | the source PNGs of the matched pictures, in drawing order: their pixel sizes must be kept |
+| `minScale` | any |  | 0.995 |  | shown / stored (after a crop) below this = scaled down on the sheet |
+| `names` | list |  | [] |  | picture or group names (a group = all its pictures); empty = every picture on the sheet |
+| `path` | path | yes |  |  | the saved .xlsx |
+| `sheet` | string | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `alert` | string | the reason when code is not ok |
+| `code` | string | ok \| ng \| unknown |
+| `pictures` | list | @{ name; group; media; format; bytes; mediaW; mediaH; shownW; shownH; scale; sourceW; sourceH; verdict; why } |
+| `reason` | string |  |
+
+failures: `file_not_found` (transient), `read_failed` (transient), `sheet_not_found` (not transient)
+
+```json
+{"id":"picture_pixels","use":"verify.picture_pixels","with":{"expect":[],"names":["verifyWide","verifyWidePng"],"path":"{{vars.book}}","sheet":"{{vars.sheet}}"}}
+```
+
+Notes: A check, never a stop: ng is the gate's alert. Excel keeps a PNG as it was given unless the file's picture compression applies (it resamples pictures shown smaller than they are, down to the default resolution) -- so ng with scale < 1 is the one to fix.
 
 ### `verify.record_counts`
 

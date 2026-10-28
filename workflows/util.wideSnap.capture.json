@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "id": "util.wideSnap.capture",
+  "title": "横に長いスナップ(撮るだけ): データファイルを sakura で開き、行末まで 1 ページずつ撮って PNG を残す。Excel には触らない",
+  "version": "0.1.0",
+  "profile": "none",
+  "vars": {
+    "_doc": "ebi.ps1 run workflows\\util.wideSnap.capture.json -WorkDir <作業フォルダー> -Var dataFile=<データファイル> [-Var viewer=<sakura.exe>]. 撮った各ページ <ファイル名>__01.png .. と結合した __wide.png が <作業フォルダー>\\capture\\wide に残る。窓の大きさ・位置は sakura が前回閉じたときのまま(-Var width=1906 で幅だけそろえることもできる)。-Var close=false = 撮ったあと sakura を閉じない。",
+    "dataFile": "",
+    "viewer": "C:\\Program Files (x86)\\sakura\\sakura.exe",
+    "width": "0",
+    "x": "0",
+    "close": "true",
+    "capture": "capture/wide"
+  },
+
+  "setup": [
+    { "id": "eol", "use": "file.line_ends",
+      "label": "データファイルの改行(CRLF / LF / CR)と一番長い行の桁数 -> どこまで右へ撮ればいいか",
+      "with": { "path": "{{vars.dataFile}}" } },
+
+    { "id": "wide", "use": "screen.stitch_scroll",
+      "label": "sakura で読み取り専用(-R)で開き、左上から 1 ページずつ右へ撮る。一番長い行の改行マークが写るまで",
+      "with": { "exe": "{{vars.viewer}}", "file": "{{vars.dataFile}}", "args": ["-R"],
+                "needCols": "{{steps.eol.out.needCols}}", "saveDir": "{{vars.capture}}",
+                "x": "{{vars.x}}", "width": "{{vars.width}}", "close": "{{vars.close}}" } },
+
+    { "id": "look", "use": "human.gate",
+      "label": "撮った PNG を見る: 行末(改行マーク)まで写っているか。貼り付けは手で",
+      "with": { "code": "unknown", "askWhen": ["unknown"],
+                "reason": "{{steps.eol.out.eol}} 改行 / 一番長い行 {{steps.eol.out.longestLine}} 行目 {{steps.eol.out.longestCols}} 桁 -> {{steps.wide.out.coveredCols}} 桁まで撮った",
+                "evidence": "{{steps.wide.out.tiles}}",
+                "alert": ["{{steps.eol.out.alert}}"] } }
+  ]
+}
