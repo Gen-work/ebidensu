@@ -196,7 +196,6 @@ kernel/                 runner internals. Json.ps1 (P1-35: the ONE JSON
                         verify.book_review / gfixRecv.review; Test-BookReview).
                         Stitch.ps1 (long snaps: line ends + page stitch; Test-Stitch).
 workflows/              JSON workflows (the artifact a human or Agent writes).
-                        util.wideSnap.json: data file -> sakura pages to line end -> book.
                         spike.capture_window.json is the P0-08 end-to-end
                         spike (prepare -> ensure -> capture one window).
                         gfixRecv.*.json: GFIX receive day (docs/gfix-recv/RUNBOOK.zh.md);
