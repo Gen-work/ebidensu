@@ -1,3 +1,19 @@
+## 2026-10-28 - POM rerun: the rerun's GFIX files go to 他対応/修正後DATA (v2.41.2)
+
+10/28 JJDSWPA1 (done by hand): the rerun's received file was saved in
+`<bix>/他対応/修正後DATA/JJDSWPA1/`, not next to the first run's file in
+`DATA/GFIX/JJDSWPA1/`. The flow keeps the same place.
+
+- `gfixRecv.track` 0.9.3: the download folder is `{{vars.gfixDataDir}}`
+  under paths.bix (default `DATA/GFIX`, unchanged for the day flow); the
+  POM rerun runs track with `-Var gfixDataDir=他対応/修正後DATA`. The
+  folder is created when missing (file.download did this already).
+- `layout.pom.dataDir` = `他対応/修正後DATA`; `pom/gfixRecv.pom` 0.1.2
+  looks there for the rerun file and the `.HOST` download;
+  `pom/gfixRecv.pomPlan` 0.1.1 prints the track command with the -Var.
+- RUNBOOK 4c updated. (The two v2.41.1 entries below come from parallel
+  branches that took the same number.)
+
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 
 First office run of gfixRecv.review (JJODWU31): `read_failed: Cannot find

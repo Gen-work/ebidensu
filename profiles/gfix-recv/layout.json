@@ -94,8 +94,10 @@
       "GFIXデータ_変更前後比較: B3 = the IF name, DF pictures of GIFT data vs the rerun's GFIX data + red boxes (same rules as GIFTデータvsGFIXデータ)",
       "data differ -> GFIXデータ_HOSTvsOPEN right after it: B3 = the IF name, DF pictures of the HOST download (.HOST) vs the file OPEN received; write the notes by hand (JJDLWA09: 修正前後で抽出件数が違った / ヘッダーのみの差分)"
     ],
+    "dataDir": "他対応/修正後DATA",
+    "_dataDir_doc": "the rerun's received GFIX files, under paths.bix, one folder per Excel_NAME (10/28 JJDSWPA1 by hand: 他対応/修正後DATA/JJDSWPA1/F202610280010.csv); the first run's stay in DATA/GFIX. gfixRecv.track downloads here with -Var gfixDataDir=他対応/修正後DATA; the .HOST download goes in the same folder",
     "hostGlob": "*.HOST",
-    "_hostGlob_doc": "the HOST download of the received data set (HOST code 939), put next to the GFIX file: DATA/GFIX/<Excel_NAME>/<data set>.HOST (JJDLWA09: LJDL.J.VER.JJDLWA09.CSV.HOST)"
+    "_hostGlob_doc": "the HOST download of the received data set (HOST code 939), put next to the rerun GFIX file: <dataDir>/<Excel_NAME>/<data set>.HOST (JJDLWA09: LJDL.J.VER.JJDLWA09.CSV.HOST)"
   },
   "checkSheet": {
     "_doc": "gfixRecv.deliver (10/15): the review check sheet row, read off Check Sheet_J4 (row 351..358: B 記入日 / C COBOL/JAVA / E 確認ﾌｪｰｽﾞ / F レビュー対象 = the evidence book's file name / G 担当 / H 確認). The columns are in the workflow (excel.append_row cells); the values that may change are here.",
