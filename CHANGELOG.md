@@ -58,6 +58,10 @@ with no gap and no repeat (checked seam by seam on the real pictures).
   file's line count) sizes the window to the lines + the [EOF] row --
   chromePx 110 + rowPx 14 a row, measured on the J4 pictures (166 = 3
   lines + [EOF]).
+- The operator wants the window height sakura remembers, not a fitted
+  one: the workflows no longer pass `fitLines` (the input stays, default
+  0 = leave it). New `workflows/util.wideSnap.capture.json`: data file in,
+  the page captures out, no Excel -- pasting is done by hand.
 
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 

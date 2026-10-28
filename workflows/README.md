@@ -26,3 +26,7 @@ here; put capabilities in `modules/` and local values in ignored local config.
   `verify.picture_pixels` reads the .xlsx to say whether any picture lost
   pixels. `-Var dataFile=... -Var book=... [-Var mode=both|stitched|tiles]`;
   the book is saved -- try it on a copy first.
+- `util.wideSnap.capture.json` -- the same captures, nothing else: the page
+  PNGs (`<file>__01.png` ..) and the merged `__wide.png` under
+  `capture/wide`, for pasting by hand. Excel is not touched; the window
+  keeps the height the viewer remembers (only the width is set).

@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "profile": "none",
   "vars": {
-    "_doc": "ebi.ps1 run workflows\\util.wideSnap.json -WorkDir <作業フォルダー> -Var dataFile=<データファイル> -Var book=<証跡ブック.xlsx> [-Var sheet=GFIXデータ] [-Var cell=B4] [-Var mode=tiles|both|stitched] [-Var height=<px>](既定 0 = データの行数 + [EOF] 行が見える高さに合わせる)。mode tiles(既定)= 撮ったページを Excel の中で並べてグループ化。10/28 の実測: Excel の外で結合した 1 枚(11181x1014)は保存後 2679x243 に縮められた(画質が落ちる)、ページごとの図は 1906 px のまま -- 結合 PNG はファイルとして capture/ に残る。both = 比較用に両方。ブックは保存される: 最初はコピーで。",
+    "_doc": "ebi.ps1 run workflows\\util.wideSnap.json -WorkDir <作業フォルダー> -Var dataFile=<データファイル> -Var book=<証跡ブック.xlsx> [-Var sheet=GFIXデータ] [-Var cell=B4] [-Var mode=tiles|both|stitched] [-Var height=<px>](既定 0 = sakura が前回閉じたときの高さのまま)。mode tiles(既定)= 撮ったページを Excel の中で並べてグループ化。10/28 の実測: Excel の外で結合した 1 枚(11181x1014)は保存後 2679x243 に縮められた(画質が落ちる)、ページごとの図は 1906 px のまま -- 結合 PNG はファイルとして capture/ に残る。both = 比較用に両方。ブックは保存される: 最初はコピーで。",
     "dataFile": "",
     "book": "",
     "sheet": "GFIXデータ",
@@ -28,7 +28,7 @@
       "label": "sakura で読み取り専用(-R)で開き、左上から 1 ページずつ右へ撮る。一番長い行の改行マークが写るまで。撮った後 Excel の外で 1 枚に結合",
       "with": { "exe": "{{vars.viewer}}", "file": "{{vars.dataFile}}", "args": ["-R"],
                 "needCols": "{{steps.eol.out.needCols}}", "saveDir": "{{vars.capture}}",
-                "x": "{{vars.x}}", "width": "{{vars.width}}", "height": "{{vars.height}}", "fitLines": "{{steps.eol.out.lines}}" } },
+                "x": "{{vars.x}}", "width": "{{vars.width}}", "height": "{{vars.height}}" } },
 
     { "id": "app", "use": "excel.ensure_app", "with": { "visible": true, "as": "xl" } },
     { "id": "open", "use": "excel.open", "with": { "app": "xl", "path": "{{vars.book}}", "as": "wb" } },
