@@ -7326,7 +7326,7 @@
       "tier": "core"
     },
     "verify.log_blocks": {
-      "effects": "pure",
+      "effects": "read",
       "example": {
         "use": "verify.log_blocks",
         "with": {
@@ -7376,6 +7376,16 @@
           "desc": "the DF pairs (track.json pairs); their side file names must be among the stored files",
           "type": "list"
         },
+        "repair": {
+          "default": true,
+          "desc": "put a compared file the log did not store right, when exactly one stored file fits (same folder, extension, line count, unused)",
+          "type": "bool"
+        },
+        "shots": {
+          "default": [],
+          "desc": "the DF shots of the pairs, in the same order (track.json dfShots): a repaired pair's shot comes back null (take it again)",
+          "type": "list"
+        },
         "side": {
           "default": "left",
           "desc": "which file of a pair the log stored (left = GIFT)",
@@ -7392,7 +7402,7 @@
         }
       },
       "needs": [],
-      "notes": "Pure. A pair whose side has no name (no leftName / left path) is not checked, nor one whose extension the log stored no file of (a ZIP transfer stores the .zip). Stored files are compared by file name, case-insensitive.",
+      "notes": "Reads only the stored files a repair would use (exists, line count); writes nothing. A pair whose side has no name (no leftName / left path) is not checked, nor one whose extension the log stored no file of (a ZIP transfer stores the .zip). Stored files are compared by file name, case-insensitive.",
       "outputs": {
         "alert": {
           "desc": "the reason when code is ng, else empty: the gate draws it red",
@@ -7411,12 +7421,24 @@
           "type": "list"
         },
         "missing": {
-          "desc": "compared file names the log did not store",
+          "desc": "compared file names the log did not store (after the repair)",
+          "type": "list"
+        },
+        "pairs": {
+          "desc": "the pairs, with repaired sides: feed these to the DF steps",
           "type": "list"
         },
         "reason": {
           "desc": "one line for the gate",
           "type": "string"
+        },
+        "repaired": {
+          "desc": "\"<old> -> <new>\" per repaired side",
+          "type": "list"
+        },
+        "shots": {
+          "desc": "the shots input, null where the pair was repaired",
+          "type": "list"
         },
         "starts": {
           "desc": "transfer ids with a START line, in order",

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -120,8 +120,8 @@
       "label": "GIFT受信結果 の B 列(GIFTReceive.log が貼ってある)を読む",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.evidence.sheets.giftResult}}", "columns": { "line": "B" }, "firstRow": 1 } },
     { "id": "giftLogCheck", "use": "verify.log_blocks",
-      "label": "GIFTReceive.log: START / END が対になっているか(10/26 Q/S: START が 1 本欠け)、DF の GIFT 側ファイルがログの file stored にあるか(10/26 L: 別 job の空ファイル)。GATE で赤字、止まらない",
-      "with": { "lines": "{{steps.giftLogRows.out.records}}", "pairs": "{{steps.track.out.data.pairs}}", "side": "left",
+      "label": "GIFTReceive.log: START / END が対になっているか(10/26 Q/S: START が 1 本欠け)、DF の GIFT 側ファイルがログの file stored にあるか(10/26 L: 別 job の空ファイル)。GATE で赤字、止まらない。ログに無いファイルを比べていて、同じフォルダにログのファイルが 1 つだけ(同じ行数・未使用)あれば組を直して DF を撮り直す(10/28 L: track.json に古い組が残っていた)",
+      "with": { "lines": "{{steps.giftLogRows.out.records}}", "pairs": "{{steps.track.out.data.pairs}}", "shots": "{{steps.track.out.data.dfShots}}", "side": "left",
                 "label": "GIFTReceive.log (GIFT受信結果)" } },
 
     { "id": "jobText", "use": "file.read_text",
@@ -140,7 +140,7 @@
       "with": { "paths": "{{steps.hostPics.out.paths}}" } },
     { "id": "dfRanges", "use": "verify.df_ranges",
       "label": "GFIX受信ログ(ジョブログ)も同じ順に(アップロードの大きさで組を合わせる。10/26 加瀬さん C/F/MJODWAF1「GFIX受信ログの添付順が違います」)。DF 図を 送信データ の HOST 図の順に並べ(行数で組を合わせる。行番号の無い HOST 図 = 空ファイル)、行数を HOST 図に合わせる(DF 行 = HOST 行 - 1。HOST の最後 - 1 がファイルの行数と違う = 空行が落ちた: 合わせない)。10/26 K/LJODWAF1: 空の 0006 が先に来ていた",
-      "with": { "pairs": "{{steps.track.out.data.pairs}}", "ranges": "{{steps.hostLines.out.ranges}}", "shots": "{{steps.track.out.data.dfShots}}",
+      "with": { "pairs": "{{steps.giftLogCheck.out.pairs}}", "ranges": "{{steps.hostLines.out.ranges}}", "shots": "{{steps.giftLogCheck.out.shots}}",
                 "jobLogs": "{{steps.logs.out.data.jobLogs}}", "jobLogBytes": "{{steps.jobBytes.out.names}}" } },
 
     { "id": "jobLog", "use": "excel.write_lines",
@@ -301,7 +301,7 @@
       "with": { "path": "{{vars.capture}}/{{item.keySafe}}/gate.json",
                 "data": { "key": "{{item.key}}", "date": "{{item.GFIX_DATE}}",
                           "auto": { "pic1Cmp": "{{steps.pic1Cmp.out.code}}", "pic1Score": "{{steps.pic1Cmp.out.score}}", "pic1Before": "{{steps.preCmp.out.score}}", "giftPic1Replace": "{{steps.giftAsk.out.action}}", "reason": "{{steps.pic1Cmp.out.reason}}",
-                                    "dfRanges": "{{steps.dfRanges.out.reason}}", "giftLog": "{{steps.giftLogCheck.out.reason}}", "hostLines": "{{steps.hostLines.out.ranges}}", "dfShots": "{{steps.dfShots.out.shots}}",
+                                    "dfRanges": "{{steps.dfRanges.out.reason}}", "giftLog": "{{steps.giftLogCheck.out.reason}}", "pairRepaired": "{{steps.giftLogCheck.out.repaired}}", "hostLines": "{{steps.hostLines.out.ranges}}", "dfShots": "{{steps.dfShots.out.shots}}",
                                     "groups": "{{steps.excelSnap.out.groups}}" },
                           "person": { "action": "{{steps.look.out.action}}", "note": "{{steps.look.out.note}}" } } } },
 

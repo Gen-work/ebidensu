@@ -17,7 +17,9 @@ pictures as GIFTデータvsGFIXデータ.
   The track pairs differ -> a gate asks for the HOST download
   (`DATA/GFIX/<W>/<data set>.HOST`), then DF HOST vs OPEN goes on a new
   GFIXデータ_HOSTvsOPEN right after 変更前後比較 (first file pair only).
-  Kept in `workflows/pom/` so the day menu does not list it.
+  Kept in `workflows/pom/` so the day menu does not list it. Like
+  gfixRecv.evidence 0.9.8 it READS GIFT受信結果's GIFTReceive.log
+  (verify.log_blocks) and takes the repaired pairs (v2.38.12).
 - `workflows/pom/gfixRecv.pomPlan.json` (new, 0.1.0): plan does not offer
   these jobs in a fresh work folder (the WBS actual start of the first
   run counts them as done outside the tool); pomPlan writes the -Only
@@ -56,6 +58,25 @@ still in the old layout.
   resulting sheet order without starting Excel.
 - `Tests/Test-PomBook.ps1` (new). Cloud: static-checked only (no pwsh);
   run Tests\Run-Tests.ps1 and a `-DryRun` on the office PC first.
+## 2026-10-28 - evidence repairs a pair the GIFT log disowns (v2.38.12)
+
+10/28 LJODWAF1: with 0003 gone from DATA\GIFT\LJODWAF1 and 0005 there,
+evidence still compared 0003: it takes the pairs (and reusable DF shots)
+from the track.json of 10/26, never the folder. Hand-editing track.json
+fixed it in one run.
+
+- `verify.log_blocks` (effects now `read`): when a compared GIFT file is
+  not among the log's stored files and exactly one stored file of the
+  same folder, extension and line count is unused, the pair takes it.
+  New input `shots` / `repair`, outputs `pairs`, `shots` (null for a
+  repaired pair: its DF is taken again) and `repaired`; a
+  `pair_repaired` warning says what changed. Anything less certain stays
+  the red gate line.
+- `gfixRecv.evidence` 0.9.8: `dfRanges` reads the pairs / shots from
+  `giftLogCheck`; gate.json records `pairRepaired`. KNOWLEDGE K-53.
+- Static-checked only: run `Tests\Run-Tests.ps1` and `ebi lint` on the
+  office PC.
+
 ## 2026-10-27 - review tool: DF title file names vs the receive logs (v2.38.11)
 
 10/27 加瀬さん NG on LJODWAF1 (STEP MQFX0030): the delivered book's second
