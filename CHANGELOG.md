@@ -1,3 +1,22 @@
+## 2026-10-28 - evidence repairs a pair the GIFT log disowns (v2.38.12)
+
+10/28 LJODWAF1: with 0003 gone from DATA\GIFT\LJODWAF1 and 0005 there,
+evidence still compared 0003: it takes the pairs (and reusable DF shots)
+from the track.json of 10/26, never the folder. Hand-editing track.json
+fixed it in one run.
+
+- `verify.log_blocks` (effects now `read`): when a compared GIFT file is
+  not among the log's stored files and exactly one stored file of the
+  same folder, extension and line count is unused, the pair takes it.
+  New input `shots` / `repair`, outputs `pairs`, `shots` (null for a
+  repaired pair: its DF is taken again) and `repaired`; a
+  `pair_repaired` warning says what changed. Anything less certain stays
+  the red gate line.
+- `gfixRecv.evidence` 0.9.8: `dfRanges` reads the pairs / shots from
+  `giftLogCheck`; gate.json records `pairRepaired`. KNOWLEDGE K-53.
+- Static-checked only: run `Tests\Run-Tests.ps1` and `ebi lint` on the
+  office PC.
+
 ## 2026-10-27 - review tool: DF title file names vs the receive logs (v2.38.11)
 
 10/27 加瀬さん NG on LJODWAF1 (STEP MQFX0030): the delivered book's second
