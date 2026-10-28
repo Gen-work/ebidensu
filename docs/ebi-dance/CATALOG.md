@@ -11,7 +11,7 @@
 | browser | `browser.assert_page`, `browser.download_each`, `browser.ensure`, `browser.fill`, `browser.find`, `browser.focus_body`, `browser.navigate`, `browser.read_text`, `browser.send_keys`, `browser.submit`, `browser.tab_to`, `browser.wait_for` |
 | screen | `screen.capture_region`, `screen.capture_window`, `screen.compare_strip`, `screen.crop`, `screen.find_ink_rows`, `screen.find_window`, `screen.fit_window`, `screen.launch_capture`, `screen.list_rects`, `screen.ocr`, `screen.read_line_numbers`, `screen.row_region`, `screen.save` |
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.set_aside`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
-| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
+| excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.prepare_sheet`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
 | verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.log_blocks`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
@@ -1605,6 +1605,37 @@ failures: `sheet_not_found` (not transient), `file_not_found` (transient), `inse
 ```
 
 Notes: Not idempotent for replace = none (a rerun adds a second copy); atCell and first replace what is there, so a rerun ends with one picture.
+
+### `excel.prepare_sheet`
+
+Create a sheet from another one's look when missing, and clear its shapes / values / fills except keepCells
+
+- file: `modules/excel/excel.prepare_sheet.ps1`
+- effects: `write` / tier: `core` / idempotent: `true`
+- needs: `excel` / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `after` | string |  | (empty) |  | a new sheet goes right after this one; empty = right after template |
+| `clearExisting` | bool |  | true |  | false = only create a missing sheet, leave an existing one as it is |
+| `keepCells` | list |  | ["A1"] |  | cells whose value survives the clear (the A1 sheet-name formula) |
+| `sheet` | string | yes |  |  | the sheet to prepare |
+| `template` | string |  | (empty) |  | when sheet is missing: copy this sheet (its look) and name the copy sheet; empty = a missing sheet is a failure |
+| `workbook` | session:workbook | yes |  |  |  |
+
+| output | type | desc |
+|--------|------|------|
+| `created` | bool | the sheet was made by this call |
+| `shapesRemoved` | int | shapes deleted by the clear (a group counts once) |
+| `sheet` | string | the sheet name |
+
+failures: `sheet_not_found` (not transient), `write_failed` (transient)
+
+```json
+{"id":"prepare_sheet","use":"excel.prepare_sheet","with":{"keepCells":["A1","B3"],"sheet":"hostVsOpen","template":"compare","workbook":"wb"}}
+```
+
+Notes: The clear keeps the cells' formats (fonts, borders) but removes fill colours (the yellow highlight rows). Column widths and row heights are not touched.
 
 ### `excel.quit_app`
 

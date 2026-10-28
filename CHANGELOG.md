@@ -1,3 +1,38 @@
+## 2026-10-28 - POM rerun day: pomPlan / pom workflows, excel.prepare_sheet (v2.40.0)
+
+10/28: the POM jobs (failed on the first run, fixed) run again today. The
+evidence of the rerun goes only into the Convert-PomBook layout's
+GFIX受信結果(変更後) and GFIXデータ_変更前後比較, plus -- when GIFT data and
+the rerun's GFIX data differ -- a new GFIXデータ_HOSTvsOPEN (the delivered
+JJPCRR12_JJDLWA09 sample: 修正前後で抽出件数が違った -> HOST download vs
+the file OPEN received, ヘッダーのみの差分). The two delivered samples'
+変更前後比較 are DF pictures of GIFT data vs GFIX data, i.e. the same
+pictures as GIFTデータvsGFIXデータ.
+
+- `workflows/pom/gfixRecv.pom.json` (new, 0.1.0): gfixRecv.evidence for a
+  POM book. Book = `<bix>/他対応/J4*_<W>_POM*.xlsx`; GFIX受信結果(変更後)
+  emptied first (it starts as a copy of the first run), then filled by the
+  evidence rules; 変更前後比較 = the DF of the track pairs; the GIFT
+  sheets, the (変更前) sheets and GIFTデータvsGFIXデータ are not touched.
+  The track pairs differ -> a gate asks for the HOST download
+  (`DATA/GFIX/<W>/<data set>.HOST`), then DF HOST vs OPEN goes on a new
+  GFIXデータ_HOSTvsOPEN right after 変更前後比較 (first file pair only).
+  Kept in `workflows/pom/` so the day menu does not list it.
+- `workflows/pom/gfixRecv.pomPlan.json` (new, 0.1.0): plan does not offer
+  these jobs in a fresh work folder (the WBS actual start of the first
+  run counts them as done outside the tool); pomPlan writes the -Only
+  names' WBS rows into gfixrecv.csv with WORKDAY = GFIX_DATE = today and
+  asks when a name has no WBS row.
+- `excel.prepare_sheet` (new step): create a sheet from another sheet's
+  look when missing; clear shapes (groups whole), values and fills except
+  keepCells. CATALOG.md / catalog.json written by hand (no PowerShell in
+  the cloud): Tests\Test-Catalog.ps1 says if they drift from Docs.ps1.
+- `profiles/gfix-recv/layout.json`: `pom` block (subdir, glob, sheets,
+  hostGlob, checklist).
+- RUNBOOK 4c: the POM day in a separate work folder.
+- Static-checked only (JSON parse, ASCII step source); run
+  `ebi.ps1 lint` / `dryrun` on the office PC before the real run.
+
 ## 2026-10-27 - Convert-PomBook: old-layout POM books get the before / after sheets (v2.39.0)
 
 10/27: the POM jobs (failed on the first run, fixed, run again) are
