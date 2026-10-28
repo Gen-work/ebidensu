@@ -21,6 +21,53 @@ still in the old layout.
   resulting sheet order without starting Excel.
 - `Tests/Test-PomBook.ps1` (new). Cloud: static-checked only (no pwsh);
   run Tests\Run-Tests.ps1 and a `-DryRun` on the office PC first.
+## 2026-10-27 - review tool: DF title file names vs the receive logs (v2.38.11)
+
+10/27 加瀬さん NG on LJODWAF1 (STEP MQFX0030): the delivered book's second
+DF compared GIFT F202609280003.csv, KJODWAF1's empty file, again. The
+10/26 hand fix had pasted the right DF (...0005) as 図 1 on top of the
+tool's old one; when the old picture was to be removed, 図 1 was deleted
+instead. Both are empty-file DFs saying 同一内容; only the title differs.
+
+- `tools/review/df_files.py` (new), called by `check_book.py`: OCRs each
+  DF picture's title bar / [1] [2] lines on GIFTデータvsGFIXデータ and
+  checks the GIFT / GFIX file names against the "file stored" lines of
+  the logs on GIFT受信結果 / GFIX受信結果 (exact name, three reads, any
+  one naming a stored file is enough). Over the 31 uploaded books it
+  flags the three LJODWAF1 versions and nothing else. KNOWLEDGE K-53.
+
+## 2026-10-27 - retry by procedure, counts kept for reruns, GIFT picture 1 only on the operator's o (v2.38.10)
+
+10/27 office run, the operator's answers to the review questions.
+
+- **Retry by procedure (K-47).** A step that analyses an earlier capture
+  (page text, screenshot, download, exported picture, a pasted message)
+  and fails on what it showed now retries from that capture:
+  `gfixRecv.track` 0.9.2 `win` / `wide` -> `start`, `near` / `winAt` /
+  `jkDay` -> `gaText`, `dl` -> `jkText`; `gfixRecv.gift` 0.2.1 `cand` /
+  `dl` -> `jkText`; `before.transferStatus.capture` 1.0.1 `assert` /
+  `row` -> `wait`, `crop` -> `shot`. `ebi lint` warns on any `each` step
+  that reads a capture through `with` (directly or through steps in
+  between), can fail on its content and has no `retryFrom`
+  (WORKFLOW-SCHEMA section 9). Over the shipped workflows it found these
+  11 plus the 3 already fixed; none are left.
+- **Counts kept for reruns (K-52).** `human.paste` takes `defaultCounts`
+  and says `countsSource` (given / worklist / ""). `gfixRecv.track`
+  writes the counts it first read to the new worklist column
+  `GFIX_COUNTS` and a rerun with no start message takes them from there,
+  so the Teams reply keeps "(受信データ:...件)".
+- **GIFT picture 1 (K-51).** For a single-row job, `gfixRecv.evidence`
+  0.9.7 compares the GIFT side's current picture 1 first; when it
+  differs, the gate asks whether to replace it with today's list snap and
+  only `o` replaces it (Enter, no console and DryRun keep it). The answer
+  is in gate.json (`giftPic1Replace`). Pixel compare and OCR are not
+  stable without a dedicated library: a TODO to talk over (docs/TODO.md).
+- **U33's red "HOST picture could not be read"**: when every DF pair is
+  lined up (align / empty), a leftover picture with no line numbers (the
+  scrolled-right half of a HOST screen) is said in the reason, not drawn
+  red (K-43).
+- Static-checked only (no PowerShell here): run `Tests\Run-Tests.ps1`
+  and `ebi lint` on the office PC.
 ## 2026-10-27 - track: r on a GoAnywhere / Jenkins miss refreshes the page and reads it again (v2.38.9)
 
 10/27 office run: JJODWAB1's Enter at "wait for HOST" went in before the

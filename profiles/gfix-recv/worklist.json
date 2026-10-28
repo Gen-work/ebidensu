@@ -22,6 +22,7 @@
     { "name": "GFIX_DATE", "role": "text", "default": "" },
     { "name": "GFIX_TIME", "role": "time", "default": "" },
     { "name": "FileCount", "role": "text", "default": "-1" },
+    { "name": "GFIX_COUNTS", "role": "text", "default": "", "_doc": "the counts of the Teams start message (e.g. 815件、46件) as gfixRecv.track first read them: a rerun with no message takes them from here, so the reply still carries the record counts (10/27)" },
     { "name": "Owner", "role": "owner", "default": "" },
     { "name": "WORKDAY", "role": "day", "fallback": "GFIX_DATE", "default": "", "_doc": "the day the plan picked this row for (yyyy-MM-dd). The day phases take only today's rows (-AllDays for every day); GFIX_DATE stays the day the GFIX job ran" },
     { "name": "hold", "role": "hold", "default": "", "_doc": "not blank = on hold, with the reason (HOST 待ち): every phase leaves the row out until it is cleared (menu h)" },

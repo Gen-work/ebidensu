@@ -2,7 +2,7 @@
 
 交给加瀬さん之前,把当天要交的 `J4検証資料(...)_<job>.xlsx` 过一遍。
 **只读**,不改工作簿。规则来自 Check Sheet_J4 的历史指摘和 10/23 的自查,
-见 `docs/ebi-dance/KNOWLEDGE.md` 第 5 节(K-36 ～ K-50)。
+见 `docs/ebi-dance/KNOWLEDGE.md` 第 5 节(K-36 ～ K-50、K-53)。
 
 不是 VerifyTool 的 phase,也不是 ebi-dance 的 step:是 Python 3 的旁路工具,
 在云端会话(或任何装了 Python 的机器)上跑。
@@ -47,6 +47,7 @@ python3 tools/review/drawings.py render <book.xlsx> <输出文件夹>
 | GIFTデータvsGFIXデータ:标签只在每组图的正上方一行;别处的(旧版留下的)点名报出 | K-48 |
 | 手贴的图盖住工具贴的图(`verifyPic_*`):旧图和旧红框还在下面 | K-49 |
 | GIFT受信結果(OCR):一览红框框住的行 = Detail 页那几行(Detail 的 SENDDATETIMECHAR 在框里的 Msgid 里);Detail 的 RECVFILENAME = 日志的 START | K-50 |
+| GIFTデータvsGFIXデータ(OCR):每张 DF 图标题里的 GIFT / GFIX 文件名 = 两边受信日志 `file stored` 的文件(压在下面的旧图也查) | K-53 |
 | 红框落在某张图上(不是孤零零浮着) | Check Sheet「最背面に赤枠の残骸」 |
 | 乱码(`�`、`縺繧` 一类) | Check Sheet「文字化けしてます」 |
 

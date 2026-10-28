@@ -36,11 +36,26 @@
 #      on a transient one
 #    warnings: tier fallback in use; destructive with confirm:false; needs
 #      excel / browser / calibrated:*; profile not loaded; item column not
-#      declared by the profile
+#      declared by the profile; an each step that reads an earlier capture
+#      (page text, screenshot, download, operator input) and can fail on
+#      its content, with no retryFrom (K-47: r would re-read the cache)
 #    profile: page exists; worklist role:key columns == key.columns
 # ============================================================
 
 . (Join-Path $PSScriptRoot 'Runner.ps1')
+
+function Get-EbiCaptureUses {
+    # Steps that capture something a later step reads, besides every
+    # effects = ui step (page text, keys, operator input): their output is a
+    # file or picture taken from the outside world (K-47).
+    return @('screen.capture_window', 'screen.capture_region', 'screen.launch_capture', 'screen.ocr', 'file.download', 'browser.download_each', 'excel.export_pictures')
+}
+
+function Get-EbiContentFailureIds {
+    # Failures about WHAT a capture showed -- a fresh capture can change
+    # them; retrying the analysis alone cannot (K-47).
+    return @('not_found', 'record_not_found', 'ambiguous', 'wrong_hit', 'wrong_page', 'page_empty', 'page_expired', 'page_unknown', 'parse_error', 'region_empty', 'span_unreadable', 'no_date', 'too_many', 'crop_exceeds_image')
+}
 
 function Get-EbiMustReleaseKinds {
     <#
@@ -199,6 +214,7 @@ function Invoke-EbiLint {
     foreach ($section in @('setup', 'each', 'after', 'teardown')) {
         if (-not $Workflow.Contains($section) -or -not ($Workflow[$section] -is [System.Collections.IList])) { continue }
         $stepsSoFar = New-Object System.Collections.ArrayList
+        $capOf = @{}
         $stepManifests = @{}
         foreach ($call in $Workflow[$section]) {
             if (-not ($call -is [System.Collections.IDictionary])) { continue }
@@ -219,6 +235,29 @@ function Invoke-EbiLint {
             if ($call.Contains('when') -and $null -ne $call['when']) {
                 $w = ConvertFrom-EbiWhen -Text ([string]$call['when'])
                 if ($w['ok']) { Test-Ref -Path $w['path'] -Where ($where + '.when') -Section $section -StepsSoFar $stepsSoFar -Manifests $stepManifests }
+            }
+
+            # K-47: an analysis step over an earlier capture needs retryFrom
+            if ($section -eq 'each' -and $id -ne '') {
+                $refPaths = New-Object System.Collections.ArrayList
+                # only what the step READS (with); a when decides whether it runs
+                foreach ($k in $with.Keys) { foreach ($r in @(Get-EbiTemplateReferences -Value $with[$k])) { [void]$refPaths.Add([string]$r) } }
+                $mine = New-Object System.Collections.ArrayList
+                foreach ($r in $refPaths) {
+                    if ($r -match '^steps\.([^.]+)\.' -and $capOf.Contains($Matches[1])) { foreach ($c in @($capOf[$Matches[1]])) { if ($null -ne $c -and -not ($mine -contains $c)) { [void]$mine.Add($c) } } }
+                }
+                $isCap = $false; $grp = ''
+                if ($null -ne $manifest) {
+                    $isCap = (($manifest.Contains('effects') -and [string]$manifest['effects'] -eq 'ui') -or ((Get-EbiCaptureUses) -contains $use))
+                    $grp = if ($manifest.Contains('group')) { [string]$manifest['group'] } else { '' }
+                }
+                # assigned directly: $(...) would turn an empty list into $null
+                if ($isCap) { $capOf[$id] = @($id) } else { $capOf[$id] = $mine.ToArray() }
+                $hasRetry = $call.Contains('retryFrom') -and -not [string]::IsNullOrWhiteSpace([string]$call['retryFrom'])
+                if ($null -ne $manifest -and -not $isCap -and $mine.Count -gt 0 -and -not $hasRetry -and (@('table', 'flow', 'excel', 'progress', 'human', 'file') -notcontains $grp)) {
+                    $content = @(Get-EbiManifestFailureIds -Manifest $manifest | Where-Object { (Get-EbiContentFailureIds) -contains $_ })
+                    if ($content.Count -gt 0) { Warn -Where $where -Message ('reads ' + ($mine.ToArray() -join ', ') + ' and can fail ' + ($content -join ' / ') + ' on what it showed, but has no retryFrom: r would read the same capture -- add "retryFrom": "' + [string]$mine[$mine.Count - 1] + '" (K-47)') }
+                }
             }
 
             if ($null -ne $manifest) {

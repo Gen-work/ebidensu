@@ -4311,6 +4311,11 @@
           "desc": "a start time already known (the worklist row): Enter takes it, n takes now",
           "type": "string"
         },
+        "defaultCounts": {
+          "default": "",
+          "desc": "counts already known (the worklist row): used for the countsGroup field when the answer brought none",
+          "type": "string"
+        },
         "expect": {
           "default": "",
           "desc": "value the expectGroup must have (full-width folded, case-insensitive); empty = any",
@@ -4341,6 +4346,10 @@
       "outputs": {
         "clock": {
           "desc": "HH:mm:ss: when Enter was pressed, or the time typed",
+          "type": "string"
+        },
+        "countsSource": {
+          "desc": "given (from the message / typed now: write it back to the row) | worklist (defaultCounts) | \"\" (none)",
           "type": "string"
         },
         "date": {

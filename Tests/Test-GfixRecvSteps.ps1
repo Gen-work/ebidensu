@@ -580,6 +580,16 @@ try {
     Assert-True ($d['clock'] -eq '13:00:00' -and $d['needMessage']) 'paste: n overrides the row with NOW'
     $d = HumanPaste-Decide -Typed (HumanPaste-Typed -Answer '10:30') -Default '11:45:29' -NowClock '13:00:00'
     Assert-True ($d['clock'] -eq '10:30:00' -and $d['source'] -eq 'typed' -and -not $d['needMessage']) 'paste: a typed time wins over the row'
+    # 10/27: a rerun with no message keeps the counts the first run read
+    $kc = '815' + [char]0x4EF6 + [char]0x3001 + '46' + [char]0x4EF6
+    $fc = HumanPaste-FillCounts -Result @{ ok = $true; fields = @{ job = ''; counts = '' } } -CountsGroup 'counts' -DefaultCounts $kc
+    Assert-True ($fc['fields']['counts'] -eq $kc -and $fc['countsSource'] -eq 'worklist') 'paste: no counts in the answer -> the row''s GFIX_COUNTS (10/27 rerun replied without counts)'
+    $fc = HumanPaste-FillCounts -Result @{ ok = $true; fields = @{ counts = ('5' + [char]0x4EF6) } } -CountsGroup 'counts' -DefaultCounts ('815' + [char]0x4EF6)
+    Assert-True ($fc['fields']['counts'] -eq ('5' + [char]0x4EF6) -and $fc['countsSource'] -eq 'given') 'paste: counts in the message win over the row, and are written back (given)'
+    $fc = HumanPaste-FillCounts -Result @{ ok = $true; fields = @{ counts = '' } } -CountsGroup 'counts' -DefaultCounts ''
+    Assert-Equal '' $fc['countsSource'] 'paste: no counts anywhere -> countsSource empty'
+    $fc = HumanPaste-FillCounts -Result @{ ok = $false; failure = 'operator_skip'; fields = @{ counts = '' } } -CountsGroup 'counts' -DefaultCounts ('815' + [char]0x4EF6)
+    Assert-True ($fc['countsSource'] -eq '' -and $fc['fields']['counts'] -eq '') 'paste: a skip takes no counts from the row'
 
     Write-Host '  -- first office run of the track: DF window, GIFT folder, waiting'
     $wins = @(@{ handle = '100'; title = 'DF - [C:\x\OLD1.csv  - C:\y\OLD2.csv]' }, @{ handle = '200'; title = 'DF - [C:\a\F202608310006.csv  - C:\b\F202610090033.csv]' }, @{ handle = '300'; title = 'Teams' })
@@ -787,6 +797,12 @@ try {
     $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $sp; ranges = @(@{ ok = $false }, @{ ok = $false }, @{ ok = $false }) }
     Assert-True ((-not $dr['moved']) -and (@($dr['pairs'] | ForEach-Object { $_['rightName'] }) -join ',') -eq 'F202610260013.csv,F202610260014.csv') 'df ranges step: nothing readable -> pairs stay in track''s order'
     Assert-True ($dr['plans'][0]['mode'] -eq 'default' -and $dr['alert'] -match '3 HOST picture\(s\) on the send-data sheet could not be read') ('df ranges step: nothing readable -> default + the unreadable count: ' + $dr['alert'])
+    # 10/27 JJODWU33: three files, every pair lined up, one more picture with no numbers
+    $up = @(@{ lines = 26; rightName = 'F202610270009.csv' }, @{ lines = 58; rightName = 'F202610270010.csv' }, @{ lines = 0; rightName = 'F202610270011.csv' })
+    $dr = Invoke-TestStep 'verify.df_ranges' @{ pairs = $up; ranges = @((& $rg 1 17), (& $rg 18 27), (& $rg 1 17), (& $rg 43 59), @{ ok = $false }, @{ ok = $false }) }
+    Assert-Equal 'align,align,empty' (@($dr['plans'] | ForEach-Object { $_['mode'] }) -join ',') 'df ranges step: U33 -- two aligned, the empty one on a blank picture'
+    Assert-Equal '' $dr['alert'] 'df ranges step: a left-over picture with no numbers after every pair lined up is not an alert (U33 10/27)'
+    Assert-True ($dr['reason'] -match 'left over') 'df ranges step: ... it is said in the reason'
     $as = VerifyDfRanges-Assign -Slots (VerifyDfRanges-Slots -Ranges @(@{ ok = $false }, (& $rg 1 20), (& $rg 1635 1653)))['slots'] -Lines @(0, 1652)
     Assert-True ($as['sure'] -and (@($as['order']) -join ',') -eq '0,1') 'df assign: the empty set first on the sheet -> it stays first'
     # launch_capture follows an align plan: start heights moved by 18 px a line
