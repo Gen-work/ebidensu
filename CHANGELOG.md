@@ -73,6 +73,15 @@ with no gap and no repeat (checked seam by seam on the real pictures).
   line-number strip and laid on the one before so ruler and text run on
   -- the layout excel.place_tiles builds; `each` = whole captures side by
   side; `first` = the old one-frame join.
+- Office run 3: the operator pasted the `aligned` merged PNGs (11181 px
+  wide, 185-444 tall) BY HAND into JJODWDBF / DBH / DBM; read back from
+  the saved books every one is PNG, 11181 px, shown 1:1, and the last
+  capture shows the line end mark. So the 24 % shrink of run 2 belongs to
+  the picture put in by `Shapes.AddPicture` (excel.place_tiles), not to a
+  big picture as such -- cause not pinned down (insert path or the
+  book's picture compression; not tested). Until it is: paste the merged
+  PNG by hand (`util.wideSnap.capture`), or let `util.wideSnap` put the
+  pages in (mode tiles, 1:1 measured).
 
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 
