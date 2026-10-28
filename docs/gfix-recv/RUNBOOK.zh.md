@@ -372,6 +372,18 @@ GATE 的面板上：
 
 ---
 
+## 4a. 交付前自查：`gfixRecv.review`（v2.41.0 起）
+
+```powershell
+ebi.ps1 run workflows\gfixRecv.review.json -WorkDir $W
+```
+
+- 不开 Excel、不用 Python：直接读**已保存**的证迹簿（.xlsx 是 zip 里的 XML），做 `tools/review/check_book.py` 里**不用 OCR** 的那些检查——保存时的表/光标位置、字体、日志标签和 START / END、黄色、vs 表的标签（B = 相関ID、G = STEP 名、残留的旧标签）、GFIX受信ログ 的 Renaming 黄色和顺序、手贴图盖住工具图、没压在图上的红框。
+- 没有 NG：不停，直接记 `review = ok`。有 NG：GATE 上红字列出来（哪一格、什么问题、K 号）。**Enter 不算 ok**：去改，保存后 `s`，再跑一次；确认不用改才打 `o`。
+- `deliver` 只拿 `review = ok` 的行（10/28 起）。
+- OCR 的两项（GIFT 一览红框对 Detail、DF 标题的文件名对日志）还是云端：照旧把书传上来。
+- 记录：`capture\gfix\<J名>\review.json`（自动检查的结果 + 你的回答）。
+
 ## 4b. 交付：`gfixRecv.deliver`（v2.26.0 起；10/19 起「先全部写、一次确认；再全部草稿、一次确认」；10/20–10/22 最后填 WBS 実績，10/23 起拿掉）
 
 ```powershell

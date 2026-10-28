@@ -4,7 +4,7 @@
 > **Do not edit.** `Tests/Test-Docs.ps1` regenerates it and fails on drift; the
 > Agent-facing twin is `catalog.json`. Contract: `spec/STEP-CONTRACT.md`.
 
-96 step(s) in 9 group(s).
+98 step(s) in 9 group(s).
 
 | group | steps |
 |-------|-------|
@@ -13,7 +13,7 @@
 | file | `file.assert_exists`, `file.compare`, `file.convert_encoding`, `file.download`, `file.extract_blocks`, `file.find`, `file.list`, `file.move`, `file.read_json`, `file.read_text`, `file.set_aside`, `file.wait_for_download`, `file.wait_unlocked`, `file.write_json` |
 | excel | `excel.append_row`, `excel.close`, `excel.copy_picture`, `excel.ensure_app`, `excel.export_pictures`, `excel.highlight`, `excel.insert_pictures`, `excel.label_sections`, `excel.mark_rows`, `excel.open`, `excel.place_picture`, `excel.prepare_sheet`, `excel.quit_app`, `excel.read_rows`, `excel.snap_list`, `excel.stack_plan`, `excel.tidy`, `excel.write_cell`, `excel.write_lines` |
 | table | `table.day_sets`, `table.ensure_columns`, `table.key`, `table.load`, `table.save`, `table.select`, `table.set`, `table.upsert` |
-| verify | `verify.assert`, `verify.assert_each`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.log_blocks`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
+| verify | `verify.assert`, `verify.assert_each`, `verify.book_review`, `verify.compare_sets`, `verify.crosscheck`, `verify.derive_fields`, `verify.df_ranges`, `verify.file_window`, `verify.filter_records`, `verify.find_token`, `verify.log_blocks`, `verify.match_record`, `verify.nearest_time`, `verify.owner_pattern`, `verify.pair_files`, `verify.parse_text`, `verify.record_counts`, `verify.time_candidates`, `verify.time_window` |
 | human | `human.choose`, `human.draft_mail`, `human.gate`, `human.input`, `human.paste`, `human.pick`, `human.prepare`, `human.share` |
 | progress | `progress.event`, `progress.status` |
 | flow | `flow.checkpoint`, `flow.redo`, `flow.require` |
@@ -2170,6 +2170,40 @@ failures: `rules_invalid` (not transient)
 ```
 
 Notes: An empty list is ok (nothing failed) -- pair it with a filter step that fails not_found when the rows are missing. The same rule table as verify.assert, so a profile keeps one vocabulary of rules.
+
+### `verify.book_review`
+
+Review an evidence .xlsx without Excel: view, fonts, logs, yellow, labels, job logs, boxes
+
+- file: `modules/verify/verify.book_review.ps1`
+- effects: `read` / tier: `core` / idempotent: `true`
+- needs: - / provides: - / releases: -
+
+| input | type | required | default | enum | desc |
+|-------|------|----------|---------|------|------|
+| `font` | string | yes |  |  | the one font every cell with a value must use (profile.layout.evidence.font.name) |
+| `jobLog` | string | yes |  |  | the GFIX job-log label on the GFIX receive sheet (profile.layout.evidence.labels.jobLog) |
+| `maxAlert` | int |  | 8 |  | how many NG lines go to alert (the rest are counted) |
+| `path` | path | yes |  |  | the evidence workbook (.xlsx); read with a shared handle, never written |
+| `sheets` | map | yes |  |  | sheet names: sendData, giftResult, gfixResult, compare (profile.layout.evidence.sheets) |
+
+| output | type | desc |
+|--------|------|------|
+| `alert` | list | the NG lines ("where: message (ref)"), at most maxAlert, then one "... and N more" |
+| `code` | string | ok (no NG; WARN lines may be there) \| ng \| unknown (dry run, no book) |
+| `findings` | list | @{ level = NG\|WARN; where; message; ref } in check order |
+| `ng` | int | how many NG findings |
+| `path` | path |  |
+| `reason` | string | one line for the gate |
+| `warn` | int | how many WARN findings |
+
+failures: `file_not_found` (not transient), `read_failed` (transient), `input_invalid` (not transient)
+
+```json
+{"id":"book_review","use":"verify.book_review","with":{"font":"{{profile.layout.evidence.font.name}}","jobLog":"{{profile.layout.evidence.labels.jobLog}}","path":"{{steps.book.out.path}}","sheets":"{{profile.layout.evidence.sheets}}"}}
+```
+
+Notes: Read-only: the .xlsx is opened as a zip with a shared read handle, so a book open in Excel can be reviewed (what Excel has not saved yet is not seen). Pictures are not read: the OCR checks are tools/review/check_book.py's. A WARN never makes the code ng.
 
 ### `verify.compare_sets`
 

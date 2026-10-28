@@ -6724,6 +6724,98 @@
       "summary": "Run a rule table over every record; the worst verdict wins (ng > unknown > ok)",
       "tier": "core"
     },
+    "verify.book_review": {
+      "effects": "read",
+      "example": {
+        "use": "verify.book_review",
+        "with": {
+          "font": "{{profile.layout.evidence.font.name}}",
+          "jobLog": "{{profile.layout.evidence.labels.jobLog}}",
+          "path": "{{steps.book.out.path}}",
+          "sheets": "{{profile.layout.evidence.sheets}}"
+        }
+      },
+      "failures": [
+        {
+          "id": "file_not_found",
+          "transient": false
+        },
+        {
+          "id": "read_failed",
+          "transient": true
+        },
+        {
+          "id": "input_invalid",
+          "transient": false
+        }
+      ],
+      "file": "modules/verify/verify.book_review.ps1",
+      "group": "verify",
+      "id": "verify.book_review",
+      "idempotent": true,
+      "inputs": {
+        "font": {
+          "desc": "the one font every cell with a value must use (profile.layout.evidence.font.name)",
+          "required": true,
+          "type": "string"
+        },
+        "jobLog": {
+          "desc": "the GFIX job-log label on the GFIX receive sheet (profile.layout.evidence.labels.jobLog)",
+          "required": true,
+          "type": "string"
+        },
+        "maxAlert": {
+          "default": 8,
+          "desc": "how many NG lines go to alert (the rest are counted)",
+          "type": "int"
+        },
+        "path": {
+          "desc": "the evidence workbook (.xlsx); read with a shared handle, never written",
+          "required": true,
+          "type": "path"
+        },
+        "sheets": {
+          "desc": "sheet names: sendData, giftResult, gfixResult, compare (profile.layout.evidence.sheets)",
+          "required": true,
+          "type": "map"
+        }
+      },
+      "needs": [],
+      "notes": "Read-only: the .xlsx is opened as a zip with a shared read handle, so a book open in Excel can be reviewed (what Excel has not saved yet is not seen). Pictures are not read: the OCR checks are tools/review/check_book.py's. A WARN never makes the code ng.",
+      "outputs": {
+        "alert": {
+          "desc": "the NG lines (\"where: message (ref)\"), at most maxAlert, then one \"... and N more\"",
+          "type": "list"
+        },
+        "code": {
+          "desc": "ok (no NG; WARN lines may be there) | ng | unknown (dry run, no book)",
+          "type": "string"
+        },
+        "findings": {
+          "desc": "@{ level = NG|WARN; where; message; ref } in check order",
+          "type": "list"
+        },
+        "ng": {
+          "desc": "how many NG findings",
+          "type": "int"
+        },
+        "path": {
+          "type": "path"
+        },
+        "reason": {
+          "desc": "one line for the gate",
+          "type": "string"
+        },
+        "warn": {
+          "desc": "how many WARN findings",
+          "type": "int"
+        }
+      },
+      "provides": [],
+      "releases": [],
+      "summary": "Review an evidence .xlsx without Excel: view, fonts, logs, yellow, labels, job logs, boxes",
+      "tier": "core"
+    },
     "verify.compare_sets": {
       "effects": "pure",
       "example": {

@@ -1,3 +1,33 @@
+## 2026-10-28 - review phase: the book's self-review on the office PC, no Python (v2.41.0)
+
+The office PC has no Python, so `tools/review/check_book.py` only ran in
+the cloud. Its non-OCR checks are now PowerShell and a phase of their own.
+
+- `kernel/Xlsx.ps1` (new): reads an .xlsx as a zip of XML parts, no Excel,
+  through a shared read handle (a book open in Excel can be read; unsaved
+  edits are not seen) -- sheets, styles, cells, sheet views, drawing items
+  with the box y taken from the cell anchor (the drawings.py port, K-42).
+- `kernel/BookReview.ps1` (new): the checks -- save view (first sheet,
+  top, A1/A3), fonts, receive-log blocks (bold label, label = the log,
+  whole runs, nothing after END + date, mojibake: K-36 / K-37), yellow
+  (empty row NG, short / long WARN: K-38), compare-sheet labels (count,
+  correl, STEP, stale: K-39 / K-48), GFIX job logs (Renaming yellow,
+  order vs the empty DF set: K-44 / K-45), shapes (a picture pasted over a
+  tool picture, a red box on nothing: K-49).
+- `verify.book_review` (new step, effects read) and
+  `workflows/gfixRecv.review.json` (0.1.0): per evidence-ok row, review
+  the book; no NG -> `review = ok` without a question; NG -> red gate
+  lines, Enter is not ok (fix, save, s and run again; o sends it as it
+  is); `capture/gfix/<job>/review.json` keeps the findings and the answer.
+- Worklist column `review` (verdict, between evidence and deliver);
+  `gfixRecv.deliver` 0.6.0 takes only `review = ok` rows; evidence 0.9.9's
+  next line points at the review.
+- The OCR checks (K-50 GIFT list box, K-53 DF file names) stay in the
+  cloud `check_book.py`.
+- Tests\Test-BookReview.ps1: a small book built from XML parts (and the
+  same parts zipped to a real file) with one of each NG. Static-checked
+  only here: run `Tests\Run-Tests.ps1` and `ebi lint` on the office PC.
+
 ## 2026-10-28 - POM rerun day: pomPlan / pom workflows, excel.prepare_sheet (v2.40.0)
 
 10/28: the POM jobs (failed on the first run, fixed) run again today. The

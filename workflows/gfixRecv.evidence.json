@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gfixRecv.evidence",
   "title": "GFIX受信: 証跡ブック(GFIX受信結果 / GIFTデータvsGFIXデータ)を作る",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
 
@@ -316,6 +316,6 @@
   "teardown": [
     { "id": "listClose", "use": "excel.close", "with": { "workbook": "list" } },
     { "id": "quit", "use": "excel.quit_app", "with": { "app": "xl" } },
-    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "evidence", "next": ["ebi.ps1 run workflows\\gfixRecv.deliver.json -WorkDir {{run.workDir}}   (レビュー依頼: チェックシート 1 行 + メール下書き)"] } }
+    { "id": "status", "use": "progress.status", "with": { "worklist": "wl", "field": "evidence", "next": ["ebi.ps1 run workflows\\gfixRecv.review.json -WorkDir {{run.workDir}}   (交付前の自己チェック: NG があれば直してから)"] } }
   ]
 }

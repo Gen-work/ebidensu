@@ -18,18 +18,15 @@ file stays small. Designed-then-shelved work lives in
   is never reused). Needs: `file.list` already gives name / path /
   lines; add size + mtime, a pure compare step (or a mode of
   `verify.pair_files`), tests on temp files, evidence wiring.
-- **gfix-recv: a review phase before deliver?** (10/28, proposed).
-  Run `tools/review/check_book.py` on the day's evidence books between
-  evidence and deliver, so a NG stops the review request instead of
-  coming back from 加瀬さん. Open question first: is Python on the
-  office PC? (check_book is Python; its OCR parts -- K-50 GIFT list box,
-  K-53 DF file names -- also need Tesseract, today cloud-only.) Options:
-  (a) Python + Tesseract installed on the office PC -> a
-  `gfixRecv.review` workflow that runs it per row and checkpoints a
-  `review` verdict column deliver requires; (b) no Python -> port the
-  non-OCR checks (labels, fonts, yellow, START / END, box on a picture)
-  to PowerShell steps; the OCR checks stay a cloud pass (upload the
-  books, as now).
+- **gfix-recv: review phase -- first office run** (v2.41.0, 10/28).
+  The office PC has no Python, so option (b) was built: `gfixRecv.review`
+  (between evidence and deliver; deliver takes only `review = ok` rows)
+  runs `verify.book_review` = `kernel/BookReview.ps1`, the non-OCR checks
+  of `check_book.py`, reading the saved .xlsx as a zip (no Excel). On the
+  office PC: `Tests\Run-Tests.ps1` (Test-BookReview) + `ebi lint`; run it
+  on today's books and compare with the cloud `check_book.py` on the same
+  books -- the same NG lines are expected, minus the two OCR checks (K-50,
+  K-53), which stay a cloud pass.
 - **gfix-recv: talk about pixel compare / OCR** (10/27, KNOWLEDGE K-51).
   Neither is stable without a dedicated library: the picture-1 pixel
   compare false-alarms on hand-pasted pictures (AB1 / U35 / U36), Windows
