@@ -1,4 +1,4 @@
-## 2026-10-28 - review phase: the book's self-review on the office PC, no Python (v2.38.13)
+## 2026-10-28 - review phase: the book's self-review on the office PC, no Python (v2.41.0)
 
 The office PC has no Python, so `tools/review/check_book.py` only ran in
 the cloud. Its non-OCR checks are now PowerShell and a phase of their own.
@@ -28,6 +28,66 @@ the cloud. Its non-OCR checks are now PowerShell and a phase of their own.
   same parts zipped to a real file) with one of each NG. Static-checked
   only here: run `Tests\Run-Tests.ps1` and `ebi lint` on the office PC.
 
+## 2026-10-28 - POM rerun day: pomPlan / pom workflows, excel.prepare_sheet (v2.40.0)
+
+10/28: the POM jobs (failed on the first run, fixed) run again today. The
+evidence of the rerun goes only into the Convert-PomBook layout's
+GFIX受信結果(変更後) and GFIXデータ_変更前後比較, plus -- when GIFT data and
+the rerun's GFIX data differ -- a new GFIXデータ_HOSTvsOPEN (the delivered
+JJPCRR12_JJDLWA09 sample: 修正前後で抽出件数が違った -> HOST download vs
+the file OPEN received, ヘッダーのみの差分). The two delivered samples'
+変更前後比較 are DF pictures of GIFT data vs GFIX data, i.e. the same
+pictures as GIFTデータvsGFIXデータ.
+
+- `workflows/pom/gfixRecv.pom.json` (new, 0.1.0): gfixRecv.evidence for a
+  POM book. Book = `<bix>/他対応/J4*_<W>_POM*.xlsx`; GFIX受信結果(変更後)
+  emptied first (it starts as a copy of the first run), then filled by the
+  evidence rules; 変更前後比較 = the DF of the track pairs; the GIFT
+  sheets, the (変更前) sheets and GIFTデータvsGFIXデータ are not touched.
+  The track pairs differ -> a gate asks for the HOST download
+  (`DATA/GFIX/<W>/<data set>.HOST`), then DF HOST vs OPEN goes on a new
+  GFIXデータ_HOSTvsOPEN right after 変更前後比較 (first file pair only).
+  Kept in `workflows/pom/` so the day menu does not list it. Like
+  gfixRecv.evidence 0.9.8 it READS GIFT受信結果's GIFTReceive.log
+  (verify.log_blocks) and takes the repaired pairs (v2.38.12).
+- `workflows/pom/gfixRecv.pomPlan.json` (new, 0.1.0): plan does not offer
+  these jobs in a fresh work folder (the WBS actual start of the first
+  run counts them as done outside the tool); pomPlan writes the -Only
+  names' WBS rows into gfixrecv.csv with WORKDAY = GFIX_DATE = today and
+  asks when a name has no WBS row.
+- `excel.prepare_sheet` (new step): create a sheet from another sheet's
+  look when missing; clear shapes (groups whole), values and fills except
+  keepCells. CATALOG.md / catalog.json written by hand (no PowerShell in
+  the cloud): Tests\Test-Catalog.ps1 says if they drift from Docs.ps1.
+- `profiles/gfix-recv/layout.json`: `pom` block (subdir, glob, sheets,
+  hostGlob, checklist).
+- RUNBOOK 4c: the POM day in a separate work folder.
+- Static-checked only (JSON parse, ASCII step source); run
+  `ebi.ps1 lint` / `dryrun` on the office PC before the real run.
+
+## 2026-10-27 - Convert-PomBook: old-layout POM books get the before / after sheets (v2.39.0)
+
+10/27: the POM jobs (failed on the first run, fixed, run again) are
+delivered in the JJPCRR12_JJDLWA09 / JJPCRR12_JJDSWPA1 layout -- GFIX
+送信結果 and GFIX受信結果 each twice, (変更前) = the first run and
+(変更後) = the rerun, plus GFIXデータ_変更前後比較. The other books in
+the operator's share (YJDSWM39 and the other *JDSWM39 / CJDSWM40) are
+still in the old layout.
+
+- `PomBook.ps1` (new, pure): `Get-PomBookPlan` -- GFIX send / recv result
+  renamed (変更前) and copied right behind as (変更後) (a placeholder
+  until the rerun evidence goes in); GIFT送信結果 / GIFT受信結果 /
+  GIFTデータvsGFIXデータ stay where they are; a blank GFIXデータ_変更前後比較
+  at the end (A1 file-name formula and B3 data name of GIFT-vs-GFIX, no
+  pictures). No JJPCRR12 sheets (only books named after JJPCRR12 have
+  them). A book already in the POM layout is skipped; one with neither
+  layout is reported and left alone.
+- `Convert-PomBook.ps1` (new, standalone): does the plan with Excel COM on
+  a copy in `-OutDir` (default `<dir>\pom_converted`); pictures and red
+  boxes travel with Worksheet.Copy. `-DryRun` prints the plan and the
+  resulting sheet order without starting Excel.
+- `Tests/Test-PomBook.ps1` (new). Cloud: static-checked only (no pwsh);
+  run Tests\Run-Tests.ps1 and a `-DryRun` on the office PC first.
 ## 2026-10-28 - evidence repairs a pair the GIFT log disowns (v2.38.12)
 
 10/28 LJODWAF1: with 0003 gone from DATA\GIFT\LJODWAF1 and 0005 there,

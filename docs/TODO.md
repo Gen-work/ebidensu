@@ -18,7 +18,7 @@ file stays small. Designed-then-shelved work lives in
   is never reused). Needs: `file.list` already gives name / path /
   lines; add size + mtime, a pure compare step (or a mode of
   `verify.pair_files`), tests on temp files, evidence wiring.
-- **gfix-recv: review phase -- first office run** (v2.38.13, 10/28).
+- **gfix-recv: review phase -- first office run** (v2.41.0, 10/28).
   The office PC has no Python, so option (b) was built: `gfixRecv.review`
   (between evidence and deliver; deliver takes only `review = ok` rows)
   runs `verify.book_review` = `kernel/BookReview.ps1`, the non-OCR checks

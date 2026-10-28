@@ -9,7 +9,7 @@
 
 **办公室 PC(没有 Python)上**:不用 OCR 的检查已经移植成 PowerShell
 (`kernel/BookReview.ps1` + `verify.book_review`),在 `gfixRecv.review` 里跑,
-在 evidence 和 deliver 之间(v2.38.13)。两边的检查要一起改:这里加一条不用 OCR
+在 evidence 和 deliver 之间(v2.41.0)。两边的检查要一起改:这里加一条不用 OCR
 的检查,`kernel/BookReview.ps1` 也加上同样的一条,反过来也一样。OCR 的两项
 (K-50、K-53)只在这里。
 

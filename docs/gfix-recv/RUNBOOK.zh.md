@@ -372,7 +372,7 @@ GATE 的面板上：
 
 ---
 
-## 4a. 交付前自查：`gfixRecv.review`（v2.38.13 起）
+## 4a. 交付前自查：`gfixRecv.review`（v2.41.0 起）
 
 ```powershell
 ebi.ps1 run workflows\gfixRecv.review.json -WorkDir $W
@@ -411,6 +411,43 @@ evidence = ok 的行：
    不给 `wbsPath` 就在第一步停下。测试时除了 AJ / AK / AQ，也看一眼 AF / AG 有没有变。
 
 检查表被别人开着时，`open` 会说是谁，等对方关掉再 `r`。需要 Classic Outlook（新版 Outlook 不能自动化）。
+
+---
+
+## 4c. POM 再実行（第一次出 bug、修好后重跑的 job；v2.40.0 起）
+
+POM 书的格式见 `Convert-PomBook.ps1`：第一次运行在 `(変更前)`，重跑写进 `(変更後)`。
+**只写三张**：`GFIX受信結果(変更後)`、`GFIXデータ_変更前後比較`，以及数据有差异时才加的 `GFIXデータ_HOSTvsOPEN`。
+GIFT 的几张、`(変更前)`、`GIFTデータvsGFIXデータ` 都不碰。
+
+**单独开一个工作文件夹**（不要用平时的 `$W`）：平时的 evidence 会去 `08.BIX` 找 `J4*_<W名>.xlsx`，
+那是已经交付的书；POM 的行混进平时的作业清单，就可能写坏它。
+
+```powershell
+$P = 'C:\work\pom'                       # POM 专用工作文件夹（名字随意）
+mkdir $P; Copy-Item $W\ebi.local.json $P\   # 路径设置照抄平时的
+ebi.ps1 run workflows\pom\gfixRecv.pomPlan.json -WorkDir $P -Only CJDSWM39,CJDSWM40   # 1. 放进作业清单
+ebi.ps1 run workflows\gfixRecv.track.json -WorkDir $P                                   # 2. 和平时一样
+ebi.ps1 run workflows\gfixRecv.logs.json  -WorkDir $P                                   # 3. 和平时一样
+ebi.ps1 run workflows\pom\gfixRecv.pom.json -WorkDir $P                                # 4. 代替 evidence
+```
+
+- 1 `pomPlan`：plan 不会列这些 job（WBS 的 AJ 已经有第一次的实绩，新文件夹的清单又没见过它们 → 当作「工具外做完」）。
+  pomPlan 直接按 `-Only` 的名字去 WBS（受信 / 修正後実施）找行写进 `gfixrecv.csv`，WORKDAY = GFIX_DATE = 今天。
+  WBS 里找不到的名字会停下来问（Enter = 只放找到的，q = 停）。
+- 2 track：GIFT 和重跑的 GFIX 数据**不一样在 POM 是可能的**（修正后抽出件数变了）——GATE 上看过 DF 以后打 `o`。
+  打 `n` 的话第 4 步会跳过这本。
+- 4 `pom`：书在 `<bix>\他対応\J4*_<W名>_POM*.xlsx`（先把 `Convert-PomBook.ps1` 转好的书放回去）。
+  - `GFIX受信結果(変更後)` **先清空**（它原来是第一次运行的复制：图、红框、日志、黄色都删，只留 A1），
+    再照平时的规则写：B3 一览截图、GFIX受信ログ、GFIXReceive.log、Jenkins 图。
+  - `GFIXデータ_変更前後比較`：B3 = IF 名，DF = GIFT 的数据 vs 重跑的 GFIX 数据（和 GIFTデータvsGFIXデータ 同样的规则）。
+  - 数据**有差异**时停下来：从 HOST 下载那个数据集（HOST コード 939），放到 `<bix>\DATA\GFIX\<W名>\<数据集名>.HOST`，
+    然后 Enter → 新建 `GFIXデータ_HOSTvsOPEN`（放在 変更前後比較 的右边，B3 = IF 名，DF = .HOST vs OPEN 收到的文件）。
+    `s` = 这本不做 HOSTvsOPEN。文件夹里有第一次留下的旧 `.HOST` 时先换掉（只认一个）。
+    吹き出し（「修正前後で抽出件数が違った」「ヘッダーのみの差分」之类）手写。
+  - 多文件的 job：HOSTvsOPEN 只做第一组；其余手做。
+- deliver 不找 `他対応`，POM 的レビュー依頼手做。
+- 先试：`ebi.ps1 lint workflows\pom\gfixRecv.pom.json` 和 `ebi.ps1 dryrun workflows\pom\gfixRecv.pom.json -WorkDir $P`。
 
 ---
 
