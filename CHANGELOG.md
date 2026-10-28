@@ -66,6 +66,10 @@ with no gap and no repeat (checked seam by seam on the real pictures).
   `width = 0` (leave the window as the viewer opens it; the page width is
   read from each capture, so any width stitches). `util.wideSnap.capture`
   takes `-Var close=false` to leave the viewer open after.
+- The merged `__wide.png` kept the window frame (title, menu, toolbar,
+  scroll bar) on its first part only. `screen.stitch_scroll frame`:
+  `each` (new default) = every capture whole, side by side, like the
+  operator's own pictures; `first` = the old one-frame join.
 
 ## 2026-10-28 - review phase fix: the XML namespace manager came back as strings (v2.41.1)
 

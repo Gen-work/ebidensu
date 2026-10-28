@@ -88,17 +88,24 @@ try {
 
     # ============================================================ layout
     # five page scrolls: the J4 book's five pictures (0, 265, 530, 795, 1060) join into 9326 x 148
-    $lay = Get-EbiStitchLayout -Starts @(0, 265, 530, 795, 1060) -Geometry $g
+    $lay = Get-EbiStitchLayout -Starts @(0, 265, 530, 795, 1060) -Geometry $g -Frame 'first'
     Assert-True ($lay['width'] -eq 9326 -and $lay['height'] -eq 148) ('layout: 30 + 5 x 1855 + the 21 px edge = 9326 wide, cut above the horizontal bar (got ' + $lay['width'] + ' x ' + $lay['height'] + ')')
     $pc = @($lay['pieces'])
     Assert-True ($pc.Count -eq 8 -and $pc[0]['h'] -eq 76 -and $pc[0]['w'] -eq 1906 -and $pc[1]['w'] -eq 30) 'layout: the first capture''s header and its line-number strip, then five bands and the edge'
     Assert-True ($pc[3]['tile'] -eq 1 -and $pc[3]['sx'] -eq 30 -and $pc[3]['dx'] -eq 1885 -and $pc[3]['w'] -eq 1855) 'layout: capture 2 adds its whole text area right after capture 1''s (no gap, no repeat)'
     Assert-True ($pc[7]['tile'] -eq 4 -and $pc[7]['sx'] -eq 1885 -and $pc[7]['w'] -eq 21 -and $pc[7]['dx'] -eq 9305) 'layout: the last capture''s right edge closes the band'
     # a scroll cut short at the end: capture 3 starts at 400, repeating 130 columns -> only its new 135
-    $lay = Get-EbiStitchLayout -Starts @(0, 265, 400) -Geometry $g
+    $lay = Get-EbiStitchLayout -Starts @(0, 265, 400) -Geometry $g -Frame 'first'
     $pc = @($lay['pieces'])
     Assert-True ($pc[4]['tile'] -eq 2 -and $pc[4]['sx'] -eq 940 -and $pc[4]['w'] -eq 945 -and $pc[4]['dx'] -eq 3740 -and $lay['width'] -eq 4706) 'layout: a capture that repeats columns adds only the new ones'
     Assert-Equal 0 (Get-EbiStitchLayout -Starts @() -Geometry $g)['width'] 'layout: no captures -> nothing'
+    # frame each (the default, 10/28): every capture whole, side by side
+    $lay = Get-EbiStitchLayout -Starts @(0, 265, 530, 795, 1060) -Geometry $g
+    $pc = @($lay['pieces'])
+    Assert-True ($lay['width'] -eq 9530 -and $lay['height'] -eq 166 -and $pc.Count -eq 5) ('layout each: five whole 1906 x 166 captures = 9530 x 166 (got ' + $lay['width'] + ' x ' + $lay['height'] + ')')
+    Assert-True ($pc[3]['tile'] -eq 3 -and $pc[3]['sx'] -eq 0 -and $pc[3]['w'] -eq 1906 -and $pc[3]['h'] -eq 166 -and $pc[3]['dx'] -eq 5718) 'layout each: capture 4 whole, frame and all, after the third'
+    $lay = Get-EbiStitchLayout -Starts @(0, 265, 265) -Geometry $g
+    Assert-Equal 2 @($lay['pieces']).Count 'layout each: a capture that adds no column is left out'
 
     # ============================================================ shift
     $s = Resolve-EbiTileShift -ScrollA @{ ok = $true; pos = 0 } -ScrollB @{ ok = $true; pos = 265 } -Match $null -PageCols 265 -CharPx 7

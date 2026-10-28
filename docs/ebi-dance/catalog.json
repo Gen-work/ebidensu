@@ -6325,6 +6325,15 @@
           "desc": "height = 0: size the window to show this many lines and the [EOF] row, no more (file.line_ends lines); capped by maxHeight",
           "type": "int"
         },
+        "frame": {
+          "default": "each",
+          "desc": "the merged PNG: each = every capture whole (window frame and all) side by side; first = one frame (the first capture's title / menu / toolbar), the text bands joined column to column",
+          "enum": [
+            "each",
+            "first"
+          ],
+          "type": "string"
+        },
         "height": {
           "default": 0,
           "desc": "visible window height; 0 = fitLines decides (else leave as the viewer opens it)",

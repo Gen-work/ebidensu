@@ -153,7 +153,14 @@ function Get-EbiStitchLayout {
     <#
       PURE. The merged picture of the captures, given each capture's first
       column (Starts, Starts[0] = 0 for a view that began at the left) and
-      the geometry:
+      the geometry. Frame:
+        'each'  (default, 10/28 operator: "like pic 2 -- now only the 1st
+                one has it") every capture whole, window frame and all,
+                side by side left to right: a page scroll moves exactly
+                the columns a capture shows, so nothing is lost between
+                them; a capture that adds no new column is left out
+        'first' one frame: as below
+      Frame 'first':
         * the whole first capture above the band (title, menu, toolbar --
           the file name and its encoding are evidence) and its line-number
           strip
@@ -165,12 +172,22 @@ function Get-EbiStitchLayout {
       Rows below the band (the horizontal scroll bar) are left out.
       -> @{ width; height; pieces = @(@{ tile; sx; sy; w; h; dx; dy }) }
     #>
-    param($Starts, $Geometry)
+    param($Starts, $Geometry, [string]$Frame = 'each')
     $g = $Geometry
     $st = @(@($Starts) | ForEach-Object { [int]$_ })
     $pieces = New-Object System.Collections.ArrayList
     if ($st.Count -eq 0 -or -not [bool]$g['ok']) { return @{ width = 0; height = 0; pieces = @() } }
     $L = [int]$g['textLeft']; $cpx = [int]$g['charPx']; $page = [int]$g['pagePx']
+    if ($Frame -ne 'first') {
+        $tw = [int]$g['tileW']; $x = 0; $lastEnd = -1
+        for ($k = 0; $k -lt $st.Count; $k++) {
+            $end = $st[$k] + [int]$g['pageCols']
+            if ($k -gt 0 -and $end -le $lastEnd) { continue }   # nothing new in it
+            [void]$pieces.Add(@{ tile = $k; sx = 0; sy = 0; w = $tw; h = [int]$g['tileH']; dx = $x; dy = 0 })
+            $x += $tw; $lastEnd = $end
+        }
+        return @{ width = $x; height = [int]$g['tileH']; pieces = $pieces.ToArray() }
+    }
     $top = [int]$g['bandTop']; $bot = [int]$g['bandBottom']; $bh = $bot - $top
     $base = $st[0]
     # the first capture: everything above the band, then the strip left of column 0

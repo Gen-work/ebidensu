@@ -43,6 +43,7 @@ $Manifest = @{
     saveDir     = @{ type='path';   required=$true }
     name        = @{ type='string'; default=''; desc='file name stem of the captures (<name>__01.png .. and <name>__wide.png); empty = the file name' }
     stitch      = @{ type='bool';   default=$true; desc='also merge the captures into <name>__wide.png' }
+    frame       = @{ type='string'; default='each'; enum=@('each', 'first'); desc='the merged PNG: each = every capture whole (window frame and all) side by side; first = one frame (the first capture''s title / menu / toolbar), the text bands joined column to column' }
     x           = @{ type='int';    default=40 }
     y           = @{ type='int';    default=40 }
     width       = @{ type='int';    default=0; desc='visible window width; 0 = leave as the viewer opens it (the geometry defaults were measured at 1906)' }
@@ -267,7 +268,7 @@ function Invoke-Step {
         }
         $layout = @{ textLeft = [int]$g['textLeft']; textRight = [int]$g['textRight']; bandTop = [int]$g['bandTop']; bandBottom = [int]$g['bandBottom']; charPx = [int]$g['charPx']; pageCols = $pageCols; tileW = [int]$g['tileW']; tileH = [int]$g['tileH']; starts = $starts.ToArray() }
         if ($wide -ne '') {
-            $lay = Get-EbiStitchLayout -Starts $starts.ToArray() -Geometry $g
+            $lay = Get-EbiStitchLayout -Starts $starts.ToArray() -Geometry $g -Frame ([string]$In['frame'])
             $r = New-EbiStitchedPng -Tiles $tiles.ToArray() -Layout $lay -Dest $wide
             if (-not $r['ok']) { return (& $fail 'save_failed' ('merging the captures: ' + $r['message'])) }
             $outW = [int]$r['width']; $outH = [int]$r['height']
