@@ -467,6 +467,14 @@ try {
     Assert-Equal '1,1,3' (@($rc2s['short']) -join ',') 'counts shortOk: short says by how many lines'
     $rc2o = Invoke-TestStep 'verify.record_counts' @{ text = ('10' + $ken); files = @(@{ name = 'U.csv'; lines = 13 }); unit = $ken; shortOk = $true }
     Assert-True (-not [bool]$rc2o['matched'] -and $rc2o['warnings'][0]['code'] -eq 'count_disagree') 'counts shortOk: MORE lines than count + header is still a disagreement'
+    # 10/28 JJODWU31: the message lists 48, 882, 9, 26; the files arrive as 8, 47, 25, 881 lines
+    $rcO = Invoke-TestStep 'verify.record_counts' @{ text = ('48' + $ken + $ten + '882' + $ken + $ten + '9' + $ken + $ten + '26' + $ken); files = @(@{ name = 'F1.csv'; lines = 8 }, @{ name = 'F2.csv'; lines = 47 }, @{ name = 'F3.csv'; lines = 25 }, @{ name = 'F4.csv'; lines = 881 }); unit = $ken; joiner = $ten; shortOk = $true }
+    Assert-Equal ('47' + $ken + '(48' + $ken + ')' + $ten + '881' + $ken + '(882' + $ken + ')' + $ten + '8' + $ken + '(9' + $ken + ')' + $ten + '25' + $ken + '(26' + $ken + ')') $rcO['text'] 'counts order (10/28 JJODWU31): each count takes the file that fits it, text in the message''s order'
+    Assert-True ([bool]$rcO['matched'] -and [bool]$rcO['reordered'] -and (@($rcO['fileOf']) -join ',') -eq '1,3,0,2' -and (@($rcO['short']) -join ',') -eq '1,1,1,1') 'counts order: matched, reordered, fileOf 1,3,0,2, each 1 short'
+    $rcT = Invoke-TestStep 'verify.record_counts' @{ text = ('9' + $ken + $ten + '9' + $ken); files = @(@{ name = 'A.csv'; lines = 8 }, @{ name = 'B.csv'; lines = 9 }); unit = $ken; joiner = $ten; shortOk = $true }
+    Assert-True ((-not [bool]$rcT['reordered']) -and (@($rcT['fileOf']) -join ',') -eq '0,1') 'counts order: a tie keeps the listed order'
+    $rcX = Invoke-TestStep 'verify.record_counts' @{ text = ('48' + $ken + $ten + '882' + $ken); files = @(@{ name = 'A.csv'; lines = 883 }, @{ name = 'B.csv'; lines = 49 }); unit = $ken; joiner = $ten }
+    Assert-True ([bool]$rcX['reordered'] -and [bool]$rcX['matched'] -and $rcX['text'] -eq ('48' + $ken + $ten + '882' + $ken)) 'counts order without shortOk: header-tolerant agreement still pairs by count'
     $rcN = Invoke-TestStep 'verify.record_counts' @{ text = ''; files = @(@{ name = 'F.csv'; lines = 61 }); unit = $ken }
     Assert-True ($rcN['ok'] -and $rcN['matched'] -and -not $rcN.Contains('warnings')) 'record_counts: no start message (row time used) -> nothing to compare, no count_disagree warning'
     $rc3 = Invoke-TestStep 'verify.record_counts' @{ text = ('0' + $ken); files = @(@{ name = 'F.csv'; lines = 1 }); unit = $ken }
