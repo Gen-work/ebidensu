@@ -1,8 +1,9 @@
 # Versioning policy
 
 This repository uses practical semantic versioning for operator-visible releases.
-The current project version appears in each `CHANGELOG.md` release heading, for
-example `v2.9.29`.
+Each `CHANGELOG.md` release heading carries its version, for example `v2.9.29`.
+A branch never writes that number itself: it writes `vNEXT` and main assigns
+the number on merge (see "Who assigns the number" below).
 
 ## Version format
 
@@ -46,10 +47,11 @@ working, use MAJOR.
 
 ## Changelog rules
 
-Every released change should add a new top entry to `CHANGELOG.md`:
+Every released change should add a new top entry to `CHANGELOG.md`, with the
+bump KIND instead of a number:
 
 ```markdown
-## YYYY-MM-DD - Short release title (vMAJOR.MINOR.PATCH)
+## YYYY-MM-DD - Short release title (vNEXT patch)
 
 ### Added
 - ...
@@ -61,32 +63,44 @@ Every released change should add a new top entry to `CHANGELOG.md`:
 - ...
 ```
 
-Keep sections that apply and omit empty sections. Put the newest release at the
-top. If multiple commits are part of one unreleased release, keep updating the
-same top entry instead of creating many tiny version headings.
+`(vNEXT patch)`, `(vNEXT minor)` or `(vNEXT major)` -- the decision guide above
+picks the kind; a bare `(vNEXT)` means patch. Keep sections that apply and omit
+empty sections. Put the newest release at the top. If multiple commits are part
+of one unreleased release, keep updating the same top entry instead of creating
+many tiny version headings.
 
-## Automation recommendation
+Commit messages and PR titles carry no version number: the number does not
+exist until the merge.
 
-For this PowerShell-only repository, keep automation simple:
+## Who assigns the number
 
-1. Store the current version in one plain text file, `VERSION`.
-2. Keep `CHANGELOG.md` as the human release record.
-3. Use a release helper script that:
-   - reads `VERSION`;
-   - bumps `major`, `minor`, or `patch`;
-   - writes the new `VERSION`;
-   - verifies the top `CHANGELOG.md` heading contains the same `vX.Y.Z`;
-   - creates a git tag such as `v2.10.0` after tests pass.
-4. In CI, fail if `VERSION` and the latest changelog heading disagree.
+Branches used to pick their own number. Two branches cut from the same main
+then picked the same one, and both merged: `v2.41.1` and `v2.41.2` each head
+two entries in `CHANGELOG.md`. Those two duplicates stay as they are (an old
+delivery is not redone under a new rule); the stamper knows them and reports
+any other duplicate.
 
-Recommended command shape:
+Now `.github/workflows/stamp-version.yml` runs on every push to `main`:
 
-```powershell
-.\Release-Version.ps1 -Bump patch -Title "FillCheckSheet prefix fallback"
-.\Tests\Run-Tests.ps1
-# review, commit, then tag after merge/release
-# git tag v2.9.30
-```
+1. `tools/version/stamp_changelog.py` replaces each `(vNEXT <kind>)` heading
+   with the next number after the HIGHEST real one in the file (not the top
+   one); several pending headings are numbered bottom-up, oldest first.
+   Only `## ` headings outside code fences, and only a tag that ends the
+   heading, are touched.
+2. The workflow commits that to `main` as `CHANGELOG: stamp vX.Y.Z` and tags
+   `vX.Y.Z`, pushed atomically.
+3. Runs share one `concurrency` group, so they queue; each run checks out the
+   latest `main`, never the pushed SHA. If `main` moved during a run, the
+   push is rejected and the next queued run stamps the same headings.
+4. `mirror-to-gitlab.yml` mirrors again when the stamp run completes (a push
+   made with `GITHUB_TOKEN` starts no workflow, so without this the office PC
+   would not see the number until the next push).
 
-Avoid fully automatic version bumps on every commit. Version numbers should mark
-operator-facing releases, not every internal checkpoint.
+Until the stamp run lands (seconds), `main` -- and a GitLab pull taken in that
+window -- shows `(vNEXT ...)`; the next mirror fixes it.
+
+The stamper's unit tests: `python3 -m unittest discover -s tools/version -p
+"test_*.py"` (the workflow runs them before stamping).
+
+Version numbers still mark operator-facing releases, not every commit: only a
+heading someone wrote gets a number, never a commit without one.

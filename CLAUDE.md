@@ -17,7 +17,7 @@ Remote: `gen-work/ebidensu`
 Branch convention: `claude/<slug>`
 Local clone: configure per environment (do not commit personal paths).
 
-Versioning: use `MAJOR.MINOR.PATCH`; release headings in `CHANGELOG.md` carry the current `vX.Y.Z`. See `docs/Versioning.md` for bump rules and release automation guidance.
+Versioning: `MAJOR.MINOR.PATCH`. A branch writes its `CHANGELOG.md` heading as `(vNEXT patch|minor|major)` and never a number (not in commits or PR titles either); `stamp-version.yml` assigns it on merge to main. Bump rules: `docs/Versioning.md`.
 
 ## File map
 

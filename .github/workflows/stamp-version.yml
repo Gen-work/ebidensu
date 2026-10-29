@@ -1,0 +1,69 @@
+name: Stamp version
+
+# Branches write CHANGELOG headings as "(vNEXT patch|minor|major)"; this
+# turns each one into the next real number once it reaches main, commits
+# that back to main and tags it (docs/Versioning.md). Runs are queued, never
+# parallel, so two merges cannot take the same number.
+#
+# A push made with GITHUB_TOKEN starts no other workflow, so the stamp
+# commit and its tags would not reach GitLab on their own: mirror-to-gitlab
+# .yml also runs on this workflow's completion (workflow_run).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stamp-version
+  cancel-in-progress: false
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    steps:
+      # ref: main, not the pushed SHA: a queued run must see the stamp an
+      # earlier run already pushed.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Test the stamper
+        run: python3 -m unittest discover -s tools/version -p "test_*.py"
+
+      - name: Stamp CHANGELOG.md
+        id: stamp
+        run: python3 tools/version/stamp_changelog.py CHANGELOG.md --github-output "$GITHUB_OUTPUT"
+
+      - name: Commit, tag, push
+        if: steps.stamp.outputs.versions != ''
+        env:
+          VERSIONS: ${{ steps.stamp.outputs.versions }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -am "CHANGELOG: stamp ${VERSIONS}"
+          refs=""
+          for v in $VERSIONS; do
+            git tag "$v"
+            refs="$refs refs/tags/$v"
+          done
+          # --atomic: the tags land only together with the commit. If main
+          # moved meanwhile the push is rejected; that newer push queued its
+          # own run, which still sees these vNEXT headings and stamps them.
+          if git push --atomic origin HEAD:main $refs; then
+            echo "pushed ${VERSIONS}"
+            exit 0
+          fi
+          git fetch -q origin main
+          if [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD~1)" ]; then
+            echo "::notice::main moved during the stamp; the queued run stamps these headings instead of ${VERSIONS}"
+            exit 0
+          fi
+          # main did not move, so the push itself was refused (permissions).
+          echo "::error::could not push the stamp to main; check Settings -> Actions -> General -> Workflow permissions"
+          exit 1
