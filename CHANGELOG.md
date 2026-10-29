@@ -1,3 +1,23 @@
+## 2026-10-29 - KNOWLEDGE: what the long snap taught (v2.42.1)
+
+Docs only. Three entries in `docs/ebi-dance/KNOWLEDGE.md` from the v2.42.0
+work, plus checklist item 12 in its section 0:
+
+- K-56: a 11181 px merged PNG put in with `Shapes.AddPicture` was stored
+  at 2679 px (24 %); the 1906 px page captures and the operator's
+  hand-pasted merged PNGs kept every pixel. Cause still open; tiles stay
+  the default and `verify.picture_pixels` checks the saved file.
+- K-57: the J4 long-snap layout (every capture keeps its window frame,
+  the later ones cropped by the line-number strip and laid over), the
+  measured sakura geometry (a page scroll is exactly 265 columns, no
+  seam overlap), and the rule that the line end is decided from the data
+  file (`needCols`), not from the picture; the window is left as sakura
+  remembers it.
+- K-58 (section 9): when the operator cannot describe the look they want,
+  ask for an existing picture before coding instead of another round of
+  run-this steps; facts about the environment are still measured by
+  running.
+
 ## 2026-10-28 - long snap: a data file captured page by page to the line end, merged outside and inside Excel (v2.42.0)
 
 The J4 books hold the GFIX data file as a row of text-editor captures put

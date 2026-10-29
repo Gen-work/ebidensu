@@ -27,6 +27,7 @@
 9. 把「页面上的一行」和「这本」对上的东西,如果只有一个(GFIX 受信是开始时刻),它要来自**当天现场的话**(Teams「実施します」),不是计划表;计划表的时刻只当默认值,面板上写清它可能是计划(K-21)。
 10. 人工回答在 `-Resume` 时**重新问**,不要从 ledger 重放:回答错了正是要恢复的原因(K-18)。
 11. 往证迹簿里写标签、涂色、画框的 step:标签从来源推、不写死;涂色前确认这一行有字;多组的每一组都要写(K-36 ～ K-41)。交付前跑 `tools/review/check_book.py`(第 5 节)。
+12. 截图要「和某本证迹一样」时,排法也从那本证迹里量,不只量尺寸;窗口大小、位置没人要求就不动;存盘后从 xlsx 里确认图的像素数(K-56、K-57)。外观要求说不清时先要一张现成的图,不要一轮轮试(K-58)。
 
 ---
 
@@ -259,6 +260,24 @@
 - **10/23 第一件**:FJODWAF1 两个文件(CSV1 / CSV2,STEP:MQFX0020 / MQFX0030)。GIFTデータvsGFIXデータ 只在第一组上面写了 B3 / G3,第二组(第 66 行)的相关ID 和 STEP 名是手补的。v2.36.0:`excel.label_sections` 按 送信データ 的第 k 个标签行,给第 k 组 DF 图上面一行写 B / G。
 - **来源**:10/23 加瀬さん的话(操作员转述)。
 
+### K-56 Excel 用 AddPicture 插入很宽的图,存盘后被缩到 24%;手贴的不缩
+- **症状**:10/28 JIGPS8BS(`util.wideSnap.json`,mode both):在 Excel 外合成的 1 张 11181×1014 PNG,用 `Shapes.AddPicture`(-1 / -1,原尺寸)插入并保存后,xlsx 里存的是 **2679×243**(24%)。`verify.picture_pixels` 报 ng。同一次 run 里,每页 1906 px 的截图也是用 AddPicture 插入的,却保持 1:1(ok)。操作员手贴的 JJODWDBF / DBH / DBM 三本,合成图都是 11181 px 1:1,行尾的 ↓ 看得清。
+- **原因**:未确认。可疑的有「ファイル内のイメージを圧縮しない」这个设置、保存时的默认解像度、AddPicture 对很宽的图有上限,但都没有做过对照(同一个 Excel 里,手贴和 AddPicture 各贴一次同一张图)。1906 px 的图不缩,说明不是所有 AddPicture 都会缩。
+- **现在的对策**(v2.42.0):`util.wideSnap.json` 默认 `mode tiles`:每页截图分别插入,在 Excel 里排齐、编组(`excel.place_tiles`),不缩。合成 PNG 留在 `capture/`,要贴就手贴。存盘后 `verify.picture_pixels` 不开 Excel 直接读 xlsx:是不是还是 PNG、像素数是不是和截图一样、是不是 1:1 显示,对不上就在 GATE 上画红。
+- **写新 workflow 时**:「插进去了」不等于「原样存下了」,要从**存好的文件**里确认像素数。宽度超过几千 px 的图,在原因查清之前不要用 AddPicture 插入。
+- **可能错在哪**:只在一台办公 PC、一个 Excel 上见过一次;不知道 11181 和 1906 之间缩与不缩的分界在哪里;也可能是那次 run 的 Excel 设置和操作员手贴时不同。
+- **来源**:10/28 office run 2 的 `pxPng` / `pxTiles` 结果;10/28 操作员上传的三本手贴版。
+
+### K-57 横长截图(GFIXデータ):每屏都保留窗口外框,截到哪一栏由数据文件决定
+- **症状**:10/28 做 GFIXデータ 的横长截图(sakura 往右一页一页翻)。第 1 版只给第 1 屏留了标题栏 / 菜单 / 工具栏,后几屏只截文字带,操作员:「now it only 1st one has it」。第 2 版每屏整张并排,还是不对。操作员贴了一张 J4 证迹的 Excel 截图之后才对上。窗口这边:先是按行数把窗口高度调小(操作员:「too high the window」之后,又说「don't set hight」),后来改成大小、位置都不动;`x 40` + 宽 1906 超出了 1920 的屏幕。
+- **原因**:J4 的排法是:**每一屏都保留窗口外框**,第 2 屏起切掉左边的行号栏(约 30 px,图片裁剪 l≈1.5%),往左叠在前一屏上,标尺和文字刚好接上。最开始的请求里就附了这样的例子(sheet 1 和最后一张 sheet),agent(Claude)从里面量了几何尺寸,排法却用了自己想的。
+- **实测的几何**(J4 的 1906×166 截图,sakura):文字从 x 30 开始,一栏 7 px,竖滚动条从 x 1888 开始,标尺 y 76,横滚动条 y 148,行高 14 px。往右翻一页**正好**是可见的 265 栏(1855 px),接缝处不重叠也不缺,所以不需要用图像去找接缝。每屏的起始栏从滚动条位置读(Win32 GetScrollInfo),读不到才看像素。
+- **截到哪里**:由数据文件定,不由图定。`file.line_ends` 读改行(CRLF / LF / CR / 混合 / 没有)和最长一行的栏数(SJIS 双字节 / UTF-8 宽字符算 2 栏,Tab 展开),`needCols` = 最长栏数 + 2(最长的是最后一行、后面接 [EOF] 时 + 5)。截到的栏数 ≥ needCols 才算到行尾,否则 `not_at_line_end`。图只给人看(GATE)。10/28 JIGPS8BS:1 行、1513 栏、LF,6 屏,截到 1590 栏(需要 1515)。
+- **现在的对策**(v2.42.0):`screen.stitch_scroll` 默认 `frame aligned`(J4 排法;`each` = 整屏并排,`first` = 只有第 1 屏带框);`width` / `height` 默认 0 = 窗口保持 sakura 上次记住的大小和位置。`excel.place_tiles` 用同样的排法在 Excel 里贴(CropLeft + 左移,编组)。只截图、手贴:`workflows/util.wideSnap.capture.json`。sakura 不在默认路径时,用 `-Var viewer=<路径>`。
+- **写新 workflow 时**:要做成「和某本证迹一样」时,排法也从那本证迹里量(谁在上、裁了哪边、外框留没留),不只量尺寸。窗口大小、位置没人要求就不要动。
+- **可能错在哪**:几何是从一台 PC 的 sakura 设置量出来的(字体、7 px 栏宽、行号栏宽度)。字体、显示倍率不同,或者文件行数多到行号栏变宽(未确认),这些数都会变,要用 `textLeft` / `charPx` 改。`frame aligned` 和「窗口不动」都是最后一次办公室实跑之后才改的,只用 J4 的真图在云端对照过。ISPF(送信データ)的横长截图还没做。
+- **来源**:10/28 最初的请求(「like the one in sheet 1 and sheet last」「make sure it get to the end of the line. like CR or LF or both」);同日操作员:「i want keep outer window」「like pic 2, now it only 1st one has it」「make hight remember last time i open it. (don't set hight)」「not only keep the very line. but also keep window」;office run 1–3;PR Gen-work/ebidensu#220。
+
 ### K-24 deliver 写 WBS 实绩:日志说写了,WBS 里没有
 - **症状**:10/20 deliver 印出 `wrote MJODJSPQ row 3854: AK=2026-10-20`(三本都是),`excel.close saved=True`;之后打开 WBS,AK 是空的。只写了 修正後実施 一行,结果まとめ 行、工数 AQ 都没写。
 - **原因**:未确认。起初猜是保存时的「文書分類/機密区分の登録」对话框取消了保存;操作员说**不是**:WBS 早就登录过分类,不会再弹。操作员看到的是:关卡上按 Enter **之前** Excel 里就看不到写进去的值,怀疑当时 WBS 开着筛选(filter)。打开 WBS 时两次「只读」也说明当时有人(或别的 Excel 窗口)开着它。
@@ -474,3 +493,14 @@
 
 **怎么贡献**:先发现症状,再追原因;对策写进 step 或 profile 之后,在这一页加上 K-xx(五栏都要有)。
 没查清的写「未确认」,和代码改动放在同一个 PR 里。
+
+### K-58 操作员说不清要什么样子时:先要一张现成的图,不要一轮轮给操作步骤
+- **症状**:10/28 横长截图的排法(K-57)来回了三轮:agent(Claude)每次按自己的理解改一版,再给一整套「打开 shell → 粘贴 → 跑」的步骤,操作员在办公室跑一次,看了说不对,再来。最后操作员贴了一张 Excel 截图,一次就对了。操作员:「sorry for confusion like this.」之后:「if i dont know what i want. not say step by step procedure. you should ask me instead of repeat again and again. prove me wrong」。
+- **原因**:「keep outer window」「like pic 2」这样的话,可以读成好几种排法。agent 挑了一种就动手,每次猜错的代价都是操作员在办公室跑一次。排法是「要什么样子」的问题,答案在操作员(和 J4 证迹)那里,跑多少次都跑不出来。
+- **规则**(10/28 和操作员一起定的):
+  1. **要什么样子**(排法、留什么、裁什么)说不清时,先问,要一张现成的图(以前的证迹、手做的样子、截图),对着图确认之后再写代码。手上已经有例子的,先从例子里量,量完把读到的写给操作员确认。
+  2. **环境里的事实**(Excel 会不会缩图、滚动条能不能读、窗口坐标)不要问人,去跑、去量。
+  3. 给操作步骤之前,先确认这一轮要验证的是什么;一轮只验证一件事。
+- **反方**(操作员说「prove me wrong」):有时候做出一版给人看,比空口问更快——人看到错的东西才说得出对的样子。这次第 1 版也确实让操作员说出了「only 1st one has it」。所以第 1 版不算白做;**错的是第 2 版**:那时候还是没要图,又猜了一次。
+- **可能错在哪**:要图也要操作员花时间找、花时间贴;要求本来就清楚的时候,先问只会拖慢。这条只用于「说不清的外观要求」,只有这一次的例子。
+- **来源**:10/28 横长截图的对话(DETOUR-GFIX-001.18)。
