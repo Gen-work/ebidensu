@@ -1757,6 +1757,7 @@ Create a sheet from another one's look when missing, and clear its shapes / valu
 | `after` | string |  | (empty) |  | a new sheet goes right after this one; empty = right after template |
 | `clearExisting` | bool |  | true |  | false = only create a missing sheet, leave an existing one as it is |
 | `keepCells` | list |  | ["A1"] |  | cells whose value survives the clear (the A1 sheet-name formula) |
+| `renameFrom` | string |  | (empty) |  | when sheet is missing but this one exists: rename it to sheet (then clear it) instead of copying template (10/29: GFIX recv result (after) -> the POM name) |
 | `sheet` | string | yes |  |  | the sheet to prepare |
 | `template` | string |  | (empty) |  | when sheet is missing: copy this sheet (its look) and name the copy sheet; empty = a missing sheet is a failure |
 | `workbook` | session:workbook | yes |  |  |  |
@@ -1764,13 +1765,14 @@ Create a sheet from another one's look when missing, and clear its shapes / valu
 | output | type | desc |
 |--------|------|------|
 | `created` | bool | the sheet was made by this call |
+| `renamed` | bool | the sheet was renameFrom, renamed by this call |
 | `shapesRemoved` | int | shapes deleted by the clear (a group counts once) |
 | `sheet` | string | the sheet name |
 
 failures: `sheet_not_found` (not transient), `write_failed` (transient)
 
 ```json
-{"id":"prepare_sheet","use":"excel.prepare_sheet","with":{"keepCells":["A1","B3"],"sheet":"hostVsOpen","template":"compare","workbook":"wb"}}
+{"id":"prepare_sheet","use":"excel.prepare_sheet","with":{"keepCells":["A1","B3"],"renameFrom":"oldName","sheet":"hostVsOpen","template":"compare","workbook":"wb"}}
 ```
 
 Notes: The clear keeps the cells' formats (fonts, borders) but removes fill colours (the yellow highlight rows). Column widths and row heights are not touched.

@@ -79,17 +79,20 @@
     "_glob_doc": "starts with J4 so the ~$ lock file Excel leaves next to an open workbook never matches"
   },
   "pom": {
-    "_doc": "workflows/pom/gfixRecv.pom.json (10/28): the POM rerun -- a job that failed on its first run, was fixed and runs again. Its book (Convert-PomBook.ps1 layout) keeps the first run in the (変更前) sheets and takes the rerun in the (変更後) ones; the GIFT sheets and GIFT-vs-GFIX are not touched. The compare is GIFT data vs the rerun's GFIX data (the delivered samples JJPCRR12_JJDLWA09 / _JJDSWPA1); when they differ, the HOST download of the data set vs the file OPEN received goes on hostVsOpen (JJDLWA09: 修正前後で抽出件数が違った -> ヘッダーのみの差分).",
+    "_doc": "workflows/pom/gfixRecv.pom.json (10/28): the POM rerun -- a job that failed on its first run, was fixed and runs again. Its book keeps the first run in the (変更前) sheets and takes the rerun in the POM稼働確認・ ones (Convert-PomBook.ps1 writes (変更後); the pom flow renames the recv one); the GIFT sheets and GIFT-vs-GFIX are not touched. The compare is GIFT data vs the rerun's GFIX data (the delivered samples JJPCRR12_JJDLWA09 / _JJDSWPA1); when they differ, the HOST download of the data set vs the file OPEN received goes on hostVsOpen (JJDLWA09: 修正前後で抽出件数が違った -> ヘッダーのみの差分).",
     "subdir": "他対応",
     "_subdir_doc": "the POM books live in <paths.bix>/<subdir> (10/27 share)",
     "glob": "J4*_{{item.Excel_NAME}}_POM*.xlsx",
     "sheets": {
-      "gfixResult": "GFIX受信結果(変更後)",
+      "gfixResult": "POM稼働確認・GFIX受信結果",
+      "_gfixResult_doc": "10/29 (operator): the rerun's recv sheet is named like the HOST team's send sheet in C/FJDSWM39 (POM稼働確認・GFIX送信結果). A book still carrying gfixResultOld has it renamed to this, then emptied",
+      "gfixResultOld": "GFIX受信結果(変更後)",
+      "gfixBefore": "GFIX受信結果(変更前)",
       "compare": "GFIXデータ_変更前後比較",
       "hostVsOpen": "GFIXデータ_HOSTvsOPEN"
     },
     "checklist": [
-      "GFIX受信結果(変更後): emptied first (it started as a copy of the first run), then B3 = the Excel snap of THIS job's row(s), GFIX受信ログ from row 8 with yellow rows, the GFIXReceive.log block with yellow, the Jenkins picture with the red box -- all from the RERUN",
+      "POM稼働確認・GFIX受信結果 (renamed from GFIX受信結果(変更後) when the book still has that name): emptied first (it started as a copy of the first run), then B3 = the Excel snap of THIS job's row(s), GFIX受信ログ from row 8 with yellow rows, the GFIXReceive.log block with yellow, the Jenkins picture with the red box -- all from the RERUN",
       "GFIX受信結果(変更前) / GIFT送信結果 / GIFT受信結果 / GIFTデータvsGFIXデータ: untouched",
       "GFIXデータ_変更前後比較: B3 = the IF name, DF pictures of GIFT data vs the rerun's GFIX data + red boxes (same rules as GIFTデータvsGFIXデータ)",
       "data differ -> GFIXデータ_HOSTvsOPEN right after it: B3 = the IF name, DF pictures of the HOST download (.HOST) vs the file OPEN received; write the notes by hand (JJDLWA09: 修正前後で抽出件数が違った / ヘッダーのみの差分)"

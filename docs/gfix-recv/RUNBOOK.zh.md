@@ -417,7 +417,7 @@ evidence = ok 的行：
 ## 4c. POM 再実行（第一次出 bug、修好后重跑的 job；v2.40.0 起）
 
 POM 书的格式见 `Convert-PomBook.ps1`：第一次运行在 `(変更前)`，重跑写进 `(変更後)`。
-**只写三张**：`GFIX受信結果(変更後)`、`GFIXデータ_変更前後比較`，以及数据有差异时才加的 `GFIXデータ_HOSTvsOPEN`。
+**只写三张**：`POM稼働確認・GFIX受信結果`、`GFIXデータ_変更前後比較`，以及数据有差异时才加的 `GFIXデータ_HOSTvsOPEN`。
 GIFT 的几张、`(変更前)`、`GIFTデータvsGFIXデータ` 都不碰。
 
 **单独开一个工作文件夹**（不要用平时的 `$W`）：平时的 evidence 会去 `08.BIX` 找 `J4*_<W名>.xlsx`，
@@ -440,7 +440,8 @@ ebi.ps1 run workflows\pom\gfixRecv.pom.json -WorkDir $P                         
   GIFT 和重跑的 GFIX 数据**不一样在 POM 是可能的**（修正后抽出件数变了）——GATE 上看过 DF 以后打 `o`。
   打 `n` 的话第 4 步会跳过这本。
 - 4 `pom`：书在 `<bix>\他対応\J4*_<W名>_POM*.xlsx`（先把 `Convert-PomBook.ps1` 转好的书放回去）。
-  - `GFIX受信結果(変更後)` **先清空**（它原来是第一次运行的复制：图、红框、日志、黄色都删，只留 A1），
+  - 受信侧的「变更后」叫 `POM稼働確認・GFIX受信結果`（10/29 起，和 C/FJDSWM39 送信侧 HOST 改的名字一致）：书里还是 `GFIX受信結果(変更後)` 就先改名；
+    然后**先清空**（它原来是第一次运行的复制：图、红框、日志、黄色都删，只留 A1），
     再照平时的规则写：B3 一览截图、GFIX受信ログ、GFIXReceive.log、Jenkins 图。
   - `GFIXデータ_変更前後比較`：B3 = IF 名，DF = GIFT 的数据 vs 重跑的 GFIX 数据（和 GIFTデータvsGFIXデータ 同样的规则）。
   - 数据**有差异**时停下来：从 HOST 下载那个数据集（HOST コード 939），放到 `<bix>\他対応\修正後DATA\<W名>\<数据集名>.HOST`（和重跑的 GFIX 文件同一个文件夹），

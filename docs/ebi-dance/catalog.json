@@ -2085,6 +2085,7 @@
             "A1",
             "B3"
           ],
+          "renameFrom": "oldName",
           "sheet": "hostVsOpen",
           "template": "compare",
           "workbook": "wb"
@@ -2122,6 +2123,11 @@
           "desc": "cells whose value survives the clear (the A1 sheet-name formula)",
           "type": "list"
         },
+        "renameFrom": {
+          "default": "",
+          "desc": "when sheet is missing but this one exists: rename it to sheet (then clear it) instead of copying template (10/29: GFIX recv result (after) -> the POM name)",
+          "type": "string"
+        },
         "sheet": {
           "desc": "the sheet to prepare",
           "required": true,
@@ -2145,6 +2151,10 @@
       "outputs": {
         "created": {
           "desc": "the sheet was made by this call",
+          "type": "bool"
+        },
+        "renamed": {
+          "desc": "the sheet was renameFrom, renamed by this call",
           "type": "bool"
         },
         "shapesRemoved": {

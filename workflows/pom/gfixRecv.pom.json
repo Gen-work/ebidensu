@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "id": "gfixRecv.pom",
-  "title": "GFIX受信 POM 再実行: 証跡ブックの (変更後) / 変更前後比較 / HOSTvsOPEN だけを作る",
-  "version": "0.1.3",
+  "title": "GFIX受信 POM 再実行: 証跡ブックの POM稼働確認・GFIX受信結果 / 変更前後比較 / HOSTvsOPEN だけを作る",
+  "version": "0.1.4",
   "profile": "gfix-recv",
   "page": "jenkinsReport",
-  "_doc": "10/28 POM rerun (a job that failed on its first run, was fixed and runs again). gfixRecv.evidence for a POM book: run it in a SEPARATE work folder (its own gfixrecv.csv), after plan / track / logs there. Writes only GFIX受信結果(変更後) (emptied first: it starts as a copy of the first run), GFIXデータ_変更前後比較 (GIFT data vs the rerun's GFIX data, DF) and -- only when the data differ -- GFIXデータ_HOSTvsOPEN (the HOST download vs the file OPEN received). GIFT sheets, (変更前) sheets and GIFTデータvsGFIXデータ are never touched -- not even read (10/29: the POM books need not have GIFT受信結果). Kept in workflows/pom/ so the day menu (ebi status / menu) does not list it next to gfixRecv.evidence. gfixRecv.deliver does not look in the POM folder: ask for the review by hand.",
+  "_doc": "10/28 POM rerun (a job that failed on its first run, was fixed and runs again). gfixRecv.evidence for a POM book: run it in a SEPARATE work folder (its own gfixrecv.csv), after plan / track / logs there. Writes only POM稼働確認・GFIX受信結果 (renamed from GFIX受信結果(変更後) when needed, emptied first: it starts as a copy of the first run), GFIXデータ_変更前後比較 (GIFT data vs the rerun's GFIX data, DF) and -- only when the data differ -- GFIXデータ_HOSTvsOPEN (the HOST download vs the file OPEN received). GIFT sheets, (変更前) sheets and GIFTデータvsGFIXデータ are never touched -- not even read (10/29: the POM books need not have GIFT受信結果). Kept in workflows/pom/ so the day menu (ebi status / menu) does not list it next to gfixRecv.evidence. gfixRecv.deliver does not look in the POM folder: ask for the review by hand.",
 
   "vars": { "capture": "capture/gfix" },
 
@@ -67,8 +67,9 @@
     { "id": "open", "use": "excel.open", "once": "group",
       "with": { "app": "xl", "path": "{{steps.book.out.path}}", "as": "wb" } },
     { "id": "afterSheet", "use": "excel.prepare_sheet", "once": "group",
-      "label": "GFIX受信結果(変更後) を空にする(1 回目の内容のコピーなので、図・枠・ログ・黄色を消す。A1 のシート名の式だけ残す)",
-      "with": { "workbook": "wb", "sheet": "{{profile.layout.pom.sheets.gfixResult}}", "keepCells": ["A1"] } },
+      "label": "POM稼働確認・GFIX受信結果 を用意: 無ければ GFIX受信結果(変更後) をこの名前に変える(それも無ければ (変更前) の見た目で作る)。1 回目の内容のコピーなので、図・枠・ログ・黄色を消す。A1 のシート名の式だけ残す",
+      "with": { "workbook": "wb", "sheet": "{{profile.layout.pom.sheets.gfixResult}}", "renameFrom": "{{profile.layout.pom.sheets.gfixResultOld}}",
+                "template": "{{profile.layout.pom.sheets.gfixBefore}}", "keepCells": ["A1"] } },
     { "id": "compareSheet", "use": "excel.prepare_sheet", "once": "group",
       "label": "GFIXデータ_変更前後比較 を空にする(無ければ GIFTデータvsGFIXデータ の見た目で作る)。A1 / B3 は残す",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.pom.sheets.compare}}", "template": "{{profile.layout.evidence.sheets.compare}}",
@@ -82,7 +83,7 @@
                 "extendTo": "{{profile.layout.evidence.list.extendTo}}",
                 "savePng": "{{vars.capture}}/{{item.keySafe}}/pic1.png" } },
     { "id": "excelSnap", "use": "excel.place_picture",
-      "label": "その PNG を GFIX受信結果(変更後) B3 へ。GIFT受信結果 には貼らない",
+      "label": "その PNG を POM稼働確認・GFIX受信結果 B3 へ。GIFT受信結果 には貼らない",
       "with": { "workbook": "wb", "sheet": "{{profile.layout.pom.sheets.gfixResult}}", "path": "{{steps.listSnap.out.png}}",
                 "cell": "B3", "replace": "atCell" } },
 

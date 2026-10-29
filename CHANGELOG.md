@@ -1,3 +1,18 @@
+## 2026-10-29 - POM: the rerun's recv sheet is POM稼働確認・GFIX受信結果 (v2.42.2)
+
+10/29: in C/FJDSWM39 the HOST team renamed the send-side "after" sheet to
+`POM稼働確認・GFIX送信結果` (and dropped the GIFT sheets); the recv side
+follows (operator).
+
+- `layout.pom.sheets.gfixResult` = `POM稼働確認・GFIX受信結果`
+  (`gfixResultOld` = `GFIX受信結果(変更後)`, `gfixBefore` = `(変更前)`).
+- `excel.prepare_sheet`: `renameFrom` -- a missing sheet whose old name is
+  there is renamed (then cleared) instead of copied; output `renamed`.
+  CATALOG.md / catalog.json updated by hand.
+- `pom/gfixRecv.pom` 0.1.4: afterSheet renames GFIX受信結果(変更後) when the
+  book still has it, else makes the sheet from (変更前)'s look.
+- RUNBOOK 4c updated.
+
 ## 2026-10-29 - POM: the pom flow no longer reads GIFT受信結果 (v2.42.1)
 
 10/29 first real run: `pom/gfixRecv.pom` stopped on CJDSWM39 at
