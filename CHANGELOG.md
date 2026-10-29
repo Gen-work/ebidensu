@@ -1,3 +1,26 @@
+## 2026-10-29 - version numbers are assigned on merge, not by the branch (vNEXT patch)
+
+Branches picked their own number from the main they were cut from, so two
+parallel branches took the same one: `v2.41.1` and `v2.41.2` each head two
+entries below. Reminding every branch to read this file first did not stop
+it (10/13, 10/27, 10/28 twice).
+
+- A branch now writes its heading as `(vNEXT patch|minor|major)`; commit
+  messages and PR titles carry no number.
+- `.github/workflows/stamp-version.yml` (new) runs on each push to main:
+  `tools/version/stamp_changelog.py` (new, Python, unit-tested by
+  `tools/version/test_stamp_changelog.py`) turns each vNEXT heading into
+  the next number after the highest real one, then the run commits it to
+  main and tags it, atomically. Runs queue in one `concurrency` group; a
+  run whose push loses a race leaves the headings to the queued run.
+- `mirror-to-gitlab.yml` also runs when a stamp run completes, because a
+  push made with `GITHUB_TOKEN` starts no other workflow.
+- The two existing duplicates stay (old releases are not renumbered); the
+  stamper warns on any new one, e.g. a branch cut before this change that
+  still writes a number by hand.
+- `docs/Versioning.md`: the old VERSION-file / release-script suggestion
+  (never built) is replaced by "Who assigns the number".
+
 ## 2026-10-28 - long snap: a data file captured page by page to the line end, merged outside and inside Excel (v2.42.0)
 
 The J4 books hold the GFIX data file as a row of text-editor captures put

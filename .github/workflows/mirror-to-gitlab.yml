@@ -13,6 +13,11 @@ on:
     branches: ["**"]
   delete:
   workflow_dispatch:
+  # The stamp commit and tags are pushed with GITHUB_TOKEN, which starts no
+  # push run here; mirror again once the stamp run is over.
+  workflow_run:
+    workflows: ["Stamp version"]
+    types: [completed]
 
 concurrency:
   group: mirror-to-gitlab
