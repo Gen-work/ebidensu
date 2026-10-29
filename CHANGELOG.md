@@ -1,3 +1,14 @@
+## 2026-10-29 - POM: the pom flow no longer reads GIFT受信結果 (v2.42.1)
+
+10/29 first real run: `pom/gfixRecv.pom` stopped on CJDSWM39 at
+giftLogRows -- `sheet_not_found: no sheet "GIFT受信結果"`. The POM book in
+他対応 need not carry the GIFT sheets (the delivered JJPCRR12 samples have
+none). The GIFT-log check (verify.log_blocks, added in 0.1.1 for parity with
+evidence 0.9.8) is dropped again.
+
+- `pom/gfixRecv.pom` 0.1.3: no giftLogRows / giftLogCheck; dfRanges and the
+  HOST-vs-OPEN compare take the track pairs and DF shots as in 0.1.0.
+
 ## 2026-10-28 - long snap: a data file captured page by page to the line end, merged outside and inside Excel (v2.42.0)
 
 The J4 books hold the GFIX data file as a row of text-editor captures put
