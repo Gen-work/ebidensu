@@ -1,3 +1,17 @@
+## 2026-10-30 - KNOWLEDGE K-58: confirm against a reviewed sample, ask the deadline (v2.42.2)
+
+Docs only. `docs/ebi-dance/KNOWLEDGE.md` K-58 gains the operator's 10/29-30
+note. Code from a description is reliable only for generic needs; how the
+site does a thing is in the site's own files. Confirm in three steps: pick
+a sample that passed review (site files carry copied mistakes too: K-36,
+K-50, K-53); read it back WITH a mock picture (text is weak, a picture is
+strong); write the least code that makes that mock first. Ask when the
+work is due: near a deadline, do it by hand and let code only gather the
+material (captures, files, logs) part by part while a person lays out the
+Excel and checks the format by eye; full automation is for the needs that
+have waited a long time -- much data, where hands are slow and miss more.
+Checklist item 12 says the same.
+
 ## 2026-10-29 - KNOWLEDGE: what the long snap taught (v2.42.1)
 
 Docs only. Three entries in `docs/ebi-dance/KNOWLEDGE.md` from the v2.42.0
