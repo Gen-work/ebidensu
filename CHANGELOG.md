@@ -9,7 +9,8 @@ strong); write the least code that makes that mock first. Ask when the
 work is due: near a deadline, do it by hand and let code only gather the
 material (captures, files, logs) part by part while a person lays out the
 Excel and checks the format by eye; full automation is for the needs that
-have waited a long time -- much data, where hands are slow and miss more.
+have waited a long time -- much data, where hands are slow and miss more --
+or that have plenty of time and will stay in use for a long time.
 Checklist item 12 says the same.
 
 ## 2026-10-29 - KNOWLEDGE: what the long snap taught (v2.42.1)
